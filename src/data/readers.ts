@@ -4,18 +4,17 @@ import type { Reader, ReaderId } from './types';
 export const READERS = raw as Reader[];
 
 /**
- * Static art registry -- Metro resolves `require` at build time, so portraits
- * cannot be looked up by a computed path.
+ * Reader portraits are 2:1 landscape environmental scenes rather than cut-out
+ * avatars, which is why readers are presented as wide banners instead of the
+ * columns the original sketch showed.
  *
- * These are 2:1 landscape environmental scenes rather than cut-out avatars,
- * which is why readers are presented as wide banners instead of the columns the
- * original sketch showed.
+ * The iOS build needed a static registry here because Metro resolves `require`
+ * at build time and cannot look up a computed path. On the web the URL *is*
+ * the lookup, so the registry is gone.
  */
-export const READER_ART: Record<ReaderId, number> = {
-  thessaly: require('@/assets/dukuns/thessaly.jpg'),
-  margaret: require('@/assets/dukuns/margaret.jpg'),
-  adrian: require('@/assets/dukuns/adrian.jpg'),
-};
+export function readerPortrait(id: ReaderId): string {
+  return `/dukuns/${id}.jpg`;
+}
 
 export function readerById(id: string): Reader | undefined {
   return READERS.find((r) => r.id === id);

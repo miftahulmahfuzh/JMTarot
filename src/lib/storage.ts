@@ -1,12 +1,16 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { DailyPull, Profile, ReaderId } from '@/data/types';
 
 /**
- * The entire persistence layer: four keys, all device-local.
+ * The entire client-side persistence layer: three keys, all in `localStorage`.
  *
- * Nothing here is ever transmitted. JMTarot has no accounts and no server, which
- * is what lets the App Privacy label say "Data Not Collected" -- so resist adding
- * anything that would need declaring.
+ * Nothing here is ever transmitted. There is no database, and a reading is not
+ * persisted at all -- only the profile and the daily-card state outlive a page
+ * load. Resist adding anything a server would need to see.
+ *
+ * These are synchronous, unlike the AsyncStorage version they replace, and they
+ * must not be called during render on the server: `localStorage` does not exist
+ * there. Every accessor guards on `typeof window` and returns null rather than
+ * throwing, so a stray server call degrades instead of crashing the route.
  */
 const KEY = {
   profile: 'user.profile',
@@ -14,22 +18,25 @@ const KEY = {
   preferredReader: 'reader.preferred',
 } as const;
 
-async function readJson<T>(key: string): Promise<T | null> {
+function readJson<T>(key: string): T | null {
+  if (typeof window === 'undefined') return null;
   try {
-    const raw = await AsyncStorage.getItem(key);
+    const raw = window.localStorage.getItem(key);
     return raw === null ? null : (JSON.parse(raw) as T);
   } catch {
-    // Corrupt or unparseable: treat as absent rather than crashing the app on
-    // launch. Worst case the user re-enters their name.
+    // Corrupt, unparseable, or blocked (Safari private mode throws on access):
+    // treat as absent rather than crashing. Worst case the user re-enters their
+    // name.
     return null;
   }
 }
 
-async function writeJson(key: string, value: unknown): Promise<void> {
+function writeJson(key: string, value: unknown): void {
+  if (typeof window === 'undefined') return;
   try {
-    await AsyncStorage.setItem(key, JSON.stringify(value));
+    window.localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    // Storage failures are not worth interrupting a reading for.
+    // Quota or private-mode failures are not worth interrupting a reading for.
   }
 }
 
