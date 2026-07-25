@@ -1,0 +1,354 @@
+[
+  {
+    "id": 0,
+    "slug": "00_fool",
+    "numeral": "0",
+    "name": "The Fool",
+    "glyph": "✧",
+    "element": "air",
+    "stage": "beginning",
+    "polarity": "light",
+    "yesno": "yes",
+    "keywords": [
+      "lompatan",
+      "kepolosan",
+      "percaya"
+    ]
+  },
+  {
+    "id": 1,
+    "slug": "01_magician",
+    "numeral": "I",
+    "name": "The Magician",
+    "glyph": "☿",
+    "element": "air",
+    "stage": "beginning",
+    "polarity": "light",
+    "yesno": "yes",
+    "keywords": [
+      "kehendak",
+      "fokus",
+      "keahlian"
+    ]
+  },
+  {
+    "id": 2,
+    "slug": "02_high_priestess",
+    "numeral": "II",
+    "name": "The High Priestess",
+    "glyph": "☾",
+    "element": "water",
+    "stage": "beginning",
+    "polarity": "neutral",
+    "yesno": "maybe",
+    "keywords": [
+      "rahasia",
+      "intuisi",
+      "kedalaman"
+    ]
+  },
+  {
+    "id": 3,
+    "slug": "03_empress",
+    "numeral": "III",
+    "name": "The Empress",
+    "glyph": "♀",
+    "element": "earth",
+    "stage": "beginning",
+    "polarity": "light",
+    "yesno": "yes",
+    "keywords": [
+      "kelimpahan",
+      "merawat",
+      "tubuh"
+    ]
+  },
+  {
+    "id": 4,
+    "slug": "04_emperor",
+    "numeral": "IV",
+    "name": "The Emperor",
+    "glyph": "♈",
+    "element": "fire",
+    "stage": "beginning",
+    "polarity": "neutral",
+    "yesno": "yes",
+    "keywords": [
+      "ketertiban",
+      "otoritas",
+      "struktur"
+    ]
+  },
+  {
+    "id": 5,
+    "slug": "05_hierophant",
+    "numeral": "V",
+    "name": "The Hierophant",
+    "glyph": "♉",
+    "element": "earth",
+    "stage": "beginning",
+    "polarity": "neutral",
+    "yesno": "yes",
+    "keywords": [
+      "tradisi",
+      "ajaran",
+      "ikrar"
+    ]
+  },
+  {
+    "id": 6,
+    "slug": "06_lovers",
+    "numeral": "VI",
+    "name": "The Lovers",
+    "glyph": "♊",
+    "element": "air",
+    "stage": "beginning",
+    "polarity": "light",
+    "yesno": "yes",
+    "keywords": [
+      "penyatuan",
+      "pilihan",
+      "keselarasan"
+    ]
+  },
+  {
+    "id": 7,
+    "slug": "07_chariot",
+    "numeral": "VII",
+    "name": "The Chariot",
+    "glyph": "♋",
+    "element": "water",
+    "stage": "beginning",
+    "polarity": "light",
+    "yesno": "yes",
+    "keywords": [
+      "dorongan",
+      "kemenangan",
+      "pelindung"
+    ]
+  },
+  {
+    "id": 8,
+    "slug": "08_strength",
+    "numeral": "VIII",
+    "name": "Strength",
+    "glyph": "♌",
+    "element": "fire",
+    "stage": "trial",
+    "polarity": "light",
+    "yesno": "yes",
+    "keywords": [
+      "keberanian",
+      "kesabaran",
+      "menjinakkan"
+    ]
+  },
+  {
+    "id": 9,
+    "slug": "09_hermit",
+    "numeral": "IX",
+    "name": "The Hermit",
+    "glyph": "♍",
+    "element": "earth",
+    "stage": "trial",
+    "polarity": "neutral",
+    "yesno": "no",
+    "keywords": [
+      "kesunyian",
+      "pelita",
+      "pencarian"
+    ]
+  },
+  {
+    "id": 10,
+    "slug": "10_wheel_of_fortune",
+    "numeral": "X",
+    "name": "Wheel of Fortune",
+    "glyph": "♃",
+    "element": "fire",
+    "stage": "trial",
+    "polarity": "neutral",
+    "yesno": "maybe",
+    "keywords": [
+      "perputaran",
+      "takdir",
+      "siklus"
+    ]
+  },
+  {
+    "id": 11,
+    "slug": "11_justice",
+    "numeral": "XI",
+    "name": "Justice",
+    "glyph": "♎",
+    "element": "air",
+    "stage": "trial",
+    "polarity": "neutral",
+    "yesno": "maybe",
+    "keywords": [
+      "keseimbangan",
+      "kebenaran",
+      "sebab"
+    ]
+  },
+  {
+    "id": 12,
+    "slug": "12_hanged_man",
+    "numeral": "XII",
+    "name": "The Hanged Man",
+    "glyph": "♆",
+    "element": "water",
+    "stage": "trial",
+    "polarity": "shadow",
+    "yesno": "no",
+    "keywords": [
+      "penangguhan",
+      "pembalikan",
+      "sudut pandang"
+    ]
+  },
+  {
+    "id": 13,
+    "slug": "13_death",
+    "numeral": "XIII",
+    "name": "Death",
+    "glyph": "♏",
+    "element": "water",
+    "stage": "trial",
+    "polarity": "shadow",
+    "yesno": "no",
+    "keywords": [
+      "akhir",
+      "ambang",
+      "pelepasan"
+    ]
+  },
+  {
+    "id": 14,
+    "slug": "14_temperance",
+    "numeral": "XIV",
+    "name": "Temperance",
+    "glyph": "♐",
+    "element": "fire",
+    "stage": "trial",
+    "polarity": "light",
+    "yesno": "maybe",
+    "keywords": [
+      "perpaduan",
+      "ukuran",
+      "penyelarasan"
+    ]
+  },
+  {
+    "id": 15,
+    "slug": "15_devil",
+    "numeral": "XV",
+    "name": "The Devil",
+    "glyph": "♑",
+    "element": "earth",
+    "stage": "reckoning",
+    "polarity": "shadow",
+    "yesno": "no",
+    "keywords": [
+      "belenggu",
+      "hasrat",
+      "bayangan"
+    ]
+  },
+  {
+    "id": 16,
+    "slug": "16_tower",
+    "numeral": "XVI",
+    "name": "The Tower",
+    "glyph": "♂",
+    "element": "fire",
+    "stage": "reckoning",
+    "polarity": "shadow",
+    "yesno": "no",
+    "keywords": [
+      "keruntuhan",
+      "kilat",
+      "kebenaran"
+    ]
+  },
+  {
+    "id": 17,
+    "slug": "17_star",
+    "numeral": "XVII",
+    "name": "The Star",
+    "glyph": "♒",
+    "element": "air",
+    "stage": "reckoning",
+    "polarity": "light",
+    "yesno": "yes",
+    "keywords": [
+      "harapan",
+      "ketenangan",
+      "bimbingan"
+    ]
+  },
+  {
+    "id": 18,
+    "slug": "18_moon",
+    "numeral": "XVIII",
+    "name": "The Moon",
+    "glyph": "♓",
+    "element": "water",
+    "stage": "reckoning",
+    "polarity": "shadow",
+    "yesno": "no",
+    "keywords": [
+      "mimpi",
+      "ilusi",
+      "pasang"
+    ]
+  },
+  {
+    "id": 19,
+    "slug": "19_sun",
+    "numeral": "XIX",
+    "name": "The Sun",
+    "glyph": "☉",
+    "element": "fire",
+    "stage": "reckoning",
+    "polarity": "light",
+    "yesno": "yes",
+    "keywords": [
+      "kejelasan",
+      "sukacita",
+      "vitalitas"
+    ]
+  },
+  {
+    "id": 20,
+    "slug": "20_judgement",
+    "numeral": "XX",
+    "name": "Judgement",
+    "glyph": "♇",
+    "element": "water",
+    "stage": "reckoning",
+    "polarity": "neutral",
+    "yesno": "yes",
+    "keywords": [
+      "kebangkitan",
+      "panggilan",
+      "perhitungan"
+    ]
+  },
+  {
+    "id": 21,
+    "slug": "21_world",
+    "numeral": "XXI",
+    "name": "The World",
+    "glyph": "♄",
+    "element": "earth",
+    "stage": "reckoning",
+    "polarity": "light",
+    "yesno": "yes",
+    "keywords": [
+      "penyelesaian",
+      "keutuhan",
+      "kembali"
+    ]
+  }
+]

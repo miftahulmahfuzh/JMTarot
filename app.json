@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "JMTarot",
+    "slug": "jmtarot",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "jmtarot",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0a0812",
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "bundleIdentifier": "com.jmtarot.app",
+      "supportsTablet": false,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIViewControllerBasedStatusBarAppearance": false
+      }
+    },
+    "web": {
+      "output": "single",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0a0812",
+          "imageWidth": 120
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
