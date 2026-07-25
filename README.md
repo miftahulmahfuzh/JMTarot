@@ -70,9 +70,12 @@ dashboard, where values are literal.
 
 ## Deploying
 
-Vercel, from `main`. Set the same variables for Production **and** Preview.
-Install to a phone from the production URL rather than a preview one — an
-installed web app pins whichever `start_url` it was added from.
+Vercel, from `main` — pushing to `main` deploys to production, and every other
+branch gets its own preview URL. No workflow file required.
+
+**[`docs/DEPLOY-VERCEL.md`](docs/DEPLOY-VERCEL.md)** is the step-by-step
+version, including the `$`-in-bcrypt-hash trap that will otherwise cost you an
+afternoon.
 
 ## Layout
 

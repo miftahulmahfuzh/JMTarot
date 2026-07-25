@@ -43,7 +43,8 @@ Vercel.
 
 `.env.example` has the shapes and the generation commands. Copy it to
 `.env.local` (gitignored) for local work; set the same keys in the Vercel
-dashboard for production **and** preview.
+dashboard for production **and** preview. `docs/DEPLOY-VERCEL.md` walks through
+a deployment from scratch.
 
 ```
 LLM_PROVIDER=zai                              # or `anthropic`; same adapter
