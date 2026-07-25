@@ -1,0 +1,26 @@
+[
+  {
+    "id": "thessaly",
+    "name": "Thessaly",
+    "title": "The Grounded Guide",
+    "bio": "Thessaly membaca tarot dengan serius tapi tetap dekat dengan situasi sehari-hari. Dia menggabungkan intuisi dengan logika — pendekatannya terang dan membumi.",
+    "specialties": ["Keputusan karier", "Arah hidup", "Penyelesaian masalah"],
+    "positionFraming": ["Yang sudah berlalu", "Yang sedang berjalan", "Yang akan datang"]
+  },
+  {
+    "id": "margaret",
+    "name": "Margaret",
+    "title": "The Old Soul",
+    "bio": "Margaret pembaca veteran dengan pengalaman puluhan tahun. Caranya lebih mistis dan mendalam, sering mengaitkan bacaan dengan simbolisme lama dan falsafah hidup. Cocok untuk kamu yang mencari penelusuran diri yang lebih dalam, bukan sekadar jawaban cepat.",
+    "specialties": ["Penemuan diri", "Refleksi batin", "Hubungan keluarga"],
+    "positionFraming": ["Yang telah berlalu", "Yang kini bersemayam", "Yang menanti di depan"]
+  },
+  {
+    "id": "adrian",
+    "name": "Adrian",
+    "title": "The Modern Mystic",
+    "bio": "Adrian membawa tarot dengan gaya santai dan mudah didekati — seperti ngobrol dengan kawan yang paham psikologi. Dia fokus pada cinta, hubungan, dan emosi, dengan cara yang langsung tapi empatik.",
+    "specialties": ["Percintaan & hubungan", "Emosi & harga diri", "Keputusan jangka pendek"],
+    "positionFraming": ["Yang udah lewat", "Yang sekarang", "Yang bakal dateng"]
+  }
+]

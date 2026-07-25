@@ -58,6 +58,9 @@ export const type = {
   button: { fontFamily: font.display, fontSize: 10, letterSpacing: 2.6, color: '#e8dbb6' },
   counter: { fontFamily: font.display, fontSize: 10, letterSpacing: 2.6, color: color.faint },
   title: { fontFamily: font.display, fontSize: 34, letterSpacing: 2.0, color: color.goldText },
+  /** Cinzel on dark: reader names, service names, card names outside a card face. */
+  cardTitleLight: { fontFamily: font.display, fontSize: 18, letterSpacing: 1.2, color: color.goldText },
+  /** Cinzel on the cream card face, where the art does not already print a title. */
   cardName: { fontFamily: font.display, fontSize: 12, letterSpacing: 1.2, color: '#241c33' },
   hint: { fontFamily: font.bodyItalic, fontSize: 17, color: color.muted },
   reading: { fontFamily: font.body, fontSize: 19, lineHeight: 28, color: color.textWarm },

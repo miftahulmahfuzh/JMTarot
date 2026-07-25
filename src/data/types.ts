@@ -36,3 +36,39 @@ export type Draw = {
 export type ServiceId = 'daily' | 'spread3' | 'yesno';
 
 export type ReaderId = 'thessaly' | 'margaret' | 'adrian';
+
+export type Reader = {
+  id: ReaderId;
+  name: string;
+  /** English, like the card names -- it reads as a title, not a translation. */
+  title: string;
+  bio: string;
+  specialties: string[];
+  /** Past / present / future, in this reader's own register. */
+  positionFraming: [string, string, string];
+};
+
+export type Service = {
+  id: ServiceId;
+  name: string;
+  tagline: string;
+  cardCount: number;
+  /** Slot caption for single-card services; null for the three-card spread. */
+  singleLabel: string | null;
+  oncePerDay: boolean;
+};
+
+/** What the Daily Card gate persists, so re-entry shows the same card all day. */
+export type DailyPull = {
+  /** Device-local calendar date, `YYYY-MM-DD`. */
+  date: string;
+  cardId: number;
+  reversed: boolean;
+  readerId: ReaderId;
+};
+
+export type Profile = {
+  name: string;
+  /** ISO `YYYY-MM-DD`. Personalises the greeting and derives the birth card. */
+  birthDate: string;
+};
