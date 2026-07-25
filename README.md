@@ -1,79 +1,127 @@
 # JMTarot
 
-*Jodith Miftah Tarot* — an iOS tarot reading app.
+*Jodith Miftah Tarot* — a mobile-first tarot website, installable to the iPhone
+home screen.
 
-Three reader personas, three reading services, the 22 Major Arcana. Fully
-offline: no accounts, no server, no network calls, free.
+Three reader personas, three reading services, the 22 Major Arcana. Readings
+are written by an LLM at request time, in Indonesian, in the voice of whichever
+reader you picked. Private: two accounts behind a login, no database, and a
+reading is never stored.
+
+> This was an offline Expo/React Native iOS app until 2026-07-25. The App Store
+> costs $99/yr; a website costs nothing and ships from Linux in one `git push`.
+> Everything that mattered survived — the readers, the deck, the Indonesian
+> copy, the fan draw — and one thing got better: with a server in the loop,
+> readings are generated instead of pre-written.
+>
+> The iOS tree is preserved on [`feat/ios`](../../tree/feat/ios). The rewrite is
+> planned in full in
+> [`docs/plans/2026-07-25-jmtarot-web-rewrite.md`](docs/plans/2026-07-25-jmtarot-web-rewrite.md).
 
 ## Status
 
-Early. The project scaffold, design system, card dataset and the card-fan draw
-interaction exist. The reader picker, service picker, result screen, combination
-rule engine and reading copy do not yet.
+Walkable end to end: log in, pick a reader, pick a service, optionally type a
+question, draw from the fan, and read a streamed response.
 
-See [`docs/plans/2026-07-25-tarot-mvp-design.md`](docs/plans/2026-07-25-tarot-mvp-design.md)
-for the full design and the reasoning behind every decision.
+Deliberately not built yet: onboarding, birth card, the once-per-day card lock,
+an About page, and reading history.
+
+Not yet verified on real hardware — touch behaviour, safe-area insets and Add
+to Home Screen all need a physical iPhone.
 
 ## Setup
 
-Requires Node `^20.19.4 || ^22.13.0 || ^24.3.0 || >=25` — React Native 0.86 will
-refuse to build on anything older, and the failure looks like a random build
-error rather than a version complaint.
+Requires Node 20.19+, 22.13+ or 24+. TypeScript is pinned to 5.x on purpose:
+7.x is the native port and `next build` cannot use it.
 
 ```sh
 npm install
-npm run web      # instant preview in a browser, no Mac or device needed
-npm start        # then scan the QR with Expo Go on a physical iPhone
-npm run ios      # iOS Simulator — macOS with Xcode only
+cp .env.example .env.local     # then fill it in — see below
+npm run dev                    # http://localhost:3000
 ```
 
-**On a Mac, follow [`docs/TESTING-MACOS.md`](docs/TESTING-MACOS.md)** — a complete
-assume-nothing walkthrough for both a real iPhone and the Simulator, plus what to
-look for and how to report it.
+Other scripts:
 
-Every native module this app uses is available in Expo Go, so testing needs no
-custom build, no certificates, and no Apple Developer account. That only becomes
-necessary for TestFlight and the App Store, via EAS Build.
+```sh
+npm test          # Vitest — deck, prompt, auth, rate limiter
+npm run typecheck # tsc --noEmit
+npm run build     # production build; run before trusting a green typecheck
+npm run smoke     # one live LLM call: are the key, base URL and model right?
+npm run smoke -- --all   # all nine reader x service readings, plus checks
+```
 
-Two notes for Windows: the browser preview needs device emulation at 393×852
-(F12 → Ctrl-Shift-M) or the fan geometry will look wrong, and WSL2's NAT stops a
-phone reaching Metro — use `npx expo start --tunnel`, or set
-`networkingMode=mirrored` in `.wslconfig`.
+### Environment
+
+`.env.example` documents every variable and how to generate the secrets. The
+short version:
+
+| Variable | What it is |
+|---|---|
+| `LLM_PROVIDER` | `zai` or `anthropic` — one adapter serves both |
+| `LLM_BASE_URL` | omit for Anthropic proper |
+| `LLM_API_KEY` | |
+| `LLM_MODEL` | e.g. `glm-4.6` |
+| `AUTH_SECRET` | 32+ random bytes, base64 — signs the session cookie |
+| `AUTH_USERS` | JSON array of `{u, h}` with bcrypt hashes, cost 12 |
+
+**Escape every `$` as `\$` in `.env` files** — the loader expands `$VAR`, which
+silently mangles a bcrypt hash. Do *not* escape when pasting into a hosting
+dashboard, where values are literal.
+
+## Deploying
+
+Vercel, from `main`. Set the same variables for Production **and** Preview.
+Install to a phone from the production URL rather than a preview one — an
+installed web app pins whichever `start_url` it was added from.
 
 ## Layout
 
 ```
-src/app/            expo-router screens
-src/components/     CardFan, CardBack, Backdrop
-src/data/           card dataset, deck logic (shuffle, reversals, birth card)
-src/theme/          design tokens — the single source of truth for styling
-assets/cards/       normalized card art, generated (committed for EAS)
-assets/major_arcanas/  source art, never edited in place
-assets/dukuns/      reader portraits
-tools/              asset and dataset generators
-docs/plans/         design documents
+src/app/              routes: pickers, draw screen, login, API
+src/components/       Fan, Slots, CardFace, CardBack, ReadingPanel, Backdrop
+src/data/             card dataset, deck logic (shuffle, reversals, birth card)
+src/lib/auth/         session signing (jose) and password checking (bcryptjs)
+src/lib/llm/          provider interface + the Anthropic-wire adapter
+src/lib/prompt/       the three prompt layers and the question sanitizer
+src/middleware.ts     the auth gate
+src/theme/            design tokens — the single source of truth for styling
+public/cards/         normalized card art, generated but committed
+assets/major_arcanas/ source art, never edited in place
+tools/                asset, icon and dataset generators
+docs/plans/           design documents
 ```
 
 ## Regenerating assets
 
-Both scripts are idempotent — safe to re-run whenever the source art changes.
+All idempotent — safe to re-run whenever the source art changes.
 
 ```sh
-npm run assets   # source PNGs -> normalized 2:3 WebP (60.8MB -> 4.1MB)
-npm run cards    # rebuild src/data/cards.json
+npm run assets              # source PNGs -> 800x1200 and 240x360 WebP
+npm run cards               # rebuild src/data/cards.json
+python3 tools/make_icons.py # home-screen icons
 ```
+
+`public/cards/` is committed so deploys do not need Python. The pipeline turns
+60.8MB of source PNGs into 4.2MB of full-size WebP plus 494KB of thumbnails —
+the thumbnails exist because the fan draws all 22 cards at once and the
+full-size art would be 4.2MB to paint them.
+
+The art is three visually inconsistent generations, measured and written up in
+[`docs/art-inconsistency.md`](docs/art-inconsistency.md). Regenerating it for a
+single consistent treatment is the highest-leverage improvement left.
 
 ## Design provenance
 
-The visual language comes from `Major Arcana Spread.html`, a Claude Design
-export kept in the repo as the reference. `src/theme/tokens.ts` is the
-transcription of it — colours, typography (Cinzel + Cormorant Garamond) and
-motion curves. New screens compose from those tokens rather than inventing
-values.
+The visual language comes from `Major Arcana Spread-Real Cards.html`, a Claude
+Design export kept in the repo as the reference. `src/theme/tokens.ts` is the
+transcription — colours, typography (Cinzel + Cormorant Garamond) and motion
+curves — and `src/theme/tokens.css` mirrors it for CSS. New screens compose
+from those tokens rather than inventing values.
 
-The card artwork is a *finished* card face: its own frame, numeral and title are
-part of the image. That is why the design's procedural cream card front was
-dropped while the procedural back was kept.
+The card artwork is a *finished* card face: its own frame, numeral and title
+are part of the image. That is why the design's procedural cream card front was
+dropped while the procedural back was kept, and why card names stay in English
+— an Indonesian caption would contradict the title printed on the card.
 
 ## Licence
 

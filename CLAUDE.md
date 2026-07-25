@@ -284,6 +284,7 @@ history, sharing, and a second LLM provider.
 Not yet verified on hardware: touch behaviour on a real iPhone, safe-area
 insets, and Add to Home Screen. Task 15 of the plan covers it.
 
-`README.md` and `docs/TESTING-MACOS.md` are iOS-era documents. The macOS guide
-is deleted on this branch and still lives on `feat/ios`; the README has not
-been rewritten yet and still describes an offline iOS app.
+`docs/TESTING-MACOS.md` was an assume-nothing guide to running Expo on a Mac.
+It is deleted on this branch, because it would send Jodith chasing a toolchain
+that is no longer here; it still lives on `feat/ios`. `README.md` has been
+rewritten for the web app.
