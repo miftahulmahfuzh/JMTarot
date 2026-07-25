@@ -24,6 +24,33 @@
   margin: 0;
 }
 
+/* Cancels the shell's 16px side padding so the fan sees the full viewport
+   width, the way it will on the real draw screen. */
+.bleed {
+  margin: 0 -16px;
+  padding: 0 6px;
+}
+
+.frame {
+  border: 1px dashed var(--gold-hairline);
+  border-radius: 4px;
+  flex: none;
+}
+
+.frameLabel {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  color: var(--faint);
+  padding: 6px 8px;
+  border-bottom: 1px dashed var(--gold-hairline);
+}
+
+/* 6px each side -- the breathing room the fan geometry was budgeted against. */
+.framePad {
+  padding: 6px;
+}
+
 .row {
   display: flex;
   gap: 14px;

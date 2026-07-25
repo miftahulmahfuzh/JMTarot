@@ -1,0 +1,113 @@
+/*
+ * ============================================================================
+ * FAN GEOMETRY -- these numbers were computed, not guessed. Read this before
+ * changing any of them, because several look wrong and are not.
+ * ============================================================================
+ *
+ * The plan carried a set of paper values that had never been rendered:
+ * span 64deg, pivot 340px, cards 88x132, and a target of "~18pt of reveal per
+ * card". Two of those three survive. The pivot does not, and the 18pt target
+ * is not achievable at all.
+ *
+ * WHY 18pt IS IMPOSSIBLE. 22 cards with 18px between each needs
+ * 88 + 21 x 18 = 466px, and that is the flat-row lower bound -- any arc is
+ * wider still. The narrowest phone we target is 375px (iPhone SE). The paper
+ * geometry produces a 435px fan, which overflows 375 by 60px and 390 by 45px.
+ * There is no span or pivot that fixes this; the card count and the screen
+ * width alone rule it out.
+ *
+ * WHAT SETS THE REVEAL. Not the span. Sweeping span from 40deg to 80deg with
+ * the pivot re-solved each time to exactly fill the width budget moves the
+ * centre reveal only from 13.6px to 15.3px. The reveal is
+ * (fan width - card width) / 21, and the fan width is capped by the screen.
+ * So the span is free to be chosen for how the fan LOOKS, and 64deg is kept
+ * because it is the paper value and sits at the top of the 50-64deg range the
+ * design work called for.
+ *
+ * WHAT ACTUALLY CHANGED. Only the pivot: 340px -> 272px. That is what pulls
+ * the 435px fan back to 363px.
+ *
+ * THE LANDED NUMBERS (22 cards, 88x132, span 64deg, pivot 272px):
+ *
+ *   fan box          363 x 181 px
+ *   step per card    3.0476deg
+ *   reveal           12.5px at the edges, 14.5px at the centre, 13.7 mean
+ *   visible sliver   14-16% of each card
+ *   outer tilt       32deg
+ *
+ * 14-16% is close to what you see holding a real fanned deck, and rendered it
+ * does read as a fan rather than a smear.
+ *
+ * VERIFIED IN A BROWSER, not just on paper. getBoundingClientRect against a
+ * 375px container returns a 361.0 x 180.0 fan (predicted 363 x 181, the 2px
+ * being the container's border) and a 143.8 x 157.7 bounding box for the
+ * outermost card -- which is exactly 87.5*cos32 + 131.3*sin32 for the width
+ * and 87.5*sin32 + 131.3*cos32 for the height. The arc is doing what the
+ * arithmetic says. Same match at 390 and 430.
+ *
+ * 363px is 375 minus 6px of breathing room each side. At 390 the fan has 27px
+ * spare and at 430 it has 67px, which is what --u below spends.
+ *
+ * SCALING. Every length is `calc(<reference px> * var(--u))`, where --u is one
+ * unit of the 363px design. It is derived from container query units, so the
+ * fan scales fluidly with no JavaScript, no ResizeObserver and no hydration
+ * mismatch. A `font-size`-based unit would have been shorter to write and is
+ * deliberately avoided: browsers with a minimum-font-size accessibility
+ * setting clamp it and would blow the layout apart.
+ */
+
+.stage {
+  container-type: inline-size;
+  width: 100%;
+}
+
+.fan {
+  --span: 64;
+  --pivot: 272;
+  --card-w: 88;
+  --card-h: 132;
+
+  /* 1 unit = 1px of the 363px design, capped so the fan stays phone-shaped on
+     a desktop browser instead of growing to fill a 1400px window. */
+  --u: min(calc(100cqw / 363), 1.18px);
+
+  position: relative;
+  width: calc(363 * var(--u));
+  height: calc(181 * var(--u));
+  margin: 0 auto;
+
+  /* Without this, dragging a card scrolls the page instead of lifting it.
+     It is scoped to the fan on purpose -- globally it would make the reading
+     panel unscrollable. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.card {
+  position: absolute;
+  left: 50%;
+  /* 3px, not 0: the outer cards swing above the centre card's top edge, so the
+     box needs that much headroom for the arc to sit inside it. */
+  top: calc(3 * var(--u));
+  width: calc(var(--card-w) * var(--u));
+  height: calc(var(--card-h) * var(--u));
+  margin-left: calc(var(--card-w) / -2 * var(--u));
+
+  /* The pivot is 272px below the card's own top edge, which puts it 140px
+     below the card's bottom -- off the fan box entirely, which is what makes
+     the arc shallow enough to fit. */
+  transform-origin: 50% calc(var(--pivot) * var(--u));
+  transform: rotate(var(--angle));
+
+  /* Scaled with the rest so the flip in Task 6 has the same depth at every
+     size. The reference used 1400px against 172px cards. */
+  perspective: calc(1400 * var(--u));
+  transition: transform var(--dur) var(--ease-card), filter 0.3s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    transition: none;
+  }
+}

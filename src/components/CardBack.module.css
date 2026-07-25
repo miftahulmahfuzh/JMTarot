@@ -10,6 +10,17 @@
  * small card and vanishes on the large one. Each cqw value below is the
  * reference pixel divided by 172.
  *
+ * WHY THERE ARE TWO ELEMENTS, .back AND .plate. This looks like one div too
+ * many and is not. An element that declares `container-type` is NOT its own
+ * container -- `cqw` in its own declarations resolves against the nearest
+ * ANCESTOR container. The first version of this file put the padding and the
+ * shadows on the same element that declared `container-type`, so `7cqw` of
+ * padding resolved against the fan stage (375px) instead of the card (88px):
+ * 26px of padding on an 88px card, which crushed the inner panel to a sliver.
+ * Descendants resolved correctly, so it rendered as "slightly off" rather than
+ * obviously broken. .back declares the container and paints nothing; .plate is
+ * a descendant, so its cqw means what it says.
+ *
  * Two things deliberately do NOT scale:
  *
  *   border-radius   stays var(--radius-card). It is a design token, and a
@@ -24,6 +35,12 @@
   position: absolute;
   inset: 0;
   container-type: inline-size;
+  backface-visibility: hidden;
+}
+
+.plate {
+  width: 100%;
+  height: 100%;
   border-radius: var(--radius-card);
   border: 1px solid var(--card-back-border);
   background: linear-gradient(
@@ -32,13 +49,21 @@
     var(--card-back-2) 48%,
     var(--card-back-3) 100%
   );
+  /*
+   * The reference's drop shadow is 0 18px 40px against a 172px card, which
+   * scales to 10.5cqw/23cqw. That is right for one card and wrong for
+   * twenty-two: stacked across the fan the shadows compound into a dark smear
+   * that swallows the left half of the arc. Halved here, which keeps the
+   * lift on a single card and lets the fan's edges stay legible. The two
+   * inset rings are the reference's, unchanged -- they are what gives the
+   * back its bevelled edge.
+   */
   box-shadow:
-    0 10.5cqw 23cqw rgba(0, 0, 0, 0.55),
+    0 5cqw 11cqw rgba(0, 0, 0, 0.45),
     inset 0 0 0 2.3cqw rgba(10, 8, 18, 0.6),
     inset 0 0 0 2.9cqw rgba(201, 162, 39, 0.28);
   padding: 7cqw;
   overflow: hidden;
-  backface-visibility: hidden;
 }
 
 .panel {
@@ -60,6 +85,7 @@
 .medallion {
   width: 36cqw;
   aspect-ratio: 1;
+  flex: none;
   border: 1px solid rgba(201, 162, 39, 0.5);
   border-radius: 50%;
   display: flex;

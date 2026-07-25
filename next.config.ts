@@ -3,6 +3,10 @@ import type { NextConfig } from 'next';
 const nextConfig: NextConfig = {
   reactStrictMode: true,
 
+  /* The floating dev badge sits over the bottom-left of the viewport, which is
+     exactly where the fan lives. It obscures the thing we screenshot most. */
+  devIndicators: false,
+
   async headers() {
     return [
       {
