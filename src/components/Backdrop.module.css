@@ -1,0 +1,54 @@
+/*
+ * The starfield, lifted verbatim from the Claude Design export
+ * (`Major Arcana Spread-Real Cards.html`): ten stacked radial-gradient dots at
+ * opacity .5, pulsing on a 7s cycle.
+ *
+ * Ten hand-placed dots rather than a generated field or an image, because that
+ * is what the design does and it costs zero bytes. The positions are clustered
+ * in the top 42% on purpose -- that is where the purple glow of --bg-radial is,
+ * and stars over the darker lower half would read as dust on the screen.
+ */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: var(--bg-radial);
+  pointer-events: none;
+}
+
+.stars {
+  position: absolute;
+  inset: 0;
+  opacity: 0.5;
+  pointer-events: none;
+  background-image: radial-gradient(1.5px 1.5px at 12% 18%, #fff 50%, transparent 51%),
+    radial-gradient(1px 1px at 28% 9%, #fff 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 44% 22%, #fff 50%, transparent 51%),
+    radial-gradient(1px 1px at 63% 12%, #fff 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 78% 25%, #fff 50%, transparent 51%),
+    radial-gradient(1px 1px at 90% 15%, #fff 50%, transparent 51%),
+    radial-gradient(1px 1px at 8% 34%, #fff 50%, transparent 51%),
+    radial-gradient(1px 1px at 55% 32%, #fff 50%, transparent 51%),
+    radial-gradient(1px 1px at 71% 38%, #fff 50%, transparent 51%),
+    radial-gradient(1px 1px at 35% 42%, #fff 50%, transparent 51%);
+  animation: twinkle 7s ease-in-out infinite;
+}
+
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+/* The stars stay; only the pulse goes. Removing them entirely would change the
+   composition rather than just calming it. */
+@media (prefers-reduced-motion: reduce) {
+  .stars {
+    animation: none;
+  }
+}

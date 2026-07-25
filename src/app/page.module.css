@@ -1,0 +1,42 @@
+/* Placeholder styling for the boot page. Task 12 replaces this with the
+   reader picker; it exists now only so the fonts and backdrop are visible. */
+
+.shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+}
+
+.eyebrow {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.title {
+  font-family: var(--font-display), serif;
+  font-weight: 500;
+  font-size: var(--fs-title);
+  letter-spacing: var(--ls-title);
+  color: var(--gold-text);
+  margin: 0;
+}
+
+.hint {
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: var(--fs-hint);
+  color: var(--muted);
+  margin: 0;
+}
+
+.rule {
+  width: 96px;
+  height: 1px;
+  background: var(--gold-hairline);
+}

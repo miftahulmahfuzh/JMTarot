@@ -1,0 +1,68 @@
+@import '../theme/tokens.css';
+
+/*
+ * Base layer. Everything below is either a reset or a mobile-web fix that the
+ * whole app depends on -- per-component styling belongs in CSS Modules.
+ *
+ * The mobile-web rules are not cosmetic. Each one corrects a specific iOS
+ * Safari behaviour that breaks the draw interaction:
+ *
+ *   overscroll-behavior  kills the rubber-band bounce, which otherwise reads
+ *                        as the page coming loose while you drag a card.
+ *   100dvh               Safari's toolbar collapses on scroll, so `vh` is
+ *                        measured against a viewport that does not exist yet.
+ *   user-select          a long press on a card would otherwise select text
+ *                        and raise the iOS callout mid-drag.
+ *   safe-area-inset      with viewport-fit=cover the home indicator overlaps
+ *                        the bottom of the page unless we pad for it.
+ *
+ * `touch-action: none` is deliberately NOT global -- it belongs on the fan
+ * only. Setting it here would make the reading panel unscrollable.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--canvas);
+  color: var(--text);
+  font-family: var(--font-body), Georgia, serif;
+  overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}
