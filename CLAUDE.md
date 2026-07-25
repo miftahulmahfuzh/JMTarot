@@ -12,9 +12,15 @@ records every decision and why, including the ones that look arbitrary. Do not
 relitigate its decision table without asking.
 
 This was an Expo/React Native iOS app until 2026-07-25. The full iOS tree is
-preserved on `feat/ios` and on `backup/main-ios-2026-07-25`. If something here
-reads like a leftover from that era, check those branches before assuming it
-was a mistake.
+preserved on `feat/ios`. If something here reads like a leftover from that era,
+check that branch before assuming it was a mistake.
+
+`backup/main-ios-2026-07-25` was deleted as redundant: the rewrite was a linear
+continuation, so `feat/ios` (`7fe0249`) is an ancestor of `main` and the whole
+iOS history is reachable from `main` regardless of which branches exist. The
+backup only ever labelled `cfa9f29`, one commit further along, which is also
+still in `main`. Recreate the label with
+`git branch backup/main-ios-2026-07-25 cfa9f29` if you ever want it back.
 
 ## Environment
 
