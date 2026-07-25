@@ -57,6 +57,9 @@ export function Fan({ deck, picks, cardCount, onToggle, slotRefs }: Props) {
   const fanRef = useRef<HTMLDivElement | null>(null);
   const [flights, setFlights] = useState<(Flight | null)[]>([]);
   const [drag, setDrag] = useState<{ index: number; dy: number } | null>(null);
+  /* Mirrors `drag` so pointer handlers can read it without a state updater;
+     see the note on onPointerUp. */
+  const dragRef = useRef<{ index: number; dy: number } | null>(null);
   const reduceMotion = usePrefersReducedMotion();
 
   const n = deck.length;
@@ -126,19 +129,43 @@ export function Fan({ deck, picks, cardCount, onToggle, slotRefs }: Props) {
   const onPointerDown = (index: number) => (e: ReactPointerEvent<HTMLDivElement>) => {
     // Capture so a drag survives the pointer leaving this card -- with only a
     // ~13px sliver exposed, it leaves almost immediately.
-    e.currentTarget.setPointerCapture?.(e.pointerId);
+    //
+    // Guarded: setPointerCapture throws NotFoundError if the pointer is no
+    // longer active by the time we ask, which can happen on a very fast tap.
+    // Capture is an enhancement to dragging; losing it must not take the tap
+    // down with it.
+    try {
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+    } catch {
+      /* not capturable; tap still works */
+    }
+    dragRef.current = { index, dy: 0 };
     setDrag({ index, dy: 0 });
   };
 
   const onPointerMove = (index: number) => (e: ReactPointerEvent<HTMLDivElement>) => {
-    setDrag((d) => (d && d.index === index ? { index, dy: e.movementY + d.dy } : d));
+    const d = dragRef.current;
+    if (!d || d.index !== index) return;
+    d.dy += e.movementY;
+    setDrag({ index, dy: d.dy });
   };
 
+  /*
+   * The drag is tracked in a ref as well as in state, and onToggle is called
+   * from here rather than from inside a setState updater.
+   *
+   * That is not a style preference. The first version read the drag by calling
+   * onToggle INSIDE a setDrag updater, and React StrictMode double-invokes
+   * updaters to surface exactly this kind of impurity -- so every tap picked a
+   * card and then immediately un-picked it. The fan was completely dead in
+   * development and would have worked in production, which is the worst
+   * possible way for a bug to behave. Updaters must stay pure.
+   */
   const onPointerUp = (index: number) => () => {
-    setDrag((d) => {
-      if (d && d.index === index) onToggle(index);
-      return null;
-    });
+    const d = dragRef.current;
+    dragRef.current = null;
+    setDrag(null);
+    if (d && d.index === index) onToggle(index);
   };
 
   return (
@@ -184,7 +211,7 @@ export function Fan({ deck, picks, cardCount, onToggle, slotRefs }: Props) {
               onPointerDown={onPointerDown(i)}
               onPointerMove={onPointerMove(i)}
               onPointerUp={onPointerUp(i)}
-              onPointerCancel={() => setDrag(null)}
+              onPointerCancel={() => { dragRef.current = null; setDrag(null); }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();

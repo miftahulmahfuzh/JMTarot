@@ -1,0 +1,134 @@
+.shell {
+  min-height: 100dvh;
+  max-width: 520px;
+  margin: 0 auto;
+  /* Bottom padding clears the sticky footer plus the home indicator. */
+  padding: 18px 16px calc(96px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* Standalone mode has no browser chrome and no back gesture; see the note in
+   the service picker's stylesheet. */
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 12px 10px 12px 0;
+}
+
+.back:hover {
+  color: var(--gold-lift);
+}
+
+.title {
+  font-family: var(--font-display), serif;
+  font-weight: 500;
+  font-size: 26px;
+  letter-spacing: var(--ls-title);
+  color: var(--gold-text);
+  margin: 0;
+  text-align: center;
+}
+
+.hint {
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: var(--fs-hint);
+  color: var(--muted);
+  margin: 0;
+  text-align: center;
+}
+
+.questionField {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.questionLabel {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-slot-label);
+  text-transform: uppercase;
+  color: var(--label);
+}
+
+.question {
+  font-family: var(--font-body), Georgia, serif;
+  /* 16px minimum: below it iOS Safari zooms the page on focus and does not
+     zoom back out on blur. */
+  font-size: 17px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-chip);
+  padding: 13px 12px;
+  width: 100%;
+}
+
+.question:focus {
+  outline: none;
+  border-color: var(--gold-border);
+  background: var(--gold-wash);
+}
+
+.question:disabled {
+  opacity: 0.55;
+}
+
+.bleed {
+  margin: 0 -16px;
+  padding: 0 6px;
+}
+
+.footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--gold-hairline);
+  /* Opaque enough that the fan scrolling underneath does not muddy the text. */
+  background: rgba(10, 8, 18, 0.92);
+  backdrop-filter: blur(8px);
+}
+
+.counter {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.reset {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--button-text);
+  border: 1px solid var(--gold-border);
+  background: var(--gold-wash);
+  border-radius: var(--radius-chip);
+  /* 44px tall for a thumb. */
+  padding: 14px 16px;
+}
+
+.reset:hover {
+  background: var(--gold-wash-strong);
+}

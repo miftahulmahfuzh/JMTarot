@@ -1,0 +1,87 @@
+.panel {
+  border-top: 1px solid var(--gold-hairline);
+  padding-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.waiting {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-section-label);
+  text-transform: uppercase;
+  color: var(--gold);
+  /*
+   * This is not decoration. Time-to-first-token on the current provider was
+   * measured at 2.7s, 5.4s and 11.6s -- it has to hold the screen for up to
+   * ten seconds without looking hung, which is what the pulse is for.
+   */
+  animation: breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .waiting {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+.text {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-reading);
+  line-height: var(--lh-reading);
+  color: var(--text-warm);
+  margin: 0;
+  /* The model writes paragraphs separated by blank lines; preserve them
+     without needing to parse anything. */
+  white-space: pre-wrap;
+}
+
+.error {
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: 16px;
+  color: #e0a3a3;
+  margin: 0;
+}
+
+.retry {
+  align-self: flex-start;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--button-text);
+  border: 1px solid var(--gold-border);
+  background: var(--gold-wash);
+  border-radius: var(--radius-chip);
+  padding: 14px 18px;
+}
+
+.retry:hover {
+  background: var(--gold-wash-strong);
+}
+
+.disclaimer {
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: 13px;
+  color: var(--faint);
+  border-top: 1px solid var(--gold-hairline);
+  padding-top: 14px;
+  margin: 6px 0 0;
+}
