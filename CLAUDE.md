@@ -180,14 +180,22 @@ or easing curves** without a reason worth writing down. Change `tokens.ts`
 first, then mirror.
 
 The design covers only the 3-card draw screen; it lives in
-`Major Arcana Spread-Real Cards.html`, a Claude Design export kept as the
-visual reference. Its real implementation is a JSON-escaped string on line 392:
+`Major Arcana Spread-Real Cards-Card Clickable.html`, a Claude Design export
+kept as the visual reference. Its real implementation is a JSON-escaped string
+on line 392:
 
 ```python
 import json
-lines = open("Major Arcana Spread-Real Cards.html", encoding="utf-8").read().split("\n")
+name = "Major Arcana Spread-Real Cards-Card Clickable.html"
+lines = open(name, encoding="utf-8").read().split("\n")
 open("/tmp/fan-reference.html", "w", encoding="utf-8").write(json.loads(lines[392]))
 ```
+
+Two earlier exports — `Major Arcana Spread.html` and `Major Arcana Spread-Real
+Cards.html` — were removed once this one superseded them; the Clickable export
+is the same fan plus the card detail overlay. Both are still in history if you
+need to diff against them — they were last present at `d7fdd89`:
+`git show d7fdd89:"Major Arcana Spread-Real Cards.html"`.
 
 ## Assets
 

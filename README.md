@@ -115,8 +115,9 @@ single consistent treatment is the highest-leverage improvement left.
 
 ## Design provenance
 
-The visual language comes from `Major Arcana Spread-Real Cards.html`, a Claude
-Design export kept in the repo as the reference. `src/theme/tokens.ts` is the
+The visual language comes from `Major Arcana Spread-Real Cards-Card
+Clickable.html`, a Claude Design export kept in the repo as the reference — the
+three-card fan plus the card detail overlay. `src/theme/tokens.ts` is the
 transcription — colours, typography (Cinzel + Cormorant Garamond) and motion
 curves — and `src/theme/tokens.css` mirrors it for CSS. New screens compose
 from those tokens rather than inventing values.

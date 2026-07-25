@@ -61,7 +61,7 @@ Reuse these as-is or with the noted edit. Do not rewrite them from scratch.
 | `src/data/cardArt.ts` | **Delete.** It exists only because Metro can't resolve computed `require` paths. On the web a card's URL is `/cards/${slug}.webp`. |
 | `src/lib/storage.ts` | **Rewrite** for `localStorage`. Keep `todayKey()` verbatim — the local-timezone reasoning in its comment is still correct and still non-obvious. |
 | `src/components/*.tsx` | **Rewrite.** All four are React Native. `CardFan.tsx` is the one to read first for intent, not for code. |
-| `Major Arcana Spread-Real Cards.html` | **Reference.** Extract with the snippet in §6 — the real fan implementation lives in an escaped string on line 392. |
+| `Major Arcana Spread-Real Cards.html` | **Reference.** Extract with the snippet in §6 — the real fan implementation lives in an escaped string on line 392. *(Superseded on 2026-07-25 by `Major Arcana Spread-Real Cards-Card Clickable.html`, same file structure; this one was removed from the tree and is at `d7fdd89` in history.)* |
 
 ---
 
@@ -273,11 +273,12 @@ export const config = {
 
 ## 6. The fan on the web
 
-The design export `Major Arcana Spread-Real Cards.html` (committed at `7fe0249`) is a working browser implementation of exactly this interaction, with the real card art. Extract its inner document first — the 4.4MB file is a Claude Design bundle whose actual app lives in a JSON-escaped string:
+The design export `Major Arcana Spread-Real Cards.html` (committed at `7fe0249`, removed from the tree on 2026-07-25 in favour of the `-Card Clickable` export, which has the same structure) is a working browser implementation of exactly this interaction, with the real card art. Extract its inner document first — the 4.4MB file is a Claude Design bundle whose actual app lives in a JSON-escaped string:
 
 ```python
 import json
-lines = open("Major Arcana Spread-Real Cards.html", encoding="utf-8").read().split("\n")
+name = "Major Arcana Spread-Real Cards-Card Clickable.html"  # was "...-Real Cards.html"
+lines = open(name, encoding="utf-8").read().split("\n")
 open("/tmp/fan-reference.html", "w", encoding="utf-8").write(json.loads(lines[392]))
 # line 380 is the asset map: 22 card JPEGs + 10 woff2 + 3 JS, keyed by uuid
 ```
@@ -833,7 +834,7 @@ describe('sanitizeQuestion', () => {
   });
 
   it('strips control characters', () => {
-    expect(sanitizeQuestion('halo dunia')).toBe('halodunia');
+    expect(sanitizeQuestion('halo\x00\x1bdunia')).toBe('halodunia');
   });
 
   it('treats blank input as no question', () => {
