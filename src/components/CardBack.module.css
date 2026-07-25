@@ -1,0 +1,75 @@
+/*
+ * The card back, ported from the Claude Design export. Zero image bytes: it is
+ * a gradient, two crosshatches and a circle, so all 22 fanned backs cost
+ * nothing to download and stay crisp at any scale.
+ *
+ * Everything proportional is expressed in `cqw` (1cqw = 1% of the card's own
+ * width) rather than pixels. The reference is a desktop layout with 172px
+ * cards; ours are 88px in the fan and roughly twice that in the result panel.
+ * Hardcoding the reference's pixels would give a medallion that swallows the
+ * small card and vanishes on the large one. Each cqw value below is the
+ * reference pixel divided by 172.
+ *
+ * Two things deliberately do NOT scale:
+ *
+ *   border-radius   stays var(--radius-card). It is a design token, and a
+ *                   corner radius reads as a property of the deck rather than
+ *                   of how large the card happens to be drawn.
+ *   hairlines       the 1px crosshatch lines and 1px borders stay 1px. Scaling
+ *                   them down turns the crosshatch into grey haze; scaling up
+ *                   makes it a plaid. Only the *period* between lines scales.
+ */
+
+.back {
+  position: absolute;
+  inset: 0;
+  container-type: inline-size;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--card-back-border);
+  background: linear-gradient(
+    160deg,
+    var(--card-back-1) 0%,
+    var(--card-back-2) 48%,
+    var(--card-back-3) 100%
+  );
+  box-shadow:
+    0 10.5cqw 23cqw rgba(0, 0, 0, 0.55),
+    inset 0 0 0 2.3cqw rgba(10, 8, 18, 0.6),
+    inset 0 0 0 2.9cqw rgba(201, 162, 39, 0.28);
+  padding: 7cqw;
+  overflow: hidden;
+  backface-visibility: hidden;
+}
+
+.panel {
+  width: 100%;
+  height: 100%;
+  border: 1px solid rgba(201, 162, 39, 0.3);
+  border-radius: 3cqw;
+  background-image: repeating-linear-gradient(
+      45deg,
+      rgba(201, 162, 39, 0.16) 0 1px,
+      transparent 1px 6.4cqw
+    ),
+    repeating-linear-gradient(-45deg, rgba(201, 162, 39, 0.16) 0 1px, transparent 1px 6.4cqw);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.medallion {
+  width: 36cqw;
+  aspect-ratio: 1;
+  border: 1px solid rgba(201, 162, 39, 0.5);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle, rgba(201, 162, 39, 0.18), transparent 70%);
+}
+
+.glyph {
+  font-size: 15cqw;
+  line-height: 1;
+  color: var(--gold-lift);
+}

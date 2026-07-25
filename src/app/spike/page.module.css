@@ -1,0 +1,47 @@
+/* Temporary. Task 13 deletes this route once the real draw screen exists. */
+
+.shell {
+  min-height: 100dvh;
+  padding: 24px 16px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.heading {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-section-label);
+  text-transform: uppercase;
+  color: var(--gold);
+  margin: 0;
+}
+
+.note {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 15px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.row {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+/* The two sizes Task 4 asks to check: the fan/slot size and roughly double it. */
+.small {
+  position: relative;
+  width: 88px;
+  height: 132px;
+  flex: none;
+}
+
+.large {
+  position: relative;
+  width: 160px;
+  height: 240px;
+  flex: none;
+}

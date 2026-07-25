@@ -1,0 +1,33 @@
+/*
+ * The face-up card: a gold-edged window onto the artwork, nothing else. The
+ * card's title is rendered into the image itself, which is why the names stay
+ * English and why nothing is drawn over the art here.
+ */
+
+.face {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--card-face-border);
+  /* Shows through the padding bars on cards whose trimmed art is narrower than
+     2:3. Matches the mat the pipeline pads with, so the seam is invisible. */
+  background: #0f0b1c;
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  backface-visibility: hidden;
+}
+
+.art {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* A reversed card is the same artwork turned around, so the rotation goes on
+   the image and not on .face -- the gold border and its shadow must stay put. */
+.reversed {
+  transform: rotate(180deg);
+}
