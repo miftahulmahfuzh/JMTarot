@@ -8,11 +8,20 @@ artwork: trim the dark mat, then pad symmetrically back out to exactly 2:3.
 Padding (never cropping) is deliberate -- cropping to 2:3 would cut into the
 frame and clip the card titles on the 1024x1536 generation.
 
+Two sizes come out, because the app draws cards at two very different scales.
+The fan renders all 22 at roughly 88x132 CSS pixels; serving 800x1200 art for
+that means 4.1MB to paint 22 thumbnails, which on mobile data would be the
+single worst thing this app does. The result panel genuinely needs the full
+size. So: full for the reading, thumb for the fan and the slots.
+
     python3 tools/normalize_cards.py
 
-Reads  assets/major_arcanas/*.png   (left untouched)
-Writes assets/cards/NN_slug.webp    at TARGET_W x TARGET_H
-       tools/_contactsheet.jpg      for eyeballing the result
+Reads  assets/major_arcanas/*.png     (left untouched)
+Writes public/cards/NN_slug.webp      at TARGET_W x TARGET_H
+       public/cards/thumb/NN_slug.webp at THUMB_W x THUMB_H
+       tools/_contactsheet.jpg        for eyeballing the result
+
+Idempotent: re-running overwrites both outputs with identical bytes.
 """
 
 from PIL import Image
@@ -20,9 +29,17 @@ from pathlib import Path
 import sys
 
 SRC = Path("assets/major_arcanas")
-OUT = Path("assets/cards")
+OUT = Path("public/cards")
+THUMB_OUT = OUT / "thumb"
 TARGET_W, TARGET_H = 800, 1200
 QUALITY = 82
+
+# The fan draws cards at 88x132 CSS px, so 240x360 covers a 2.7x device pixel
+# ratio -- more than an iPhone's 3x needs at that size, and the headroom means
+# the same file also serves the slightly larger slots. Quality drops to 80
+# because compression artefacts are invisible at this scale.
+THUMB_W, THUMB_H = 240, 360
+THUMB_QUALITY = 80
 MAT = (0, 0, 0)
 DARK_THRESHOLD = 40
 
@@ -110,13 +127,14 @@ def main():
     if not SRC.is_dir():
         sys.exit(f"missing source directory: {SRC}")
     OUT.mkdir(parents=True, exist_ok=True)
+    THUMB_OUT.mkdir(parents=True, exist_ok=True)
 
     missing = [f for _, f in ARCANA if not (SRC / f).is_file()]
     if missing:
         sys.exit(f"missing source art: {', '.join(missing)}")
 
-    thumbs, total_in, total_out = [], 0, 0
-    print(f"{'card':22s} {'source':>12s} {'trimmed':>12s} {'bars':>6s} {'kb':>7s}")
+    thumbs, total_in, total_out, total_thumb = [], 0, 0, 0
+    print(f"{'card':22s} {'source':>12s} {'trimmed':>12s} {'bars':>6s} {'kb':>7s} {'thumb kb':>9s}")
 
     for slug, filename in ARCANA:
         src_path = SRC / filename
@@ -133,11 +151,23 @@ def main():
         out_bytes = dst.stat().st_size
         total_out += out_bytes
 
+        # Downscaled from the already-padded 2:3 card, not from the source, so
+        # the two sizes frame the artwork identically. A thumb derived straight
+        # from the source would sit a pixel or two off from its full-size
+        # counterpart and the swap would visibly jump.
+        thumb_dst = THUMB_OUT / f"{slug}.webp"
+        card.resize((THUMB_W, THUMB_H), Image.LANCZOS).save(
+            thumb_dst, "WEBP", quality=THUMB_QUALITY, method=6
+        )
+        thumb_bytes = thumb_dst.stat().st_size
+        total_thumb += thumb_bytes
+
         # Side bars appear when the trimmed art is narrower than 2:3.
         bars = (TARGET_W - drawn_w) // 2
         print(
             f"{slug:22s} {'x'.join(map(str, source_size)):>12s} "
-            f"{'x'.join(map(str, trimmed_size)):>12s} {bars:>6d} {out_bytes/1024:>7.1f}"
+            f"{'x'.join(map(str, trimmed_size)):>12s} {bars:>6d} {out_bytes/1024:>7.1f} "
+            f"{thumb_bytes/1024:>9.1f}"
         )
         thumbs.append(card.resize((160, 240), Image.LANCZOS))
 
@@ -148,6 +178,8 @@ def main():
 
     print(f"\n{len(ARCANA)} cards  {total_in/1e6:.1f}MB -> {total_out/1e6:.2f}MB "
           f"({total_in/total_out:.0f}x smaller)")
+    print(f"{len(ARCANA)} thumbs {total_thumb/1e3:.0f}KB total "
+          f"-- the whole fan, at {total_thumb/total_out*100:.0f}% of the full-size cost")
     print("contact sheet: tools/_contactsheet.jpg")
 
 

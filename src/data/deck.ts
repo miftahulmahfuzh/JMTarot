@@ -3,6 +3,27 @@ import type { Card, Draw, Polarity } from './types';
 
 export const CARDS = raw as Card[];
 
+/**
+ * Full-size card art, 800x1200. For the result panel, where the card is large
+ * enough that the artwork is the point.
+ *
+ * The iOS build needed a generated `cardArt.ts` registry here because Metro
+ * cannot resolve a computed `require` path. On the web the URL is the lookup,
+ * so the registry is gone and the slug is the only key we need.
+ */
+export function cardImage(slug: string): string {
+  return `/cards/${slug}.webp`;
+}
+
+/**
+ * 240x360 card art, ~22KB. For the fan and the slots, which draw at 88x132.
+ * Serving the full size to 22 fanned cards would cost 4.1MB to paint
+ * thumbnails -- see tools/normalize_cards.py.
+ */
+export function cardThumb(slug: string): string {
+  return `/cards/thumb/${slug}.webp`;
+}
+
 /** The design reverses roughly three cards in ten. */
 const REVERSAL_RATE = 0.3;
 
