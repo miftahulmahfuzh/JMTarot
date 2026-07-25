@@ -24,9 +24,18 @@ npm run web         # fastest way to see the UI: no Mac, no device
 npm start           # then scan the QR with Expo Go on a physical iPhone
 ```
 
-There is **no iOS Simulator** — neither of us has a Mac. iOS builds and App Store
-submission go through EAS Build on hosted macOS. To sanity-check that a change
-still bundles for iOS without a device:
+Testing setup, in full, is in `docs/TESTING-MACOS.md` — point the user there
+rather than improvising instructions.
+
+Every native module this project uses is in Expo Go, so no custom dev build,
+certificates, or Apple Developer account is needed to test. Verify before adding
+a dependency: if it is absent from `node_modules/expo/bundledNativeModules.json`
+and ships native code, it breaks Expo Go and forces everyone onto dev builds.
+
+Miftah is on Windows 11 + WSL2 with **no Mac**, so no iOS Simulator there. Jodith
+has a MacBook Air and can run the Simulator via `npm run ios`. App Store builds
+go through EAS Build on hosted macOS either way. To sanity-check that a change
+still bundles for iOS without any device:
 
 ```sh
 npx expo export --platform ios --output-dir /tmp/jmtarot-export

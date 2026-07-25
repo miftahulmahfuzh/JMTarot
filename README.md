@@ -17,16 +17,28 @@ for the full design and the reasoning behind every decision.
 ## Setup
 
 Requires Node `^20.19.4 || ^22.13.0 || ^24.3.0 || >=25` — React Native 0.86 will
-refuse to build on anything older.
+refuse to build on anything older, and the failure looks like a random build
+error rather than a version complaint.
 
 ```sh
 npm install
-npm run web      # fastest way to see the fan, no Mac or device needed
+npm run web      # instant preview in a browser, no Mac or device needed
 npm start        # then scan the QR with Expo Go on a physical iPhone
+npm run ios      # iOS Simulator — macOS with Xcode only
 ```
 
-There is no iOS Simulator without a Mac. Builds and App Store submission go
-through EAS Build, which compiles on hosted macOS.
+**On a Mac, follow [`docs/TESTING-MACOS.md`](docs/TESTING-MACOS.md)** — a complete
+assume-nothing walkthrough for both a real iPhone and the Simulator, plus what to
+look for and how to report it.
+
+Every native module this app uses is available in Expo Go, so testing needs no
+custom build, no certificates, and no Apple Developer account. That only becomes
+necessary for TestFlight and the App Store, via EAS Build.
+
+Two notes for Windows: the browser preview needs device emulation at 393×852
+(F12 → Ctrl-Shift-M) or the fan geometry will look wrong, and WSL2's NAT stops a
+phone reaching Metro — use `npx expo start --tunnel`, or set
+`networkingMode=mirrored` in `.wslconfig`.
 
 ## Layout
 
