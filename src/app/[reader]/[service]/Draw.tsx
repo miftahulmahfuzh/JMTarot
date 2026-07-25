@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { CardDetail } from '@/components/CardDetail';
 import { Fan } from '@/components/Fan';
 import { ReadingPanel, type ReadingState } from '@/components/ReadingPanel';
 import { Slots } from '@/components/Slots';
@@ -46,6 +47,8 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
   const [picks, setPicks] = useState<number[]>([]);
   const [question, setQuestion] = useState('');
   const [reading, setReading] = useState<ReadingState>({ status: 'idle' });
+  /** Index into `deck` of the card whose detail overlay is open, if any. */
+  const [detail, setDetail] = useState<number | null>(null);
 
   const slotRefs = useRef<(HTMLDivElement | null)[]>([]);
   const abortRef = useRef<AbortController | null>(null);
@@ -70,10 +73,35 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
   const complete = picks.length === cardCount;
   const busy = reading.status === 'waiting' || reading.status === 'streaming';
 
-  const toggle = useCallback(
+  /*
+   * A tap means one of two things.
+   *
+   * On a card still in the fan it is a pick. On a card already picked it opens
+   * the detail overlay rather than returning the card -- at 88x132 the art is
+   * too small to read, so the first thing anyone wants after drawing is a
+   * proper look at what they drew. Returning a card is still possible, from a
+   * button inside that overlay.
+   *
+   * Only picking is gated on the reading being idle. Once a reading is under
+   * way the draw is settled -- changing it would leave the cards on screen
+   * disagreeing with the text below them -- but looking at a card is exactly
+   * what the querent is doing while they read.
+   */
+  const tapCard = useCallback(
     (index: number) => {
-      // Once a reading is under way the draw is settled; changing it would
-      // leave the cards on screen disagreeing with the text below them.
+      if (picks.includes(index)) {
+        setDetail(index);
+        return;
+      }
+      if (reading.status !== 'idle') return;
+      setPicks((prev) => togglePick(prev, index, cardCount));
+    },
+    [cardCount, picks, reading.status],
+  );
+
+  const returnCard = useCallback(
+    (index: number) => {
+      setDetail(null);
       if (reading.status !== 'idle') return;
       setPicks((prev) => togglePick(prev, index, cardCount));
     },
@@ -172,8 +200,14 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
     abortRef.current?.abort();
     setReading({ status: 'idle' });
     setPicks([]);
+    // Close the overlay before the reshuffle: `detail` is an index into the
+    // old deck, and after shuffleDeck() it points at some other card.
+    setDetail(null);
     setDeck(shuffleDeck());
   };
+
+  const detailDraw = detail !== null ? deck[detail] : undefined;
+  const detailSlot = detail !== null ? picks.indexOf(detail) : -1;
 
   return (
     <main className={styles.shell}>
@@ -184,7 +218,7 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
       <h1 className={styles.title}>{service.name}</h1>
       <p className={styles.hint}>
         {complete
-          ? 'Kartumu sudah terbuka.'
+          ? 'Kartumu sudah terbuka. Ketuk salah satu untuk melihatnya lebih besar.'
           : cardCount === 1
             ? 'Ketuk satu kartu, atau tarik ke atas.'
             : `Ketuk ${cardCount} kartu, atau tarik ke atas.`}
@@ -220,10 +254,19 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
           deck={deck}
           picks={picks}
           cardCount={cardCount}
-          onToggle={toggle}
+          onCardTap={tapCard}
           slotRefs={slotRefs}
         />
       </div>
+
+      {detail !== null && detailDraw && detailSlot >= 0 ? (
+        <CardDetail
+          draw={detailDraw}
+          position={labels[detailSlot] ?? labels[0]}
+          onClose={() => setDetail(null)}
+          onReturn={reading.status === 'idle' ? () => returnCard(detail) : undefined}
+        />
+      ) : null}
 
       <ReadingPanel
         state={reading}

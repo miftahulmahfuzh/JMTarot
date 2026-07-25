@@ -240,6 +240,14 @@ decides it, including the reversal flip, and the prompt hands the model the
 word and tells it to open with it. Letting the model choose produced answers
 that contradicted the card's own orientation.
 
+`meaning` is a **pair** of one-line Indonesian glosses, upright and reversed,
+shown by the card detail overlay. Always read it through `cardMeaning(draw)`:
+the reversed line is a different statement, not a negation of the upright one,
+and showing the upright line under artwork that is visibly upside-down
+contradicts the card on screen. The lines live in `MEANINGS_ID` in
+`tools/generate_cards.py`, which asserts every slug has a distinct pair — edit
+there and rerun `npm run cards`, never in `cards.json`.
+
 ## Copy constraints
 
 All reader-facing copy is **Indonesian, not Malay**. The original spec mixed in
@@ -272,11 +280,32 @@ The querent's question goes in the **user turn only**, inside `<pertanyaan>`
 delimiters, never in the system prompt. Verified against a real injection
 attempt; the base contract's last rule held.
 
+**Length is controlled per paragraph, not per reading.** The three-card task
+asked for four paragraphs of 3–5 sentences and came back at ~330 words, which
+is more than anyone reads on a phone. A whole-reading word budget did not fix
+it: Margaret's persona mandates long sentences with subordinate clauses, and
+she ran 238–298 words against a stated 140–180 while Adrian obeyed at 128. A
+ceiling the model can count as it writes — 2–3 sentences **and** at most 40
+words per paragraph — landed all three at 128–169 words. Two side effects worth
+knowing: compression pressure made Thessaly stop naming the cards at all, which
+is why the task now says so explicitly, and `MAX_TOKENS.spread3` came down from
+1100 to 650 (still roughly double the new length, because that ceiling is a
+runaway guard, not the length control).
+
 ## Current state
 
 Built and working end to end: login and the middleware gate, reader picker,
-service picker, the draw (fan, pick, return, flip, reduced-motion grid), the
-streaming reading endpoint, the prompt layer, and the web app manifest.
+service picker, the draw (fan, pick, flip, reduced-motion grid), the card
+detail overlay, the streaming reading endpoint, the prompt layer, and the web
+app manifest.
+
+**Tapping a picked card opens its detail, it does not return it to the deck.**
+Returning moved into a button inside that overlay, because at 88x132 the art is
+unreadable and "what did I just draw?" is the first thing anyone asks. The
+button is only offered while the reading is idle — once a reading is running
+the draw is settled — so after a completed spread the overlay is look-only.
+`Fan`/`FanGrid` report a tap as `onCardTap`; the draw screen decides what it
+means.
 
 Not built, deliberately deferred: onboarding, birth card, the daily-card lock
 (`todayKey()` and `birthCard()` are already written), an About page, reading

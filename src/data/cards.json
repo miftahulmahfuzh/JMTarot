@@ -13,7 +13,11 @@
       "lompatan",
       "kepolosan",
       "percaya"
-    ]
+    ],
+    "meaning": {
+      "upright": "Langkah pertama yang diambil karena percaya, bukan karena yakin.",
+      "reversed": "Lompatan yang diambil tanpa sempat melihat ke bawah."
+    }
   },
   {
     "id": 1,
@@ -29,7 +33,11 @@
       "kehendak",
       "fokus",
       "keahlian"
-    ]
+    ],
+    "meaning": {
+      "upright": "Kemampuan yang diarahkan dengan niat yang jelas.",
+      "reversed": "Bakat yang habis dipakai untuk terlihat hebat."
+    }
   },
   {
     "id": 2,
@@ -45,7 +53,11 @@
       "rahasia",
       "intuisi",
       "kedalaman"
-    ]
+    ],
+    "meaning": {
+      "upright": "Sesuatu yang sudah kamu tahu tapi belum kamu ucapkan.",
+      "reversed": "Suara dari dalam yang terus kamu lewatkan."
+    }
   },
   {
     "id": 3,
@@ -61,7 +73,11 @@
       "kelimpahan",
       "merawat",
       "tubuh"
-    ]
+    ],
+    "meaning": {
+      "upright": "Sesuatu yang tumbuh karena benar-benar dirawat.",
+      "reversed": "Merawat sampai melewati batas dirimu sendiri."
+    }
   },
   {
     "id": 4,
@@ -77,7 +93,11 @@
       "ketertiban",
       "otoritas",
       "struktur"
-    ]
+    ],
+    "meaning": {
+      "upright": "Struktur yang membuat pijakanmu lebih tenang.",
+      "reversed": "Kendali yang dikira sebagai kekuatan."
+    }
   },
   {
     "id": 5,
@@ -93,7 +113,11 @@
       "tradisi",
       "ajaran",
       "ikrar"
-    ]
+    ],
+    "meaning": {
+      "upright": "Pelajaran yang diwariskan dan masih terpakai.",
+      "reversed": "Aturan yang hidup lebih lama daripada gunanya."
+    }
   },
   {
     "id": 6,
@@ -109,7 +133,11 @@
       "penyatuan",
       "pilihan",
       "keselarasan"
-    ]
+    ],
+    "meaning": {
+      "upright": "Pilihan yang diambil dengan seluruh dirimu.",
+      "reversed": "Diri yang terbelah di antara dua arah."
+    }
   },
   {
     "id": 7,
@@ -125,7 +153,11 @@
       "dorongan",
       "kemenangan",
       "pelindung"
-    ]
+    ],
+    "meaning": {
+      "upright": "Dorongan yang masih bisa kamu kemudikan.",
+      "reversed": "Tenaga besar yang tidak punya arah."
+    }
   },
   {
     "id": 8,
@@ -141,7 +173,11 @@
       "keberanian",
       "kesabaran",
       "menjinakkan"
-    ]
+    ],
+    "meaning": {
+      "upright": "Kelembutan yang justru memegang kendali.",
+      "reversed": "Keberanian yang dipakai pada hal yang keliru."
+    }
   },
   {
     "id": 9,
@@ -157,7 +193,11 @@
       "kesunyian",
       "pelita",
       "pencarian"
-    ]
+    ],
+    "meaning": {
+      "upright": "Menarik diri sebentar supaya semuanya jernih.",
+      "reversed": "Menyendiri yang disamarkan jadi kebijaksanaan."
+    }
   },
   {
     "id": 10,
@@ -173,7 +213,11 @@
       "perputaran",
       "takdir",
       "siklus"
-    ]
+    ],
+    "meaning": {
+      "upright": "Putaran yang memang sedang tiba giliranmu.",
+      "reversed": "Menahan putaran yang sudah waktunya berjalan."
+    }
   },
   {
     "id": 11,
@@ -189,7 +233,11 @@
       "keseimbangan",
       "kebenaran",
       "sebab"
-    ]
+    ],
+    "meaning": {
+      "upright": "Perhitungan yang jujur, apa adanya.",
+      "reversed": "Timbangan yang dimiringkan oleh rasa takut."
+    }
   },
   {
     "id": 12,
@@ -205,7 +253,11 @@
       "penangguhan",
       "pembalikan",
       "sudut pandang"
-    ]
+    ],
+    "meaning": {
+      "upright": "Berhenti sejenak, dan sudut pandangnya berubah.",
+      "reversed": "Menunggu yang dipakai untuk menghindar."
+    }
   },
   {
     "id": 13,
@@ -221,7 +273,11 @@
       "akhir",
       "ambang",
       "pelepasan"
-    ]
+    ],
+    "meaning": {
+      "upright": "Akhir yang justru membebaskan.",
+      "reversed": "Menggenggam sesuatu yang sebenarnya sudah selesai."
+    }
   },
   {
     "id": 14,
@@ -237,7 +293,11 @@
       "perpaduan",
       "ukuran",
       "penyelarasan"
-    ]
+    ],
+    "meaning": {
+      "upright": "Jalan tengah yang butuh kesabaran.",
+      "reversed": "Dua hal berlawanan yang menolak menyatu."
+    }
   },
   {
     "id": 15,
@@ -253,7 +313,11 @@
       "belenggu",
       "hasrat",
       "bayangan"
-    ]
+    ],
+    "meaning": {
+      "upright": "Rantai yang sebenarnya kamu lihat sendiri.",
+      "reversed": "Keinginan yang belum berani kamu sebut namanya."
+    }
   },
   {
     "id": 16,
@@ -269,7 +333,11 @@
       "keruntuhan",
       "kilat",
       "kebenaran"
-    ]
+    ],
+    "meaning": {
+      "upright": "Keruntuhan yang memang perlu terjadi.",
+      "reversed": "Peringatan yang terus dilewatkan begitu saja."
+    }
   },
   {
     "id": 17,
@@ -285,7 +353,11 @@
       "harapan",
       "ketenangan",
       "bimbingan"
-    ]
+    ],
+    "meaning": {
+      "upright": "Harapan yang tenang setelah semuanya berantakan.",
+      "reversed": "Harapan yang ditaruh pada cahaya yang keliru."
+    }
   },
   {
     "id": 18,
@@ -301,7 +373,11 @@
       "mimpi",
       "ilusi",
       "pasang"
-    ]
+    ],
+    "meaning": {
+      "upright": "Apa yang sedang dibisikkan oleh hal yang belum jelas.",
+      "reversed": "Rasa takut yang dikira pertanda."
+    }
   },
   {
     "id": 19,
@@ -317,7 +393,11 @@
       "kejelasan",
       "sukacita",
       "vitalitas"
-    ]
+    ],
+    "meaning": {
+      "upright": "Kebenaran yang terang dan menghangatkan.",
+      "reversed": "Silau yang justru menutupi detailnya."
+    }
   },
   {
     "id": 20,
@@ -333,7 +413,11 @@
       "kebangkitan",
       "panggilan",
       "perhitungan"
-    ]
+    ],
+    "meaning": {
+      "upright": "Panggilan yang harus kamu jawab.",
+      "reversed": "Panggilan yang terus kamu tunda."
+    }
   },
   {
     "id": 21,
@@ -349,6 +433,10 @@
       "penyelesaian",
       "keutuhan",
       "kembali"
-    ]
+    ],
+    "meaning": {
+      "upright": "Lingkaran yang akhirnya tertutup.",
+      "reversed": "Akhir yang diumumkan terlalu cepat."
+    }
   }
 ]

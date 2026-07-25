@@ -25,6 +25,15 @@ export type Card = {
   yesno: YesNo;
   /** Indonesian, like all reader-facing copy. */
   keywords: string[];
+  /**
+   * The one-line gloss the card detail overlay shows, in Indonesian.
+   *
+   * Two lines, not one with a negation bolted on: an upright card and the same
+   * card reversed say different things, and showing the upright line under a
+   * card that is visibly upside-down contradicts the card on screen. Pick with
+   * `cardMeaning()`, never by reading `.upright` directly.
+   */
+  meaning: { upright: string; reversed: string };
 };
 
 /** A card as it came out of the deck: identity plus orientation. */

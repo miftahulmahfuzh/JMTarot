@@ -1,0 +1,152 @@
+/*
+ * The card detail overlay: one drawn card, full size, with the one line that
+ * belongs to its orientation.
+ *
+ * Sized so the whole sheet fits an iPhone SE (375x667) without scrolling --
+ * 240px of card is 360px tall, and the heading, the line and the buttons come
+ * to roughly 250px more. Anything shorter than that (landscape, mostly) scrolls
+ * the scrim rather than shrinking the art, because the art is the point.
+ */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+  padding: calc(24px + env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom));
+  /* --canvas at 94%, the same treatment the sticky footer uses. */
+  background: rgba(10, 8, 18, 0.94);
+  backdrop-filter: blur(6px);
+  animation: fade 200ms ease-out;
+}
+
+.sheet {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  width: 100%;
+  max-width: 340px;
+  margin: auto;
+  text-align: center;
+  animation: rise 260ms var(--ease-card);
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scrim,
+  .sheet {
+    animation: none;
+  }
+}
+
+.position {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-section-label);
+  text-transform: uppercase;
+  color: var(--gold);
+  min-height: 1em;
+}
+
+/* CardFace fills its positioned parent, so the frame is what decides the size.
+   2:3, like every other card on screen. */
+.frame {
+  position: relative;
+  width: min(240px, 62vw);
+  aspect-ratio: 2 / 3;
+  flex: none;
+}
+
+.heading {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.name {
+  margin: 0;
+  font-family: var(--font-display), serif;
+  font-weight: 500;
+  font-size: 22px;
+  letter-spacing: var(--ls-card-title);
+  color: var(--gold-text);
+}
+
+/* Quieter than the name: the card is still The Moon, it is just the other way
+   up. The rotated artwork above already says so; this only names it. */
+.reversed {
+  color: var(--muted);
+  font-size: var(--fs-card-title);
+}
+
+.numeral {
+  font-family: var(--font-display), serif;
+  font-size: 11px;
+  letter-spacing: var(--ls-slot-label);
+  color: var(--label);
+}
+
+.meaning {
+  margin: 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: var(--fs-reading);
+  line-height: var(--lh-reading);
+  color: var(--text-warm);
+  text-wrap: pretty;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+.close,
+.return {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  border-radius: var(--radius-chip);
+  /* 44px tall for a thumb. */
+  padding: 14px 20px;
+}
+
+.close {
+  color: var(--button-text);
+  background: var(--gold-wash);
+  border: 1px solid var(--gold-border);
+}
+
+.close:hover {
+  background: var(--gold-wash-strong);
+}
+
+.return {
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--gold-hairline);
+}
+
+.return:hover {
+  color: var(--button-text);
+  border-color: var(--gold-border);
+}

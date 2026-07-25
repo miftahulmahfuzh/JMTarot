@@ -46,6 +46,18 @@ export function shuffleDeck(reversals = true): Draw[] {
   }));
 }
 
+/**
+ * The one line shown under a card in the detail overlay.
+ *
+ * Orientation decides which of the two lines is true, the same way it decides
+ * polarity and the yes/no verdict. Going through this function rather than
+ * reading `card.meaning.upright` is what keeps a reversed card from being
+ * described as if it were upright.
+ */
+export function cardMeaning({ card, reversed }: Draw): string {
+  return reversed ? card.meaning.reversed : card.meaning.upright;
+}
+
 /** Reversal inverts a card's charge. Neutral cards have none to invert. */
 export function effectivePolarity({ card, reversed }: Draw): Polarity {
   if (!reversed || card.polarity === 'neutral') return card.polarity;

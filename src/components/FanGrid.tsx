@@ -9,17 +9,18 @@ type Props = {
   deck: Draw[];
   picks: number[];
   cardCount: number;
-  onToggle: (index: number) => void;
+  /** A tap on the card at `index`; see the note on the same prop in Fan.tsx. */
+  onCardTap: (index: number) => void;
 };
 
 /**
  * What the fan becomes under `prefers-reduced-motion: reduce`.
  *
- * The draw is identical -- same shuffled deck, same toggle-to-return, same
- * cap -- but nothing animates and nothing overlaps, so there is no sliver to
+ * The draw is identical -- same shuffled deck, same taps, same cap -- but
+ * nothing animates and nothing overlaps, so there is no sliver to
  * aim at and no card travelling across the screen.
  */
-export function FanGrid({ deck, picks, cardCount, onToggle }: Props) {
+export function FanGrid({ deck, picks, cardCount, onCardTap }: Props) {
   const complete = picks.length >= cardCount;
 
   return (
@@ -41,9 +42,13 @@ export function FanGrid({ deck, picks, cardCount, onToggle }: Props) {
             type="button"
             className={className}
             disabled={complete && !chosen}
-            aria-label={chosen ? `Kartu ${slot + 1}, ketuk untuk kembalikan` : 'Ambil kartu'}
+            aria-label={
+              chosen
+                ? `Kartu ${slot + 1}: ${draw.card.name}, ketuk untuk lihat kartunya`
+                : 'Ambil kartu'
+            }
             aria-pressed={chosen}
-            onClick={() => onToggle(i)}
+            onClick={() => onCardTap(i)}
           >
             {chosen ? (
               <CardFace card={draw.card} reversed={draw.reversed} size="thumb" />

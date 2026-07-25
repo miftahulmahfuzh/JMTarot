@@ -39,7 +39,12 @@ type Props = {
   picks: number[];
   /** How many cards this service draws. */
   cardCount: number;
-  onToggle: (index: number) => void;
+  /**
+   * A tap on the card at `index`. What that means depends on whether the card
+   * is already picked -- picking, or opening its detail -- and the draw screen
+   * decides; the fan only reports the tap.
+   */
+  onCardTap: (index: number) => void;
   /** Slot boxes to fly picked cards into. See Slots.tsx. */
   slotRefs: RefObject<(HTMLDivElement | null)[]>;
 };
@@ -53,7 +58,7 @@ type Flight = { dx: number; dy: number; scale: number };
  * All 22 render. No windowing at this count -- the arc is cheaper than the
  * bookkeeping, and every card has to be reachable anyway.
  */
-export function Fan({ deck, picks, cardCount, onToggle, slotRefs }: Props) {
+export function Fan({ deck, picks, cardCount, onCardTap, slotRefs }: Props) {
   const fanRef = useRef<HTMLDivElement | null>(null);
   const [flights, setFlights] = useState<(Flight | null)[]>([]);
   const [drag, setDrag] = useState<{ index: number; dy: number } | null>(null);
@@ -122,7 +127,7 @@ export function Fan({ deck, picks, cardCount, onToggle, slotRefs }: Props) {
 
   if (reduceMotion) {
     return (
-      <FanGrid deck={deck} picks={picks} cardCount={cardCount} onToggle={onToggle} />
+      <FanGrid deck={deck} picks={picks} cardCount={cardCount} onCardTap={onCardTap} />
     );
   }
 
@@ -151,11 +156,11 @@ export function Fan({ deck, picks, cardCount, onToggle, slotRefs }: Props) {
   };
 
   /*
-   * The drag is tracked in a ref as well as in state, and onToggle is called
+   * The drag is tracked in a ref as well as in state, and onCardTap is called
    * from here rather than from inside a setState updater.
    *
    * That is not a style preference. The first version read the drag by calling
-   * onToggle INSIDE a setDrag updater, and React StrictMode double-invokes
+   * onCardTap INSIDE a setDrag updater, and React StrictMode double-invokes
    * updaters to surface exactly this kind of impurity -- so every tap picked a
    * card and then immediately un-picked it. The fan was completely dead in
    * development and would have worked in production, which is the worst
@@ -165,7 +170,7 @@ export function Fan({ deck, picks, cardCount, onToggle, slotRefs }: Props) {
     const d = dragRef.current;
     dragRef.current = null;
     setDrag(null);
-    if (d && d.index === index) onToggle(index);
+    if (d && d.index === index) onCardTap(index);
   };
 
   return (
@@ -206,7 +211,11 @@ export function Fan({ deck, picks, cardCount, onToggle, slotRefs }: Props) {
               data-card
               role="button"
               tabIndex={complete && !chosen ? -1 : 0}
-              aria-label={chosen ? `Kartu ${slot + 1}, ketuk untuk kembalikan` : 'Ambil kartu'}
+              aria-label={
+                chosen
+                  ? `Kartu ${slot + 1}: ${draw.card.name}, ketuk untuk lihat kartunya`
+                  : 'Ambil kartu'
+              }
               aria-pressed={chosen}
               onPointerDown={onPointerDown(i)}
               onPointerMove={onPointerMove(i)}
@@ -215,7 +224,7 @@ export function Fan({ deck, picks, cardCount, onToggle, slotRefs }: Props) {
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
-                  onToggle(i);
+                  onCardTap(i);
                 }
               }}
             >
