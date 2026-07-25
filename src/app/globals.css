@@ -26,6 +26,21 @@
   box-sizing: border-box;
 }
 
+/*
+ * Screenshot escape hatch, set by ?still=1 in development only (see
+ * layout.tsx). Headless Chrome runs transform transitions on the compositor,
+ * which --virtual-time-budget does not advance, so a screenshot of an
+ * animating page freezes mid-transition -- cards halfway to their slots,
+ * partially rotated, looking exactly like a layout bug. Killing transitions
+ * outright is the reliable way to capture an end state.
+ */
+html[data-still] *,
+html[data-still] *::before,
+html[data-still] *::after {
+  transition: none !important;
+  animation: none !important;
+}
+
 html {
   height: 100%;
 }

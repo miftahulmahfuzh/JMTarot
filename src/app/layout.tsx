@@ -44,6 +44,17 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="id" className={`${cinzel.variable} ${cormorant.variable}`}>
       <body>
+        {/* Dev-only: ?still=1 disables every transition so a headless
+            screenshot captures the settled state rather than a frozen
+            mid-transition frame. Stripped from production builds. */}
+        {process.env.NODE_ENV !== 'production' ? (
+          <script
+            dangerouslySetInnerHTML={{
+              __html:
+                "if(location.search.indexOf('still=1')>-1)document.documentElement.setAttribute('data-still','')",
+            }}
+          />
+        ) : null}
         <Backdrop />
         {children}
       </body>

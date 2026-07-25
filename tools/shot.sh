@@ -41,8 +41,13 @@ WIN_TMP='C:\Users\GPD\AppData\Local\Temp'
 LIN_TMP='/mnt/c/Users/GPD/AppData/Local/Temp'
 NAME="jmtarot-shot-$$.png"
 
+# --virtual-time-budget lets transitions finish before the capture. Without it
+# the shot lands mid-animation: cards halfway to their slots, partially
+# rotated, and it reads as a layout bug rather than a timing artefact. The card
+# flight and flip are both 620ms, so 3s is comfortable.
 "$CHROME" --headless --disable-gpu --hide-scrollbars \
   --force-device-scale-factor=2 \
+  --virtual-time-budget="${BUDGET:-3000}" \
   --window-size="${W},${H}" \
   --screenshot="${WIN_TMP}\\${NAME}" \
   "http://localhost:${PORT}${URL_PATH}" >/dev/null 2>&1

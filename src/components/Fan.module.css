@@ -100,14 +100,58 @@
   transform-origin: 50% calc(var(--pivot) * var(--u));
   transform: rotate(var(--angle));
 
-  /* Scaled with the rest so the flip in Task 6 has the same depth at every
-     size. The reference used 1400px against 172px cards. */
+  /* Scaled with the rest so the flip has the same depth at every size. The
+     reference used 1400px against 172px cards. */
   perspective: calc(1400 * var(--u));
   transition: transform var(--dur) var(--ease-card), filter 0.3s ease;
+  cursor: pointer;
 }
 
+.card:focus-visible {
+  outline: 2px solid var(--gold-lift);
+  outline-offset: 2px;
+}
+
+/*
+ * THE FLIP. One rotation on a shared parent, with both faces backface-hidden.
+ *
+ * The React Native build could not do this -- RN has no `transform-style:
+ * preserve-3d`, so flipping a shared parent did nothing and each face had to
+ * be rotated separately, 180deg apart, with the pair faked into reading as one
+ * card. That workaround was correct there and is wrong here. If you find
+ * yourself reintroducing per-face rotation, you are re-solving a problem the
+ * browser does not have.
+ */
+.inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform var(--dur) var(--ease-flip);
+}
+
+.flipped {
+  transform: rotateY(180deg);
+}
+
+.faceBack,
+.faceFront {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.faceFront {
+  transform: rotateY(180deg);
+}
+
+/* Belt and braces. The component swaps in FanGrid under reduced motion, so
+   this should never apply -- but if the swap is ever bypassed, nothing here
+   should still be animating. */
 @media (prefers-reduced-motion: reduce) {
-  .card {
+  .card,
+  .inner {
     transition: none;
   }
 }

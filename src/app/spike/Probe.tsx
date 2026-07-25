@@ -35,11 +35,31 @@ export function Probe() {
           out.push(`  card box ${first.width.toFixed(1)} x ${first.height.toFixed(1)}`);
         }
       });
+
+      document.querySelectorAll<HTMLElement>('[data-slotbox]').forEach((b, i) => {
+        const r = b.getBoundingClientRect();
+        out.push(`slot[${i}] x ${r.left.toFixed(1)} y ${r.top.toFixed(1)} ${r.width.toFixed(0)}x${r.height.toFixed(0)}`);
+      });
+
+      document.querySelectorAll<HTMLElement>('[data-card][aria-pressed="true"]').forEach((c, i) => {
+        const r = c.getBoundingClientRect();
+        out.push(
+          `picked[${i}] centre ${(r.left + r.width / 2).toFixed(1)},${(r.top + r.height / 2).toFixed(1)}` +
+            `  transform ${c.style.transform || '(none)'}`,
+        );
+      });
       setLines(out);
     };
     read();
+    // Re-read once the card flight and flip have finished. Measuring only on
+    // mount catches cards mid-transition and reports positions that are real
+    // for one frame and misleading for every other purpose.
+    const settled = window.setTimeout(read, 1200);
     window.addEventListener('resize', read);
-    return () => window.removeEventListener('resize', read);
+    return () => {
+      window.clearTimeout(settled);
+      window.removeEventListener('resize', read);
+    };
   }, []);
 
   return (

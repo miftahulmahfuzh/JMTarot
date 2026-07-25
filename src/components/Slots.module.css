@@ -1,0 +1,62 @@
+/*
+ * The row of empty card outlines the picked cards fly into.
+ *
+ * The Fan measures these boxes and scales the flying card to match exactly, so
+ * a landed card covers its outline rather than sitting inside it. That means
+ * the size below is the single place a slot's dimensions are decided --
+ * changing it needs no matching change in the Fan.
+ */
+
+.row {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: nowrap;
+}
+
+.slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+
+.box {
+  position: relative;
+  width: 90px;
+  height: 135px;
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-card);
+  background: rgba(255, 255, 255, 0.015);
+}
+
+/* Only meaningful in the reduced-motion path, where no card flies here and the
+   slot has to show the face itself. */
+.filled {
+  border-color: var(--gold-border);
+}
+
+.label {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-slot-label);
+  text-transform: uppercase;
+  color: var(--label);
+  text-align: center;
+  max-width: 96px;
+  line-height: 1.4;
+}
+
+/* Three 90px slots plus two 12px gaps is 294px, which fits 375 comfortably.
+   A reader's own position framing can be wordy ("Yang udah lewat"), so the
+   labels wrap rather than the row scrolling. */
+@media (max-width: 359px) {
+  .box {
+    width: 78px;
+    height: 117px;
+  }
+  .row {
+    gap: 8px;
+  }
+}

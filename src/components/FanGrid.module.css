@@ -1,0 +1,41 @@
+/*
+ * The reduced-motion alternative to the fan: a plain tappable grid.
+ *
+ * Not a degraded fan -- a different thing. No arc, so no card is hidden behind
+ * another and no 13px sliver has to be hit; no flight, so nothing moves across
+ * the screen; no flip, the face just replaces the back. Someone who has asked
+ * the OS to reduce motion gets the same draw with none of the movement.
+ */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 0 4px;
+}
+
+.cell {
+  position: relative;
+  aspect-ratio: 2 / 3;
+  border-radius: var(--radius-card);
+}
+
+.cell:focus-visible {
+  outline: 2px solid var(--gold-lift);
+  outline-offset: 2px;
+}
+
+.chosen::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border: 1px solid var(--gold);
+  border-radius: calc(var(--radius-card) + 3px);
+  pointer-events: none;
+}
+
+.dimmed {
+  filter: brightness(0.55) saturate(0.7);
+}
