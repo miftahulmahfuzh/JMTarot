@@ -55,7 +55,32 @@
 > - **§7.6 — the age bar is 18.** Your first-sign-in acceptance screen writes
 >   `age_confirmed_at` against that; W7 owns the copy.
 
-**Status:** planning. Nothing here is built yet.
+**Status: BUILT, 2026-07-26**, on `feat/w2-google-auth`. Tasks 1 and 3–11 are
+done; Task 2 (Google Cloud console) was done by hand against project `jmtarot`.
+**Task 12 is outstanding** — the Vercel variables and the real-iPhone checks,
+above all sign-in from a home-screen installed instance in standalone mode.
+
+Google sign-in is verified end to end locally: the consent screen renders as
+JMTarot, the callback completes, one `users` row appears with the right
+`google_sub`, and the gate then sends the un-onboarded user to `/onboarding`
+(which 404s until W3 exists — correct behaviour, not a bug).
+
+Four corrections this plan needed, all recorded inline where they belong rather
+than only here: `@auth/core` does not force-append `state` to `checks` (§1); the
+sign-in identity is `account.providerAccountId` and **never** `token.sub`, which
+this plan did not anticipate and which silently created a new user on every
+sign-in; the pure `session` callback must live in `config.ts` or middleware and
+the pages disagree about who is signed in; and `pages.error` has to be set or a
+failed token exchange renders Auth.js's own 500 page. The last three are in
+`CLAUDE.md`'s `## Auth` section, with the mechanism for each.
+
+W1 never shipped the two queries this plan's *Interfaces I need* asked for, so W2
+wrote them: `upsertUserOnSignIn` and `readSessionFacts` in
+`src/lib/db/queries/profile.ts`, **handle-first** per the query-module contract
+rather than the handle-less signatures below, and following reconciliation §7.8's
+grace-period erasure rather than §5.3's outright refusal — so the function never
+returns null and the nullable is gone.
+
 **Date opened:** 2026-07-26.
 **Owns:** `src/lib/auth/**`, `src/middleware.ts`, `src/app/login/**`,
 `src/app/api/auth/**`.
@@ -122,8 +147,38 @@ Verified against the actual package rather than the docs
 - `peerDependencies.next` is `^14.0.0-0 || ^15.0.0 || ^16.0.0`. We are on Next
   16.2.11. This is supported, not merely tolerated.
 - The Google provider is `type: "oidc"` with issuer discovery against
-  `https://accounts.google.com`, and `checks` defaults to `["pkce"]` with
-  `"state"` force-appended.
+  `https://accounts.google.com`, and `checks` defaults to `["pkce"]`.
+
+  > **CORRECTED DURING IMPLEMENTATION, 2026-07-26.** This line originally said
+  > `"state"` was *force-appended*. It is not. `@auth/core/lib/utils/providers.js:52`
+  > reads `const checks = c.checks ?? ["pkce"]` and appends `"state"` **only
+  > inside `if (c.redirectProxyUrl)`** — and reconciliation §7.9a cut
+  > `AUTH_REDIRECT_PROXY_URL`, so we never set it. Observed on the wire: the
+  > authorization URL carries `response_type`, `client_id`, `redirect_uri`,
+  > `code_challenge`, `code_challenge_method=S256` and `scope`, and **no `state`
+  > and no `nonce`**; the cookie jar gets `authjs.pkce.code_verifier`,
+  > `authjs.csrf-token` and `authjs.callback-url`, and no `authjs.state`.
+  >
+  > **This is not a hole, and the fix is to not "fix" it.** PKCE covers state's
+  > CSRF role here: the callback requires *this browser's* `code_verifier`
+  > cookie, so a code minted in the attacker's flow fails the token exchange
+  > with `invalid_grant`, and a browser with no verifier cookie is refused by
+  > `useCookie` before any exchange happens. @auth/core cites the reasoning in
+  > its own source (`lib/actions/callback/oauth/checks.js:80`, linking
+  > danielfett.de's PKCE-vs-nonce article). `nonce` is OPTIONAL for the
+  > authorization-code flow in OIDC and REQUIRED only for implicit/hybrid, which
+  > we do not use — the `id_token` arrives from Google's token endpoint over TLS,
+  > not from the browser, so there is no id_token to replay.
+  >
+  > Do not add `checks: ['pkce', 'state', 'nonce']`. It would work, and it would
+  > add two more cookies that have to survive the round trip — which is the
+  > largest unverified risk in this workstream (§11's iOS standalone item), paid
+  > for a property PKCE already provides.
+  >
+  > §1's argument for adopting a library is otherwise unaffected: the token
+  > exchange, the JWKS signature check and the `iss`/`aud`/`azp`/`exp` claim
+  > checks are still the library's, and they are still the part nobody should
+  > hand-roll.
 - The default scope for an OIDC provider is literally `openid profile email`
   (`lib/utils/providers.js:48`). The minimum we want is the default. We add
   nothing.

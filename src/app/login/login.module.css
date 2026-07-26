@@ -47,47 +47,61 @@
   margin: 0;
 }
 
+/* `.card` is a centred flex column, so a bare <form> shrink-wraps to its
+   content and the button comes out narrower than the card. This was the old
+   `.form` rule and it is still load-bearing for exactly that reason -- deleting
+   it along with the username and password fields is what made the button 240px
+   wide inside a 340px card. */
 .form {
   width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
 }
 
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-
-.label {
-  font-family: var(--font-display), serif;
-  font-size: var(--fs-eyebrow);
-  letter-spacing: var(--ls-slot-label);
-  text-transform: uppercase;
-  color: var(--label);
-}
-
-.input {
+/* One line of context for a stranger, who arrives knowing nothing. The old
+   page assumed you already did. */
+.tagline {
   font-family: var(--font-body), Georgia, serif;
-  font-size: 17px;
-  color: var(--text);
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--gold-hairline);
-  border-radius: var(--radius-chip);
-  /* 16px+ font and 14px padding: under 16px iOS Safari zooms the page on
-     focus, and the zoom does not undo itself when the field blurs. */
-  padding: 14px 12px;
-  width: 100%;
+  font-style: italic;
+  font-size: var(--fs-hint);
+  color: var(--muted);
+  text-align: center;
+  margin: 0;
+  max-width: 28ch;
 }
 
-.input:focus {
-  outline: none;
-  border-color: var(--gold-border);
-  background: var(--gold-wash);
+/* One sentence with two inline anchors, not three stacked lines: it reads as a
+   statement you agree to rather than as a menu of documents. */
+.legal {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+  text-align: center;
+  margin: 0;
 }
 
+.legal a {
+  color: var(--gold);
+}
+
+/* CLAUDE.md requires the entertainment-only line under every reading and on both
+   pickers. This is the third place and the first one anybody sees. */
+.disclaimer {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+  margin: 0;
+  opacity: 0.8;
+}
+
+/* Reused verbatim from the old submit button, plus the row layout for the mark.
+   16px of padding on a 12px-ish cap-height line clears the 44px tap target. */
 .submit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
   font-family: var(--font-display), serif;
   font-size: var(--fs-eyebrow);
   letter-spacing: var(--ls-button);
