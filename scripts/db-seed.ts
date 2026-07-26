@@ -304,6 +304,8 @@ async function main() {
     let rigCursor = 0;
 
     let readingIndex = 0;
+    /** The most recent seeded reading, for the reading.completed event below. */
+    let lastReading: { id: string; readerId: string; serviceId: string } | null = null;
 
     for (let d = READINGS_PER_DAY.length - 1; d >= 0; d -= 1) {
       const localDate = todayKey(daysAgo(d));
@@ -359,23 +361,30 @@ async function main() {
 
         // Through the query module, not by direct insert: otherwise the seed
         // is not evidence that insertReading works.
-        await insertReading(db, reading, cards);
+        const stored = await insertReading(db, reading, cards);
+        // Kept so the reading.completed event below can name a reading that
+        // really exists -- see the comment on that event.
+        lastReading = { id: stored.id, readerId, serviceId };
         readingIndex += 1;
       }
     }
 
     // ---- A handful of events ---------------------------------------------
     //
-    // W4 owns the taxonomy; these are placeholders of the right SHAPE, with
-    // scalars-only props, so W4 has non-empty jsonb to look at. Note the props
-    // are scalars by construction -- reconciliation R9 makes that a runtime
+    // NAMES FROM W4's CLOSED TAXONOMY (src/lib/analytics/events.ts). They were
+    // placeholders of the right shape -- `reader_selected`, `login_viewed` --
+    // written before that file existed and explicitly pending it; leaving them
+    // would have made `where name like 'reading.%'` miss the seeded rows and
+    // handed the next person two naming conventions to choose between.
+    //
+    // Props are scalars by construction. Reconciliation R9 makes that a runtime
     // rule, because it is what allows `events` to survive account erasure with
     // user_id nulled.
     await db.insert(events).values([
       {
         userId: miftah.id,
         sessionId: `${SESSION_PREFIX}0`,
-        name: 'reader_selected',
+        name: 'reader.chosen',
         props: { reader_id: 'thessaly' },
         locale: 'id' as Locale,
         localDate: todayKey(),
@@ -383,7 +392,7 @@ async function main() {
       {
         userId: miftah.id,
         sessionId: `${SESSION_PREFIX}0`,
-        name: 'service_selected',
+        name: 'service.chosen',
         props: { reader_id: 'thessaly', service_id: 'spread3' },
         locale: 'id' as Locale,
         localDate: todayKey(),
@@ -391,25 +400,47 @@ async function main() {
       {
         userId: miftah.id,
         sessionId: `${SESSION_PREFIX}0`,
-        name: 'reading_completed',
-        props: { service_id: 'spread3', latency_ms: 2140, token_output: 168 },
+        /*
+         * NAMES A READING THAT REALLY EXISTS, and that is not a detail.
+         * docs/analytics-queries.md's first query -- the alarm -- looks for a
+         * client `reading.completed` with no matching `readings` row, which is
+         * how a lost after() write is detected. A seeded event pointing at a
+         * fabricated uuid would make that alarm fire on a fresh database and
+         * teach whoever runs it to ignore the result.
+         */
+        name: 'reading.completed',
+        props: {
+          reading_id: lastReading?.id ?? '',
+          reader_id: lastReading?.readerId ?? 'thessaly',
+          service_id: lastReading?.serviceId ?? 'spread3',
+          latency_ms: 2140,
+          total_ms: 5120,
+          chars: 812,
+          token_input: null,
+          token_output: 168,
+          truncated: false,
+          status: 'ok',
+          source: 'client',
+        },
         locale: 'id' as Locale,
         localDate: todayKey(),
       },
       {
         userId: jodith.id,
         sessionId: `${SESSION_PREFIX}jo`,
-        name: 'reader_selected',
+        name: 'reader.chosen',
         props: { reader_id: 'margaret' },
         locale: 'en' as Locale,
         localDate: todayKey(),
       },
       {
-        // An anonymous event, so the SET NULL shape is represented too.
+        // An anonymous event, so the SET NULL shape is represented too -- and
+        // app.launched genuinely has no user, which is why /api/events is
+        // public at all.
         userId: null,
         sessionId: `${SESSION_PREFIX}anon`,
-        name: 'login_viewed',
-        props: {},
+        name: 'app.launched',
+        props: { standalone: false, referrer_kind: 'direct' },
         locale: 'id' as Locale,
         localDate: todayKey(),
       },
