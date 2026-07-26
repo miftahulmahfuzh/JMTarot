@@ -207,6 +207,20 @@ const _noOrphans: _NoOrphans extends never ? true : never = true;
 void _noOrphans;
 
 /**
+ * One buffered event on its way to the `events` table.
+ *
+ * NO TIMESTAMP. Every row in a batch gets the same `created_at` from the one
+ * insert, and within-batch ordering is recovered from `props.seq` -- a
+ * monotonic integer per browser session. Reconstructing order from a client
+ * `Date.now()` would mean trusting a clock that is routinely wrong by minutes
+ * and occasionally by years.
+ */
+export type PendingEvent = {
+  name: EventName;
+  props: Record<string, EventPropValue>;
+};
+
+/**
  * The runtime guard, because the collector route receives names off the wire
  * and a type cannot check those.
  *
