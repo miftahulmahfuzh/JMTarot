@@ -91,6 +91,23 @@ async function main() {
   const reader = arg('reader');
   const service = arg('service');
   const all = process.argv.includes('--all');
+  const lotus = process.argv.includes('--lotus');
+
+  /*
+   * `npm run smoke -- --lotus` runs ONE real distillation and shows its whole
+   * pipeline: the prompt, the raw model output, the parsed result and the
+   * safety-check verdict.
+   *
+   * This exists because everything about the Lotus block is unit-tested for
+   * SHAPE and nothing can unit-test whether it is any good -- and unlike a
+   * reading, nobody ever reads this text again after it is written once. It goes
+   * silently into every subsequent reading prompt instead. So it gets looked at
+   * on purpose, at least once, by a person.
+   */
+  if (lotus && !all) {
+    await runLotus();
+    return;
+  }
 
   if (!reader && !service && !all) {
     await run(
@@ -147,6 +164,96 @@ async function main() {
       'distinguishable. Cover the names and read them. If you cannot tell who\n' +
       'wrote which, the app has one reader in three hats -- fix the persona\n' +
       'paragraphs in src/lib/prompt/readers.ts, not the code.\n',
+  );
+}
+
+/**
+ * The fixture answer set for `--lotus`.
+ *
+ * Chosen to exercise every guard at once rather than to be typical:
+ *
+ *   - `most_loved` carries a PROPER NAME ("Sari"), so a block that copies it is
+ *     caught by the name check rather than by luck.
+ *   - `worst_thing` carries something genuinely heavy, because "abstract, never
+ *     restate" is only tested by material worth restating.
+ *   - `best_thing` is long enough to produce a six-word run if the model quotes.
+ *   - `willow_wish` is skipped, so the `(dilewati)` path is in the prompt.
+ */
+const LOTUS_FIXTURE = {
+  birthYear: 1994,
+  answers: [
+    {
+      key: 'best_thing' as const,
+      text: 'tahun pertama kerja di kota lain, waktu semuanya masih serba baru dan aku belum kenal siapa-siapa',
+      choice: null,
+      skipped: false,
+    },
+    {
+      key: 'worst_thing' as const,
+      text: 'waktu SMA aku lihat tetangga sebelah rumah dibawa pergi pakai ambulans dan tidak pernah pulang lagi, ibunya menjerit di depan pagar sampai pagi',
+      choice: null,
+      skipped: false,
+    },
+    { key: 'most_loved' as const, text: 'ibu saya, namanya Sari', choice: null, skipped: false },
+    { key: 'introversion' as const, text: null, choice: '30', skipped: false },
+    { key: 'color' as const, text: null, choice: 'black', skipped: false },
+    { key: 'willow_wish' as const, text: null, choice: null, skipped: true },
+  ],
+};
+
+async function runLotus() {
+  const { buildLotusPrompt, parseLotusResponse, fallbackLotus, lotusSafetyCheck, renderLotusBlock } =
+    await import('@/lib/prompt/lotus');
+
+  const prompt = buildLotusPrompt(LOTUS_FIXTURE);
+
+  process.stdout.write(`\n${'#'.repeat(70)}\nUSER TURN SENT TO THE DISTILLER\n${'#'.repeat(70)}\n`);
+  process.stdout.write(`${prompt.user}\n`);
+
+  const raw = await run('lotus distillation', prompt.system, prompt.user, prompt.maxTokens);
+
+  const rawAnswers = LOTUS_FIXTURE.answers
+    .map((a) => a.text)
+    .filter((t): t is string => typeof t === 'string');
+
+  process.stdout.write(`\n${'#'.repeat(70)}\nPARSED\n${'#'.repeat(70)}\n`);
+
+  let parsed;
+  try {
+    parsed = parseLotusResponse(raw, LOTUS_FIXTURE);
+  } catch (err) {
+    process.stdout.write(`UNPARSEABLE: ${err instanceof Error ? err.message : String(err)}\n`);
+    process.stdout.write('falling back to the deterministic template:\n');
+    parsed = fallbackLotus(LOTUS_FIXTURE);
+  }
+
+  const idWords = parsed.summaryId.trim().split(/\s+/).length;
+  const enWords = parsed.summaryEn.trim().split(/\s+/).length;
+  process.stdout.write(`summary_id (${idWords} words, ${parsed.summaryId.length} chars):\n`);
+  process.stdout.write(`  ${parsed.summaryId}\n\n`);
+  process.stdout.write(`summary_en (${enWords} words, ${parsed.summaryEn.length} chars):\n`);
+  process.stdout.write(`  ${parsed.summaryEn}\n\n`);
+  process.stdout.write(`traits: ${JSON.stringify(parsed.traits)}\n`);
+
+  process.stdout.write(`\n${'#'.repeat(70)}\nSAFETY CHECK\n${'#'.repeat(70)}\n`);
+  const verdict = lotusSafetyCheck({ id: parsed.summaryId, en: parsed.summaryEn }, rawAnswers);
+  process.stdout.write(
+    verdict.ok ? 'ACCEPTED\n' : `REJECTED -- reason: ${verdict.reason} (the template is stored)\n`,
+  );
+
+  process.stdout.write(`\n${'#'.repeat(70)}\nRENDERED INTO A READING\n${'#'.repeat(70)}\n`);
+  const block = renderLotusBlock({
+    nickname: 'Rani',
+    summary: verdict.ok ? parsed.summaryId : fallbackLotus(LOTUS_FIXTURE).summaryId,
+  });
+  process.stdout.write(`${block}\n[${block.length} chars, cap 600]\n`);
+
+  process.stdout.write(
+    '\nThree questions to ask, and only the third needs a person:\n' +
+      `  1. is summary_id ${45}-${75} words?  (${idWords} above)\n` +
+      '  2. does it describe a SHAPE rather than an incident?\n' +
+      '  3. would you be comfortable if the person who wrote those answers read it?\n' +
+      'If the answer to the third is no, the CONTRACT needs another rule -- not the code.\n',
   );
 }
 
