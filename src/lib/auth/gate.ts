@@ -50,12 +50,21 @@ export type GateDecision =
  * stranger has to be able to read the terms before agreeing to them. They are
  * also the two pages that must stay statically renderable, which is why nothing
  * above them may call `auth()`.
+ *
+ * `/api/events` is public because the events that matter most happen BEFORE
+ * there is a session: `terms.viewed`, `app.launched`, and a sign-in that
+ * failed. Roadmap §3 allows `events.user_id` to be null for exactly this. It is
+ * named exactly, not by widening a prefix, and it is the only writing endpoint
+ * in the app a stranger can reach -- W4's route carries its own caps and IP
+ * limit, it never reads a user id from the body, and it only ever writes names
+ * from the closed taxonomy, so it cannot be used as free storage.
  */
 export function isPublic(pathname: string): boolean {
   return (
     pathname === '/login' ||
     pathname === '/terms' ||
     pathname === '/privacy' ||
+    pathname === '/api/events' ||
     pathname.startsWith('/api/auth/')
   );
 }
