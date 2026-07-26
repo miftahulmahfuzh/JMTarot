@@ -19,15 +19,22 @@
  * "three fields" on the facts step, the single `onboarding.facts.title` key and
  * the single `POST /api/onboarding/facts` endpoint all agree on nine screens.
  * There are eleven screenshots only if you count the three facts separately.
+ *
+ * WHERE THE WRITES GO (L2). The facts step awaits its POST. The six do not:
+ * they fire and forget, and the close screen's submit re-sends everything
+ * authoritatively, which is idempotent on `(user_id, question_key)` and repairs
+ * anything that was lost. Nobody waits on a spinner between questions.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ONBOARDING_QUESTION_KEYS,
   nextUnansweredKey,
   type OnboardingQuestionKey,
+  type RawAnswer,
 } from '@/data/onboarding';
 import type { Profile } from '@/data/types';
-import { c } from './copy';
+import { c, q } from './copy';
+import { FactsStep, type Facts } from './FactsStep';
 import styles from './onboarding.module.css';
 
 /** Step 0 is the invitation, step 1 the facts, 2-7 the six, 8 the close. */
@@ -60,6 +67,11 @@ function firstQuestionNumber(step: number): number | null {
   return null;
 }
 
+function keyForStep(step: number): OnboardingQuestionKey | null {
+  if (step < STEP_FIRST_QUESTION || step >= STEP_DONE) return null;
+  return ONBOARDING_QUESTION_KEYS[step - STEP_FIRST_QUESTION];
+}
+
 export type OnboardingProps = {
   /** Null until the facts step has been submitted -- `full_name` is `not null`,
    *  so the row cannot exist half-made and there is nothing to restore. */
@@ -78,32 +90,119 @@ export function Onboarding({ profile, answeredKeys, initialStep }: OnboardingPro
    * no row, and the resume point is that key's screen -- so there is no cursor
    * to get out of sync with the rows it points at.
    *
-   * The facts step comes first if there is no profile at all. If there is one
-   * and all six are recorded, the close: the user got as far as the last answer
-   * and closed the tab before the final submit, and sending them back through
-   * six answered questions would be a punishment for it.
+   * Computed once, as the initial state, rather than in a `useMemo` that would
+   * re-run and fight the user's own navigation: `answeredKeys` is a prop from
+   * the server, and if it changed under an open stepper the last thing anyone
+   * wants is the step index jumping.
    *
-   * `useMemo` and not `useState`'s initialiser-with-side-effects: this is a pure
-   * computation over props, and the deck taught this project what happens when
-   * an impure one runs in an initialiser (two different decks, one on the server
-   * and one on the client, with nothing on screen looking wrong).
+   * If there is a profile and all six are recorded, this opens on the close: the
+   * user got as far as the last answer and shut the tab before the final submit,
+   * and marching them back through six answered questions would punish them for
+   * it.
    */
-  const resumeStep = useMemo(() => {
+  const [step, setStep] = useState(() => {
+    if (initialStep !== null) return initialStep;
     if (!profile) return STEP_INTRO;
     const next = nextUnansweredKey(answeredKeys);
     if (next === null) return STEP_DONE;
     return STEP_FIRST_QUESTION + ONBOARDING_QUESTION_KEYS.indexOf(next);
-  }, [profile, answeredKeys]);
+  });
 
-  const [step, setStep] = useState(initialStep ?? resumeStep);
+  /**
+   * The three facts, and the six answers, as this session knows them.
+   *
+   * The answers are held so the close screen can re-send everything
+   * authoritatively (L2). NOTE WHAT IS *NOT* HERE ON RESUME: answers written in
+   * a previous session are absent, because the server never sent their text
+   * back. That is correct rather than lossy -- the final submit upserts per key,
+   * so a key this session never touched keeps the row it already has.
+   */
+  const [facts, setFacts] = useState<Facts | null>(
+    profile
+      ? { fullName: profile.fullName, nickname: profile.nickname, birthDate: profile.birthDate }
+      : null,
+  );
+  const [answers, setAnswers] = useState<Partial<Record<OnboardingQuestionKey, RawAnswer>>>({});
 
   const questionNumber = firstQuestionNumber(step);
+  const headingId = 'onboarding-step-heading';
+
+  /*
+   * MOVE FOCUS TO THE STEP HEADING ON ADVANCE, and announce the step politely.
+   *
+   * Without this, a screen-reader user who taps "Lanjut" hears nothing: the
+   * heading changed but focus is still on a button that has just been replaced,
+   * so the reading order restarts from the top of the document on the next
+   * gesture. Nine times.
+   *
+   * THE EFFECT DEPENDS ON `step` AND NOTHING ELSE, which is CardDetail.tsx's
+   * discipline applied to the same hazard: anything read out of props or state
+   * here would re-fire the focus() on every keystroke in a textarea, and the
+   * caret would jump to the heading mid-sentence.
+   */
+  const headingRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    // Not on first paint. Stealing focus before the user has done anything is
+    // the behaviour that makes screen readers announce a page twice.
+    if (step === STEP_INTRO) return;
+    const el = document.getElementById(headingId);
+    headingRef.current = el;
+    el?.focus();
+  }, [step]);
+
+  function advance() {
+    setStep((s) => Math.min(STEP_DONE, s + 1));
+  }
+
+  /** The facts step's awaited write. Throws on failure so the step can say so. */
+  async function submitFacts(next: Facts) {
+    const response = await fetch('/api/onboarding/facts', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(next),
+    });
+    if (!response.ok) throw new Error(`facts ${response.status}`);
+    setFacts(next);
+    advance();
+  }
+
+  /**
+   * One of the six. Advances IMMEDIATELY and writes in the background (L2).
+   *
+   * The write is not awaited and its failure is not surfaced: it is a resume
+   * marker, the close screen re-sends everything, and a "couldn't save" banner
+   * between two questions would be alarming about something already handled.
+   * The `.catch` is required all the same -- an unhandled rejection in a
+   * fire-and-forget fetch is a console error on every skipped question.
+   */
+  function submitAnswer(key: OnboardingQuestionKey, raw: RawAnswer) {
+    setAnswers((prev) => ({ ...prev, [key]: raw }));
+    void fetch('/api/onboarding/answer', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ key, ...raw }),
+    }).catch(() => {
+      // Deliberately silent. See above.
+    });
+    advance();
+  }
 
   return (
     <main className={styles.shell}>
       <div className={styles.card}>
+        {/*
+          The polite live region. Separate from the heading because the heading
+          is what receives focus, and a node that is both the focus target and an
+          aria-live region gets announced twice by VoiceOver.
+        */}
+        <p className={styles.srOnly} role="status" aria-live="polite">
+          {questionNumber === null
+            ? ''
+            : c('onboarding.progress', { n: questionNumber, total: TOTAL_QUESTIONS })}
+        </p>
+
         {step === STEP_INTRO ? (
-          <Invitation onStart={() => setStep(STEP_FACTS)} />
+          <Invitation onStart={advance} />
         ) : (
           <>
             <button
@@ -116,30 +215,75 @@ export function Onboarding({ profile, answeredKeys, initialStep }: OnboardingPro
             </button>
 
             {questionNumber === null ? null : (
-              <p className={styles.progress}>
+              <p className={styles.progress} aria-hidden="true">
                 {c('onboarding.progress', { n: questionNumber, total: TOTAL_QUESTIONS })}
               </p>
             )}
 
-            {/*
-              Steps 1-7 land here in Tasks 4 and 5: FactsStep, then TextStep /
-              ScaleStep / ColorStep for the six. The step model, the resume
-              point and the close are what Task 3 needed in order to verify the
-              gate and the derived resume, and they are what is here.
-            */}
-            {step === STEP_DONE ? (
-              <Close />
-            ) : (
-              <p className={styles.hint}>
-                {/* Placeholder, replaced in Tasks 4-5. Never shipped: Task 11's
-                    verification pass walks every screen. */}
-                step {step}
-              </p>
-            )}
+            <StepBody
+              step={step}
+              profile={profile}
+              facts={facts}
+              answers={answers}
+              headingId={headingId}
+              onSubmitFacts={submitFacts}
+              onSubmitAnswer={submitAnswer}
+            />
           </>
         )}
       </div>
     </main>
+  );
+}
+
+function StepBody({
+  step,
+  profile,
+  facts,
+  answers,
+  headingId,
+  onSubmitFacts,
+  onSubmitAnswer,
+}: {
+  step: number;
+  profile: Profile | null;
+  facts: Facts | null;
+  answers: Partial<Record<OnboardingQuestionKey, RawAnswer>>;
+  headingId: string;
+  onSubmitFacts: (facts: Facts) => Promise<void>;
+  onSubmitAnswer: (key: OnboardingQuestionKey, raw: RawAnswer) => void;
+}) {
+  if (step === STEP_FACTS) {
+    return <FactsStep profile={profile} headingId={headingId} onSubmit={onSubmitFacts} />;
+  }
+
+  if (step === STEP_DONE) {
+    return <Close facts={facts} answers={answers} headingId={headingId} />;
+  }
+
+  const key = keyForStep(step);
+  if (!key) return null;
+
+  /*
+   * TextStep / ScaleStep / ColorStep land here in Task 5. `onSubmitAnswer` is
+   * already the shape they need, so Task 5 adds three components and no
+   * plumbing.
+   */
+  return (
+    <div className={styles.step}>
+      <h1 className={styles.title} id={headingId} tabIndex={-1}>
+        {q(key, 'title')}
+      </h1>
+      <p className={styles.framing}>{q(key, 'framing')}</p>
+      <p className={styles.hint}>{q(key, 'hint')}</p>
+      <button
+        type="button"
+        className={styles.cta}
+        onClick={() => onSubmitAnswer(key, { skipped: true })}
+      >
+        {c('onboarding.actions.skip')}
+      </button>
+    </div>
   );
 }
 
@@ -168,7 +312,7 @@ function Invitation({ onStart }: { onStart: () => void }) {
 }
 
 /**
- * Step 8.
+ * Step 8. The authoritative submit lands here in Task 6.
  *
  * NO "your avatar is being woven", NO progress indicator, and no link to
  * anything but the reader picker. The distillation runs in `after()` and may not
@@ -176,13 +320,24 @@ function Invitation({ onStart }: { onStart: () => void }) {
  * false, a spinner would be a wait we just decided not to impose, and "still
  * working" would draw attention to plumbing. "Sudah cukup" is true whenever it
  * is read.
- *
- * The submit that sets `completed_at` is wired in Task 6.
  */
-function Close() {
+function Close({
+  facts,
+  answers,
+  headingId,
+}: {
+  facts: Facts | null;
+  answers: Partial<Record<OnboardingQuestionKey, RawAnswer>>;
+  headingId: string;
+}) {
+  void facts;
+  void answers;
+
   return (
     <div className={styles.step}>
-      <h1 className={styles.titleLarge}>{c('onboarding.done.title')}</h1>
+      <h1 className={styles.titleLarge} id={headingId} tabIndex={-1}>
+        {c('onboarding.done.title')}
+      </h1>
       <p className={styles.body}>{c('onboarding.done.body')}</p>
       <a className={styles.cta} href="/">
         {c('onboarding.done.cta')}

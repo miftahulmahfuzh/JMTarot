@@ -46,6 +46,8 @@
  * A flat record rather than a nested object, because the keys are dotted paths
  * in W6's catalog and nesting them here would mean un-nesting them there.
  */
+import type { OnboardingQuestionKey } from '@/data/onboarding';
+
 export const ONBOARDING_COPY_ID = {
   // --- The name -----------------------------------------------------------
   'onboarding.lotusName': 'Teratai Batin',
@@ -218,4 +220,17 @@ export function c(
   return raw.replace(/\{(\w+)\}/g, (whole, name: string) =>
     name in vars ? String(vars[name]) : whole,
   );
+}
+
+/**
+ * The three parts of one of the six questions, by key.
+ *
+ * A typed helper rather than an interpolated `c()` call at each site: the
+ * template literal type proves `onboarding.q.<key>.<part>` is a real key, so
+ * adding a seventh question without its copy is a compile error instead of
+ * `undefined` rendered into the page. The alternative at the call sites was a
+ * cast, and a cast here would defeat the whole point of the key set being typed.
+ */
+export function q(key: OnboardingQuestionKey, part: 'title' | 'framing' | 'hint'): string {
+  return c(`onboarding.q.${key}.${part}`);
 }

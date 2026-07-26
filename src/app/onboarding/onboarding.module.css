@@ -89,6 +89,26 @@
   margin: 0;
 }
 
+/*
+ * NO FOCUS RING ON THE STEP HEADING, and this is a deliberate exception rather
+ * than a stripped outline.
+ *
+ * The heading takes `tabIndex={-1}` and receives `focus()` on every advance, so
+ * a screen reader announces the new step instead of restarting from the top of
+ * the document. `tabIndex={-1}` also means it is NOT reachable by Tab, so no
+ * keyboard user can ever land here and none of them loses an indicator --
+ * WCAG 2.4.7 is about keyboard-operable controls, and this is not one.
+ *
+ * What the default ring cost: Chrome drew a rounded box around the heading, and
+ * on the facts step that put a box around "Siapa kamu" sitting directly above
+ * three real text inputs. It read as a fourth, mysteriously-filled field. Caught
+ * in a 390px screenshot, invisible to every test in this project.
+ */
+.title:focus,
+.titleLarge:focus {
+  outline: none;
+}
+
 /* Reserved for step 0, which is the one screen that gets the full display size. */
 .titleLarge {
   font-family: var(--font-display), serif;
@@ -145,6 +165,75 @@
   line-height: 1.55;
   color: var(--muted);
   margin: 0;
+}
+
+/* --- Fields -------------------------------------------------------------- */
+
+/* One labelled field: label, input, hint. The hint sits UNDER the input so it
+   does not push the field down the screen away from the keyboard. */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-slot-label);
+  text-transform: uppercase;
+  color: var(--label);
+}
+
+/*
+ * Recovered from `cafaf28`'s login.module.css, which W2 deleted along with the
+ * password fields. The 16px+ rule is the load-bearing half and applies to the
+ * textarea below just as much.
+ */
+.input {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 17px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-chip);
+  /* 16px+ font and 14px padding: under 16px iOS Safari ZOOMS THE PAGE on focus,
+     and the zoom does not undo itself when the field blurs. `maximumScale: 1`
+     would also stop it and is deliberately absent from layout.tsx, because it
+     blocks pinch-zoom and fails WCAG 1.4.4. The font size is the real fix. */
+  padding: 14px 12px;
+  width: 100%;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--gold-border);
+  background: var(--gold-wash);
+}
+
+/*
+ * The date input needs help that the text inputs do not.
+ *
+ * WebKit renders `input[type=date]` with its own internal padding and, left
+ * alone, ignores the `color` it inherits -- the placeholder text comes out near
+ * black on a near black canvas and reads as an empty field with a mysterious
+ * height. `color-scheme: dark` is what makes the native picker and its text
+ * follow the page instead of the platform default.
+ */
+.input[type='date'] {
+  color-scheme: dark;
+  /* iOS lays the date text out against the left edge of its own shadow DOM,
+     which sits inside our padding; without this the value looks indented. */
+  -webkit-appearance: none;
+  appearance: none;
+  min-height: 51px;
+}
+
+.fieldHint {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--faint);
 }
 
 /* --- Controls ------------------------------------------------------------ */
