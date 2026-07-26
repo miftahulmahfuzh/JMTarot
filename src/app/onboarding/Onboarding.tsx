@@ -349,7 +349,7 @@ function Invitation({ onStart }: { onStart: () => void }) {
 }
 
 /**
- * Step 8. The authoritative submit lands here in Task 6.
+ * Step 8, and the authoritative submit.
  *
  * NO "your avatar is being woven", NO progress indicator, and no link to
  * anything but the reader picker. The distillation runs in `after()` and may not
@@ -357,6 +357,12 @@ function Invitation({ onStart }: { onStart: () => void }) {
  * false, a spinner would be a wait we just decided not to impose, and "still
  * working" would draw attention to plumbing. "Sudah cukup" is true whenever it
  * is read.
+ *
+ * THE BUTTON IS A BUTTON, NOT A LINK, and that is the one thing this screen is
+ * doing that the copy does not show. `POST /api/onboarding/complete` has to
+ * finish before the navigation, because it is what sets `completed_at` AND
+ * re-mints the cookie -- follow an `<a href="/">` first and middleware reads the
+ * old `onb: false` and bounces the user back into the questionnaire.
  */
 function Close({
   facts,
@@ -367,8 +373,48 @@ function Close({
   answers: Partial<Record<OnboardingQuestionKey, RawAnswer>>;
   headingId: string;
 }) {
-  void facts;
-  void answers;
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function finish() {
+    if (saving) return;
+    setSaving(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/onboarding/complete', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          // Omitted when the facts came from a previous session; the row is
+          // already there and the server does not need it re-sent.
+          ...(facts ? { facts } : {}),
+          /*
+           * Everything THIS SESSION answered, re-sent authoritatively (L2). Each
+           * upsert is idempotent on `(user_id, question_key)`, so this repairs any
+           * of the six optimistic writes that were lost, and costs nothing when
+           * none were. Keys answered in a previous session are absent and keep the
+           * rows they already have -- the server confirms the full set itself.
+           */
+          answers: Object.entries(answers).map(([key, raw]) => ({ key, ...raw })),
+        }),
+      });
+
+      if (!response.ok) throw new Error(`complete ${response.status}`);
+
+      /*
+       * A FULL NAVIGATION, not `router.push`. The completion response carries a
+       * `Set-Cookie` with the re-minted session, and a client-side navigation
+       * would ask the Next router for `/` using the RSC cache and the router's own
+       * fetch -- which the fresh cookie may not have reached yet. A document
+       * navigation cannot race it.
+       */
+      window.location.assign('/');
+    } catch {
+      setSaving(false);
+      setError(c('onboarding.error.saveFailed'));
+    }
+  }
 
   return (
     <div className={styles.step}>
@@ -376,9 +422,16 @@ function Close({
         {c('onboarding.done.title')}
       </h1>
       <p className={styles.body}>{c('onboarding.done.body')}</p>
-      <a className={styles.cta} href="/">
+
+      {error ? (
+        <p className={styles.error} role="alert">
+          {error}
+        </p>
+      ) : null}
+
+      <button type="button" className={styles.cta} onClick={finish} disabled={saving}>
         {c('onboarding.done.cta')}
-      </a>
+      </button>
     </div>
   );
 }

@@ -105,6 +105,28 @@ export async function getOnboardingState(
 }
 
 /**
+ * WHICH questions have a row. Decrypts nothing, reads no text.
+ *
+ * The completion check (Task 6) and the resume read both want exactly this, and
+ * it has to be callable inside the completion transaction -- `getOnboardingState`
+ * would drag the profile along and is shaped for a page render.
+ *
+ * It reading no text is not an optimisation, it is the guarantee: this is the
+ * function on the path that answers "is the set complete", and it must never be
+ * the reason a plaintext answer exists in memory.
+ */
+export async function getAnsweredKeys(
+  db: DbOrTx,
+  userId: string,
+): Promise<OnboardingQuestionKey[]> {
+  const rows = await db
+    .select({ questionKey: onboardingAnswers.questionKey })
+    .from(onboardingAnswers)
+    .where(eq(onboardingAnswers.userId, userId));
+  return rows.map((r) => r.questionKey);
+}
+
+/**
  * Every answer, DECRYPTED. Server-side only, and only ever on the way to the
  * distiller.
  *
