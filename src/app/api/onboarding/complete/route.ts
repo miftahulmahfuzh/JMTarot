@@ -18,8 +18,9 @@
  * The distillation is step 5 and runs in `after()`, wired in Task 8. The user
  * never waits for a model call.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { z } from 'zod';
+import { generateLotus } from '@/lib/prompt/lotus.generate';
 import {
   ONBOARDING_MAX_ANSWER_CHARS,
   ONBOARDING_QUESTION_KEYS,
@@ -167,10 +168,26 @@ export async function POST(request: Request) {
   }
 
   /*
-   * TODO(W3 Task 8): after(() => generateLotus(userId)).
-   * Deliberately absent rather than stubbed -- `after()` wrapping a function that
-   * does not exist yet would look wired and do nothing.
+   * THE DISTILLATION RUNS AFTER THE RESPONSE IS FLUSHED (D9/§6, L7).
+   *
+   * `after()` runs its callback once the response has gone, inside the same
+   * serverless invocation -- the Vercel equivalent of the goroutine there is no
+   * way to spawn. The user taps "Pilih pembacamu" and lands on the reader picker
+   * in the time one round trip takes, not in the time a model call takes.
+   *
+   * The alternative is a spinner at the end of a nine-step form, which is exactly
+   * where abandonment costs the most because the data is already collected.
+   *
+   * `generateLotus` never throws, so there is nothing to catch. If it fails
+   * anyway, the next reading's repair picks it up (L15) -- absence of the row is
+   * the "needs generation" signal, which is why there is no status column.
+   *
+   * WHAT THE USER SEES IF THEY BEAT IT: nothing. No shimmer, no "preparing your
+   * reading". `getLotusBlock` returns null and the reading is built without the
+   * block -- exactly the reading a fully-skipped user gets, which is a perfectly
+   * good reading. Their SECOND reading has it.
    */
+  after(() => generateLotus(gate.user.id));
 
   return NextResponse.json({ ok: true, sessionRefreshed });
 }
