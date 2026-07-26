@@ -51,7 +51,13 @@ function arg(name: string): string | undefined {
   return i >= 0 ? process.argv[i + 1] : undefined;
 }
 
-async function run(label: string, system: string, user: string, maxTokens: number) {
+async function run(
+  label: string,
+  system: string,
+  user: string,
+  maxTokens: number,
+  promptVersion = 'smoke',
+) {
   const provider = getProvider();
   process.stdout.write(`\n${'='.repeat(70)}\n${label}\n${'='.repeat(70)}\n`);
 
@@ -60,16 +66,33 @@ async function run(label: string, system: string, user: string, maxTokens: numbe
   let firstChunkAt = 0;
   let text = '';
 
-  for await (const chunk of provider.streamReading({ system, user, maxTokens })) {
+  /*
+   * STILL A PLAIN `for await`, unchanged by W4's interface change, which is the
+   * whole justification for the intersection type: `usage` is an added property
+   * and not a new shape, so every existing consumer keeps compiling.
+   */
+  const stream = provider.streamReading({ system, user, maxTokens, promptVersion });
+  for await (const chunk of stream) {
     if (chunks === 0) firstChunkAt = Date.now() - started;
     chunks += 1;
     text += chunk;
     process.stdout.write(chunk);
   }
 
+  /*
+   * EXPECT NULLS ON z.ai. It reports `input_tokens: 0`, which the adapter
+   * stores as null rather than 0 so no average is silently wrong. Printed here
+   * so the fact is documented by the tool rather than left as folklore -- if
+   * these ever come back as numbers, the provider changed and
+   * readings.token_input becomes worth querying.
+   */
+  const usage = await stream.usage;
+
   process.stdout.write(
     `\n\n[${chunks} chunks, first after ${firstChunkAt}ms, ` +
-      `${Date.now() - started}ms total, ${text.length} chars]\n`,
+      `${Date.now() - started}ms total, ${text.length} chars, ` +
+      `tokens in=${usage.inputTokens ?? 'null'} out=${usage.outputTokens ?? 'null'}, ` +
+      `prompt=${promptVersion}]\n`,
   );
   return text;
 }
@@ -165,7 +188,13 @@ async function main() {
       question: arg('question'),
       context: lotus ? { lotus: LOTUS_BLOCK_FIXTURE } : undefined,
     });
-    const text = await run(`${r} / ${s}`, prompt.system, prompt.user, prompt.maxTokens);
+    const text = await run(
+      `${r} / ${s}`,
+      prompt.system,
+      prompt.user,
+      prompt.maxTokens,
+      prompt.promptVersion,
+    );
     if (s === 'spread3') spreads.set(r, text);
 
     const framing = READERS.find((x) => x.id === r)?.positionFraming ?? [];

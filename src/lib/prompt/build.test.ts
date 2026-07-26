@@ -244,3 +244,71 @@ describe('the base contract', () => {
     expect(system).toContain('paling banyak sekali');
   });
 });
+
+describe('promptVersion', () => {
+  const version = (args: Parameters<typeof buildPrompt>[0]) => buildPrompt(args).promptVersion;
+
+  it('is `<locale>-v1.<sha8>` (reconciliation R5)', () => {
+    expect(version({ reader: 'adrian', service: 'spread3', picks: draw })).toMatch(
+      /^id-v1\.[0-9a-f]{8}$/,
+    );
+  });
+
+  it('is stable across two identical builds', () => {
+    // A hash requires no discipline; a hand-bumped constant does. That only
+    // holds if the same prompt really does produce the same string.
+    const a = version({ reader: 'adrian', service: 'spread3', picks: draw });
+    const b = version({ reader: 'adrian', service: 'spread3', picks: draw });
+    expect(a).toBe(b);
+  });
+
+  it('differs by reader and by service', () => {
+    const readers = ['thessaly', 'margaret', 'adrian'].map((r) =>
+      version({ reader: r, service: 'spread3', picks: draw }),
+    );
+    expect(new Set(readers).size).toBe(3);
+
+    const services = [
+      version({ reader: 'adrian', service: 'spread3', picks: draw }),
+      version({ reader: 'adrian', service: 'daily', picks: [draw[0]] }),
+      version({ reader: 'adrian', service: 'yesno', picks: [draw[0]] }),
+    ];
+    expect(new Set(services).size).toBe(3);
+  });
+
+  it('is UNCHANGED by the question, the picks, or the Lotus block', () => {
+    /*
+     * The property the column exists for. Hashing the per-user or per-request
+     * layers would turn a version into a nonce: `group by prompt_version` would
+     * return one row per reading and the column would answer nothing at all.
+     */
+    const base = version({ reader: 'margaret', service: 'spread3', picks: draw });
+
+    expect(version({ reader: 'margaret', service: 'spread3', picks: draw, question: 'apakah dia serius' })).toBe(base);
+    expect(
+      version({
+        reader: 'margaret',
+        service: 'spread3',
+        picks: [draw[2], draw[0], draw[1]],
+      }),
+    ).toBe(base);
+    expect(
+      version({
+        reader: 'margaret',
+        service: 'spread3',
+        picks: draw,
+        context: { lotus: { nickname: 'Mift', summary: 'Seseorang yang menimbang lama.' } },
+      }),
+    ).toBe(base);
+  });
+
+  it('carries the locale prefix, because a reading cannot be read without it', () => {
+    const id = version({ reader: 'adrian', service: 'daily', picks: [draw[0]], locale: 'id' });
+    const en = version({ reader: 'adrian', service: 'daily', picks: [draw[0]], locale: 'en' });
+    expect(id.startsWith('id-')).toBe(true);
+    expect(en.startsWith('en-')).toBe(true);
+    // The locale is IN the hash as well as in front of it, so W6's English fork
+    // cannot collide with the Indonesian one on a shared static layer.
+    expect(id.slice(3)).not.toBe(en.slice(3));
+  });
+});
