@@ -99,14 +99,34 @@ cosmetic:
 | Environment | Value |
 |---|---|
 | Local | `http://localhost:3001` — 3000 is permanently taken, see CLAUDE.md |
-| Preview | the **stable branch alias**, `https://jmtarot-git-<branch>-<scope>.vercel.app` |
-| Production | `https://www.jmtarot.com` |
+| Preview | the **stable branch alias**, `https://jm-tarot-git-<branch>-<scope>.vercel.app` |
+| Production | `https://www.jmtarot.site` — the **`www` host**, never the apex |
+
+**Production is the `www` host and this is not a detail.** The apex
+308-redirects to it, so setting `AUTH_URL` to `https://jmtarot.site` produces a
+sign-in that looks like it should work: the browser lands on `www` after the
+redirect, but the `redirect_uri` Auth.js already sent Google was the apex, and
+Google refuses it. See §7.2 of the reconciliation.
 
 **Read the preview alias out of the Vercel dashboard rather than constructing
 it.** Branch names containing slashes, or over the length limit, get mangled,
 and a constructed guess fails as Google's `redirect_uri_mismatch` — an error page
 that does not tell you which URI it wanted. (It is in the `redirect_uri` query
 parameter of the URL you were sent to; read it and paste that exact string.)
+Worked example, and note that *nothing* about it is guessable — the Vercel
+project is `jm-tarot` and the scope is `jmt-arot`:
+
+```
+branch  chore/production-db
+alias   https://jm-tarot-git-chore-production-db-jmt-arot.vercel.app
+```
+
+**A Preview `AUTH_URL` left at the production value is the most likely way to
+see `redirect_uri_mismatch`**, because everything else looks configured. Read
+the `redirect_uri=` parameter in Google's error page: it names the host the app
+actually asked for, which is the one variable that is wrong. And remember that
+environment variables are bound to a build — **changing one in the dashboard
+does nothing until you redeploy.**
 
 Every one of those hosts, plus `http://localhost:3001`, needs its own
 `…/api/auth/callback/google` entry in the Google console's Authorized redirect
@@ -115,10 +135,19 @@ do Google login — that is acceptable, since it can still be screenshotted and
 hardware testing happens on a named branch.
 
 `*.vercel.app` **cannot** be a Google Authorized domain: it is a public suffix,
-so Search Console will not let anyone verify it. That is why the consent screen
-stays in **Testing** mode — where only the ≤100 manually-added test accounts can
-sign in — until `www.jmtarot.com` is bought and pointed at Vercel. "Public
-release" and "buy the domain" are the same task.
+so Search Console will not let anyone verify it. It is fine as a *redirect URI*,
+which is why preview sign-in works at all — a preview alias is one label below
+the public suffix and so is itself a top private domain. The two fields have
+different rules and it is worth not conflating them.
+
+**`jmtarot.site` was bought on 2026-07-27 and solves the Authorized domain
+problem** (this paragraph used to say the release was waiting on
+`www.jmtarot.com`, which was never purchased). The consent screen nonetheless
+stays in **Testing** — ≤100 manually-added test accounts — until Google's
+branding requirements are met: an app homepage that is **not** a login page,
+plus a privacy policy and terms. Signed out, `/` redirects to `/login`, so there
+is currently nothing else to show a reviewer; `/privacy` and `/terms` are W7's
+and still 404.
 
 Generate the secret locally:
 

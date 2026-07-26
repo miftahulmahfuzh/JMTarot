@@ -475,7 +475,7 @@ reading why they went.)*
 | `FIELD_ENCRYPTION_KEY` | — **required** | W1 | base64url, so no `$`, `+`, `/` or `=`. Three consumers — see R15 |
 | `AUTH_SECRET` | — **required** | W2 | Must be set in Preview too; missing it looks like "signed in, then bounced forever" with a 200 in the log |
 | ~~`AUTH_SECRET_1..3`~~ | — | — | **Cut (§7.9a).** Rotation machinery for a rotation nobody has scheduled. The mechanism is `@auth/core`'s; re-add in the hour it is needed |
-| `AUTH_URL` | `http://localhost:3001` | W2 | **:3001 local, see R12. Production `https://www.jmtarot.com` (§7.2).** Preview uses the stable branch alias, not the per-deploy URL |
+| `AUTH_URL` | `http://localhost:3001` | W2 | **:3001 local, see R12. Production `https://www.jmtarot.site` (§7.2, amended 2026-07-27).** Preview uses the stable branch alias, not the per-deploy URL |
 | `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` | — **required** | W2 | Referenced statically in `config.ts` so Next can inline them into the edge bundle |
 | ~~`AUTH_REDIRECT_PROXY_URL`~~ | — | — | **Cut (§7.9a).** Its own note said "do not set before there is a production domain", and there is not one yet |
 | `SESSION_TTL_HOURS` | `24` | W2 | Idle timeout, sliding. Read at module scope, so a dashboard change needs a redeploy |
@@ -560,23 +560,36 @@ exactly like a hotline entry, and W7's 180/365-day staleness test covers it.
 Terms of use change, and a privacy policy quoting a clause that was silently
 revised is worse than one that never quoted it.
 
-### 7.2 Domain: `www.jmtarot.com`, purchased later
+### 7.2 Domain: `www.jmtarot.site`, bought 2026-07-27
 
-**Answer: `www.jmtarot.com`. Not bought yet.**
+**Answer: `www.jmtarot.site`. Bought and live.**
+
+**AMENDED 2026-07-27. This section said `www.jmtarot.com`, "not bought yet",
+throughout.** The `.com` was never purchased. `jmtarot.site` was registered at
+DomaiNesia for Rp 35.190/year, on the reasoning that the TLD is irrelevant to
+everything this section actually decides — what matters is that it is a **top
+private domain**, which `*.vercel.app` is not, and which is the whole reason the
+purchase sat on the critical path. Every rule below is unchanged apart from the
+string. The old name is recorded rather than erased because it appears in W2's
+plan and implementation review, and someone will otherwise read those and go
+looking for a domain that does not exist.
 
 Consequences, all of them exact-match sensitive:
 
-- **`www.jmtarot.com` is canonical.** The apex `jmtarot.com` 308-redirects to it.
+- **`www.jmtarot.site` is canonical.** The apex `jmtarot.site` 308-redirects to
+  it — verified on the wire, not assumed.
   Pick one and never serve both, because an OAuth redirect URI is a string
   comparison and a user who arrives at the apex will fail the callback.
-- **Google Authorized Domain** is the registrable domain, `jmtarot.com`, which
+- **Google Authorized Domain** is the registrable domain, `jmtarot.site`, which
   covers the `www` host. **The redirect URI is the canonical host only:**
-  `https://www.jmtarot.com/api/auth/callback/google`.
-- **Production `AUTH_URL=https://www.jmtarot.com`.**
-- Until the domain exists, the OAuth consent screen **stays in Testing mode**
-  and only manually-added test accounts can sign in (Google caps that list at
-  100). Everything else can be built and previewed against that constraint; the
-  release itself cannot happen.
+  `https://www.jmtarot.site/api/auth/callback/google`.
+- **Production `AUTH_URL=https://www.jmtarot.site`.**
+- **The domain is no longer what blocks publishing.** The consent screen still
+  stays in Testing — only manually-added test accounts can sign in, capped at
+  100 — but the remaining gates are now Google's branding requirements, not a
+  purchase: an **app homepage that is not a login page** (signed out, `/`
+  redirects to `/login`, so there is nothing else to show), a **privacy policy**
+  and **terms**, both of which W7 owns and both of which currently 404.
 - The company domain (`citrasukabuana.co.id`, §7.3) and the product domain are
   different on purpose. The T&C names the operator; the app is served from the
   product domain. No conflict, worth not being surprised by.

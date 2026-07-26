@@ -394,14 +394,25 @@ tested in WSL, in Windows Chrome, or on a simulator that does not exist here —
 only on a real iPhone against a Vercel preview. It is also the reason Bug 4's
 answer is "do not add two more cookies to the round trip".
 
-### Still blocked on a purchase
+### Was blocked on a purchase — RESOLVED 2026-07-27
 
 `*.vercel.app` cannot be a Google Authorized Domain: it is a public suffix, so it
-cannot be verified in Search Console, so it cannot be claimed. The consent screen
-therefore stays in **Testing**, only manually-added test accounts can sign in at
-all, and **"public release" and "buy www.jmtarot.com" are the same task.** This is
-a purchase and a DNS change sitting between "everything is built" and "a stranger
-can sign in".
+cannot be verified in Search Console, so it cannot be claimed. That much is
+permanent and is why a domain had to be bought at all.
+
+**This section said the blocker was "buy www.jmtarot.com". The `.com` was never
+purchased.** `jmtarot.site` was registered instead — the TLD is irrelevant to
+the constraint, which only requires a **top private domain** — and
+`https://www.jmtarot.site` is live on Vercel with the apex 308-redirecting to
+it. Reconciliation §7.2 carries the amendment.
+
+**What this changes: the purchase is no longer the gate, and it was never the
+only one.** The consent screen still stays in **Testing** with only
+manually-added test accounts, because Google's branding requirements also want
+an app homepage that is not merely a login page — signed out, `/` redirects to
+`/login`, so there is currently nothing else to show — plus a privacy policy and
+terms, which are W7's and which still 404. Those three, not a credit card, are
+now what sit between "everything is built" and "a stranger can sign in".
 
 ### Routes that 404 on purpose
 

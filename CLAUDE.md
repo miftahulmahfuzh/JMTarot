@@ -852,11 +852,21 @@ can never sign in", which breaks the product's whole delivery model. It cannot b
 tested in WSL, in Windows Chrome, or on a simulator that does not exist here — only
 on a real iPhone against a Vercel preview.
 
-Google sign-in itself is verified **locally only**, and the OAuth consent screen is
-in **Testing** mode, so only the manually-added test accounts can sign in at all.
-Publishing needs `www.jmtarot.com`: `*.vercel.app` cannot be a Google Authorized
-Domain (it is a public suffix and cannot be verified in Search Console), so "public
-release" and "buy the domain" are the same task.
+**The domain is `www.jmtarot.site`, bought 2026-07-27 and live.** Reconciliation
+§7.2 originally said `www.jmtarot.com`; that was never purchased, and the
+amendment is in §7.2 itself. The apex 308-redirects to the `www` host — serve
+one, never both, because an OAuth redirect URI is a string comparison and
+`AUTH_URL` pointed at the apex fails the callback after a redirect that looks
+successful. Production `AUTH_URL=https://www.jmtarot.site`; Google's Authorized
+Domain is the registrable `jmtarot.site`.
+
+The OAuth consent screen is still in **Testing** mode, so only the
+manually-added test accounts can sign in at all. **The purchase is no longer
+what blocks publishing** — `*.vercel.app` still cannot be an Authorized Domain
+(public suffix, unverifiable in Search Console), but that is solved. What
+remains is Google's branding requirements: an **app homepage that is not a login
+page** — signed out, `/` redirects to `/login`, so there is nothing else to
+show — plus `/privacy` and `/terms`, which are W7's and still 404.
 
 `docs/TESTING-MACOS.md` was an assume-nothing guide to running Expo on a Mac.
 It is deleted on this branch, because it would send Jodith chasing a toolchain

@@ -31,13 +31,16 @@
 > - Your open question 8 (`ratelimit.ts` unowned) is resolved: **W7 owns it.**
 > - **Your open questions 5 and 7 are ANSWERED** (reconciliation §7.2 and §7.8,
 >   settled 2026-07-26):
->   - **Domain: `www.jmtarot.com`**, canonical, with the apex 308-redirecting to
->     it. **Production `AUTH_URL=https://www.jmtarot.com`**; redirect URI
->     `https://www.jmtarot.com/api/auth/callback/google`; Google Authorized
->     Domain is the registrable `jmtarot.com`. Serve one host, never both — the
->     callback is a string comparison. **Not purchased yet**, so the consent
->     screen stays in Testing mode and only manually-added test accounts can sign
->     in. Build against that.
+>   - **Domain: `www.jmtarot.site`**, canonical, with the apex 308-redirecting to
+>     it. **Production `AUTH_URL=https://www.jmtarot.site`**; redirect URI
+>     `https://www.jmtarot.site/api/auth/callback/google`; Google Authorized
+>     Domain is the registrable `jmtarot.site`. Serve one host, never both — the
+>     callback is a string comparison. The consent screen stays in Testing mode
+>     and only manually-added test accounts can sign in. Build against that.
+>
+>     **CORRECTED 2026-07-27: this said `.com` and "not purchased yet".** The
+>     `.com` was never bought; `jmtarot.site` was, and is live. Reconciliation
+>     §7.2 carries the amendment and the reasoning. Only the string changed.
 >   - **Erasure: a 30-day grace period, then a hard purge.** Replace your
 >     outright refusal. Sign-in against a soft-deleted row **within** 30 days
 >     clears `deleted_at` and restores the account; **past** 30 days it
@@ -409,6 +412,10 @@ what the Auth.js docs call *APIs & Services → OAuth consent screen* is now
   `vercel.app` — it is a public suffix that Google will not let you claim in
   Search Console — so there is no way to list it. This is the reason the
   Testing/Production split in §4.5 exists rather than being an afterthought.
+  **(2026-07-27: `jmtarot.site` now exists and is listable once verified in
+  Search Console by DNS TXT. Publishing still needs the branding requirements
+  §4.5 names — a homepage that is not a login page, plus `/privacy` and
+  `/terms`.)**
 
 **Audience:** *External*. (*Internal* requires a Google Workspace and restricts
 sign-in to that workspace's domain.) While the publishing status is **Testing**,
