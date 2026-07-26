@@ -75,7 +75,7 @@ instead if a plan hits a wall against one.
 | D2 | Password login | **Removed once Google works**, kept behind `DEV_PASSWORD_LOGIN=1` for local development only | Local dev and Vitest should not need a Google round-trip. *(amended, R10: it becomes a **Credentials provider** producing a real Auth.js session, not a flag-gated route minting a second cookie format. The route is deleted outright rather than 404-ing, `users.ts` survives, and the flag additionally requires `NODE_ENV !== 'production'`.)* |
 | D3 | Session TTL | **`SESSION_TTL_HOURS`, default 24** | Miftah's call. The current 30-day constant was sized for two people typing a password once; a public app is a different threat model. *(amended, R11: `session.updateAge` is **ignored** on the JWT path — JWT sessions always slide — so this is an idle timeout, not a cap. `SESSION_ABSOLUTE_TTL_DAYS`, default 30, is the hard ceiling that bounds a stolen cookie.)* |
 | D4 | Database | **Postgres via Drizzle ORM** | Typed schema, SQL-shaped queries, generated migrations, no query engine binary and so no cold-start tax on Vercel. Local `psql` now; the cloud host is a later session's problem and Drizzle makes it a driver swap. |
-| D5 | Hosting the DB in prod | **Deferred, explicitly** | Local development only for now. Every plan must keep the driver behind `src/lib/db/client.ts` so the swap is one file. |
+| D5 | Hosting the DB in prod | **RESOLVED 2026-07-27: Neon, free tier, Singapore, Postgres 16.** Was "deferred, explicitly" | The deferral held: the driver stayed behind `src/lib/db/client.ts` and the swap was that one file. See **D5 resolved** below for the endpoint rules and the exit plan. |
 | D6 | i18n mechanism | **Typed static catalogs in-repo**, locale from profile + cookie, **not** a URL segment | Copy is reviewable in a diff and versioned with the code that uses it. No cache layer, no fallback chain, no DB round-trip to render a button. The app is behind auth, so there is no SEO argument for `/en/...`. |
 | D7 | i18n scope | **Interface *and* readings** | An English app that reads your cards in Indonesian is not an English app. This means an English fork of the entire prompt layer, including rewritten worked-example paragraphs for all three readers. |
 | D8 | Moderation | **Deterministic blocklist, then a concurrent classifier with a gated flush** | The blocklist rejects the obvious at zero cost. Otherwise the classifier runs *in parallel* with the reading call and the stream buffers until the verdict lands — the classifier normally returns before the reading's first token, so the added latency is near zero and no unsafe text can leak. *(amended, R8: the buffer sits **before the response headers**, not inside the stream. Same perceived latency, but it recovers a real `403 application/json` — and the refusal must be able to render "Terms & Conditions" as a link, which a `text/plain` stream cannot. Consequence: the reading route no longer always returns 200.)* |
@@ -83,6 +83,66 @@ instead if a plan hits a wall against one.
 | D10 | Onboarding answers in prompts | **Distilled once into a compact Lotus block, cached in the DB. Raw answers are never sent to the reading model.** | Bounded tokens, better voice, and it keeps the rawest text — question 3b especially — out of nine prompts a day. Regenerable by bumping a version column. |
 | D11 | Sensitive answers | **Encrypted at rest, application-level, skippable, and named in the privacy policy** | See §8. This is the highest-liability data in the product. |
 | D12 | Reading persistence | **Reversed from the rewrite plan: readings are now stored** | The old "reading history: not stored" line was correct when there was no database. Every memory feature in §5 of this file is a consequence of storing them. |
+
+### D5 resolved: Neon
+
+Project `jmtarot`, free plan, **AWS ap-southeast-1 (Singapore)**, **Postgres
+16.14**. The ten tables were migrated on 2026-07-27 with `npm run db:migrate`
+against the direct endpoint; nothing was seeded, and there is no `neon_auth`
+schema.
+
+**Why Neon over Supabase**, given both are free and the storage limits are
+equally irrelevant to ten tables of text: Supabase **pauses a free project after
+one week of inactivity** and needs a manual restore. JMTarot is a personal app
+that can easily go a week quiet. Neon scales to zero after five minutes and
+resumes on the next query.
+
+**Why Postgres 16 and not the 18 the console offers by default.** It matches
+`docker-compose.yml`, so development, the integration suite and production are
+one version. It also keeps the exit plan working: **`pg_dump` will not read a
+server newer than itself**, and the only `pg_dump` binary on this machine is the
+one inside the `postgres:16-alpine` container. Picking 18 would have meant
+upgrading the container before you could take a backup — an extra step at
+exactly the wrong moment. A 16 dump also restores into any host worth moving to.
+
+**Two endpoints, and the difference is load-bearing.**
+
+| Endpoint | Host | Used by |
+|---|---|---|
+| **Pooled** | contains `-pooler` | `DATABASE_URL` in Vercel. PgBouncer, **transaction mode** |
+| **Direct** | no `-pooler` | `npm run db:migrate`, `db:studio`, `pg_dump`, any local script |
+
+Transaction mode is why `client.ts` sets `prepare: false`, and it does so keyed
+off `VERCEL` rather than `NODE_ENV` — a Vercel *preview* is also
+`NODE_ENV=production` and also serverless, while a local `npm run build && npm
+start` is neither. Migrations take the direct endpoint because they run DDL and
+must not share a pooled connection.
+
+**Neon Auth is deliberately NOT enabled.** It is free (60K MAU) so this is not a
+cost decision. It provisions a `neon_auth` schema and asynchronously mirrors
+users into `neon_auth.users_sync`, which would give this app a **second identity
+source** alongside D1's Auth.js + `users.google_sub`. W2's Bug 1 was one email
+producing two rows; a sync-based second user table is that bug on a
+subscription. It is also the only genuinely un-portable thing Neon sells.
+
+**Staying portable, because a free tier is a promise and not a contract.** The
+whole database surface is `postgres` (postgres.js) + `drizzle-orm`. There is no
+`@neondatabase/serverless`, no `@vercel/postgres`, no Neon HTTP driver and no
+`neon()` call anywhere in `src/` — audited on the day this was chosen. Neon is a
+connection string. Three rules keep it that way: **no Neon Auth**, **never adopt
+the Neon serverless HTTP driver** (faster cold starts, hard dependency), and
+**never make Neon branching a CI dependency**. The exit is then:
+
+```sh
+docker compose exec db pg_dump --no-owner --no-privileges --format=custom "$OLD" -f /tmp/jmtarot.dump
+docker compose exec db pg_restore --no-owner --no-privileges -d "$NEW" /tmp/jmtarot.dump
+```
+
+…change `DATABASE_URL`, redeploy. The only code question is whether the new host
+fronts you with a transaction-mode pooler; if it does not, `prepare` can go back
+on. That is one line in one file, which is what the deferral was protecting.
+Realistic fallbacks are Supabase free (accepting the pause) or a $4–5/mo VPS
+running the committed `docker-compose.yml`.
 
 ### Deliberately still out of scope
 

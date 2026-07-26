@@ -22,7 +22,7 @@ there is no workflow file to write:
 
 ## 2. Environment variables
 
-Eight, all needed, for **Production** *and* **Preview**:
+Ten, all needed, for **Production** *and* **Preview**:
 
 ```
 LLM_PROVIDER               zai
@@ -33,7 +33,16 @@ AUTH_SECRET                <32+ random bytes, base64>
 AUTH_GOOGLE_ID             <client id>.apps.googleusercontent.com
 AUTH_GOOGLE_SECRET         <client secret>
 AUTH_URL                   per environment -- see below
+DATABASE_URL               Neon's POOLED string -- see §6
+FIELD_ENCRYPTION_KEY       <32 random bytes, base64url>
 ```
+
+**This list said eight until 2026-07-27, and omitting the last two was wrong
+from W2 onward, not from W3.** `src/lib/auth/auth.ts` imports `db` and the `jwt`
+callback calls `upsertUserOnSignIn`, so **Google sign-in itself reads the
+database** — a deployment without `DATABASE_URL` 500s on the first login, not on
+some later feature. W3 then added the onboarding writes, which is what needs
+`FIELD_ENCRYPTION_KEY`.
 
 `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET` come from a Google Cloud OAuth client.
 **`docs/plans/2026-07-26-google-auth.md` §4 is the assume-nothing walkthrough** —
@@ -54,7 +63,7 @@ SESSION_ABSOLUTE_TTL_DAYS  30    hard ceiling, never slides
 `LLM_PROVIDER` may also be `anthropic`; the same adapter serves both, and you
 drop `LLM_BASE_URL` for Anthropic proper.
 
-**Note that `DATABASE_URL` is not in that list.** See §6.
+**`DATABASE_URL` needs the right one of Neon's two endpoints.** See §6.
 
 ### Two that must be *removed*, not set
 
@@ -191,44 +200,101 @@ Expect these two, neither of which is a bug:
 - **Rotate a token the moment it is pasted anywhere shared** — a chat, an
   issue, a screenshot.
 
-## 6. The database is local-only, on purpose
+## 6. The production database: Neon
 
-There is a Postgres database now, and **there is no production one.**
-`PUBLIC_RELEASE_ROADMAP.md` D5 defers picking a host explicitly, so
-`DATABASE_URL` is deliberately absent from §2's list and must not be set in
-Vercel. Nothing deployed reads it yet.
+**This section used to say the database was local-only and that `DATABASE_URL`
+must not be set in Vercel. That is obsolete** — roadmap D5 was resolved on
+2026-07-27 — and it is rewritten rather than deleted because "nothing deployed
+reads it yet" was never quite true: `src/lib/auth/auth.ts` has imported `db`
+since W2, so sign-in itself needs a database.
 
-Two consequences worth stating rather than discovering:
+Neon, free plan, **AWS ap-southeast-1 (Singapore)**, **Postgres 16** to match
+`docker-compose.yml`. Roadmap §2's *D5 resolved* has the reasoning — including
+why not Supabase, why not Postgres 18, and why **Neon Auth must stay off**. What
+follows is the procedure.
 
-- **Do not point a deployment at the local database.** It binds to `127.0.0.1`
-  inside WSL and is unreachable from Vercel by design. A `DATABASE_URL` set in
-  the dashboard would be a connection that times out, not one that fails
-  loudly.
-- **`FIELD_ENCRYPTION_KEY` follows the database.** It has no purpose without
-  one, and setting it early is a secret in a dashboard protecting nothing.
+### Set it up from scratch
 
-**When a host is chosen**, the driver is named in exactly one file —
-`src/lib/db/client.ts` — and its comment block names the three settings that
-move and why guessing them now produces wrong values:
+1. [neon.com](https://neon.com) → **Create project**. Name it, pick Singapore,
+   pick **Postgres 16**, and **leave Neon Auth unchecked**.
+2. Copy both connection strings from the dashboard. There are two, and using the
+   wrong one is the whole failure mode of this section:
 
-1. `max` → 1, because each serverless invocation is its own isolate and a pool
-   of ten per isolate exhausts Postgres' 100-connection default in seconds.
-2. `prepare` → false **if and only if** the host puts a transaction-mode pooler
-   in front (Supabase's `:6543`, PgBouncer in transaction mode). A session-mode
-   pooler or Neon's HTTP driver needs no such thing, and the symptom of getting
-   it wrong is `prepared statement "s1" already exists` under load and never in
-   testing.
-3. `ssl` → `'require'` for every managed host.
+   | Endpoint | Host | Used by |
+   |---|---|---|
+   | **Pooled** | contains `-pooler` | `DATABASE_URL` in Vercel |
+   | **Direct** | no `-pooler` | migrations, `db:studio`, `pg_dump`, any script |
 
-Migrations are committed and applied with `npm run db:migrate`. Whatever host
-is chosen, that command is what runs against it — `drizzle-kit push` is banned,
-for the reasons in `src/lib/db/migrations/README.md`. **No migration in this
-project inserts a row**, so there is no seed data to worry about leaking into
-production; the two development users come from `npm run db:seed`, which
-refuses to run against anything but `127.0.0.1`.
+3. Apply the schema, with the **direct** string:
 
-This section deliberately does not contain a deployment procedure for a host
-nobody has picked.
+   ```sh
+   export PATH=~/tools/node-v24.18.0-linux-x64/bin:$PATH
+   DATABASE_URL='postgresql://…neon.tech/neondb?sslmode=require' npm run db:migrate
+   ```
+
+   Expect `migrations applied (10 tables in public)`. It is idempotent, and it
+   is what runs after every future migration — `drizzle-kit push` stays banned,
+   for the reasons in `src/lib/db/migrations/README.md`.
+
+   **A shell-set `DATABASE_URL` wins over `.env.local`**, because
+   `scripts/db-migrate.ts` calls dotenv's `config()`, which does not override an
+   existing value. That is what makes this line safe to run from a working tree
+   pointed at Docker.
+
+4. **Do not run `npm run db:seed`.** It refuses anything but `127.0.0.1`, so it
+   will stop you — but the point stands: the two dev users are meant not to
+   exist in production. **No migration in this project inserts a row**, so there
+   is no seed data that can leak into production by accident.
+5. Put the **pooled** string in Vercel as `DATABASE_URL`, and set
+   `FIELD_ENCRYPTION_KEY` alongside it (§2).
+6. Vercel → Project Settings → Functions → region **Singapore `sin1`**. The
+   default is Washington DC, which puts the Pacific between every query and its
+   database.
+
+### The three driver knobs, and why they are keyed off `VERCEL`
+
+`src/lib/db/client.ts` is still the only file that names the driver. All three
+of the settings its comment block predicted are now set, conditionally:
+
+1. `max` → **1** on Vercel, 10 locally. Each serverless invocation is its own
+   isolate, and a pool of ten per isolate exhausts Postgres' connection limit in
+   seconds. One long-lived local process wants the pool.
+2. `prepare` → **false** on Vercel, because Neon's pooled endpoint is PgBouncer
+   in **transaction mode**. A prepared statement does not survive its connection
+   being handed to another client mid-session, and the symptom is `prepared
+   statement "s1" already exists` under load and never in testing.
+3. `ssl` → **`'require'`** on Vercel.
+
+The condition is `process.env.VERCEL`, **not `NODE_ENV`**: a Vercel *preview*
+build is also `NODE_ENV=production` and also serverless, while a local `npm run
+build && npm start` is neither.
+
+The one case this gets wrong is running a **local** process against the
+**pooled** URL — `VERCEL` is unset, `prepare` stays on, and you get the
+`s1 already exists` error locally. Use the direct string locally, which is what
+migrations want anyway.
+
+### Backups, and getting off Neon
+
+Free-tier history retention is short. Turn on whatever backup/PITR window the
+plan allows; it is the difference between undoing a bad migration and not.
+
+The exit is a plain `pg_dump`, and it works because nothing here is
+Neon-specific — see roadmap §2 *D5 resolved* for the audit and the three rules
+that keep it that way. Note that **`pg_dump` cannot read a server newer than
+itself**, and the only `pg_dump` on this machine is inside the
+`postgres:16-alpine` container. That is why production is Postgres 16.
+
+```sh
+docker compose exec db pg_dump --no-owner --no-privileges --format=custom "$OLD" -f /tmp/jmtarot.dump
+docker compose exec db pg_restore --no-owner --no-privileges -d "$NEW" /tmp/jmtarot.dump
+```
+
+### Still true: do not point a deployment at the local database
+
+It binds to `127.0.0.1` inside WSL and is unreachable from Vercel by design. A
+`DATABASE_URL` set to it in the dashboard is a connection that times out, not
+one that fails loudly.
 
 ## Deploying from the terminal
 

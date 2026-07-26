@@ -67,8 +67,13 @@ npm run smoke -- --all --lotus   # the nine WITH a canned Lotus block, fixed han
 npm run smoke -- --all --fixed   # the nine without one, same hands, for the diff
 ```
 
-The database is local-only for now (roadmap D5) and lives in Docker. `db:up`
-must run before `npm run dev`; it is one command and it is idempotent.
+**Development** runs against Postgres in Docker. `db:up` must run before
+`npm run dev`; it is one command and it is idempotent. **Production is Neon**
+(free plan, Singapore, Postgres 16 — same major as the container on purpose);
+roadmap D5 was resolved on 2026-07-27 and `docs/DEPLOY-VERCEL.md` §6 is the
+procedure. The one thing to carry in your head: Neon gives you **two**
+connection strings, and the **pooled** one (`-pooler` in the host) is for Vercel
+only — migrations, `db:studio` and `pg_dump` take the direct one.
 
 ```sh
 npm run db:up        # docker compose; Postgres 16 on 127.0.0.1:5432
@@ -584,9 +589,11 @@ W1 of the public release is done, and W3 is its first consumer. What exists:
 ```
 src/lib/db/
   client.ts      the postgres.js client + Drizzle instance. `server-only`.
-                 THE ONLY PLACE THE DRIVER IS NAMED. Its comment block names
-                 the exact three knobs that move when a production host is
-                 chosen (roadmap D5) -- do not trim it.
+                 THE ONLY PLACE THE DRIVER IS NAMED. The three knobs its
+                 comment block predicted are now SET, for Neon (roadmap D5,
+                 resolved): max 1, prepare false, ssl require -- conditional on
+                 `VERCEL`, not on NODE_ENV, because a preview build is also
+                 NODE_ENV=production. Do not trim that comment.
   types.ts       Db / Tx / DbOrTx. Type-only, no runtime imports, so a query
                  module cannot acquire the singleton by accident.
   schema.ts      the ten tables. ONE OWNER: W1.
