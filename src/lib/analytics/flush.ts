@@ -60,6 +60,15 @@ const MAX_STRING_CHARS = 120;
 const KEY_RE = /^[a-z][a-z0-9_]{0,31}$/;
 
 /**
+ * `__proto__` already fails KEY_RE on its leading underscore. `constructor` and
+ * `prototype` do NOT -- they are ordinary lowercase words -- and assigning them
+ * onto the accumulator shadows real object properties. Named explicitly rather
+ * than folded into the pattern, because a future reader tightening the regex
+ * should not have to rediscover which three words matter.
+ */
+const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/**
  * Scalars only, short, and lower_snake keys.
  *
  * `events` rows SURVIVE ACCOUNT ERASURE with `user_id` nulled (reconciliation
@@ -80,10 +89,9 @@ export function sanitizeProps(raw: unknown): Record<string, EventPropValue> {
   let kept = 0;
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
     if (kept >= MAX_PROP_KEYS) break;
-    // Rejects `__proto__`, `constructor` and `camelCase` in one line: the
-    // pattern requires a lowercase letter first and allows nothing but
-    // [a-z0-9_] after it.
-    if (!KEY_RE.test(key)) continue;
+    // Rejects `__proto__` and `camelCase`: the pattern requires a lowercase
+    // letter first and allows nothing but [a-z0-9_] after it.
+    if (!KEY_RE.test(key) || FORBIDDEN_KEYS.has(key)) continue;
 
     if (typeof value === 'string') {
       out[key] = value.slice(0, MAX_STRING_CHARS);
