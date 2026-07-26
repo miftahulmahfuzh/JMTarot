@@ -1,0 +1,269 @@
+/**
+ * `onboarding_answers`, and the one read a resumed stepper needs.
+ *
+ * WRITTEN BY W3 INTO W1's DIRECTORY. W1 owns `src/lib/db/**` and shipped
+ * `profile.ts`, `history.ts`, `frequency.ts` and `summary.ts`; this module is
+ * named in W3's plan under *Interfaces I need from W1* and did not land with
+ * W1, so W3 supplies it against that specification rather than inventing one.
+ * No table and no column is redefined here -- see `../schema.ts`, which already
+ * carries W3's three folded deltas.
+ *
+ * It obeys the four rules in `profile.ts`'s header: the handle comes first, the
+ * types are imported type-only, there is no React and no Next, and it returns
+ * domain shapes.
+ *
+ * THIS MODULE IS THE ONLY PLACE `answer_text` IS ENCRYPTED OR DECRYPTED, AND
+ * THAT IS A DEVIATION FROM THE PLAN WORTH READING. W3's Task 6 Step 3 puts
+ * `encryptField()` in the route handler. Doing it here instead, symmetrically
+ * with the decrypt that `getAnswers` was always specified to do, buys three
+ * things:
+ *
+ *   1. `OnboardingAnswer.text` KEEPS ITS DOCUMENTED MEANING. That field says
+ *      "plaintext". Under the plan's split, `upsertAnswer` would receive
+ *      ciphertext in a field typed and documented as plaintext while
+ *      `getAnswers` returned real plaintext in the same field -- the same type
+ *      meaning two different things depending on direction, which is how a
+ *      later refactor writes plaintext into the column by accident.
+ *   2. THE AAD IS CONSTRUCTED ONCE. Reconciliation R2 made the AAD required
+ *      precisely so it cannot be forgotten; two call sites building it by hand
+ *      is the next-best way to get it wrong, and a mismatched AAD is
+ *      indistinguishable from data loss.
+ *   3. THE AUDIT IS ONE FILE. "Does anything write this column in plaintext?"
+ *      is answered by reading this file, not by auditing every handler that
+ *      ever touches an answer.
+ *
+ * The property Task 6 Step 5 verifies is unchanged and still verifiable the
+ * same way: the column holds `v1.…` ciphertext and a skip holds NULL.
+ */
+import { and, eq, inArray } from 'drizzle-orm';
+import type { Profile } from '@/data/types';
+import {
+  ONBOARDING_VERSION,
+  isFreeText,
+  type OnboardingAnswer,
+  type OnboardingQuestionKey,
+} from '@/data/onboarding';
+import { answerAad, decryptField, encryptField } from '../crypto';
+import { onboardingAnswers, profiles } from '../schema';
+import type { DbOrTx } from '../types';
+
+/**
+ * Everything `/onboarding` needs to render, in one place.
+ *
+ * TWO QUERIES AND DELIBERATELY NO DECRYPTION. `answeredKeys` is which questions
+ * have a row -- not what is in them -- because the server never sends answer
+ * text back to a browser. Decrypting `worst_thing` to pre-fill a textarea is
+ * not a thing this app does, and the resume case does not need it: a revisited
+ * step shows an empty field and says an answer is already saved.
+ *
+ * This is the one DB read on a render path in W3, and it is the exemption
+ * roadmap non-negotiable #1 allows: the page cannot exist without it. The
+ * `onb` claim in the session cookie is what keeps every OTHER route free of it.
+ */
+export async function getOnboardingState(
+  db: DbOrTx,
+  userId: string,
+): Promise<{ profile: Profile | null; answeredKeys: OnboardingQuestionKey[] }> {
+  const [profileRows, answerRows] = await Promise.all([
+    db
+      .select({
+        fullName: profiles.fullName,
+        nickname: profiles.nickname,
+        birthDate: profiles.birthDate,
+        onboardingVersion: profiles.onboardingVersion,
+        completedAt: profiles.completedAt,
+      })
+      .from(profiles)
+      .where(eq(profiles.userId, userId))
+      .limit(1),
+    db
+      .select({ questionKey: onboardingAnswers.questionKey })
+      .from(onboardingAnswers)
+      .where(eq(onboardingAnswers.userId, userId)),
+  ]);
+
+  const row = profileRows[0];
+
+  return {
+    /*
+     * `completedAt` crosses to a client component, so it becomes an ISO string
+     * here rather than at the boundary. A Date would not survive the
+     * serialization, and converting it in the page would put the same three
+     * lines in every future caller.
+     */
+    profile: row
+      ? {
+          fullName: row.fullName,
+          nickname: row.nickname,
+          birthDate: row.birthDate,
+          onboardingVersion: row.onboardingVersion,
+          completedAt: row.completedAt ? row.completedAt.toISOString() : null,
+        }
+      : null,
+    answeredKeys: answerRows.map((a) => a.questionKey),
+  };
+}
+
+/**
+ * Every answer, DECRYPTED. Server-side only, and only ever on the way to the
+ * distiller.
+ *
+ * AN UNDECRYPTABLE ANSWER READS AS A SKIP. That is `decryptField`'s documented
+ * asymmetry rather than a shrug: it returns null on a missing key, a rotated
+ * key, a wrong AAD or a tampered tag, and roadmap §8 already requires the app
+ * to work without any given free-text answer. The alternative is a distillation
+ * that throws for every user the moment a key changes. The failure is logged
+ * inside `decryptField`, so it is not silent -- just not fatal.
+ *
+ * Returns rows in the catalog's asking order, so the prompt the distiller sees
+ * has a stable shape regardless of what order the user answered in.
+ */
+export async function getAnswers(db: DbOrTx, userId: string): Promise<OnboardingAnswer[]> {
+  const rows = await db
+    .select({
+      questionKey: onboardingAnswers.questionKey,
+      answerText: onboardingAnswers.answerText,
+      answerChoice: onboardingAnswers.answerChoice,
+      skipped: onboardingAnswers.skipped,
+    })
+    .from(onboardingAnswers)
+    .where(eq(onboardingAnswers.userId, userId));
+
+  return rows.map((row) => {
+    const text =
+      row.answerText === null
+        ? null
+        : decryptField(row.answerText, answerAad(userId, row.questionKey));
+
+    return {
+      key: row.questionKey,
+      text,
+      choice: row.answerChoice,
+      // A row whose ciphertext will not open is reported as skipped, because
+      // that is what it now is: there is no answer to be had from it.
+      skipped: row.skipped || (row.answerText !== null && text === null),
+    };
+  });
+}
+
+/**
+ * Write one answer. Idempotent on `(user_id, question_key)`.
+ *
+ * A SKIP WRITES `answer_text = NULL`, NEVER AN ENCRYPTED EMPTY STRING. The
+ * second would be indistinguishable from an encrypted answer in a database
+ * dump, which defeats the point of recording the skip at all (§5).
+ *
+ * `updatedAt` is set BY HAND in the conflict branch. Drizzle's `$onUpdate()`
+ * fires on `db.update()` and NOT inside `onConflictDoUpdate` -- the trap
+ * CLAUDE.md names -- so relying on the column definition leaves it frozen at
+ * the first insert, and this column exists to answer "when did they change it?"
+ * for the erasure right.
+ */
+export async function upsertAnswer(
+  db: DbOrTx,
+  userId: string,
+  answer: OnboardingAnswer,
+): Promise<void> {
+  const answerText =
+    answer.text === null || answer.skipped
+      ? null
+      : encryptField(answer.text, answerAad(userId, answer.key));
+
+  // Belt to normaliseAnswer's braces. A closed question whose choice reached
+  // here as prose would put unencrypted user text in `answer_choice`, the one
+  // column in this table nothing treats as sensitive.
+  const answerChoice = isFreeText(answer.key) ? null : answer.choice;
+
+  await db
+    .insert(onboardingAnswers)
+    .values({
+      userId,
+      questionKey: answer.key,
+      answerText,
+      answerChoice,
+      skipped: answer.skipped,
+    })
+    .onConflictDoUpdate({
+      target: [onboardingAnswers.userId, onboardingAnswers.questionKey],
+      set: { answerText, answerChoice, skipped: answer.skipped, updatedAt: new Date() },
+    });
+}
+
+/**
+ * The authoritative write at the end of the stepper (L2).
+ *
+ * ONE TRANSACTION, because a half-applied final submit is the state the whole
+ * design exists to avoid: `completed_at` is about to be set on the strength of
+ * these rows, and a user who is marked onboarded with four of six answers
+ * written can never be asked again.
+ *
+ * The six per-step writes are best-effort resume markers; this repairs any that
+ * were lost, and re-sending everything costs nothing because each upsert is
+ * idempotent.
+ */
+export async function upsertAnswers(
+  db: DbOrTx,
+  userId: string,
+  answers: readonly OnboardingAnswer[],
+): Promise<void> {
+  for (const answer of answers) {
+    await upsertAnswer(db, userId, answer);
+  }
+}
+
+/**
+ * The per-answer erasure (L13, Task 10).
+ *
+ * DELETES THE TEXT, KEEPS THE ROW, AND THE ROW BECOMES A SKIP. Removing the row
+ * outright would make `nextUnansweredKey` treat the question as never asked, so
+ * a user who deleted an answer would be sent back into a stepper they finished.
+ * A skip is also the honest record: they were asked and there is now no answer.
+ *
+ * This changes `lotusInputHash`, which makes the Lotus block stale, which the
+ * next reading regenerates. That chain is what makes the delete button reach all
+ * the way through -- a delete whose effect stops at this table is worse than no
+ * delete button, because the deleted material stays paraphrased in a
+ * current-looking block.
+ *
+ * Returns whether a row was actually there, so the handler can 404 rather than
+ * reporting success for a question the user never answered.
+ */
+export async function deleteAnswer(
+  db: DbOrTx,
+  userId: string,
+  key: OnboardingQuestionKey,
+): Promise<boolean> {
+  const rows = await db
+    .update(onboardingAnswers)
+    .set({ answerText: null, answerChoice: null, skipped: true, updatedAt: new Date() })
+    .where(and(eq(onboardingAnswers.userId, userId), eq(onboardingAnswers.questionKey, key)))
+    .returning({ questionKey: onboardingAnswers.questionKey });
+
+  return rows.length > 0;
+}
+
+/**
+ * Erase every free-text answer a user has, in one statement.
+ *
+ * For W7's account-deletion path, which needs the text gone before the 30-day
+ * hard delete cascades the rows away. Kept here rather than in W7 so that the
+ * only module that writes this column is still the only module that writes it.
+ */
+export async function clearFreeTextAnswers(db: DbOrTx, userId: string): Promise<void> {
+  const freeText = (
+    ['best_thing', 'worst_thing', 'most_loved', 'willow_wish'] satisfies OnboardingQuestionKey[]
+  ).filter(isFreeText);
+
+  await db
+    .update(onboardingAnswers)
+    .set({ answerText: null, skipped: true, updatedAt: new Date() })
+    .where(
+      and(
+        eq(onboardingAnswers.userId, userId),
+        inArray(onboardingAnswers.questionKey, freeText),
+      ),
+    );
+}
+
+/** Re-exported so a caller writing `onboarding_version` cannot invent a number. */
+export { ONBOARDING_VERSION };

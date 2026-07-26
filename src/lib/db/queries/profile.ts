@@ -95,6 +95,87 @@ export async function upsertProfile(db: DbOrTx, input: NewProfile): Promise<Prof
 }
 
 /**
+ * Write the three factual answers, and NOTHING ELSE (W3 Task 1 / L13).
+ *
+ * ADDED BY W3, against the interface its plan names under *Interfaces I need
+ * from W1*, which specified `upsertProfileFacts` and `markOnboardingComplete`
+ * and did not land with W1.
+ *
+ * IT MUST NOT GO THROUGH `upsertProfile`, AND THIS IS THE WHOLE REASON IT
+ * EXISTS. That function sets `completedAt: input.completedAt` in its conflict
+ * branch, so a facts-only edit -- which L13 makes a permanent feature, since
+ * names are typo-prone and the nickname is what the reader calls you -- would
+ * carry `undefined` into the one column that decides whether onboarding is
+ * finished. The user edits their nickname from `/account` and is sent back
+ * through the questionnaire.
+ *
+ * `onboarding_version` is written on insert only. Bumping it for an existing
+ * profile would claim the user answered a question set they never saw.
+ *
+ * `updatedAt` is set by hand: `$onUpdate()` does not fire inside
+ * `onConflictDoUpdate`.
+ */
+export async function upsertProfileFacts(
+  db: DbOrTx,
+  userId: string,
+  facts: { fullName: string; nickname: string; birthDate: string },
+): Promise<void> {
+  await db
+    .insert(profiles)
+    .values({
+      userId,
+      fullName: facts.fullName,
+      nickname: facts.nickname,
+      birthDate: facts.birthDate,
+    })
+    .onConflictDoUpdate({
+      target: profiles.userId,
+      set: {
+        fullName: facts.fullName,
+        nickname: facts.nickname,
+        birthDate: facts.birthDate,
+        updatedAt: new Date(),
+      },
+    });
+}
+
+/**
+ * Set `completed_at`. THE completion marker (L3), and the only writer of it.
+ *
+ * IDEMPOTENT, AND IT KEEPS THE FIRST TIMESTAMP. `where completed_at is null`
+ * means a replayed or double-submitted completion does not move the date --
+ * "when did this person finish onboarding" stays answerable, and the value
+ * cannot silently become the moment of the most recent retry.
+ *
+ * Returns the timestamp now in the column, whether this call set it or an
+ * earlier one did, so the handler can put it in its response without a second
+ * read. Null only if there is no `profiles` row at all, which means the facts
+ * step never completed and the caller is finishing a questionnaire that never
+ * started.
+ */
+export async function markOnboardingComplete(
+  db: DbOrTx,
+  userId: string,
+): Promise<Date | null> {
+  const [updated] = await db
+    .update(profiles)
+    .set({ completedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(profiles.userId, userId), isNull(profiles.completedAt)))
+    .returning({ completedAt: profiles.completedAt });
+
+  if (updated?.completedAt) return updated.completedAt;
+
+  // Already complete, or no row. One indexed lookup tells those apart.
+  const [existing] = await db
+    .select({ completedAt: profiles.completedAt })
+    .from(profiles)
+    .where(eq(profiles.userId, userId))
+    .limit(1);
+
+  return existing?.completedAt ?? null;
+}
+
+/**
  * Bump `last_seen_at`. Called from after(), never awaited by a handler.
  *
  * Returns void rather than the row: nothing needs the value back, and

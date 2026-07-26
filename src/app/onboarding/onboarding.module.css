@@ -1,0 +1,337 @@
+/*
+ * The questionnaire's shell.
+ *
+ * Composed entirely from `src/theme/tokens.css`. NO NEW HEX VALUES, NO NEW FONT
+ * SIZES, NO NEW EASING CURVES -- the one derived colour below is a `color-mix`
+ * of two existing tokens rather than a fourth grey, and it is commented so
+ * nobody "simplifies" it into a literal.
+ *
+ * The visual precedent is `src/app/login/login.module.css`: the
+ * eyebrow-with-hairlines, the `.submit` fill, the 340px card. `.input` below is
+ * that file's input idiom, RECOVERED FROM `cafaf28` -- W2 deleted it along with
+ * the username and password fields when Google sign-in replaced them, so the
+ * "copy the idiom" instruction in the plan points at a rule that no longer
+ * exists. The 16px/iOS comment came with it and is the load-bearing half.
+ */
+
+.shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  /* The bottom inset is the home indicator. `viewportFit: 'cover'` in
+     layout.tsx is what makes env() report anything but zero. */
+  padding: 32px 24px calc(32px + env(safe-area-inset-bottom));
+}
+
+.card {
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Gold hairlines flanking the eyebrow, per the design's section header. */
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-section-label);
+  text-transform: uppercase;
+  color: var(--gold);
+  white-space: nowrap;
+}
+
+.eyebrow::before,
+.eyebrow::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--gold-hairline);
+}
+
+/*
+ * The step counter. A Cinzel numeral, not nine dots.
+ *
+ * Same idiom as the draw screen's counter, and the same reasoning: at phone
+ * width nine dots become decoration nobody counts, whereas "4 / 9" answers the
+ * only question a stepper raises. It sits above the title so it is read first
+ * and then ignored.
+ */
+.progress {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  color: var(--faint);
+  margin: 0;
+}
+
+/*
+ * The question itself.
+ *
+ * Not `--fs-title` (34px): these are sentences, not the word "JMTarot", and six
+ * of them run past two lines at that size on a 375px screen. `--fs-card-title`
+ * is the next step down in the scale and is what the card detail overlay uses
+ * for the same job -- a heading that is prose.
+ */
+.title {
+  font-family: var(--font-display), serif;
+  font-weight: 500;
+  font-size: var(--fs-card-title);
+  letter-spacing: var(--ls-card-title);
+  line-height: 1.45;
+  color: var(--gold-text);
+  margin: 0;
+}
+
+/* Reserved for step 0, which is the one screen that gets the full display size. */
+.titleLarge {
+  font-family: var(--font-display), serif;
+  font-weight: 500;
+  font-size: var(--fs-title);
+  letter-spacing: var(--ls-title);
+  line-height: 1.2;
+  color: var(--gold-text);
+  margin: 0;
+}
+
+/*
+ * The mystical register. Italic Cormorant, because that is what this app uses
+ * when it is being atmospheric rather than instructive.
+ */
+.framing {
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: var(--fs-hint);
+  line-height: 1.5;
+  color: var(--text-warm);
+  margin: 0;
+}
+
+/*
+ * Where honesty lives: scope, and the practical truth. Upright and quieter than
+ * the framing line, so atmosphere and disclosure do not contaminate each other.
+ */
+.hint {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--muted);
+  margin: 0;
+}
+
+/* Step 0's body copy. `white-space: pre-line` so the paragraph break in the
+   copy string renders without splitting it into two keys. */
+.body {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-hint);
+  line-height: 1.6;
+  color: var(--text);
+  margin: 0;
+  white-space: pre-line;
+}
+
+/* The permission to refuse, on step 0. Quietest thing on the screen and still
+   the most important sentence on it. */
+.note {
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--muted);
+  margin: 0;
+}
+
+/* --- Controls ------------------------------------------------------------ */
+
+/*
+ * The primary action. Lifted from login's `.submit`.
+ * 16px of padding on a 12px-ish cap-height line clears the 44px tap target.
+ */
+.cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--button-text);
+  border: 1px solid var(--gold-border);
+  background: var(--gold-wash);
+  border-radius: var(--radius-chip);
+  padding: 16px;
+  /* An <a> is used for this in one place (the repair screen's retry). */
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.cta:hover:not(:disabled) {
+  background: var(--gold-wash-strong);
+}
+
+.cta:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/*
+ * The action row.
+ *
+ * `column` by default: Skip belongs BELOW Continue on five of the six question
+ * steps, because offering them side by side gives declining the same weight as
+ * answering, which on `best_thing` is an odd thing to do.
+ */
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+/*
+ * `worst_thing` ONLY (§4). Skip sits beside Continue at equal weight rather
+ * than below it, because on the one question that asks about the worst thing
+ * someone has witnessed, declining should not look like the lesser option.
+ */
+.actionsLevel {
+  flex-direction: row;
+}
+
+.actionsLevel > * {
+  flex: 1;
+}
+
+/*
+ * Skip. A real button, never a link and never smaller than 44px of tap target.
+ *
+ * Bordered rather than bare text when it is level with Continue, so the two read
+ * as two choices rather than as a button and an afterthought.
+ */
+.skip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 15px;
+  color: var(--muted);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-chip);
+  padding: 12px;
+  cursor: pointer;
+}
+
+.skip:hover {
+  color: var(--text-warm);
+}
+
+.actionsLevel .skip {
+  border-color: var(--gold-hairline);
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  padding: 16px;
+}
+
+/* Back is always available and never competes with the primary action. */
+.back {
+  align-self: flex-start;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--faint);
+  background: none;
+  border: none;
+  /* 12px vertical either side of a 10px line clears 44px with the row gap. */
+  padding: 12px 4px;
+  cursor: pointer;
+}
+
+.back:hover {
+  color: var(--muted);
+}
+
+.back:disabled {
+  opacity: 0;
+  /* Hidden rather than removed, so the header does not reflow between steps. */
+  pointer-events: none;
+}
+
+/* --- Feedback ----------------------------------------------------------- */
+
+.error {
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: 15px;
+  /* The same red login.module.css uses. Not a token: there is no error colour in
+     tokens.ts, and adding one for two call sites is not worth a token churn. */
+  color: #e0a3a3;
+  margin: 0;
+  min-height: 1.2em;
+}
+
+/*
+ * The polite live region that announces each step.
+ *
+ * Visually hidden rather than `display: none`, which screen readers skip
+ * entirely. The clip-path/1px idiom is the one that survives every AT.
+ */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- Step transitions --------------------------------------------------- */
+
+/*
+ * One step visible at a time, and the change is a short fade-and-rise rather
+ * than a slide: a slide implies a horizontal filmstrip the user can swipe, and
+ * they cannot.
+ */
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  animation: rise var(--dur) var(--ease-card) both;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/*
+ * Instant under reduced motion. `usePrefersReducedMotion` handles the cases
+ * JavaScript has to know about; this covers the CSS-only ones, and both are
+ * needed -- the hook cannot cancel an animation the stylesheet declares.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .step {
+    animation: none;
+  }
+}
