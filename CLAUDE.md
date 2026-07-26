@@ -62,6 +62,9 @@ npm test             # vitest, UNIT ONLY. No database. Keep it that way.
 npm run build        # DO NOT SKIP -- see the TypeScript trap below
 npm run smoke        # one live LLM call: is the key/baseURL/model right?
 npm run smoke -- --all   # all nine reader x service readings, with checks
+npm run smoke -- --lotus # one real Lotus distillation, end to end. READ IT.
+npm run smoke -- --all --lotus   # the nine WITH a canned Lotus block, fixed hands
+npm run smoke -- --all --fixed   # the nine without one, same hands, for the diff
 ```
 
 The database is local-only for now (roadmap D5) and lives in Docker. `db:up`
@@ -108,6 +111,13 @@ AUTH_USERS=[{"u":"...","h":"$2b$12$..."}]     # bcrypt hashes, cost 12
 DATABASE_URL=postgres://jmtarot:jmtarot@127.0.0.1:5432/jmtarot
 TEST_DATABASE_URL=postgres://jmtarot:jmtarot@127.0.0.1:5432/jmtarot_test
 FIELD_ENCRYPTION_KEY=...                      # 32 bytes, base64url
+
+LOTUS_MODEL=                                  # defaults to LLM_MODEL
+LOTUS_STUB=                                   # 1 => skip the model, write the
+                                              # template. NEVER in production:
+                                              # every user would silently get
+                                              # the fallback and nothing would
+                                              # alert on it.
 ```
 
 `TEST_DATABASE_URL` is a separate variable and never an override of
@@ -553,7 +563,8 @@ reason they load at all.
 
 ## Current state
 
-Built and working end to end: Google sign-in and the middleware gate, reader picker,
+Built and working end to end: Google sign-in and the middleware gate, **the
+onboarding questionnaire and the Lotus distillation (W3)**, reader picker,
 service picker, the draw (fan, pick, flip, reduced-motion grid), the card
 detail overlay, the streaming reading endpoint, the prompt layer, and the web
 app manifest.
@@ -568,7 +579,7 @@ means.
 
 ## The data layer
 
-W1 of the public release is done and nothing else consumes it yet. What exists:
+W1 of the public release is done, and W3 is its first consumer. What exists:
 
 ```
 src/lib/db/
@@ -580,8 +591,11 @@ src/lib/db/
                  module cannot acquire the singleton by accident.
   schema.ts      the ten tables. ONE OWNER: W1.
   crypto.ts      AES-256-GCM field encryption, `v1.<iv>.<ct>.<tag>` base64url
-  queries/       profile, history, frequency, summary -- one file per read
-                 concern; every function takes the handle first
+  queries/       profile, onboarding, lotus, history, frequency, summary -- one
+                 file per read concern; every function takes the handle first.
+                 `onboarding.ts` and `lotus.ts` were written by W3 into W1's
+                 directory, against the interface W3's plan names; no table or
+                 column was redefined.
   migrations/    generated, committed. Read its README before adding one.
   testing/       harness.ts (withRollback, resetDb) and globalSetup.ts
 ```
@@ -604,10 +618,100 @@ those accounts is that they do not exist there. Nothing was migrated out of
 `localStorage`; each browser held a `{name, birthDate}` pair, and onboarding
 asks for more than that anyway. It will look like data loss and it is not.
 
-Not built, deliberately deferred: onboarding, birth card, the daily-card lock
-(`todayKey()` and `birthCard()` are already written), an About page, reading
-history, sharing, and a second LLM provider. Onboarding is now *in* scope for
-the public release (W3); the rest of that list stands.
+Not built, deliberately deferred: birth card, the daily-card lock (`todayKey()`
+and `birthCard()` are already written), an About page, reading history, sharing,
+and a second LLM provider. **Onboarding has left this list — W3 shipped it.**
+
+## Onboarding and the Lotus (W3)
+
+Nine screens, asked exactly once: the invitation, all three facts together, the
+six personal questions, and a closing card. The word "onboarding" appears
+nowhere the user can see it — the questions are meant to feel like being read,
+not like being onboarded.
+
+```
+src/data/onboarding.ts          the six keys, the closed sets, and the pure
+                                functions. NO IMPORTS OUTSIDE @/data, so W2's
+                                gate can reach `isOnboarded` on the edge.
+src/app/onboarding/             the stepper. copy.ts is a STAGING POST for W6's
+                                catalog -- same key names, lookup called `c()`
+                                and not `t()` so the migration shows in a diff.
+src/app/api/onboarding/         facts / answer / complete / answer/[key] DELETE
+src/lib/prompt/lotus.ts         PURE: contract, parser, safety checks, fallback
+src/lib/prompt/lotus.generate.ts  everything impure AND stateful: the model
+                                call, the write, the cached read, the cooldown
+```
+
+**`profiles.completed_at` is the only completion marker.** Row presence is not
+completion — the facts row exists from step 1 of 9, and a half-written answer
+set must never count as onboarded and must never be distilled. Gating is the
+`onb` claim in W2's JWT so nothing reads the database per request; the
+`/onboarding` page makes the one authoritative read the roadmap's first
+non-negotiable allows, and repairs a stale flag itself.
+
+**The resume point is derived, never stored** — the first key with NO ROW, not
+the key after the last one. A user who goes back to answer something they
+skipped leaves a gap, and resuming past it would skip it forever.
+
+### The traps W3 paid for
+
+- **A stale `onb` flag cannot be fixed by redirecting.** A server component
+  cannot write cookies, so `redirect('/')` from `/onboarding` bounces off
+  middleware's identical stale claim and loops. `actions.ts` re-mints first and
+  only navigates when `onb` is actually true — the jwt update branch is
+  rate-limited and returns the STALE token when throttled, so navigating on that
+  is the loop again.
+- **`refreshSession()` does work in a route handler** (measured, not assumed).
+  The completion response carries the `Set-Cookie`; with the old cookie `/`
+  still 307s to `/onboarding`. Hence the close screen is a button doing
+  `location.assign`, not a link.
+- **The completion route reads the answer set back from the database** before
+  setting `completed_at`. The client is trusted to say what it answered, never
+  that it finished — otherwise a bare `POST` with `{}` marks a new user
+  onboarded with nothing stored, and `onb` gates `/api/reading` too.
+- **THE COOLDOWN MUST NOT GUARD A USER-CAUSED REGENERATION.**
+  `scheduleLotusRefresh`'s ten minutes bound the SPECULATIVE repair the reading
+  path fires. The answer route used it once and the first of six onboarding
+  writes armed it, so an answer edit minutes later was silently swallowed —
+  `input_hash` byte-identical, `updated_at` frozen, which is the delete button
+  being a lie. Write paths call `generateLotus` directly; it is idempotent.
+- **Staleness is split by where each trigger is cheap.** `source_version` is one
+  integer in the row and is checked on read; `input_hash` needs the ANSWERS, so
+  checking it per reading would mean decrypting six rows on the request path.
+  It is checked inside `generateLotus`, and the write paths trigger it.
+- **The cache cannot live in `queries/`.** Rule 1 of that directory needs the
+  handle first and a cache invalidator keyed by user id cannot oblige;
+  `contract.test.ts` fails on it. Rule 3 says the same thing from the other
+  side. All the stateful machinery is in `lotus.generate.ts`.
+- **A skip is `answer_text IS NULL`, never an encrypted empty string**, which
+  would be indistinguishable from a real answer in a dump. The audit query is in
+  `schema.ts` and must return 0.
+
+### Verifying it
+
+`public/cards/_onb.html` walks all nine screens with real `PointerEvent`s,
+patches the iframe's `fetch`, and diffs every outgoing body against the screen —
+the technique CLAUDE.md documents, pointed at the bug class it was built for (a
+skip that posts `text: ""`). `public/cards/_onbshot.html` puts `/onboarding` in
+a **390px iframe** so a gated page can be screenshotted at a real phone width;
+`shot.sh` alone cannot, because it cannot plant a cookie and because Windows
+clamps Chrome to ~500px. Both are gitignored under `public/cards/_*.html`.
+
+**Wait for HYDRATION, not for the iframe's `load` event.** `load` fires when the
+SSR HTML has parsed, and React has not attached its delegated listener yet — a
+real click lands on a real button and nothing happens, which reads as a dead
+stepper. Poll for React's `__reactFiber$` key on a node.
+
+`npm run smoke -- --lotus` runs one real distillation end to end and prints the
+prompt, the raw output, the parsed result and the safety verdict. **Read it.**
+`npm run smoke -- --all --lotus` injects a canned block into the nine readings
+and draws FIXED hands, so it can be diffed against `npm run smoke -- --all
+--fixed` — two runs that drew different cards are not comparable.
+
+**If the Lotus ever flattens the three readers, fix the persona paragraphs or
+the base contract's `<penanya>` rule, never the code.** Measured at the time it
+landed: mean pairwise reader overlap on `spread3` went 0.056 → 0.074, and no
+reading announced that it knew anything.
 
 Not yet verified on hardware: touch behaviour on a real iPhone, safe-area
 insets, and Add to Home Screen. Task 15 of the plan covers it.
