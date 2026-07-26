@@ -31,24 +31,39 @@ to Home Screen all need a physical iPhone.
 
 ## Setup
 
-Requires Node 20.19+, 22.13+ or 24+. TypeScript is pinned to 5.x on purpose:
-7.x is the native port and `next build` cannot use it.
+Requires Node 20.19+, 22.13+ or 24+, and Docker for the local database.
+TypeScript is pinned to 5.x on purpose: 7.x is the native port and
+`next build` cannot use it.
 
 ```sh
 npm install
 cp .env.example .env.local     # then fill it in — see below
-npm run dev                    # http://localhost:3000
+npm run db:up                  # Postgres 16 in Docker, on 127.0.0.1:5432
+npm run db:migrate             # apply the committed migrations
+npm run dev                    # http://localhost:3001
 ```
+
+`npm run db:seed` adds two development users and two weeks of invented reading
+history, which is what makes the history-dependent features visible while
+you work on them.
 
 Other scripts:
 
 ```sh
-npm test          # Vitest — deck, prompt, auth, rate limiter
+npm test          # Vitest, unit only — no database, no Docker
 npm run typecheck # tsc --noEmit
 npm run build     # production build; run before trusting a green typecheck
 npm run smoke     # one live LLM call: are the key, base URL and model right?
 npm run smoke -- --all   # all nine reader x service readings, plus checks
+
+npm run test:integration # needs db:up; applies migrations to a scratch database
+npm run db:studio        # browse the rows
+npm run db:down          # stop the database, keeping its data
+npm run db:nuke          # stop it and throw the data away
 ```
+
+`npm test` deliberately does not need the database, so the fast loop stays
+fast. `npm run test:integration` is the opt-in.
 
 ### Environment
 
@@ -63,10 +78,18 @@ short version:
 | `LLM_MODEL` | e.g. `glm-4.6` |
 | `AUTH_SECRET` | 32+ random bytes, base64 — signs the session cookie |
 | `AUTH_USERS` | JSON array of `{u, h}` with bcrypt hashes, cost 12 |
+| `DATABASE_URL` | local Postgres; matches `docker-compose.yml` |
+| `TEST_DATABASE_URL` | the integration suite's scratch database, name must end `_test` |
+| `FIELD_ENCRYPTION_KEY` | 32 bytes, base64url — encrypts the sensitive columns |
 
 **Escape every `$` as `\$` in `.env` files** — the loader expands `$VAR`, which
-silently mangles a bcrypt hash. Do *not* escape when pasting into a hosting
-dashboard, where values are literal.
+silently mangles a bcrypt hash, and would mangle a database password the same
+way. Do *not* escape when pasting into a hosting dashboard, where values are
+literal.
+
+`TEST_DATABASE_URL` is a separate variable rather than an override, because the
+integration suite truncates tables; both the harness and its global setup
+refuse any database whose name does not end in `_test`.
 
 ## Deploying
 
