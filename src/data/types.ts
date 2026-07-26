@@ -86,8 +86,37 @@ export type DailyPull = {
   readerId: ReaderId;
 };
 
+/**
+ * The querent, as the app knows them. Reshaped by W3 from `{ name, birthDate }`.
+ *
+ * THE THREE FACTS ONBOARDING ASKS FOR, PLUS THE COMPLETION MARKER. It mirrors
+ * the `profiles` table's user-facing columns and nothing else -- no `userId`, no
+ * timestamps -- because this shape crosses to the client, where a foreign key is
+ * useless and `created_at` is nobody's business.
+ *
+ * `completedAt` IS A STRING, NOT A DATE, and both halves of that matter:
+ *
+ *   - a string survives the server/client serialization boundary unchanged,
+ *     which a Date does not; the stepper is a client component
+ *   - it is only ever compared against null (`isOnboarded`), never rendered and
+ *     never arithmetic, so a Date would buy nothing and cost the timezone
+ *     question that `local_date` already exists to answer
+ *
+ * NOT THE SAME TYPE AS `Profile` IN `@/lib/db/schema`. That one is Drizzle's
+ * inferred row -- Dates, `userId`, `createdAt`, `updatedAt` -- and it stays
+ * server-side. The query layer converts. Two names would be worse: they describe
+ * the same thing at two boundaries, and the compiler keeps them apart.
+ */
 export type Profile = {
-  name: string;
-  /** ISO `YYYY-MM-DD`. Personalises the greeting and derives the birth card. */
+  /** As given. `Nama lengkap` in the copy. */
+  fullName: string;
+  /** What the reader calls you. `Nama panggilan`. */
+  nickname: string;
+  /** ISO `YYYY-MM-DD`. A distillation input, and the birth card's basis when
+   *  that ships. Deliberately promised nothing in the onboarding copy. */
   birthDate: string;
+  onboardingVersion: number;
+  /** ISO timestamp. Null until onboarding finishes. THE completion marker --
+   *  row presence is not completion. See `isOnboarded` in `./onboarding`. */
+  completedAt: string | null;
 };
