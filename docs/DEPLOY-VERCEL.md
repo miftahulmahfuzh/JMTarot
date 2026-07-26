@@ -50,15 +50,33 @@ project, Branding, Audience, the three non-sensitive scopes, and the redirect
 URIs — and it is worth following rather than improvising, because the console's UI
 was renamed in 2025 and no longer matches the Auth.js docs.
 
-Two more are optional, and both have working defaults. Set them when you want a
+The rest are optional and all have working defaults. Set them when you want a
 number other than the default, and remember that `SESSION_TTL_HOURS` is read at
 module scope in `config.ts`, so **a dashboard change needs a redeploy** before
 middleware sees it:
 
 ```
-SESSION_TTL_HOURS          24    idle timeout, slides on every request
-SESSION_ABSOLUTE_TTL_DAYS  30    hard ceiling, never slides
+SESSION_TTL_HOURS            24     idle timeout, slides on every request
+SESSION_ABSOLUTE_TTL_DAYS    30     hard ceiling, never slides
+LOTUS_MODEL                  --     falls back to LLM_MODEL
+ANALYTICS_STREAM_TIMEOUT_MS  45000  how long after() waits for the stream
+ANALYTICS_RETRY_BUDGET_MS    5000   ceiling on the readings-insert retry
 ```
+
+**`ANALYTICS_ENABLED` needs no entry: only the literal `'0'` disables writes**,
+so a deployment that never mentions it collects data. That default is
+deliberate — a typo should over-collect rather than silently collect nothing —
+but it does mean you cannot turn analytics off by deleting the variable.
+
+### Three that must be *absent*, not merely falsy
+
+`AUTH_USERS` and `DEV_PASSWORD_LOGIN` are covered below. `LOTUS_STUB` joins
+them: `1` skips the model call and writes the deterministic template, so a
+production value would give **every** user the fallback with nothing alerting on
+it. Like `DEV_PASSWORD_LOGIN` it additionally requires
+`NODE_ENV !== 'production'` and is therefore inoperative in any Vercel build —
+belt and braces, not a reason to set it. `ANALYTICS_DEBUG` logs every event with
+its props and belongs nowhere near production either.
 
 `LLM_PROVIDER` may also be `anthropic`; the same adapter serves both, and you
 drop `LLM_BASE_URL` for Anthropic proper.

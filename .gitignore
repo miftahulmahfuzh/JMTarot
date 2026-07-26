@@ -44,3 +44,9 @@ tools/_contactsheet.jpg
 
 # git worktrees
 .worktrees/
+
+.vercel
+.env*
+# ...but .env.example is the documentation for every variable and is committed.
+# `.env*` would otherwise silently swallow it, and any sibling added later.
+!.env.example

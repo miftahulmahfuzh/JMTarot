@@ -40,6 +40,14 @@ export default defineConfig({
           name: 'unit',
           include: ['src/**/*.test.ts'],
           exclude: ['src/**/*.integration.test.ts'],
+          /*
+           * Reconciliation R20. Analytics writes are off in the fast suite, so
+           * a module that forgot to mock its writer fails on an assertion
+           * rather than by reaching for Docker. The integration harness sets it
+           * back to '1' explicitly for its own tests, and the few unit tests
+           * that exercise the enabled path set it per test.
+           */
+          env: { ANALYTICS_ENABLED: '0' },
         },
       },
       {

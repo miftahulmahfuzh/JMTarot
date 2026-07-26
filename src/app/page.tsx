@@ -1,6 +1,6 @@
 import Image from 'next/image';
-import Link from 'next/link';
 import { Eyebrow } from '@/components/Eyebrow';
+import { TrackLink } from '@/components/TrackLink';
 import { READERS, readerPortrait } from '@/data/readers';
 import styles from './page.module.css';
 
@@ -20,7 +20,13 @@ export default function Home() {
 
       <div className={styles.list}>
         {READERS.map((reader, i) => (
-          <Link key={reader.id} href={`/${reader.id}`} className={styles.banner}>
+          <TrackLink
+            key={reader.id}
+            href={`/${reader.id}`}
+            className={styles.banner}
+            name="reader.chosen"
+            props={{ reader_id: reader.id }}
+          >
             <div className={styles.portrait}>
               <Image
                 src={readerPortrait(reader.id)}
@@ -45,7 +51,7 @@ export default function Home() {
                 </div>
               </div>
             </div>
-          </Link>
+          </TrackLink>
         ))}
       </div>
 

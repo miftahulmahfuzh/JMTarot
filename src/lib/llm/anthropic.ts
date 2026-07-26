@@ -4,9 +4,22 @@ import type {
   CompletionPrompt,
   LLMCallOpts,
   LLMProvider,
+  LLMStream,
   ReadingPrompt,
   ReadingUsage,
 } from './types';
+
+/**
+ * z.ai reports `input_tokens: 0` -- verified against the live endpoint and
+ * recorded in the rewrite plan §4.
+ *
+ * A literal `0` in `readings.token_input` would make every average silently
+ * wrong and would be indistinguishable from a real zero, so the columns are
+ * nullable and absence is stored as absence.
+ */
+function nonZero(n: number | null | undefined): number | null {
+  return typeof n === 'number' && n > 0 ? n : null;
+}
 
 /**
  * Serves both Anthropic proper and z.ai's Anthropic-compatible proxy.
@@ -29,27 +42,71 @@ export function createAnthropicProvider(): LLMProvider {
   const model = requireEnv('LLM_MODEL');
 
   return {
-    async *streamReading({ system, user, maxTokens }: ReadingPrompt, opts?: LLMCallOpts) {
-      const stream = client.messages.stream({
-        model: opts?.model ?? model,
-        max_tokens: maxTokens,
-        /*
-         * `cache_control` is correct for Anthropic and inert on z.ai, which
-         * accepts the marker but honours no caching -- the probe came back
-         * with no `cache_read_input_tokens` and `input_tokens: 0`. Left in
-         * because it is free and right for the other provider, but do not
-         * build anything that depends on caching or on usage numbers while
-         * pointed at z.ai.
-         */
-        system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
-        messages: [{ role: 'user', content: user }],
+    streamReading({ system, user, maxTokens }: ReadingPrompt, opts?: LLMCallOpts): LLMStream {
+      let resolveUsage!: (u: ReadingUsage) => void;
+      const usage = new Promise<ReadingUsage>((resolve) => {
+        resolveUsage = resolve;
       });
 
-      for await (const event of stream) {
-        if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-          yield event.delta.text;
+      async function* iterate() {
+        /*
+         * THE REQUEST IS OPENED HERE, INSIDE THE GENERATOR, not in the enclosing
+         * function -- which is what keeps the interface's "calling it starts
+         * nothing" contract literally true rather than nearly true. Hoisting it
+         * out would also mean a caller that builds a stream and then returns
+         * early has silently opened and abandoned a connection.
+         */
+        const upstream = client.messages.stream(
+          {
+            model: opts?.model ?? model,
+            max_tokens: maxTokens,
+            /*
+             * `cache_control` is correct for Anthropic and inert on z.ai, which
+             * accepts the marker but honours no caching -- the probe came back
+             * with no `cache_read_input_tokens` and `input_tokens: 0`. Left in
+             * because it is free and right for the other provider, but do not
+             * build anything that depends on caching or on usage numbers while
+             * pointed at z.ai.
+             */
+            system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
+            messages: [{ role: 'user', content: user }],
+          },
+          opts?.signal ? { signal: opts.signal } : undefined,
+        );
+
+        let inputTokens: number | null = null;
+        let outputTokens: number | null = null;
+        try {
+          for await (const event of upstream) {
+            if (event.type === 'message_start') {
+              inputTokens = nonZero(event.message.usage?.input_tokens);
+            }
+            if (event.type === 'message_delta') {
+              outputTokens = nonZero(event.usage?.output_tokens);
+            }
+            if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+              yield event.delta.text;
+            }
+          }
+        } finally {
+          /*
+           * RESOLVE ON EVERY EXIT PATH -- normal end, thrown error, and the
+           * early return a consumer causes by breaking out of its `for await`,
+           * which runs this `finally` when the iterator is closed.
+           *
+           * A `usage` promise that never settles parks the after() callback on
+           * ANALYTICS_STREAM_TIMEOUT_MS for every failed or abandoned reading,
+           * which is 45 seconds of a paid invocation for a number nobody got.
+           * Resolving, never rejecting: nothing awaits this on the hot path, so
+           * a rejection would be unhandled.
+           */
+          resolveUsage({ inputTokens, outputTokens });
         }
       }
+
+      // Object.assign rather than a class, so the return value IS the generator
+      // and the "calling it starts nothing" contract in types.ts still holds.
+      return Object.assign(iterate(), { usage });
     },
 
     /**

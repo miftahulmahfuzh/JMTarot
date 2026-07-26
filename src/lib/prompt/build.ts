@@ -1,6 +1,8 @@
+import { createHash } from 'node:crypto';
 import { CARDS, effectiveYesNo } from '@/data/deck';
 import { readerById } from '@/data/readers';
 import { serviceById, slotLabels } from '@/data/services';
+import type { Locale } from '@/data/types';
 import type { ReadingPrompt } from '@/lib/llm/types';
 import { BASE_CONTRACT } from './base';
 import { renderLotusBlock } from './lotus';
@@ -47,7 +49,36 @@ export type BuildArgs = {
   picks: Pick[];
   question?: string | null;
   context?: PromptContext;
+  /**
+   * W6's, reserved here because `promptVersion` needs it and W6 has not landed.
+   * There is one prompt fork today, so the default is the only value.
+   */
+  locale?: Locale;
 };
+
+/**
+ * `<locale>-v1.<sha8>` (reconciliation R5), over the STATIC layers only.
+ *
+ * The locale prefix is W6's requirement -- you cannot interpret a reading
+ * without knowing which prompt fork produced it -- and the hash is W4's,
+ * because roadmap §3 asks that a prompt change be visible in the data and a
+ * hand-bumped constant requires discipline nobody has at 11pm.
+ *
+ * WHAT IS DELIBERATELY NOT HASHED: the Lotus block, the memory block and the
+ * question. All three vary per user and per request, and including them would
+ * turn a version into a per-row nonce -- `group by prompt_version` would return
+ * one row per reading and the column would answer nothing.
+ *
+ * `v1` is a readable epoch a human bumps when the SCHEME changes; the hash does
+ * the actual work. One consequence worth knowing: `servicePrompt` takes the
+ * verdict, so `yesno` has three hashes per reader per locale rather than one.
+ * That is correct -- the three really are different system prompts -- and it
+ * means a yes/no latency comparison groups into three buckets.
+ */
+function promptVersion(locale: Locale, staticLayers: string[]): string {
+  const digest = createHash('sha256').update([locale, ...staticLayers].join('\0')).digest('hex');
+  return `${locale}-v1.${digest.slice(0, 8)}`;
+}
 
 /**
  * Assemble the system prompt and the user turn for one reading.
@@ -62,6 +93,7 @@ export function buildPrompt({
   picks,
   question,
   context,
+  locale = 'id',
 }: BuildArgs): ReadingPrompt {
   const r = readerById(reader);
   if (!r) throw new Error(`Unknown reader: ${reader}`);
@@ -87,11 +119,8 @@ export function buildPrompt({
    */
   const verdict = s.id === 'yesno' ? effectiveYesNo(draws[0]) : undefined;
 
-  const system = [
-    BASE_CONTRACT,
-    READER_PROMPTS[r.id],
-    servicePrompt(s.id, verdict),
-  ].join('\n\n');
+  const staticLayers = [BASE_CONTRACT, READER_PROMPTS[r.id], servicePrompt(s.id, verdict)];
+  const system = staticLayers.join('\n\n');
 
   const labels = slotLabels(s, r);
   const cardLines = draws.map((d, i) => {
@@ -141,5 +170,10 @@ export function buildPrompt({
     questionBlock,
   ].join('\n');
 
-  return { system, user, maxTokens: MAX_TOKENS[s.id] };
+  return {
+    system,
+    user,
+    maxTokens: MAX_TOKENS[s.id],
+    promptVersion: promptVersion(locale, staticLayers),
+  };
 }

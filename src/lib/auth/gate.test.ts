@@ -29,6 +29,16 @@ describe('isPublic', () => {
     expect(isPublic('/api/auth/dev-session')).toBe(true);
   });
 
+  it('lets the analytics collector through, and only that exact path', () => {
+    // W4. The events that matter most happen before there is a session --
+    // terms.viewed, app.launched, a sign-in that failed -- and roadmap §3
+    // allows events.user_id to be null for exactly that reason. Exact match,
+    // never a prefix: /api/events is public, nothing near it is.
+    expect(isPublic('/api/events')).toBe(true);
+    expect(isPublic('/api/events/replay')).toBe(false);
+    expect(isPublic('/api/eventsomething')).toBe(false);
+  });
+
   it('does not make the app public by accident', () => {
     expect(isPublic('/')).toBe(false);
     expect(isPublic('/api/reading')).toBe(false);

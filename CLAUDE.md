@@ -123,6 +123,13 @@ LOTUS_STUB=                                   # 1 => skip the model, write the
                                               # every user would silently get
                                               # the fallback and nothing would
                                               # alert on it.
+
+ANALYTICS_ENABLED=1                           # ONLY '0' disables writes, so a
+                                              # typo collects data rather than
+                                              # silently collecting none.
+ANALYTICS_DEBUG=                              # 1 => log each event as buffered
+ANALYTICS_STREAM_TIMEOUT_MS=45000
+ANALYTICS_RETRY_BUDGET_MS=5000
 ```
 
 `TEST_DATABASE_URL` is a separate variable and never an override of
@@ -294,6 +301,38 @@ that someone will helpfully "fix" back into existence.
   `updatedAt` by hand; drop that line and the column silently freezes at the
   first insert. For `daily_summaries` that is exactly the column the
   regeneration throttle compares against.
+
+- **`track()` returns `void` and must never be awaited.** Import it from
+  `@/lib/analytics/track` on the server and `@/lib/analytics/track.client` in a
+  client component — never the first from the second, which drags
+  `node:async_hooks` and `next/server` into the browser bundle and fails the
+  build. The two share one `TrackFn` type so only the import line differs. The
+  `void` return is the enforcement, not a convention: a function that cannot be
+  usefully awaited does not acquire an `await` at 11pm.
+
+- **No free text in `events.props`, ever.** `question.typed` carries a `length`;
+  `onboarding.question_answered` carries a `length`. `events` rows SURVIVE
+  account erasure with `user_id` nulled, and that is only honest because
+  `sanitizeProps()` provably strips everything that could identify anybody.
+  It drops non-scalars, truncates strings to 120 characters, caps at 24 keys,
+  and rejects `__proto__`, `constructor` and `prototype` by name — the last two
+  are ordinary lowercase words that pass a `lower_snake` pattern cleanly.
+
+- **Never log a driver error from an analytics path.** A postgres error quotes
+  the failing statement *and its bound parameters*, and `readings.question` is
+  one of those parameters — so `console.error('...', err)` in `flush.ts` puts
+  the querent's typed question into the platform log. Production logs ids,
+  attempt, SQLSTATE and the error's class; development prints the whole thing,
+  because there is nobody to leak it to. Found by running the database-down
+  check, not by reading the code.
+
+- **Snapshot mutable state BEFORE an `await`, in `tee.ts` especially.** Its
+  `finish()` built the outcome object around `await source.usage`, so the fields
+  were read after the await — by which time a cancelled controller had made the
+  next `enqueue` throw and the catch block had overwritten `errorKind` with
+  `'unknown'`. Every abandoned reading was recorded as having failed for an
+  unknown reason. The cancel test asserts `errorKind` and not only `status`
+  precisely because that is what caught it.
 
 - **Scripts under `scripts/` cannot use top-level `await`.** There is no
   `"type": "module"`, so tsx transforms to CJS and top-level await is a build
@@ -569,10 +608,10 @@ reason they load at all.
 ## Current state
 
 Built and working end to end: Google sign-in and the middleware gate, **the
-onboarding questionnaire and the Lotus distillation (W3)**, reader picker,
-service picker, the draw (fan, pick, flip, reduced-motion grid), the card
-detail overlay, the streaming reading endpoint, the prompt layer, and the web
-app manifest.
+onboarding questionnaire and the Lotus distillation (W3)**, **analytics and
+reading persistence (W4)**, reader picker, service picker, the draw (fan, pick,
+flip, reduced-motion grid), the card detail overlay, the streaming reading
+endpoint, the prompt layer, and the web app manifest.
 
 **Tapping a picked card opens its detail, it does not return it to the deck.**
 Returning moved into a button inside that overlay, because at 88x132 the art is
@@ -581,6 +620,76 @@ button is only offered while the reading is idle — once a reading is running
 the draw is settled — so after a completed spread the overlay is look-only.
 `Fan`/`FanGrid` report a tap as `onCardTap`; the draw screen decides what it
 means.
+
+## Analytics and reading history (W4)
+
+W4 is done. Every reading, every card and every meaningful choice is persisted,
+and **none of it is on the path of a byte the user is waiting for.**
+
+```
+src/lib/analytics/
+  events.ts        the closed taxonomy: 38 names, a prop shape each, two
+                   compile-time guards. NO IMPORTS -- it is the data dictionary
+                   and it is read by people, not only by code.
+  track.ts         SERVER. AsyncLocalStorage store, ONE after() per request,
+                   defer() for work that must outlive the response.
+  track.client.ts  'use client'. Batched: 2s debounce, flush at 20, queue
+                   capped at 200, fetch(keepalive) normally and sendBeacon on
+                   the hide path.
+  localdate.ts     isomorphic. parseLocalDate (+/-1 day), validSessionId.
+  tee.ts           the manual fan-out. The client is enqueued FIRST.
+  flush.ts         the after()-side writers, sanitizeProps, the retry.
+src/app/api/events/route.ts   public, always 204. W7 reviews it.
+src/components/TrackView|TrackLink|AppLaunched|ReaderViewed.tsx
+docs/analytics-queries.md     eight queries, all of them executed
+```
+
+**Writes go through one `after()` per request**, registered lazily by
+`withAnalytics`. Deferred work runs first, then one batched insert into `events`.
+`readings` + `reading_cards` are one transaction with a bounded retry (3
+attempts, transient SQLSTATEs only); everything else fails silently and logs.
+
+**`latency_ms` is TIME TO FIRST TOKEN**, not total generation time. Total is
+`reading.completed.total_ms`. An ambiguous latency column is worse than none,
+and changing the meaning later makes every historic row a different measurement.
+
+**The reading body is captured by a manual fan-out, never `tee()`.** Two
+branches with independent queues couple their backpressure once one drains
+slower. And the `[Bacaan terputus...]` notice reaches the screen but NEVER
+`readings.body` — a stored copy would be quoted back at the querent by W5's
+chained reading as if the reader had said it.
+
+**`reading.completed` exists twice per reading, from the server and from the
+client, distinguished by `props.source`.** That is not redundancy: the server's
+copy dies with the `after()` that writes the row, the client's arrives through
+`/api/events` on a different request, and a client copy with no matching
+`readings` row is the only way to detect a lost write. Query 1 of
+`docs/analytics-queries.md` is that alarm.
+
+**z.ai reports `output_tokens` but not `input_tokens`** — measured 2026-07-27,
+and it refines what the plans assumed. `input_tokens` comes back as `0` and is
+stored as NULL so no average is silently wrong; `token_output` is real. Half a
+cost model, not none.
+
+### Verifying it
+
+`public/cards/_dev-events.html` (gitignored, like the other harnesses) taps three
+cards with real `PointerEvent`s and diffs **three independent representations of
+one draw**: the `alt` text of the face-up cards, the `picks` in the
+`/api/reading` body, and the `card_id` props of the three `draw.card_picked`
+events. It also asserts that three taps are ONE `/api/events` POST.
+
+**Read the chosen FAN cards, not the slot boxes.** The harness needed three
+attempts to read the screen: `querySelectorAll('img')` returns the fan's 22
+hidden faces, and `[data-slotbox] img` is empty unless reduced motion is on,
+because normally the fan's own card animates into the slot. The second version
+"failed" an orientation check against an app that was right — a harness reading
+the wrong element is worse than no harness.
+
+The check that matters most is not automatable and takes ten seconds: **stop the
+database and take a reading.** It must stream and complete exactly as normal,
+with nothing but `[analytics] ...` lines in the log. That is the literal
+statement of the requirement this workstream exists to satisfy.
 
 ## The data layer
 
@@ -607,6 +716,15 @@ src/lib/db/
   testing/       harness.ts (withRollback, resetDb) and globalSetup.ts
 ```
 
+**W4's writers take an OPTIONAL handle as their last argument**, not their first,
+because they are not query modules — `persistReading(row, cards, handle?)` and
+`flushEvents(ctx, rows, handle?)` live in `src/lib/analytics/flush.ts` and reach
+the singleton through a **dynamic** `import('@/lib/db/client')`. A static import
+would pull in `server-only`, which throws under Vitest, and `sanitizeProps` —
+the function the whole "we keep no text you wrote" claim rests on — would have no
+unit test. The optional handle is how the integration suite passes its
+rolled-back transaction in.
+
 **The schema is `docs/plans/2026-07-26-RECONCILIATION.md` §3, not the roadmap's
 §3.** Ten tables, not nine — `frequency_verdicts` is new, `readings` lost
 `question_blocked` and gained `status`/`session_id`/`gist`, and
@@ -626,8 +744,10 @@ those accounts is that they do not exist there. Nothing was migrated out of
 asks for more than that anyway. It will look like data loss and it is not.
 
 Not built, deliberately deferred: birth card, the daily-card lock (`todayKey()`
-and `birthCard()` are already written), an About page, reading history, sharing,
-and a second LLM provider. **Onboarding has left this list — W3 shipped it.**
+and `birthCard()` are already written), an About page, a reading-history
+**screen**, sharing, and a second LLM provider. **Onboarding has left this list
+— W3 shipped it, and W4 shipped the history's data: every reading, its cards
+and the event trail are persisted; nothing renders them back to the user yet.**
 
 ## Onboarding and the Lotus (W3)
 
