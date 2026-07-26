@@ -35,11 +35,30 @@ function enabled(): boolean {
   return process.env.ANALYTICS_ENABLED !== '0';
 }
 
-/** Ids, counts and SQLSTATEs. NEVER user text -- Vercel's log is not a place to
- *  put `readings.question`. This is a §11 obligation, not a style preference. */
+/**
+ * Ids, counts, SQLSTATEs and the error's CLASS. Never its message.
+ *
+ * This is a privacy obligation (plan §11), not a style preference, and it is
+ * sharper than it first looks: a driver error routinely quotes the failing
+ * statement and its bound parameters, and `readings.question` is one of those
+ * parameters. Logging `err` would put the querent's typed question into
+ * Vercel's log, which has a different audience and a different retention story
+ * from the column it was meant to live in.
+ *
+ * In development the whole error is printed as well, because there is nobody to
+ * leak it to and a stack trace is the difference between a five-minute fix and
+ * an hour. `JSON.stringify` rather than the raw object because Next's dev
+ * logger renders a bare object argument as `{}` -- which is how this was found.
+ */
 function logFailure(where: string, err: unknown, extra?: object): void {
   try {
-    console.error(`[analytics] ${where} failed`, { ...extra, sqlstate: sqlstate(err), err });
+    const kind = err instanceof Error ? err.name : typeof err;
+    const detail = JSON.stringify({ ...extra, sqlstate: sqlstate(err), kind });
+    if (process.env.NODE_ENV === 'production') {
+      console.error(`[analytics] ${where} failed`, detail);
+    } else {
+      console.error(`[analytics] ${where} failed`, detail, err);
+    }
   } catch {
     /* a logger that throws must not take the invocation with it */
   }

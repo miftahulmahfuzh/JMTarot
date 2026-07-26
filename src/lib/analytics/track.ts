@@ -68,11 +68,22 @@ function debugEnabled(): boolean {
   return process.env.ANALYTICS_DEBUG === '1';
 }
 
-/** Ids and counts only. Never the props of an event that carries user text --
- *  there are none, by rule 1 of the taxonomy, which is what makes this safe. */
+/**
+ * Ids, counts and the error's class. Never its message, and never props.
+ *
+ * Same obligation as `flush.ts`'s: a driver error quotes the statement it
+ * failed on, and one of those statements binds `readings.question`. The full
+ * error is printed in development only.
+ */
 export function logAnalyticsFailure(where: string, err: unknown, extra?: object): void {
   try {
-    console.error(`[analytics] ${where} failed`, { ...extra, err });
+    const kind = err instanceof Error ? err.name : typeof err;
+    const detail = JSON.stringify({ ...extra, kind });
+    if (process.env.NODE_ENV === 'production') {
+      console.error(`[analytics] ${where} failed`, detail);
+    } else {
+      console.error(`[analytics] ${where} failed`, detail, err);
+    }
   } catch {
     // A logger that throws must not take a reading down with it.
   }
