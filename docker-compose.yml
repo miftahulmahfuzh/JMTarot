@@ -1,0 +1,39 @@
+# Local development only. There is no production database yet (roadmap D5);
+# when there is, the only file that changes is src/lib/db/client.ts, which
+# names the three settings that move and why.
+#
+# Why Docker rather than the postgresql-16 already installed on this machine:
+# that cluster is on port 5433, has no `miftah` role, and its pg_hba.conf is
+# root-only -- creating a role there needs an interactive sudo password, which
+# turns setup from a script into a conversation. Docker needs none.
+services:
+  postgres:
+    # 16 to match the psql 16.11 already on PATH, so client and server never
+    # disagree. gen_random_uuid() is core in PG13+, so the schema's
+    # `default gen_random_uuid()` needs no CREATE EXTENSION pgcrypto.
+    image: postgres:16-alpine
+    container_name: jmtarot-pg
+    # WSL has systemd enabled, so the container comes back after a WSL restart
+    # and `npm run db:up` is a no-op rather than a chore every morning.
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: jmtarot
+      # Committed on purpose, and deliberately trivial: this container binds to
+      # loopback and holds nothing but seeded fiction. IT MUST NEVER BE REUSED
+      # FOR ANYTHING. Alphanumeric on purpose too -- a `$` in a password inside
+      # a .env file gets expanded away by Next exactly the way the bcrypt
+      # hashes did, and `@ : / ?` would need percent-encoding in the URL.
+      POSTGRES_PASSWORD: jmtarot
+      POSTGRES_DB: jmtarot
+    # 127.0.0.1, not 0.0.0.0. WSL2's NAT would otherwise expose this to the
+    # Windows host and to anything that can reach it.
+    ports: ['127.0.0.1:5432:5432']
+    volumes: ['jmtarot-pgdata:/var/lib/postgresql/data']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U jmtarot -d jmtarot']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  jmtarot-pgdata:
