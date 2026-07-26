@@ -42,6 +42,16 @@ export type Draw = {
   reversed: boolean;
 };
 
+/**
+ * The two supported locales.
+ *
+ * Declared here, beside ReaderId and ServiceId, rather than in `src/lib/i18n/`
+ * so that the Drizzle schema can reach it without `@/lib/db/**` depending on
+ * `@/lib/i18n/**`. This module has no imports, which is what makes that safe.
+ * W6 re-exports this type from `@/lib/i18n/locale`; it must not redefine it.
+ */
+export type Locale = 'id' | 'en';
+
 export type ServiceId = 'daily' | 'spread3' | 'yesno';
 
 export type ReaderId = 'thessaly' | 'margaret' | 'adrian';
