@@ -1,14 +1,25 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { z } from 'zod';
 import { requireUser } from '@/lib/auth/server';
 import { getProvider } from '@/lib/llm';
 import { buildPrompt } from '@/lib/prompt/build';
+import { getLotusBlock, scheduleLotusRefresh } from '@/lib/prompt/lotus.generate';
 import { MAX_QUESTION_LENGTH } from '@/lib/prompt/sanitize';
 import { hit } from '@/lib/ratelimit';
 import { isReaderId } from '@/data/readers';
 import { isServiceId, serviceById } from '@/data/services';
 
 export const runtime = 'nodejs';
+
+/**
+ * Headroom for `after()` past the end of the stream (reconciliation §6).
+ *
+ * The Lotus repair runs after the response is flushed, and a reading can take
+ * ten seconds to start and several more to finish. Without this the invocation
+ * can end at the platform default while a distillation is mid-flight, which
+ * shows up as a `lotus_avatars` row that never appears and no error anywhere.
+ */
+export const maxDuration = 60;
 
 /*
  * The client sends card IDS AND ORIENTATION, NOTHING ELSE. Every word of card
@@ -85,12 +96,52 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Kartu tidak boleh berulang.' }, { status: 400 });
   }
 
+  /*
+   * THE LOTUS BLOCK. One cached read, and its failure is NON-FATAL.
+   *
+   * Roadmap §6 permits this read on the request path -- it is per-user, it
+   * changes rarely, and it is behind a short-lived in-process cache with one
+   * indexed lookup as the miss path. `getLotusBlock` swallows a database error
+   * and returns null rather than throwing, because a reading without the block
+   * is a valid reading and a DB hiccup must not cost the user their reading.
+   *
+   * NULL IS NORMAL, not an error: not yet distilled (they beat the `after()` from
+   * onboarding by a few seconds), distillation failed, or they skipped every
+   * question. All three produce exactly the reading an un-personalised user gets.
+   */
+  const lotus = await getLotusBlock(auth.user.id, auth.user.locale);
+
+  /*
+   * THE LAZY REPAIR (L15), and this is the one place the cooldown belongs.
+   *
+   * A missing or out-of-date block schedules a regeneration AFTER the response is
+   * flushed, so nobody waits for their lotus to be re-grown -- the current
+   * reading uses what there is, and the next one gets the fresh block. The
+   * ten-minute cooldown inside `scheduleLotusRefresh` is what stops a user whose
+   * generation keeps failing from paying for an attempt on every reading.
+   *
+   * Absence of the row is the "needs generation" signal, which is why
+   * `lotus_avatars` has no status column and needs no cron.
+   */
+  if (!lotus || lotus.stale) {
+    after(() => scheduleLotusRefresh(auth.user.id));
+  }
+
   let prompt;
   try {
     // buildPrompt re-derives every card from cards.json and, for yes/no,
     // derives the verdict from effectiveYesNo. The model explains it; it does
     // not choose it.
-    prompt = buildPrompt({ reader, service, picks, question });
+    prompt = buildPrompt({
+      reader,
+      service,
+      picks,
+      question,
+      // An empty summary means "there is a profile but nothing distilled yet".
+      // Passing it through would render an empty `<penanya>` block, which is
+      // noise in the prompt and a rule the reader would apply to nothing.
+      context: { lotus: lotus && lotus.summary ? lotus : null },
+    });
   } catch (err) {
     console.error('prompt build failed', err);
     return NextResponse.json({ error: 'Permintaan tidak valid.' }, { status: 400 });
