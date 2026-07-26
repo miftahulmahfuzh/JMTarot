@@ -236,6 +236,226 @@
   color: var(--faint);
 }
 
+/*
+ * The free-text answer.
+ *
+ * SAME 16px+ TRAP AS `.input`, and it is worth restating rather than
+ * cross-referencing: a textarea under 16px zooms iOS Safari on focus exactly
+ * like an input does, and the zoom does not undo itself on blur. This is also
+ * the field most likely to be edited on a phone with the keyboard up.
+ *
+ * `field-sizing: content` would be nicer than a fixed height and is not used:
+ * it is Chromium-only, and on Safari -- the only browser this app actually
+ * ships to -- it does nothing, so the layout would be tuned against a box that
+ * behaves differently on the target device.
+ */
+.textarea {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-chip);
+  padding: 14px 12px;
+  width: 100%;
+  /* Four lines. Enough that a real answer does not scroll from the first
+     sentence, short enough that the button stays above the keyboard. */
+  min-height: 108px;
+  resize: none;
+}
+
+.textarea:focus {
+  outline: none;
+  border-color: var(--gold-border);
+  background: var(--gold-wash);
+}
+
+/*
+ * The character counter, which APPEARS ONLY PAST 80% OF THE CAP.
+ *
+ * A counter visible from the first keystroke turns an open question into a word
+ * budget, and on `worst_thing` that would be an unkind thing to put on screen.
+ * It exists so that hitting the cap is not a surprise, and for nothing else.
+ */
+.counter {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 13px;
+  color: var(--faint);
+  align-self: flex-end;
+  /* Reserve the line whether or not it is filled, so appearing does not shift
+     the button under the user's thumb. */
+  min-height: 1.2em;
+}
+
+.counterOver {
+  color: #e0a3a3;
+}
+
+/* --- The scale ----------------------------------------------------------- */
+
+.scale {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/*
+ * A native `<input type="range">`, restyled.
+ *
+ * Native because it is the one control iOS already knows how to drag with a
+ * thumb, and because a hand-rolled slider would need pointer capture, keyboard
+ * support and an ARIA role that the platform gives away for free.
+ */
+.range {
+  width: 100%;
+  /* The track is 2px; the input needs real height for the 44px tap target. */
+  height: 44px;
+  background: none;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+.range::-webkit-slider-runnable-track {
+  height: 2px;
+  background: var(--gold-hairline);
+  border-radius: 1px;
+}
+
+.range::-moz-range-track {
+  height: 2px;
+  background: var(--gold-hairline);
+  border-radius: 1px;
+}
+
+/* The filled portion. Firefox gives it to us; WebKit does not, which is why the
+   untouched state is signalled by the thumb rather than by the fill. */
+.range::-moz-range-progress {
+  height: 2px;
+  background: var(--gold-wash-strong);
+  border-radius: 1px;
+}
+
+.range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--gold-lift);
+  /* Centre a 22px thumb on a 2px track. */
+  margin-top: -10px;
+  border: none;
+}
+
+.range::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--gold-lift);
+  border: none;
+}
+
+/*
+ * UNTOUCHED IS VISIBLY DIFFERENT FROM TOUCHED (L5).
+ *
+ * A slider parked at centre makes "no answer" and "dead centre" the same
+ * picture, which would be a silent lie in `traits`. So before the control is
+ * touched the thumb is hollow, and "Lanjut" is disabled -- the two together are
+ * what say "this needs an answer" rather than "this is already answered".
+ */
+.rangeUntouched::-webkit-slider-thumb {
+  background: transparent;
+  border: 1px solid var(--gold-border);
+}
+
+.rangeUntouched::-moz-range-thumb {
+  background: transparent;
+  border: 1px solid var(--gold-border);
+}
+
+.scaleEnds {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* --- The colour plates --------------------------------------------------- */
+
+.plates {
+  display: flex;
+  gap: 10px;
+}
+
+/*
+ * Three tappable plates in the card-back idiom.
+ *
+ * `aspect-ratio` rather than a fixed height, so all three stay square at any
+ * card width, and `min-height` so the tap target clears 44px even if the card
+ * were ever narrowed.
+ */
+.plate {
+  flex: 1;
+  aspect-ratio: 1;
+  min-height: 44px;
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-chip);
+  cursor: pointer;
+  padding: 0;
+  /* The swatch fills the plate; the label sits under it, outside. */
+  display: block;
+}
+
+.plate:hover {
+  border-color: var(--gold-border);
+}
+
+.plateSelected {
+  border-color: var(--gold-border);
+  /* Two signals, not one: a border change alone is ~1px of difference on a dark
+     screen and is easy to miss on a phone in daylight. */
+  box-shadow: inset 0 0 0 3px var(--gold-wash);
+}
+
+.plateBlack {
+  background: var(--canvas);
+}
+
+.plateWhite {
+  background: var(--card-face-1);
+}
+
+/*
+ * THE LITERAL MIDPOINT OF TWO EXISTING TOKENS, and it must stay that.
+ *
+ * `tokens.ts` has no neutral grey and this plan is not adding one. Writing
+ * `#8a8a8a` here would introduce a colour with no counterpart in the source of
+ * truth, and it would stop tracking `--canvas` and `--card-face-1` if either
+ * ever changes. Do not "simplify" this into a hex value.
+ */
+.plateGrey {
+  background: color-mix(in srgb, var(--canvas) 50%, var(--card-face-1));
+}
+
+.plateLabel {
+  display: block;
+  margin-top: 8px;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 14px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.plateWrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
 /* --- Controls ------------------------------------------------------------ */
 
 /*

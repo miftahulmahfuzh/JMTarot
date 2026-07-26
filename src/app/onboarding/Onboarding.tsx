@@ -33,8 +33,11 @@ import {
   type RawAnswer,
 } from '@/data/onboarding';
 import type { Profile } from '@/data/types';
-import { c, q } from './copy';
+import { ColorStep } from './ColorStep';
+import { c } from './copy';
 import { FactsStep, type Facts } from './FactsStep';
+import { ScaleStep } from './ScaleStep';
+import { TextStep } from './TextStep';
 import styles from './onboarding.module.css';
 
 /** Step 0 is the invitation, step 1 the facts, 2-7 the six, 8 the close. */
@@ -225,6 +228,7 @@ export function Onboarding({ profile, answeredKeys, initialStep }: OnboardingPro
               profile={profile}
               facts={facts}
               answers={answers}
+              answeredKeys={answeredKeys}
               headingId={headingId}
               onSubmitFacts={submitFacts}
               onSubmitAnswer={submitAnswer}
@@ -241,6 +245,7 @@ function StepBody({
   profile,
   facts,
   answers,
+  answeredKeys,
   headingId,
   onSubmitFacts,
   onSubmitAnswer,
@@ -249,6 +254,7 @@ function StepBody({
   profile: Profile | null;
   facts: Facts | null;
   answers: Partial<Record<OnboardingQuestionKey, RawAnswer>>;
+  answeredKeys: OnboardingQuestionKey[];
   headingId: string;
   onSubmitFacts: (facts: Facts) => Promise<void>;
   onSubmitAnswer: (key: OnboardingQuestionKey, raw: RawAnswer) => void;
@@ -265,25 +271,56 @@ function StepBody({
   if (!key) return null;
 
   /*
-   * TextStep / ScaleStep / ColorStep land here in Task 5. `onSubmitAnswer` is
-   * already the shape they need, so Task 5 adds three components and no
-   * plumbing.
+   * `alreadySaved` is the resume signal, and it is the ONLY thing the client
+   * learns about a previous answer. The step says an answer exists and that
+   * typing replaces it; it never shows the text, because the server never sent
+   * it.
+   *
+   * A key answered in THIS session is not "already saved" in that sense -- the
+   * user just typed it and going Back should not tell them their own answer is
+   * a mystery -- so `answers` shadows `answeredKeys`.
    */
+  const alreadySaved = answeredKeys.includes(key) && !(key in answers);
+
+  /*
+   * The key selects the component. A `switch` on the key rather than a field in
+   * the catalog: `isFreeText` already says which of the two shapes a question
+   * has, and the two closed questions need different controls from each other,
+   * so a table would have one row per question anyway and would put the mapping
+   * a file away from the components it names.
+   */
+  if (key === 'introversion') {
+    return (
+      <ScaleStep
+        headingId={headingId}
+        alreadySaved={alreadySaved}
+        onAnswer={(raw) => onSubmitAnswer(key, raw)}
+      />
+    );
+  }
+
+  if (key === 'color') {
+    return (
+      <ColorStep
+        headingId={headingId}
+        alreadySaved={alreadySaved}
+        onAnswer={(raw) => onSubmitAnswer(key, raw)}
+      />
+    );
+  }
+
   return (
-    <div className={styles.step}>
-      <h1 className={styles.title} id={headingId} tabIndex={-1}>
-        {q(key, 'title')}
-      </h1>
-      <p className={styles.framing}>{q(key, 'framing')}</p>
-      <p className={styles.hint}>{q(key, 'hint')}</p>
-      <button
-        type="button"
-        className={styles.cta}
-        onClick={() => onSubmitAnswer(key, { skipped: true })}
-      >
-        {c('onboarding.actions.skip')}
-      </button>
-    </div>
+    <TextStep
+      // Keyed so that moving between two free-text questions REMOUNTS the
+      // component. Without it React reuses the instance and its `text` state,
+      // and the answer to `best_thing` appears pre-typed under the heading for
+      // `worst_thing` -- which on that question in particular would be alarming.
+      key={key}
+      questionKey={key}
+      headingId={headingId}
+      alreadySaved={alreadySaved}
+      onAnswer={(raw) => onSubmitAnswer(key, raw)}
+    />
   );
 }
 
