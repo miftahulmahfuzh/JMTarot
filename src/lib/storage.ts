@@ -1,11 +1,26 @@
 import type { DailyPull, Profile, ReaderId } from '@/data/types';
 
 /**
- * The entire client-side persistence layer: three keys, all in `localStorage`.
+ * The client-side persistence layer: three keys, all in `localStorage`.
  *
- * Nothing here is ever transmitted. There is no database, and a reading is not
- * persisted at all -- only the profile and the daily-card state outlive a page
- * load. Resist adding anything a server would need to see.
+ * `localStorage` IS NO LONGER THE SOURCE OF TRUTH FOR THE PROFILE. It is a
+ * CACHE of what the server already knows (roadmap non-negotiable #3, and W3).
+ * This file used to say "nothing here is ever transmitted; there is no
+ * database, and a reading is not persisted at all", and every word of that was
+ * correct when it was written. It is now wrong three times over: there is a
+ * Postgres database, readings are stored (D12), and the profile lives in
+ * `profiles` -- written by onboarding, keyed on `users.id`, and authoritative.
+ *
+ * So: `saveProfile` is a convenience for rendering a greeting without a round
+ * trip. NOTHING may treat `loadProfile()` as authoritative, and in particular
+ * NOTHING may decide whether onboarding is complete from it -- `completedAt`
+ * here is a copy that a second browser, a fresh install or a cleared cache does
+ * not have. The gate reads the `onb` claim in the session cookie and the
+ * `/onboarding` page reads `profiles`; neither reads this.
+ *
+ * `todayKey()` STAYS, and its comment is load-bearing. The device's own
+ * calendar day is a fact the server cannot compute, which is the whole reason
+ * `local_date` is a client-supplied column (roadmap §7).
  *
  * These are synchronous, unlike the AsyncStorage version they replace, and they
  * must not be called during render on the server: `localStorage` does not exist

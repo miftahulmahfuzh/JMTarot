@@ -1,6 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { requireEnv } from '@/lib/env';
-import type { LLMProvider, ReadingPrompt } from './types';
+import type {
+  CompletionPrompt,
+  LLMCallOpts,
+  LLMProvider,
+  ReadingPrompt,
+  ReadingUsage,
+} from './types';
 
 /**
  * Serves both Anthropic proper and z.ai's Anthropic-compatible proxy.
@@ -23,9 +29,9 @@ export function createAnthropicProvider(): LLMProvider {
   const model = requireEnv('LLM_MODEL');
 
   return {
-    async *streamReading({ system, user, maxTokens }: ReadingPrompt) {
+    async *streamReading({ system, user, maxTokens }: ReadingPrompt, opts?: LLMCallOpts) {
       const stream = client.messages.stream({
-        model,
+        model: opts?.model ?? model,
         max_tokens: maxTokens,
         /*
          * `cache_control` is correct for Anthropic and inert on z.ai, which
@@ -44,6 +50,44 @@ export function createAnthropicProvider(): LLMProvider {
           yield event.delta.text;
         }
       }
+    },
+
+    /**
+     * One shot. `messages.create`, not `messages.stream`.
+     *
+     * The SDK returns content as an array of blocks; only `text` blocks carry
+     * prose, and a model that emitted a tool-use block would otherwise stringify
+     * as `[object Object]` into whatever tries to JSON.parse it. Joining the text
+     * blocks and ignoring the rest is the honest reading of the shape.
+     */
+    async complete({ system, user, maxTokens }: CompletionPrompt, opts?: LLMCallOpts) {
+      const message = await client.messages.create(
+        {
+          model: opts?.model ?? model,
+          max_tokens: maxTokens,
+          system: [{ type: 'text', text: system }],
+          messages: [{ role: 'user', content: user }],
+        },
+        opts?.signal ? { signal: opts.signal } : undefined,
+      );
+
+      const text = message.content
+        .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+        .map((block) => block.text)
+        .join('');
+
+      /*
+       * Never throws and always settles, per the interface. z.ai reports
+       * `input_tokens: 0` and honours no caching, so these are recorded as
+       * nullable rather than trusted -- do not build a cost model on them while
+       * pointed at that provider.
+       */
+      const usage: ReadingUsage = {
+        inputTokens: message.usage?.input_tokens ?? null,
+        outputTokens: message.usage?.output_tokens ?? null,
+      };
+
+      return { text, usage };
     },
   };
 }

@@ -1,0 +1,646 @@
+/*
+ * The questionnaire's shell.
+ *
+ * Composed entirely from `src/theme/tokens.css`. NO NEW HEX VALUES, NO NEW FONT
+ * SIZES, NO NEW EASING CURVES -- the one derived colour below is a `color-mix`
+ * of two existing tokens rather than a fourth grey, and it is commented so
+ * nobody "simplifies" it into a literal.
+ *
+ * The visual precedent is `src/app/login/login.module.css`: the
+ * eyebrow-with-hairlines, the `.submit` fill, the 340px card. `.input` below is
+ * that file's input idiom, RECOVERED FROM `cafaf28` -- W2 deleted it along with
+ * the username and password fields when Google sign-in replaced them, so the
+ * "copy the idiom" instruction in the plan points at a rule that no longer
+ * exists. The 16px/iOS comment came with it and is the load-bearing half.
+ */
+
+.shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  /* The bottom inset is the home indicator. `viewportFit: 'cover'` in
+     layout.tsx is what makes env() report anything but zero. */
+  padding: 32px 24px calc(32px + env(safe-area-inset-bottom));
+}
+
+.card {
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Gold hairlines flanking the eyebrow, per the design's section header. */
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-section-label);
+  text-transform: uppercase;
+  color: var(--gold);
+  white-space: nowrap;
+}
+
+.eyebrow::before,
+.eyebrow::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--gold-hairline);
+}
+
+/*
+ * The step counter. A Cinzel numeral, not nine dots.
+ *
+ * Same idiom as the draw screen's counter, and the same reasoning: at phone
+ * width nine dots become decoration nobody counts, whereas "4 / 9" answers the
+ * only question a stepper raises. It sits above the title so it is read first
+ * and then ignored.
+ */
+.progress {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  color: var(--faint);
+  margin: 0;
+}
+
+/*
+ * The question itself.
+ *
+ * Not `--fs-title` (34px): these are sentences, not the word "JMTarot", and six
+ * of them run past two lines at that size on a 375px screen. `--fs-card-title`
+ * is the next step down in the scale and is what the card detail overlay uses
+ * for the same job -- a heading that is prose.
+ */
+.title {
+  font-family: var(--font-display), serif;
+  font-weight: 500;
+  font-size: var(--fs-card-title);
+  letter-spacing: var(--ls-card-title);
+  line-height: 1.45;
+  color: var(--gold-text);
+  margin: 0;
+}
+
+/*
+ * NO FOCUS RING ON THE STEP HEADING, and this is a deliberate exception rather
+ * than a stripped outline.
+ *
+ * The heading takes `tabIndex={-1}` and receives `focus()` on every advance, so
+ * a screen reader announces the new step instead of restarting from the top of
+ * the document. `tabIndex={-1}` also means it is NOT reachable by Tab, so no
+ * keyboard user can ever land here and none of them loses an indicator --
+ * WCAG 2.4.7 is about keyboard-operable controls, and this is not one.
+ *
+ * What the default ring cost: Chrome drew a rounded box around the heading, and
+ * on the facts step that put a box around "Siapa kamu" sitting directly above
+ * three real text inputs. It read as a fourth, mysteriously-filled field. Caught
+ * in a 390px screenshot, invisible to every test in this project.
+ */
+.title:focus,
+.titleLarge:focus {
+  outline: none;
+}
+
+/* Reserved for step 0, which is the one screen that gets the full display size. */
+.titleLarge {
+  font-family: var(--font-display), serif;
+  font-weight: 500;
+  font-size: var(--fs-title);
+  letter-spacing: var(--ls-title);
+  line-height: 1.2;
+  color: var(--gold-text);
+  margin: 0;
+}
+
+/*
+ * The mystical register. Italic Cormorant, because that is what this app uses
+ * when it is being atmospheric rather than instructive.
+ */
+.framing {
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: var(--fs-hint);
+  line-height: 1.5;
+  color: var(--text-warm);
+  margin: 0;
+}
+
+/*
+ * Where honesty lives: scope, and the practical truth. Upright and quieter than
+ * the framing line, so atmosphere and disclosure do not contaminate each other.
+ */
+.hint {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--muted);
+  margin: 0;
+}
+
+/* Step 0's body copy. `white-space: pre-line` so the paragraph break in the
+   copy string renders without splitting it into two keys. */
+.body {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-hint);
+  line-height: 1.6;
+  color: var(--text);
+  margin: 0;
+  white-space: pre-line;
+}
+
+/* The permission to refuse, on step 0. Quietest thing on the screen and still
+   the most important sentence on it. */
+.note {
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--muted);
+  margin: 0;
+}
+
+/* --- Fields -------------------------------------------------------------- */
+
+/* One labelled field: label, input, hint. The hint sits UNDER the input so it
+   does not push the field down the screen away from the keyboard. */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-slot-label);
+  text-transform: uppercase;
+  color: var(--label);
+}
+
+/*
+ * Recovered from `cafaf28`'s login.module.css, which W2 deleted along with the
+ * password fields. The 16px+ rule is the load-bearing half and applies to the
+ * textarea below just as much.
+ */
+.input {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 17px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-chip);
+  /* 16px+ font and 14px padding: under 16px iOS Safari ZOOMS THE PAGE on focus,
+     and the zoom does not undo itself when the field blurs. `maximumScale: 1`
+     would also stop it and is deliberately absent from layout.tsx, because it
+     blocks pinch-zoom and fails WCAG 1.4.4. The font size is the real fix. */
+  padding: 14px 12px;
+  width: 100%;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--gold-border);
+  background: var(--gold-wash);
+}
+
+/*
+ * The date input needs help that the text inputs do not.
+ *
+ * WebKit renders `input[type=date]` with its own internal padding and, left
+ * alone, ignores the `color` it inherits -- the placeholder text comes out near
+ * black on a near black canvas and reads as an empty field with a mysterious
+ * height. `color-scheme: dark` is what makes the native picker and its text
+ * follow the page instead of the platform default.
+ */
+.input[type='date'] {
+  color-scheme: dark;
+  /* iOS lays the date text out against the left edge of its own shadow DOM,
+     which sits inside our padding; without this the value looks indented. */
+  -webkit-appearance: none;
+  appearance: none;
+  min-height: 51px;
+}
+
+.fieldHint {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--faint);
+}
+
+/*
+ * The free-text answer.
+ *
+ * SAME 16px+ TRAP AS `.input`, and it is worth restating rather than
+ * cross-referencing: a textarea under 16px zooms iOS Safari on focus exactly
+ * like an input does, and the zoom does not undo itself on blur. This is also
+ * the field most likely to be edited on a phone with the keyboard up.
+ *
+ * `field-sizing: content` would be nicer than a fixed height and is not used:
+ * it is Chromium-only, and on Safari -- the only browser this app actually
+ * ships to -- it does nothing, so the layout would be tuned against a box that
+ * behaves differently on the target device.
+ */
+.textarea {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-chip);
+  padding: 14px 12px;
+  width: 100%;
+  /* Four lines. Enough that a real answer does not scroll from the first
+     sentence, short enough that the button stays above the keyboard. */
+  min-height: 108px;
+  resize: none;
+}
+
+.textarea:focus {
+  outline: none;
+  border-color: var(--gold-border);
+  background: var(--gold-wash);
+}
+
+/*
+ * The character counter, which APPEARS ONLY PAST 80% OF THE CAP.
+ *
+ * A counter visible from the first keystroke turns an open question into a word
+ * budget, and on `worst_thing` that would be an unkind thing to put on screen.
+ * It exists so that hitting the cap is not a surprise, and for nothing else.
+ */
+.counter {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 13px;
+  color: var(--faint);
+  align-self: flex-end;
+  /* Reserve the line whether or not it is filled, so appearing does not shift
+     the button under the user's thumb. */
+  min-height: 1.2em;
+}
+
+.counterOver {
+  color: #e0a3a3;
+}
+
+/* --- The scale ----------------------------------------------------------- */
+
+.scale {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/*
+ * A native `<input type="range">`, restyled.
+ *
+ * Native because it is the one control iOS already knows how to drag with a
+ * thumb, and because a hand-rolled slider would need pointer capture, keyboard
+ * support and an ARIA role that the platform gives away for free.
+ */
+.range {
+  width: 100%;
+  /* The track is 2px; the input needs real height for the 44px tap target. */
+  height: 44px;
+  background: none;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+.range::-webkit-slider-runnable-track {
+  height: 2px;
+  background: var(--gold-hairline);
+  border-radius: 1px;
+}
+
+.range::-moz-range-track {
+  height: 2px;
+  background: var(--gold-hairline);
+  border-radius: 1px;
+}
+
+/* The filled portion. Firefox gives it to us; WebKit does not, which is why the
+   untouched state is signalled by the thumb rather than by the fill. */
+.range::-moz-range-progress {
+  height: 2px;
+  background: var(--gold-wash-strong);
+  border-radius: 1px;
+}
+
+.range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--gold-lift);
+  /* Centre a 22px thumb on a 2px track. */
+  margin-top: -10px;
+  border: none;
+}
+
+.range::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--gold-lift);
+  border: none;
+}
+
+/*
+ * UNTOUCHED IS VISIBLY DIFFERENT FROM TOUCHED (L5).
+ *
+ * A slider parked at centre makes "no answer" and "dead centre" the same
+ * picture, which would be a silent lie in `traits`. So before the control is
+ * touched the thumb is hollow, and "Lanjut" is disabled -- the two together are
+ * what say "this needs an answer" rather than "this is already answered".
+ */
+.rangeUntouched::-webkit-slider-thumb {
+  background: transparent;
+  border: 1px solid var(--gold-border);
+}
+
+.rangeUntouched::-moz-range-thumb {
+  background: transparent;
+  border: 1px solid var(--gold-border);
+}
+
+.scaleEnds {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* --- The colour plates --------------------------------------------------- */
+
+.plates {
+  display: flex;
+  gap: 10px;
+}
+
+/*
+ * Three tappable plates in the card-back idiom.
+ *
+ * `aspect-ratio` rather than a fixed height, so all three stay square at any
+ * card width, and `min-height` so the tap target clears 44px even if the card
+ * were ever narrowed.
+ */
+.plate {
+  flex: 1;
+  aspect-ratio: 1;
+  min-height: 44px;
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-chip);
+  cursor: pointer;
+  padding: 0;
+  /* The swatch fills the plate; the label sits under it, outside. */
+  display: block;
+}
+
+.plate:hover {
+  border-color: var(--gold-border);
+}
+
+.plateSelected {
+  border-color: var(--gold-border);
+  /* Two signals, not one: a border change alone is ~1px of difference on a dark
+     screen and is easy to miss on a phone in daylight. */
+  box-shadow: inset 0 0 0 3px var(--gold-wash);
+}
+
+.plateBlack {
+  background: var(--canvas);
+}
+
+.plateWhite {
+  background: var(--card-face-1);
+}
+
+/*
+ * THE LITERAL MIDPOINT OF TWO EXISTING TOKENS, and it must stay that.
+ *
+ * `tokens.ts` has no neutral grey and this plan is not adding one. Writing
+ * `#8a8a8a` here would introduce a colour with no counterpart in the source of
+ * truth, and it would stop tracking `--canvas` and `--card-face-1` if either
+ * ever changes. Do not "simplify" this into a hex value.
+ */
+.plateGrey {
+  background: color-mix(in srgb, var(--canvas) 50%, var(--card-face-1));
+}
+
+.plateLabel {
+  display: block;
+  margin-top: 8px;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 14px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.plateWrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- Controls ------------------------------------------------------------ */
+
+/*
+ * The primary action. Lifted from login's `.submit`.
+ * 16px of padding on a 12px-ish cap-height line clears the 44px tap target.
+ */
+.cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--button-text);
+  border: 1px solid var(--gold-border);
+  background: var(--gold-wash);
+  border-radius: var(--radius-chip);
+  padding: 16px;
+  /* An <a> is used for this in one place (the repair screen's retry). */
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.cta:hover:not(:disabled) {
+  background: var(--gold-wash-strong);
+}
+
+.cta:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/*
+ * The action row.
+ *
+ * `column` by default: Skip belongs BELOW Continue on five of the six question
+ * steps, because offering them side by side gives declining the same weight as
+ * answering, which on `best_thing` is an odd thing to do.
+ */
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+/*
+ * `worst_thing` ONLY (§4). Skip sits beside Continue at equal weight rather
+ * than below it, because on the one question that asks about the worst thing
+ * someone has witnessed, declining should not look like the lesser option.
+ */
+.actionsLevel {
+  flex-direction: row;
+}
+
+.actionsLevel > * {
+  flex: 1;
+}
+
+/*
+ * Skip. A real button, never a link and never smaller than 44px of tap target.
+ *
+ * Bordered rather than bare text when it is level with Continue, so the two read
+ * as two choices rather than as a button and an afterthought.
+ */
+.skip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 15px;
+  color: var(--muted);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-chip);
+  padding: 12px;
+  cursor: pointer;
+}
+
+.skip:hover {
+  color: var(--text-warm);
+}
+
+.actionsLevel .skip {
+  border-color: var(--gold-hairline);
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  padding: 16px;
+}
+
+/* Back is always available and never competes with the primary action. */
+.back {
+  align-self: flex-start;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--faint);
+  background: none;
+  border: none;
+  /* 12px vertical either side of a 10px line clears 44px with the row gap. */
+  padding: 12px 4px;
+  cursor: pointer;
+}
+
+.back:hover {
+  color: var(--muted);
+}
+
+.back:disabled {
+  opacity: 0;
+  /* Hidden rather than removed, so the header does not reflow between steps. */
+  pointer-events: none;
+}
+
+/* --- Feedback ----------------------------------------------------------- */
+
+.error {
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: 15px;
+  /* The same red login.module.css uses. Not a token: there is no error colour in
+     tokens.ts, and adding one for two call sites is not worth a token churn. */
+  color: #e0a3a3;
+  margin: 0;
+  min-height: 1.2em;
+}
+
+/*
+ * The polite live region that announces each step.
+ *
+ * Visually hidden rather than `display: none`, which screen readers skip
+ * entirely. The clip-path/1px idiom is the one that survives every AT.
+ */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- Step transitions --------------------------------------------------- */
+
+/*
+ * One step visible at a time, and the change is a short fade-and-rise rather
+ * than a slide: a slide implies a horizontal filmstrip the user can swipe, and
+ * they cannot.
+ */
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  animation: rise var(--dur) var(--ease-card) both;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/*
+ * Instant under reduced motion. `usePrefersReducedMotion` handles the cases
+ * JavaScript has to know about; this covers the CSS-only ones, and both are
+ * needed -- the hook cannot cancel an animation the stylesheet declares.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .step {
+    animation: none;
+  }
+}

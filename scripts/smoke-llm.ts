@@ -91,6 +91,26 @@ async function main() {
   const reader = arg('reader');
   const service = arg('service');
   const all = process.argv.includes('--all');
+  const lotus = process.argv.includes('--lotus');
+  /* `--all --lotus` is meant to be diffed against `--all`; fixed hands are what
+     make that diff about the Lotus block rather than about the cards. */
+  const fixedCards = all && (lotus || process.argv.includes('--fixed'));
+
+  /*
+   * `npm run smoke -- --lotus` runs ONE real distillation and shows its whole
+   * pipeline: the prompt, the raw model output, the parsed result and the
+   * safety-check verdict.
+   *
+   * This exists because everything about the Lotus block is unit-tested for
+   * SHAPE and nothing can unit-test whether it is any good -- and unlike a
+   * reading, nobody ever reads this text again after it is written once. It goes
+   * silently into every subsequent reading prompt instead. So it gets looked at
+   * on purpose, at least once, by a person.
+   */
+  if (lotus && !all) {
+    await runLotus();
+    return;
+  }
 
   if (!reader && !service && !all) {
     await run(
@@ -114,15 +134,39 @@ async function main() {
       : READERS.flatMap((r) => SERVICES.map((s) => [r.id, s.id] as const));
 
   const failures: string[] = [];
+  /** reader -> its spread3 text, for the overlap number printed at the end. */
+  const spreads = new Map<string, string>();
 
   for (const [r, s] of pairs) {
     const count = SERVICES.find((x) => x.id === s)?.cardCount ?? 1;
-    const picks = shuffleDeck()
-      .slice(0, count)
-      .map((d) => ({ id: d.card.id, reversed: d.reversed }));
 
-    const prompt = buildPrompt({ reader: r, service: s, picks, question: arg('question') });
+    /*
+     * DETERMINISTIC PICKS WHEN COMPARING, RANDOM OTHERWISE.
+     *
+     * `--all --lotus` is meant to be diffed against `--all`, and two runs that
+     * drew different cards are not comparable at all -- any difference in the
+     * prose is explained by The Tower turning up instead of The Star, and the
+     * question the comparison exists to answer ("did the Lotus block flatten the
+     * readers?") cannot be reached. So both runs draw the same nine hands.
+     *
+     * Off by default, because a single `--all` run is also how you check that a
+     * random spread still produces sane readings.
+     */
+    const picks = fixedCards
+      ? fixedPicks(pairs.findIndex(([pr, ps]) => pr === r && ps === s), count)
+      : shuffleDeck()
+          .slice(0, count)
+          .map((d) => ({ id: d.card.id, reversed: d.reversed }));
+
+    const prompt = buildPrompt({
+      reader: r,
+      service: s,
+      picks,
+      question: arg('question'),
+      context: lotus ? { lotus: LOTUS_BLOCK_FIXTURE } : undefined,
+    });
     const text = await run(`${r} / ${s}`, prompt.system, prompt.user, prompt.maxTokens);
+    if (s === 'spread3') spreads.set(r, text);
 
     const framing = READERS.find((x) => x.id === r)?.positionFraming ?? [];
     for (const problem of check(text, r, s, picks, {
@@ -142,11 +186,221 @@ async function main() {
     for (const f of failures) process.stdout.write(`FAIL  ${f}\n`);
     process.stdout.write(`\n${failures.length} violation(s)\n`);
   }
+
+  if (spreads.size === 3) {
+    /*
+     * A HEURISTIC REPORTED AS A NUMBER, NEVER AN ASSERTION (W3 plan §9).
+     *
+     * Mean pairwise Jaccard overlap of content words between the three readers'
+     * spread3 outputs. It will NOT catch two readers converging in rhythm while
+     * using different words, so it can never be the gate -- but a jump between
+     * the plain and lotus runs is a signal worth acting on, and it costs ten
+     * lines.
+     *
+     * THE GATE IS STILL READING THE NINE.
+     */
+    const texts = [...spreads.entries()];
+    const pairsOf: Array<[string, string, number]> = [];
+    for (let i = 0; i < texts.length; i += 1) {
+      for (let j = i + 1; j < texts.length; j += 1) {
+        pairsOf.push([texts[i][0], texts[j][0], jaccard(texts[i][1], texts[j][1])]);
+      }
+    }
+    const mean = pairsOf.reduce((sum, [, , v]) => sum + v, 0) / pairsOf.length;
+    process.stdout.write(`\nreader overlap, spread3 (${lotus ? 'WITH lotus' : 'plain'}):\n`);
+    for (const [a, b, v] of pairsOf) {
+      process.stdout.write(`  ${a} vs ${b}: ${v.toFixed(3)}\n`);
+    }
+    process.stdout.write(`  mean: ${mean.toFixed(3)}\n`);
+  }
+
+  if (lotus) {
+    process.stdout.write(`\n${'#'.repeat(70)}\nTHE LOTUS BLOCK THESE NINE CARRIED\n${'#'.repeat(70)}\n`);
+    process.stdout.write(`${renderLotusBlockFixture()}\n`);
+    process.stdout.write(
+      '\nRead the nine in THIS order (W3 plan §9):\n' +
+        '  1. Cover the names. Can you still tell Thessaly, Margaret and Adrian\n' +
+        '     apart? If not, fix the persona paragraphs or the base-contract\n' +
+        '     <penanya> rule -- never the code.\n' +
+        '  2. How many of the nine mention the background AT ALL? Nine out of nine\n' +
+        '     means the "at most once, only if it sharpens" rule failed and the\n' +
+        '     block is being treated as the topic. Two or three is the shape of a\n' +
+        '     rule that is working.\n' +
+        '  3. Does any reading reach PAST the block toward an incident that is not\n' +
+        '     in it? The fixture says "kenangan berat tentang kehilangan" and\n' +
+        '     nothing more; a reading that invents the loss has gone too far.\n',
+    );
+  } else {
+    process.stdout.write(
+      '\nWhat this cannot check: whether the three readers are actually\n' +
+        'distinguishable. Cover the names and read them. If you cannot tell who\n' +
+        'wrote which, the app has one reader in three hats -- fix the persona\n' +
+        'paragraphs in src/lib/prompt/readers.ts, not the code.\n',
+    );
+  }
+}
+
+/**
+ * Content-word overlap between two readings.
+ *
+ * Indonesian function words are stripped, or the number would mostly measure how
+ * often both texts said "yang".
+ */
+const STOPWORDS = new Set(
+  ('yang dan di ke dari itu ini ada untuk pada dengan kamu tidak bisa akan atau juga ' +
+    'sudah masih saat kalau karena tapi lebih satu dalam bukan apa saja hanya jadi ' +
+    'seperti agar oleh para adalah nya se ia dia mereka aku saya kita kami').split(' '),
+);
+
+function jaccard(a: string, b: string): number {
+  const bag = (t: string) =>
+    new Set(
+      t
+        .toLowerCase()
+        .replace(/[^\p{L}\s]/gu, ' ')
+        .split(/\s+/)
+        .filter((w) => w.length > 3 && !STOPWORDS.has(w)),
+    );
+  const x = bag(a);
+  const y = bag(b);
+  if (x.size === 0 || y.size === 0) return 0;
+  let shared = 0;
+  for (const w of x) if (y.has(w)) shared += 1;
+  return shared / (x.size + y.size - shared);
+}
+
+/**
+ * The canned Lotus block the `--all --lotus` run injects into all nine readings.
+ *
+ * VERBATIM FROM A REAL DISTILLATION of the fixture below, not hand-written, so
+ * the comparison measures what the feature actually produces rather than what
+ * someone imagined it would. It carries the distilled line about a heavy memory
+ * that §9's third check looks for -- "kenangan berat tentang kehilangan" and
+ * nothing about what was lost -- so a reading that reaches past it toward an
+ * incident has gone somewhere the block never took it.
+ */
+const LOTUS_BLOCK_FIXTURE = {
+  nickname: 'Rani',
+  summary:
+    'Ada satu masa awal mandiri yang membekas sebagai titik terang, saat segala ' +
+    'sesuatu terasa segar dan penuh kemungkinan. Ia juga menyimpan satu kenangan ' +
+    'berat tentang kehilangan yang datang mendadak, suatu bayangan lama yang masih ' +
+    'berdiam diam-diam. Orang yang paling dicintai adalah ibunya, sosok yang menjadi ' +
+    'pusat dari rasa aman dan kehangatan dalam hidupnya. Ia lebih sering menyendiri, ' +
+    'dengan dunia batin yang tenang dan terjaga.',
+};
+
+function renderLotusBlockFixture(): string {
+  return `<penanya>\nNama panggilan: ${LOTUS_BLOCK_FIXTURE.nickname}\nLatar: ${LOTUS_BLOCK_FIXTURE.summary}\n</penanya>`;
+}
+
+/**
+ * Nine fixed hands, one per (reader, service) pair.
+ *
+ * Derived from the pair's index rather than from a PRNG, so `--all` and
+ * `--all --lotus` draw identically with no seed to pass and no state to carry
+ * between two separate process runs. Spread across the deck and alternating
+ * orientation so the nine are not all upright and not all from the same third of
+ * the Fool's Journey.
+ */
+function fixedPicks(pairIndex: number, count: number): Array<{ id: number; reversed: boolean }> {
+  const picks: Array<{ id: number; reversed: boolean }> = [];
+  for (let i = 0; i < count; i += 1) {
+    // 7 is coprime with 22, so successive pairs walk the whole deck without
+    // repeating within a hand.
+    const id = (pairIndex * 7 + i * 5) % 22;
+    picks.push({ id, reversed: (pairIndex + i) % 3 === 0 });
+  }
+  return picks;
+}
+
+/**
+ * The fixture answer set for `--lotus`.
+ *
+ * Chosen to exercise every guard at once rather than to be typical:
+ *
+ *   - `most_loved` carries a PROPER NAME ("Sari"), so a block that copies it is
+ *     caught by the name check rather than by luck.
+ *   - `worst_thing` carries something genuinely heavy, because "abstract, never
+ *     restate" is only tested by material worth restating.
+ *   - `best_thing` is long enough to produce a six-word run if the model quotes.
+ *   - `willow_wish` is skipped, so the `(dilewati)` path is in the prompt.
+ */
+const LOTUS_FIXTURE = {
+  birthYear: 1994,
+  answers: [
+    {
+      key: 'best_thing' as const,
+      text: 'tahun pertama kerja di kota lain, waktu semuanya masih serba baru dan aku belum kenal siapa-siapa',
+      choice: null,
+      skipped: false,
+    },
+    {
+      key: 'worst_thing' as const,
+      text: 'waktu SMA aku lihat tetangga sebelah rumah dibawa pergi pakai ambulans dan tidak pernah pulang lagi, ibunya menjerit di depan pagar sampai pagi',
+      choice: null,
+      skipped: false,
+    },
+    { key: 'most_loved' as const, text: 'ibu saya, namanya Sari', choice: null, skipped: false },
+    { key: 'introversion' as const, text: null, choice: '30', skipped: false },
+    { key: 'color' as const, text: null, choice: 'black', skipped: false },
+    { key: 'willow_wish' as const, text: null, choice: null, skipped: true },
+  ],
+};
+
+async function runLotus() {
+  const { buildLotusPrompt, parseLotusResponse, fallbackLotus, lotusSafetyCheck, renderLotusBlock } =
+    await import('@/lib/prompt/lotus');
+
+  const prompt = buildLotusPrompt(LOTUS_FIXTURE);
+
+  process.stdout.write(`\n${'#'.repeat(70)}\nUSER TURN SENT TO THE DISTILLER\n${'#'.repeat(70)}\n`);
+  process.stdout.write(`${prompt.user}\n`);
+
+  const raw = await run('lotus distillation', prompt.system, prompt.user, prompt.maxTokens);
+
+  const rawAnswers = LOTUS_FIXTURE.answers
+    .map((a) => a.text)
+    .filter((t): t is string => typeof t === 'string');
+
+  process.stdout.write(`\n${'#'.repeat(70)}\nPARSED\n${'#'.repeat(70)}\n`);
+
+  let parsed;
+  try {
+    parsed = parseLotusResponse(raw, LOTUS_FIXTURE);
+  } catch (err) {
+    process.stdout.write(`UNPARSEABLE: ${err instanceof Error ? err.message : String(err)}\n`);
+    process.stdout.write('falling back to the deterministic template:\n');
+    parsed = fallbackLotus(LOTUS_FIXTURE);
+  }
+
+  const idWords = parsed.summaryId.trim().split(/\s+/).length;
+  const enWords = parsed.summaryEn.trim().split(/\s+/).length;
+  process.stdout.write(`summary_id (${idWords} words, ${parsed.summaryId.length} chars):\n`);
+  process.stdout.write(`  ${parsed.summaryId}\n\n`);
+  process.stdout.write(`summary_en (${enWords} words, ${parsed.summaryEn.length} chars):\n`);
+  process.stdout.write(`  ${parsed.summaryEn}\n\n`);
+  process.stdout.write(`traits: ${JSON.stringify(parsed.traits)}\n`);
+
+  process.stdout.write(`\n${'#'.repeat(70)}\nSAFETY CHECK\n${'#'.repeat(70)}\n`);
+  const verdict = lotusSafetyCheck({ id: parsed.summaryId, en: parsed.summaryEn }, rawAnswers);
   process.stdout.write(
-    '\nWhat this cannot check: whether the three readers are actually\n' +
-      'distinguishable. Cover the names and read them. If you cannot tell who\n' +
-      'wrote which, the app has one reader in three hats -- fix the persona\n' +
-      'paragraphs in src/lib/prompt/readers.ts, not the code.\n',
+    verdict.ok ? 'ACCEPTED\n' : `REJECTED -- reason: ${verdict.reason} (the template is stored)\n`,
+  );
+
+  process.stdout.write(`\n${'#'.repeat(70)}\nRENDERED INTO A READING\n${'#'.repeat(70)}\n`);
+  const block = renderLotusBlock({
+    nickname: 'Rani',
+    summary: verdict.ok ? parsed.summaryId : fallbackLotus(LOTUS_FIXTURE).summaryId,
+  });
+  process.stdout.write(`${block}\n[${block.length} chars, cap 600]\n`);
+
+  process.stdout.write(
+    '\nThree questions to ask, and only the third needs a person:\n' +
+      `  1. is summary_id ${45}-${75} words?  (${idWords} above)\n` +
+      '  2. does it describe a SHAPE rather than an incident?\n' +
+      '  3. would you be comfortable if the person who wrote those answers read it?\n' +
+      'If the answer to the third is no, the CONTRACT needs another rule -- not the code.\n',
   );
 }
 
