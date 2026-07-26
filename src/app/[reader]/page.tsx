@@ -2,6 +2,8 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Eyebrow } from '@/components/Eyebrow';
+import { ReaderViewed } from '@/components/ReaderViewed';
+import { TrackLink } from '@/components/TrackLink';
 import { READERS, readerById, readerPortrait } from '@/data/readers';
 import { SERVICES } from '@/data/services';
 import styles from './page.module.css';
@@ -22,6 +24,11 @@ export default async function ServicePicker({
 
   return (
     <main className={styles.shell}>
+      {/* Renders nothing. Kept out of the server component so this page stays
+          static; `from` is derived in the browser because the server cannot
+          see a client-side navigation. */}
+      <ReaderViewed readerId={reader.id} />
+
       {/* Standalone mode has no browser chrome and no back gesture. See the
           note in the stylesheet -- this is not decoration. */}
       <Link href="/" className={styles.back}>
@@ -52,10 +59,12 @@ export default async function ServicePicker({
 
       <div className={styles.services}>
         {SERVICES.map((service) => (
-          <Link
+          <TrackLink
             key={service.id}
             href={`/${reader.id}/${service.id}`}
             className={styles.service}
+            name="service.chosen"
+            props={{ reader_id: reader.id, service_id: service.id }}
           >
             <span>
               <span className={styles.serviceName}>{service.name}</span>
@@ -64,7 +73,7 @@ export default async function ServicePicker({
             <span className={styles.count}>
               {service.cardCount} kartu
             </span>
-          </Link>
+          </TrackLink>
         ))}
       </div>
 

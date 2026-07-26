@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Cinzel, Cormorant_Garamond } from 'next/font/google';
 import type { ReactNode } from 'react';
+import { AppLaunched } from '@/components/AppLaunched';
 import { Backdrop } from '@/components/Backdrop';
 import { StillMode } from '@/components/StillMode';
 import './globals.css';
@@ -80,6 +81,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         {/* Dev-only screenshot hook; see the component. Stripped from
             production builds. */}
         {process.env.NODE_ENV !== 'production' ? <StillMode /> : null}
+        {/* One event per page load. A client component here does not make the
+            layout dynamic, so /terms and /privacy stay statically renderable. */}
+        <AppLaunched />
         <Backdrop />
         {children}
       </body>

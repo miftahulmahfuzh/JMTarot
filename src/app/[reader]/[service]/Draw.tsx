@@ -11,6 +11,9 @@ import { CARDS, shuffleDeck } from '@/data/deck';
 import { slotLabels } from '@/data/services';
 import type { Draw as DrawnCard, Reader, Service } from '@/data/types';
 import { togglePick } from '@/lib/draw';
+import { LOCAL_DATE_HEADER, SESSION_HEADER } from '@/lib/analytics/localdate';
+import { getSessionId, track } from '@/lib/analytics/track.client';
+import { todayKey } from '@/lib/storage';
 import { usePrefersReducedMotion } from '@/lib/usePrefersReducedMotion';
 import { MAX_QUESTION_LENGTH } from '@/lib/prompt/sanitize';
 import { motion } from '@/theme/tokens';
@@ -54,6 +57,32 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
   const abortRef = useRef<AbortController | null>(null);
   const reduceMotion = usePrefersReducedMotion();
 
+  /** When this draw began, for `draw.completed.elapsed_ms`. Reset by a reshuffle. */
+  const drawStartedAt = useRef(Date.now());
+  /** `reading.retried.attempt`, so a retry loop is visible as one. */
+  const attempt = useRef(0);
+  /**
+   * StrictMode double-invokes effects. Without this guard every draw is counted
+   * twice in development and once in production -- the worst kind of
+   * measurement bug, because the numbers are wrong only where you look at them.
+   */
+  const startedFired = useRef(false);
+
+  useEffect(() => {
+    if (startedFired.current) return;
+    startedFired.current = true;
+    drawStartedAt.current = Date.now();
+    track('draw.started', {
+      reader_id: reader.id,
+      service_id: service.id,
+      card_count: cardCount,
+      reduced_motion: reduceMotion,
+    });
+    // Mount only: `reduceMotion` is recorded as it stood when the draw began,
+    // which is the layout the querent actually got.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   /*
    * A mirror of `deck`, refreshed on every render, so the request is always
    * built from the same array the screen is showing.
@@ -87,25 +116,65 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
    * disagreeing with the text below them -- but looking at a card is exactly
    * what the querent is doing while they read.
    */
+  /*
+   * TWO ANALYTICS RULES APPLY TO EVERYTHING BELOW, and both are CLAUDE.md traps
+   * that already cost this project a debugging session in their non-analytics
+   * form:
+   *
+   *   1. READ THE CARD FROM `deckRef.current`, NEVER FROM `deck`. Under
+   *      StrictMode the closure's deck and the rendered deck can be two
+   *      different shuffles, and an event that names the wrong card is the
+   *      SILENT version of the bug that made the screen and the request
+   *      disagree.
+   *   2. NEVER CALL track() INSIDE A setState UPDATER. Updaters are
+   *      double-invoked, so the event would fire twice and the count would be
+   *      wrong in development only. The call goes in the callback body, before
+   *      setPicks.
+   */
   const tapCard = useCallback(
     (index: number) => {
+      const drawn = deckRef.current[index];
+      if (!drawn) return;
+
       if (picks.includes(index)) {
+        track('draw.card_detail_opened', {
+          card_id: drawn.card.id,
+          reversed: drawn.reversed,
+          slot: picks.indexOf(index),
+          during_reading: reading.status !== 'idle',
+        });
         setDetail(index);
         return;
       }
       if (reading.status !== 'idle') return;
+      // togglePick no-ops past cardCount, so a stray tap on a full spread must
+      // not record a pick that did not happen.
+      if (picks.length >= cardCount) return;
+
+      track('draw.card_picked', {
+        reader_id: reader.id,
+        service_id: service.id,
+        card_id: drawn.card.id,
+        reversed: drawn.reversed,
+        slot: picks.length,
+      });
       setPicks((prev) => togglePick(prev, index, cardCount));
     },
-    [cardCount, picks, reading.status],
+    [cardCount, picks, reading.status, reader.id, service.id],
   );
 
   const returnCard = useCallback(
     (index: number) => {
       setDetail(null);
       if (reading.status !== 'idle') return;
+
+      const drawn = deckRef.current[index];
+      if (drawn) {
+        track('draw.card_returned', { card_id: drawn.card.id, slot: picks.indexOf(index) });
+      }
       setPicks((prev) => togglePick(prev, index, cardCount));
     },
-    [cardCount, reading.status],
+    [cardCount, picks, reading.status],
   );
 
   const requestReading = useCallback(
@@ -119,10 +188,37 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
       abortRef.current = controller;
       setReading({ status: 'waiting' });
 
+      const trimmed = q.trim();
+      if (!trimmed) {
+        track('question.skipped', { reader_id: reader.id, service_id: service.id });
+      }
+
+      /*
+       * The client's own view of the request, reported through /api/events --
+       * a DIFFERENT route, a different request and a different after() from the
+       * server's copy. That independence is the entire loss-detection mechanism
+       * (plan §10): a client `reading.completed` with no matching `readings` row
+       * means an invocation was killed before it could write.
+       *
+       * `reading_id` comes off the `x-reading-id` response header, so it does
+       * not exist until the headers land -- which is why there is no client-side
+       * `reading.requested`, and why a pre-headers failure reports 'unknown'.
+       */
+      let readingId = 'unknown';
+      const requestedAt = Date.now();
+      let firstByteMs: number | null = null;
+
       try {
         const res = await fetch('/api/reading', {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          headers: {
+            'content-type': 'application/json',
+            [SESSION_HEADER]: getSessionId(),
+            // The device's own calendar day. The server cannot compute it, and
+            // getting it wrong dates a third of every Jakarta evening to the
+            // day before -- roadmap §7.
+            [LOCAL_DATE_HEADER]: todayKey(),
+          },
           signal: controller.signal,
           body: JSON.stringify({
             reader: reader.id,
@@ -133,16 +229,24 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
               id: deckNow[i].card.id,
               reversed: deckNow[i].reversed,
             })),
-            question: q.trim() || undefined,
+            question: trimmed || undefined,
           }),
         });
 
+        readingId = res.headers.get('x-reading-id') ?? readingId;
+
         if (res.status === 401) {
           // The cookie expired mid-session. Nothing to show; send them back.
+          track('auth.session_expired', { at_path: window.location.pathname });
           router.replace('/login');
           return;
         }
         if (res.status === 429) {
+          track('reading.rate_limited', {
+            reader_id: reader.id,
+            service_id: service.id,
+            retry_after_s: Number(res.headers.get('retry-after') ?? 0),
+          });
           setReading({
             status: 'error',
             message: 'Terlalu banyak bacaan. Coba lagi nanti.',
@@ -150,6 +254,16 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
           return;
         }
         if (!res.ok || !res.body) {
+          track('reading.failed', {
+            reading_id: readingId,
+            reader_id: reader.id,
+            service_id: service.id,
+            stage: 'connect',
+            chars_before_failure: 0,
+            // A short classifier, never a message: rule 2 of the taxonomy.
+            error_kind: `http_${res.status}`,
+            source: 'client',
+          });
           setReading({
             status: 'error',
             message: 'Bacaan tidak bisa dimulai. Coba lagi.',
@@ -164,14 +278,56 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
         for (;;) {
           const { done, value } = await readerStream.read();
           if (done) break;
+          if (firstByteMs === null) firstByteMs = Date.now() - requestedAt;
           text += decoder.decode(value, { stream: true });
           setReading({ status: 'streaming', text });
         }
         text += decoder.decode();
         setReading({ status: 'done', text });
+
+        /*
+         * The client cannot know the token counts or whether the stored copy was
+         * truncated, and it deliberately does not guess: those are the server's
+         * to record. `status: 'ok'` here means "the stream ended normally as far
+         * as the browser is concerned" -- if the server appended its interrupted
+         * notice, ITS row and ITS event say `partial`, and the disagreement
+         * between the two copies is information rather than a contradiction.
+         */
+        track('reading.completed', {
+          reading_id: readingId,
+          reader_id: reader.id,
+          service_id: service.id,
+          latency_ms: firstByteMs ?? -1,
+          total_ms: Date.now() - requestedAt,
+          chars: text.length,
+          token_input: null,
+          token_output: null,
+          truncated: false,
+          status: 'ok',
+          source: 'client',
+        });
       } catch (err) {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted) {
+          // Draw.tsx aborts on reset, on unmount and on every fresh request, so
+          // this is a normal path. `reason` is 'user' because all three are.
+          track('reading.aborted', {
+            reading_id: readingId,
+            chars_before_abort: 0,
+            reason: 'user',
+            source: 'client',
+          });
+          return;
+        }
         console.error(err);
+        track('reading.failed', {
+          reading_id: readingId,
+          reader_id: reader.id,
+          service_id: service.id,
+          stage: firstByteMs === null ? 'connect' : 'stream',
+          chars_before_failure: 0,
+          error_kind: 'network',
+          source: 'client',
+        });
         setReading({
           status: 'error',
           message: 'Koneksi terputus. Coba lagi.',
@@ -187,16 +343,38 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
    */
   useEffect(() => {
     if (!complete || reading.status !== 'idle') return;
+    track('draw.completed', {
+      reader_id: reader.id,
+      service_id: service.id,
+      elapsed_ms: Date.now() - drawStartedAt.current,
+    });
     const timer = setTimeout(
       () => requestReading(picks, question),
       reduceMotion ? 0 : motion.settle,
     );
     return () => clearTimeout(timer);
-  }, [complete, reading.status, picks, deck, question, requestReading, reduceMotion]);
+  }, [
+    complete,
+    reading.status,
+    picks,
+    deck,
+    question,
+    requestReading,
+    reduceMotion,
+    reader.id,
+    service.id,
+  ]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
   const reset = () => {
+    track('draw.reshuffled', {
+      reader_id: reader.id,
+      service_id: service.id,
+      picks_discarded: picks.length,
+    });
+    drawStartedAt.current = Date.now();
+    attempt.current = 0;
     abortRef.current?.abort();
     setReading({ status: 'idle' });
     setPicks([]);
@@ -233,6 +411,20 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
           className={styles.question}
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
+          /*
+           * ON BLUR, NOT ON CHANGE, and the LENGTH, never the text. onChange
+           * would be one event per keystroke -- a request per keystroke once the
+           * batcher fills -- and the question itself is exactly what rule 1 of
+           * the taxonomy forbids in props.
+           */
+          onBlur={() => {
+            if (question.trim().length === 0) return;
+            track('question.typed', {
+              reader_id: reader.id,
+              service_id: service.id,
+              length: question.trim().length,
+            });
+          }}
           maxLength={MAX_QUESTION_LENGTH}
           placeholder="Ada yang mau kamu tanyakan?"
           /* Locked once the request is in flight: editing it afterwards would
@@ -270,7 +462,15 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
 
       <ReadingPanel
         state={reading}
-        onRetry={() => requestReading(picks, question)}
+        onRetry={() => {
+          attempt.current += 1;
+          track('reading.retried', {
+            reader_id: reader.id,
+            service_id: service.id,
+            attempt: attempt.current,
+          });
+          requestReading(picks, question);
+        }}
       />
 
       <div className={styles.footer}>
