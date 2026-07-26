@@ -161,7 +161,10 @@ readings                                        -- one row per completed reading
   service_id          text not null             -- 'daily' | 'spread3' | 'yesno'
   locale              text not null
   question            text                      -- the querent's text, sanitized, may be NULL
-  question_blocked    boolean not null default false
+  status              text not null default 'ok'  -- (amended) ok|partial|failed|aborted|blocked.
+                                                -- REPLACES the `question_blocked` boolean that stood
+                                                -- here: it said the same thing as status='blocked',
+                                                -- and one fact needs one column.
   verdict             text                      -- yes/no services only
   body                text                      -- the generated prose, NULL if the stream died
   model               text not null

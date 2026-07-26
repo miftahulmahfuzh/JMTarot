@@ -28,9 +28,18 @@
 >   contribute `context.lotus` and do not write the plumbing.
 > - Your open question 4 (does the JWT carry `users.id`) — **yes**, confirmed by
 >   W2, along with `onb` and `refreshSession()`.
-> - **Open questions 1 and 8 went to Miftah** (reconciliation §7, items 4 and 5):
->   dropping the §8 examples from `worst_thing`, and whether the block may carry
->   third-party names. **Do not implement either until answered.**
+> - **Your open questions 1 and 8 are ANSWERED — both in your favour**
+>   (reconciliation §7.4 and §7.5, settled 2026-07-26):
+>   - **Question 3b ships without the enumerated examples.** Your version wins
+>     over the original brief, at Miftah's explicit direction. Roadmap §8's
+>     description of the question is amended to match, and the reason is recorded
+>     so nobody restores the list later as a missing requirement.
+>   - **The Lotus block carries relations, never third-party names.** The name
+>     from `most_loved` is never stored in `summary`, never sent to z.ai, never
+>     reaches a prompt. This promotes your `lotusSafetyCheck()` capitalised-name
+>     rejection from defensive to **load-bearing** — its test is not optional.
+>     The raw answer is still stored and encrypted; the constraint is on what
+>     leaves the database, not what enters it.
 
 > **For Claude:** REQUIRED SUB-SKILL: use `superpowers-extended-cc:executing-plans` to implement this plan task-by-task.
 >

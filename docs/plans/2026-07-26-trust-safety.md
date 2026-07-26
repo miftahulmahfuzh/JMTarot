@@ -39,9 +39,36 @@
 >   your deletion flow.
 > - **R14** — the account-erasure controls live at `/account`, owned by W3.
 >   `/privacy` links to it and stays statically renderable.
-> - **Open questions 2, 3, 4, 6 and 14 went to Miftah** (reconciliation §7):
->   the asymmetric timeout, age 18, the legal entity, **z.ai's data-use terms
->   (blocking)**, and which language governs. **Tasks 8 and 9 stay blocked.**
+> - **Your open questions 2, 3, 4, 6 and 14 are all ANSWERED** (reconciliation
+>   §7, settled 2026-07-26). **Tasks 8 and 9 are unblocked.** Specifically:
+>   - **Operator:** PT Citra Suka Buana. **Contact:** cs@citrasukabuana.co.id.
+>     **Governing law:** Indonesia. **Governing language:** Bahasa Indonesia,
+>     stated in both versions — your D20 recommendation, accepted.
+>   - **Forum: `Pengadilan Negeri Jakarta Pusat`**, drafted as the standard
+>     domicile election. Miftah answered "Pengadilan Tinggi Jakarta"; a
+>     *Pengadilan Tinggi* is appellate and cannot be a filing venue, so the city
+>     is taken and the court type corrected. **Mark the Jakarta district NEEDS
+>     CONFIRMATION** against the company's deed — Jakarta has five.
+>   - **z.ai: does not train on API inputs, and you have a citable clause** —
+>     `docs.z.ai/legal-agreement/terms-of-use`, Additional Terms for API
+>     Services. Read §7.1 before writing privacy §5 clause 4: the protection is
+>     **API-specific** (the general terms reserve the opposite for consumer
+>     users), it is **opt-in**, and the document states **no retention period
+>     and no processing location**. Do not invent either. Record it with
+>     `sourceUrl` + `verifiedOn` and let the staleness test cover it.
+>   - **Age: 18.** The UU PDP verification item survives the decision — still no
+>     article number in the T&C that nobody has read.
+>   - **The asymmetric timeout stands** exactly as you designed it.
+> - **§7.8 — account deletion is a 30-day grace period, then a hard purge** that
+>   frees the `google_sub`. You own the daily sweep: **one Vercel Cron job doing
+>   three deletes** — expired soft-deletes, moderation redaction, and the
+>   `events` 180-day TTL — not three jobs.
+> - **§7.9a — `CSP_REPORT_URI` is cut** (nothing reads it; the CSP ships without
+>   the directive), and **`readings.question_blocked` is dropped**. Read
+>   `readings.status = 'blocked'` instead.
+> - **§7.9b — `EVENTS_RETENTION_DAYS=180`**, stated in the privacy policy.
+>   `readings` is explicitly NOT on that clock — life of the account, because
+>   the memory features read it. Say both, in those words.
 > - Your hotline discipline is upheld as written: nothing unverified enters
 >   `resources.ts`, and no digits ship unchecked.
 

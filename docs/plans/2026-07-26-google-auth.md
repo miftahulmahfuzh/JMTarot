@@ -29,9 +29,31 @@
 >   columns (`terms_accepted_at`, `terms_version`, `age_confirmed_at`). W7 owns
 >   the copy and the justification.
 > - Your open question 8 (`ratelimit.ts` unowned) is resolved: **W7 owns it.**
-> - Open questions 5 (a production domain) and 7 (erasure semantics) went to
->   Miftah — see reconciliation §7 items 2 and 8. Until 7 is answered, keep your
->   refusal behaviour.
+> - **Your open questions 5 and 7 are ANSWERED** (reconciliation §7.2 and §7.8,
+>   settled 2026-07-26):
+>   - **Domain: `www.jmtarot.com`**, canonical, with the apex 308-redirecting to
+>     it. **Production `AUTH_URL=https://www.jmtarot.com`**; redirect URI
+>     `https://www.jmtarot.com/api/auth/callback/google`; Google Authorized
+>     Domain is the registrable `jmtarot.com`. Serve one host, never both — the
+>     callback is a string comparison. **Not purchased yet**, so the consent
+>     screen stays in Testing mode and only manually-added test accounts can sign
+>     in. Build against that.
+>   - **Erasure: a 30-day grace period, then a hard purge.** Replace your
+>     outright refusal. Sign-in against a soft-deleted row **within** 30 days
+>     clears `deleted_at` and restores the account; **past** 30 days it
+>     hard-deletes the row and creates a fresh user in the same transaction.
+>     That lazy purge is your safety net; W7 owns the daily sweep that makes the
+>     erasure promise true for users who never come back. W1's rejected partial
+>     unique index on `google_sub` stays rejected and is now correct by
+>     construction, since no soft-deleted row outlives 30 days.
+> - **§7.9a — `AUTH_SECRET_1..3` and `AUTH_REDIRECT_PROXY_URL` are cut.**
+>   Rotation machinery for an unscheduled rotation, and a preview-only variable
+>   whose own note said not to set it before there is a production domain.
+>   `SESSION_TTL_HOURS` **and** `SESSION_ABSOLUTE_TTL_DAYS` both survive — they
+>   are orthogonal, and your `@auth/core` finding is exactly why the second is
+>   not redundant.
+> - **§7.6 — the age bar is 18.** Your first-sign-in acceptance screen writes
+>   `age_confirmed_at` against that; W7 owns the copy.
 
 **Status:** planning. Nothing here is built yet.
 **Date opened:** 2026-07-26.

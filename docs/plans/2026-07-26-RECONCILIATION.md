@@ -12,8 +12,13 @@ individual workstream plan.** Where a plan says something this file overturns,
 the plan is wrong and its own text says to come here. Nothing below is a
 suggestion.
 
-Twenty-nine items. Two are live bugs in shipped code. Nine need Miftah and are
-collected in §7.
+Twenty-nine items. Two are live bugs in shipped code.
+
+**§7 is settled.** The nine decisions that needed Miftah were answered on
+2026-07-26 and are recorded there with their consequences. Two carry a
+correction he did not give and must not be implemented as literally stated —
+the governing-court clause (§7.3) and the sourcing of the z.ai claim (§7.1).
+Nothing else in §7 is open.
 
 ---
 
@@ -197,9 +202,12 @@ further argument.
 | `gist` | `text` nullable | W5 |
 
 `prompt_version` keeps its §3 declaration, with R5's format.
-`question_blocked` and `status = 'blocked'` are redundant by construction; keep
-both — §3 declares the boolean and W7 reads it, while `status` is what makes
-four different failure modes one indexed filter.
+
+**`question_blocked` is dropped** *(amended by §7.9a)*. This paragraph
+originally kept both it and `status = 'blocked'` while admitting they are
+redundant by construction. Under Miftah's "no redundant stuff", one column with
+one meaning: **`status` survives and W7 reads it.** Roadmap §3's
+`readings.question_blocked` is removed.
 
 ### `reading_cards`
 | Change | From |
@@ -455,16 +463,21 @@ Twenty-four, of which roadmap §4 named eleven. Every new one is optional with a
 working default, except where marked. All go in `.env.example`, all obey the
 `\$`-escaping rule in `.env` files and **not** in the Vercel dashboard.
 
+*(Trimmed by §7.9a from twenty-seven: `AUTH_SECRET_1..3`,
+`AUTH_REDIRECT_PROXY_URL` and `CSP_REPORT_URI` are cut as speculative. They are
+struck through below rather than deleted, so nobody re-adds them without
+reading why they went.)*
+
 | Variable | Default | Owner | Notes |
 |---|---|---|---|
 | `DATABASE_URL` | — **required** | W1 | Percent-encode `@ : / ?`; keep the dev password alphanumeric and the `$` trap cannot arise |
 | `TEST_DATABASE_URL` | — | W1 | Separate variable, never an override. Harness refuses a value not ending `_test` |
 | `FIELD_ENCRYPTION_KEY` | — **required** | W1 | base64url, so no `$`, `+`, `/` or `=`. Three consumers — see R15 |
 | `AUTH_SECRET` | — **required** | W2 | Must be set in Preview too; missing it looks like "signed in, then bounced forever" with a 200 in the log |
-| `AUTH_SECRET_1..3` | unset | W2 | Optional, for rotation. Highest-numbered mints, the rest still decrypt |
-| `AUTH_URL` | `http://localhost:3001` | W2 | **:3001, see R12.** Preview uses the stable branch alias, not the per-deploy URL |
+| ~~`AUTH_SECRET_1..3`~~ | — | — | **Cut (§7.9a).** Rotation machinery for a rotation nobody has scheduled. The mechanism is `@auth/core`'s; re-add in the hour it is needed |
+| `AUTH_URL` | `http://localhost:3001` | W2 | **:3001 local, see R12. Production `https://www.jmtarot.com` (§7.2).** Preview uses the stable branch alias, not the per-deploy URL |
 | `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` | — **required** | W2 | Referenced statically in `config.ts` so Next can inline them into the edge bundle |
-| `AUTH_REDIRECT_PROXY_URL` | unset | W2 | Preview only; do not set before there is a production domain |
+| ~~`AUTH_REDIRECT_PROXY_URL`~~ | — | — | **Cut (§7.9a).** Its own note said "do not set before there is a production domain", and there is not one yet |
 | `SESSION_TTL_HOURS` | `24` | W2 | Idle timeout, sliding. Read at module scope, so a dashboard change needs a redeploy |
 | `SESSION_ABSOLUTE_TTL_DAYS` | `30` | W2 | R11. The only thing bounding a stolen cookie |
 | `DEV_PASSWORD_LOGIN` | unset | W2 | `'1'` **and** `NODE_ENV !== 'production'`. Never set on Vercel |
@@ -483,73 +496,253 @@ working default, except where marked. All go in `.env.example`, all obey the
 | `MODERATION_CLASSIFIER_ENABLED` | `1` | W7 | Kill switch. `0` = blocklist only, warns every request. Named so it cannot be misread as "moderation off" |
 | `MODERATION_QUESTION_RETENTION_DAYS` | `30` | W7 | Text redaction age |
 | `TERMS_VERSION` | `2026-07-26` | W7 | A bump forces re-acceptance |
-| `CSP_REPORT_URI` | unset | W7 | Omitted from the CSP when unset |
+| ~~`CSP_REPORT_URI`~~ | — | — | **Cut (§7.9a).** A report endpoint nothing reads. The CSP ships without the directive |
 
 Also not a variable but set at the same time: `export const maxDuration = 60`
 in `src/app/api/reading/route.ts`, giving `after()` headroom past the stream.
 
 ---
+## 7. Decisions — answered by Miftah, 2026-07-26
 
-## 7. For Miftah — nine decisions
+All nine came back the same day. Recorded here as settled; the workstreams they
+unblock are named against each. **Do not relitigate these.** Two carry a
+correction or a caveat, marked as such.
 
-Ordered by what blocks what. The first three block launch; the rest block a
-workstream or are product calls with no engineering answer.
+### 7.1 z.ai does not train on API inputs — **sourced, with two residual gaps**
 
-1. **z.ai's data-use terms. BLOCKING.** Do they train on API inputs, and how
-   long do they retain them? Every question a user types is sent to them. The
-   privacy policy's third-party disclosure cannot be written accurately without
-   this, and "your question goes to a company in another country" is a
-   disclosure users are entitled to have stated correctly. Nobody but you can
-   obtain this.
+**Answer: no — and unlike most such answers, this one has a citation.**
 
-2. **A production domain. BLOCKING, and it is a purchase.** `*.vercel.app` is
-   on the Public Suffix List, so Google will not verify it as an Authorized
-   domain, so the OAuth consent screen cannot leave Testing mode — meaning only
-   accounts you explicitly add can sign in. This sits between "everything is
-   built" and "a stranger can use it", and neither the brief nor my roadmap
-   costed it. Needs a domain, DNS, and `/terms` + `/privacy` served from it.
+Source: <https://docs.z.ai/legal-agreement/terms-of-use>, Additional Terms for
+API Services, retrieved 2026-07-26. The operative sentence:
 
-3. **Legal entity, jurisdiction, and a contact email.** `/terms` and `/privacy`
-   cannot ship with placeholders. Also: W7 recommends **Indonesian governs**,
-   stated in both versions, because two natively-written legal documents will
-   drift and something has to decide what happens then.
+> "We will not use your User Content for developing or improving Services
+> unless you explicitly agree to such use."
 
-4. **Question 3b's examples.** Your brief lists "partner cheats, murder,
-   bullying, suicide, rape, domestic violence" as prompts in the UI. W3 removed
-   them, arguing that listing them turns an open question into a menu and primes
-   the worst answer on the list. It kept the question, moved permission-to-decline
-   into the framing, and gave Skip equal weight. **This is a deliberate deviation
-   from what you asked for and it needs your yes or no.**
+Unblocks W7's privacy policy §5 clause 4 and W7 Tasks 8 and 9.
 
-5. **Third-party names in the Lotus block.** Question 3c hands you the name of
-   someone who never agreed to be in your database or your prompts. W3
-   recommends storing the *relation*, not the name — it reads as surveillance
-   rather than magic, and it invites the model to invent facts about a real
-   person. You may want the frisson. Explicit call, please.
+**Two things about this clause that the copy must get right.**
 
-6. **Minimum age.** W7 proposes 18, given that onboarding asks about witnessing
-   violence. Separately, and W7 was right to refuse to guess: **someone must
-   check Indonesia's personal-data law on children's data before the T&C is
-   written.** Do not let anyone cite an article number that has not been read.
+1. **It is API-specific, and the general terms say the opposite.** For
+   individual (non-API) users the same document reserves "the right to process
+   any User Content to improve our existing Services". The protection exists
+   *because JMTarot uses the API*. W7 writes it that way — "our model provider's
+   API terms prohibit training on submitted content without explicit
+   agreement" — not as a blanket claim about z.ai, which would be false for
+   their consumer product and would be trivially disprovable by a reader who
+   opens the same page.
+2. **It is opt-in, not opt-out.** Training requires affirmative agreement, so
+   the standing obligation on JMTarot is simply never to agree. Worth one line
+   in the operations notes: nobody clicks that box.
 
-7. **The asymmetric moderation timeout.** Fail *open* when the blocklist is
-   clean, fail *closed* on a Tier-B suspicion. It trades a small chance of one
-   unsafe reading against a large chance of falsely accusing innocent users
-   during a provider outage. W7 calls it "a product decision wearing engineering
-   clothes", which is exactly right.
+**Two gaps this document does not close, and the policy must not paper over
+them:**
 
-8. **Can a deleted account ever come back?** Currently no — not even as a new
-   user, because `google_sub` is unique and the erased row still holds it
-   (R23). That may be the correct reading of an erasure promise, or it may be a
-   support burden the first time someone rage-quits and returns.
+- **No retention period is stated** for API inputs or outputs, anywhere in the
+  terms. The privacy policy therefore **cannot** state one on z.ai's behalf. It
+  says what JMTarot retains and says that the provider does not publish a
+  retention period.
+- **No processing location is stated** for API data. The general terms
+  acknowledge "processing and storage of such User Content in locations outside
+  of the jurisdiction where you access or use the Services". So the honest
+  disclosure is that questions are transmitted to a third-party provider and
+  **may be processed outside Indonesia** — not a named country we cannot
+  evidence.
 
-9. **Two informational, no action needed unless you disagree:** session TTL is
-   now *two* numbers, not one — 24h idle plus a 30-day hard ceiling, because
-   Auth.js JWT sessions always slide (R11). And `events` retention defaults to
-   180 days (R19), which is a policy number your privacy policy will state.
+**One thing to obtain.** The terms reference a **"Data Processing Addendum for
+API Services"** that is not published at this URL. That document would answer
+both gaps. Requesting it from z.ai is the single highest-value follow-up here,
+and it is Miftah's to request. Until it exists, the two gaps above are described
+as unknown rather than guessed — the same discipline `resources.ts` applies to
+hotline numbers.
+
+**Citation hygiene:** this clause is recorded with `sourceUrl` + `verifiedOn`
+exactly like a hotline entry, and W7's 180/365-day staleness test covers it.
+Terms of use change, and a privacy policy quoting a clause that was silently
+revised is worse than one that never quoted it.
+
+### 7.2 Domain: `www.jmtarot.com`, purchased later
+
+**Answer: `www.jmtarot.com`. Not bought yet.**
+
+Consequences, all of them exact-match sensitive:
+
+- **`www.jmtarot.com` is canonical.** The apex `jmtarot.com` 308-redirects to it.
+  Pick one and never serve both, because an OAuth redirect URI is a string
+  comparison and a user who arrives at the apex will fail the callback.
+- **Google Authorized Domain** is the registrable domain, `jmtarot.com`, which
+  covers the `www` host. **The redirect URI is the canonical host only:**
+  `https://www.jmtarot.com/api/auth/callback/google`.
+- **Production `AUTH_URL=https://www.jmtarot.com`.**
+- Until the domain exists, the OAuth consent screen **stays in Testing mode**
+  and only manually-added test accounts can sign in (Google caps that list at
+  100). Everything else can be built and previewed against that constraint; the
+  release itself cannot happen.
+- The company domain (`citrasukabuana.co.id`, §7.3) and the product domain are
+  different on purpose. The T&C names the operator; the app is served from the
+  product domain. No conflict, worth not being surprised by.
+
+**Sequencing note, unchanged from the reconciliation's first draft:** Google's
+domain verification and consent-screen review take days and sit on the critical
+path. Buying late is the single easiest way to have everything built and still
+be unable to launch.
+
+### 7.3 Legal identity — *with one correction*
+
+| Field | Answer |
+|---|---|
+| Legal operator | **PT Citra Suka Buana** |
+| Contact | **cs@citrasukabuana.co.id** |
+| Governing language | **Bahasa Indonesia**, stated in both versions |
+| Governing law | Indonesia |
+| Forum | **Pengadilan Negeri Jakarta Pusat** — see the note |
+
+**Note on the forum, because the answer given needs one word changed.** Miftah
+answered "Pengadilan Tinggi Jakarta". A *Pengadilan Tinggi* is an **appellate**
+court — a claim cannot be filed there, so a clause naming one as the agreed
+forum names a venue nobody can use. The city is the part that was actually
+needed, and it is now settled: **Jakarta**.
+
+W7 drafts the standard Indonesian domicile election, which is a first-instance
+court:
+
+> Para Pihak sepakat memilih domisili hukum yang umum dan tetap pada
+> Kepaniteraan **Pengadilan Negeri Jakarta Pusat**.
+
+**One thing to confirm, and it is a one-word fill-in.** Jakarta has five
+district courts — Pusat, Utara, Selatan, Barat, Timur. Jakarta Pusat is the
+conventional default and is what W7 drafts. If PT Citra Suka Buana's deed of
+establishment gives a domicile in a different Jakarta district, swap the word;
+parties may elect any forum, but matching the company's domicile is the
+unarguable choice. Marked NEEDS CONFIRMATION in the same way an unverified
+hotline number is.
+
+Everything else here is final and unblocks W7 Tasks 8 and 9, plus the
+`/terms` and `/privacy` copy W2 links from the login page.
+
+### 7.4 Question 3b ships without the enumerated examples
+
+**Answer: W3's version.**
+
+The question stays; "partner cheats, murder, bullying, suicide, rape, domestic
+violence" does not appear in the UI. Permission to decline sits in the framing
+line before the field is focused, and Skip carries equal visual weight to
+Continue. Roadmap §8's description of the question is amended to match.
+
+W3's open question 1 is closed. **This overrides the original brief**, at
+Miftah's explicit direction, and the reason is recorded so nobody restores the
+list later as a "missing requirement": a list of extremes turns an open question
+into a menu and primes the worst item on it.
+
+### 7.5 The Lotus block carries relations, never third-party names
+
+**Answer: relations only.**
+
+The name given in `most_loved` is **never** stored in `lotus_avatars.summary`,
+never sent to z.ai, and never reaches any prompt. The distillation describes the
+relation ("someone they love who is not family", "a parent they are still
+trying to please"). W3's `lotusSafetyCheck()` already rejects a block containing
+a capitalised name copied out of a raw answer — that check is now load-bearing
+rather than defensive, and its test is not optional.
+
+The raw answer itself is still stored and encrypted like every other free-text
+answer; the constraint is on what leaves the database, not on what enters it.
+
+W3's open question 8 is closed.
+
+### 7.6 Minimum age: 18
+
+**Answer: 18.**
+
+W7 writes T&C clause 3 and the first-sign-in confirmation against 18. W2 owns
+the checkbox and the `users.age_confirmed_at` column.
+
+**The verification item survives the decision.** Choosing 18 does not answer
+what Indonesia's UU PDP requires for children's data and parental consent, and
+W7 was right to refuse to guess. **No article number is cited in the T&C unless
+someone has read the article.** If the law turns out to require something
+specific below 18, the clause changes; 18 is a floor we set, not a floor we
+have verified is sufficient.
+
+### 7.7 The asymmetric moderation timeout stands
+
+**Answer: as W7 designed it.**
+
+Clean blocklist plus a classifier timeout → **fail open**, the reading proceeds.
+Tier-B blocklist suspicion plus a classifier timeout → **fail closed**, refuse
+with `category: 'unclear'`.
+
+W7's open question 2 is closed. The `moderation_flags.action` column and the
+`moderation_timeout` event with its `failed_open: boolean` prop are what make
+this tunable rather than a guess — if `failed_open` ever spikes, the classifier
+is the thing to fix, not the policy.
+
+### 7.8 Account deletion: a 30-day grace period, then a real purge
+
+**Answer: my call, so I am making it explicitly rather than leaving "the usual
+answer" in the document.**
+
+```
+delete  →  users.deleted_at = now()      soft, recoverable, data intact
+        →  moderation_flags.question redacted IMMEDIATELY  (W7 §3.7, unchanged)
+        →  sign-in within 30 days: clear deleted_at, account restored as it was
+        →  at 30 days: HARD delete the users row, cascading per W4's §11 contract
+        →  google_sub is freed; that Google account may sign up again as a stranger
+```
+
+This resolves the trap in R23 — under the strict design a rage-quitting user
+could never return *even as a new user*, because the dead row held their
+`google_sub` forever. Now the identity is released when the data is.
+
+**Two implementation notes, because "there is no cron" was a real objection:**
+
+- **Lazy purge is the safety net, not the mechanism.** A sign-in that hits a
+  soft-deleted row past 30 days hard-deletes it and creates a fresh user in the
+  same transaction. This needs no scheduler and handles the only case where
+  anyone notices.
+- **A scheduled sweep is still required**, because the erasure promise is "gone
+  at 30 days", not "gone at 30 days if you come back". One Vercel Cron job daily
+  is enough and is available on the current plan. W7 owns it and runs it in the
+  same sweep as the moderation redaction and the `events` TTL — one job, three
+  deletes, rather than three jobs.
+
+The privacy policy states the 30 days plainly. W1's rejected partial unique
+index on `google_sub` (its D-3) stays rejected and is now correct by
+construction, since no soft-deleted row outlives 30 days.
+
+### 7.9a Both session expiries stay — and the env list is trimmed instead
+
+**Answer: keep both, and Miftah's "no redundant stuff" applied elsewhere.**
+
+`SESSION_TTL_HOURS=24` (sliding idle timeout) and
+`SESSION_ABSOLUTE_TTL_DAYS=30` (hard ceiling) are **not** redundant — they are
+orthogonal, and the second is the only thing that bounds a cookie an attacker
+keeps warm. Removing it would leave a session that never expires, which is the
+bug W2 found by reading `@auth/core`'s source.
+
+Taking the instruction seriously where it does apply, **three speculative
+variables and one redundant column are cut**:
+
+| Cut | Was | Why it goes |
+|---|---|---|
+| `AUTH_SECRET_1` / `_2` / `_3` | W2, secret rotation | Rotation machinery for a rotation nobody has scheduled. `AUTH_SECRET` alone until there is a reason. Re-add in the hour it is needed; the mechanism is `@auth/core`'s, not ours to build. |
+| `AUTH_REDIRECT_PROXY_URL` | W2, preview only | Explicitly "do not set until there is a production domain". There is no production domain. |
+| `CSP_REPORT_URI` | W7, optional | A report endpoint that nothing reads. The CSP ships without the directive. |
+| **`readings.question_blocked`** | roadmap §3 | R3 admitted it is redundant by construction with `status = 'blocked'` and kept both anyway. One column, one meaning: **`status` survives, `question_blocked` is dropped from §3.** W7 reads `status`. |
+
+That takes the environment surface from 27 to 24 and removes a column whose only
+purpose was agreeing with another column.
+
+### 7.9b Analytics retention: 180 days
+
+**Answer: 180 days.** `EVENTS_RETENTION_DAYS=180`, stated in the privacy policy,
+swept by the single daily cron job described in §7.8.
+
+`readings` is deliberately **not** on this clock — it is retained for the life
+of the account, because every memory feature in roadmap §5 reads it, and the
+privacy policy says so in those words rather than implying one retention period
+covers everything.
 
 ---
-
 ## 8. Build order
 
 Unchanged from roadmap §9 except that §0 precedes everything.
