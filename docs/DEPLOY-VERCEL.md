@@ -36,6 +36,8 @@ AUTH_USERS      [{"u":"miftah","h":"$2b$12$..."},{"u":"jodith","h":"$2b$12$..."}
 `LLM_PROVIDER` may also be `anthropic`; the same adapter serves both, and you
 drop `LLM_BASE_URL` for Anthropic proper.
 
+**Note that `DATABASE_URL` is not in that list.** See §6.
+
 Generate the secrets locally — one hash per person, each choosing their own
 password:
 
@@ -126,6 +128,45 @@ Expect these two, neither of which is a bug:
   cap are the real protections.
 - **Rotate a token the moment it is pasted anywhere shared** — a chat, an
   issue, a screenshot.
+
+## 6. The database is local-only, on purpose
+
+There is a Postgres database now, and **there is no production one.**
+`PUBLIC_RELEASE_ROADMAP.md` D5 defers picking a host explicitly, so
+`DATABASE_URL` is deliberately absent from §2's list and must not be set in
+Vercel. Nothing deployed reads it yet.
+
+Two consequences worth stating rather than discovering:
+
+- **Do not point a deployment at the local database.** It binds to `127.0.0.1`
+  inside WSL and is unreachable from Vercel by design. A `DATABASE_URL` set in
+  the dashboard would be a connection that times out, not one that fails
+  loudly.
+- **`FIELD_ENCRYPTION_KEY` follows the database.** It has no purpose without
+  one, and setting it early is a secret in a dashboard protecting nothing.
+
+**When a host is chosen**, the driver is named in exactly one file —
+`src/lib/db/client.ts` — and its comment block names the three settings that
+move and why guessing them now produces wrong values:
+
+1. `max` → 1, because each serverless invocation is its own isolate and a pool
+   of ten per isolate exhausts Postgres' 100-connection default in seconds.
+2. `prepare` → false **if and only if** the host puts a transaction-mode pooler
+   in front (Supabase's `:6543`, PgBouncer in transaction mode). A session-mode
+   pooler or Neon's HTTP driver needs no such thing, and the symptom of getting
+   it wrong is `prepared statement "s1" already exists` under load and never in
+   testing.
+3. `ssl` → `'require'` for every managed host.
+
+Migrations are committed and applied with `npm run db:migrate`. Whatever host
+is chosen, that command is what runs against it — `drizzle-kit push` is banned,
+for the reasons in `src/lib/db/migrations/README.md`. **No migration in this
+project inserts a row**, so there is no seed data to worry about leaking into
+production; the two development users come from `npm run db:seed`, which
+refuses to run against anything but `127.0.0.1`.
+
+This section deliberately does not contain a deployment procedure for a host
+nobody has picked.
 
 ## Deploying from the terminal
 
