@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { SESSION_COOKIE, verifySession } from '@/lib/auth/session';
+import { requireUser } from '@/lib/auth/server';
 import { getProvider } from '@/lib/llm';
 import { buildPrompt } from '@/lib/prompt/build';
 import { MAX_QUESTION_LENGTH } from '@/lib/prompt/sanitize';
@@ -34,22 +34,21 @@ const Body = z.object({
 
 export async function POST(request: Request) {
   /*
-   * Middleware already rejected anonymous callers, so this is belt and braces
-   * -- but it is also where the username comes from, and the rate limiter
-   * needs that rather than an IP.
+   * Middleware already rejected anonymous and un-onboarded callers, so these two
+   * guards are belt and braces -- but this is also where the identity comes from,
+   * and the rate limiter needs one rather than an IP: a household behind one NAT
+   * is one address and three people, and a phone hopping cell towers is one
+   * person and three addresses.
+   *
+   * The two `{ ok }` shapes are deliberately identical so the guards read the
+   * same way. THE KEY IS `users.id`, not the Google sub and no longer a username:
+   * everything else in this system joins on `users.id`, and a second identity for
+   * one purpose is a bug waiting to be written.
    */
-  const cookie = request.headers
-    .get('cookie')
-    ?.split('; ')
-    .find((c) => c.startsWith(`${SESSION_COOKIE}=`))
-    ?.slice(SESSION_COOKIE.length + 1);
+  const auth = await requireUser();
+  if (!auth.ok) return auth.response;
 
-  const username = await verifySession(cookie);
-  if (!username) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const gate = hit(username);
+  const gate = hit(auth.user.id);
   if (!gate.ok) {
     return NextResponse.json(
       { error: 'Terlalu banyak bacaan. Coba lagi nanti.' },

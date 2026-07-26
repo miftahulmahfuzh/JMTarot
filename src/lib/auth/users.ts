@@ -1,3 +1,22 @@
+/**
+ * The password list. LOCAL DEVELOPMENT ONLY.
+ *
+ * Roadmap §4 marked this file REPLACED; reconciliation R10 withdrew that. It
+ * survives as the one thing `DEV_PASSWORD_LOGIN`'s Credentials provider calls, so
+ * local work and hardware testing need no Google round trip. Nothing on any
+ * deployed path reaches it: the flag additionally requires
+ * `NODE_ENV !== 'production'`, and `AUTH_USERS` is deleted from Vercel.
+ *
+ * `bcryptjs` stays in `dependencies` rather than moving to `devDependencies`,
+ * even though this is dev-only. It is statically imported here, and `auth.ts`
+ * imports this file, so it ships in the Node lambda whether or not the flag is on
+ * -- about 30 KB of pure JS on a route that already pulls in the Anthropic SDK.
+ * Moving it would let `npm run build` resolve it (Vercel installs
+ * devDependencies at build time) and then ship a broken import at runtime.
+ *
+ * Both comments below still earn their place: the constant-time decoy and the
+ * fail-closed parse are the best explanation in this repo of why each matters.
+ */
 import bcrypt from 'bcryptjs';
 
 export type User = { u: string; h: string };

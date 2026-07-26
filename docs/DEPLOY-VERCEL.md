@@ -22,15 +22,33 @@ there is no workflow file to write:
 
 ## 2. Environment variables
 
-Six, all needed, for **Production** *and* **Preview**:
+Eight, all needed, for **Production** *and* **Preview**:
 
 ```
-LLM_PROVIDER    zai
-LLM_BASE_URL    https://api.z.ai/api/anthropic
-LLM_MODEL       glm-4.6
-LLM_API_KEY     <your provider token>
-AUTH_SECRET     <32+ random bytes, base64>
-AUTH_USERS      [{"u":"miftah","h":"$2b$12$..."},{"u":"jodith","h":"$2b$12$..."}]
+LLM_PROVIDER               zai
+LLM_BASE_URL               https://api.z.ai/api/anthropic
+LLM_MODEL                  glm-4.6
+LLM_API_KEY                <your provider token>
+AUTH_SECRET                <32+ random bytes, base64>
+AUTH_GOOGLE_ID             <client id>.apps.googleusercontent.com
+AUTH_GOOGLE_SECRET         <client secret>
+AUTH_URL                   per environment -- see below
+```
+
+`AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET` come from a Google Cloud OAuth client.
+**`docs/plans/2026-07-26-google-auth.md` §4 is the assume-nothing walkthrough** —
+project, Branding, Audience, the three non-sensitive scopes, and the redirect
+URIs — and it is worth following rather than improvising, because the console's UI
+was renamed in 2025 and no longer matches the Auth.js docs.
+
+Two more are optional, and both have working defaults. Set them when you want a
+number other than the default, and remember that `SESSION_TTL_HOURS` is read at
+module scope in `config.ts`, so **a dashboard change needs a redeploy** before
+middleware sees it:
+
+```
+SESSION_TTL_HOURS          24    idle timeout, slides on every request
+SESSION_ABSOLUTE_TTL_DAYS  30    hard ceiling, never slides
 ```
 
 `LLM_PROVIDER` may also be `anthropic`; the same adapter serves both, and you
@@ -38,74 +56,118 @@ drop `LLM_BASE_URL` for Anthropic proper.
 
 **Note that `DATABASE_URL` is not in that list.** See §6.
 
-Generate the secrets locally — one hash per person, each choosing their own
-password:
+### Two that must be *removed*, not set
+
+- **`AUTH_USERS`** — delete it from Production and Preview. The password login
+  is gone; it is now local-only fuel for `DEV_PASSWORD_LOGIN`.
+- **`DEV_PASSWORD_LOGIN`** — leave it unset everywhere. It additionally requires
+  `NODE_ENV !== 'production'`, and every Vercel build is production, so setting
+  it does nothing except look alarming in an audit.
+
+### `AUTH_URL` is per environment, and it is exact-match
+
+A Google OAuth redirect URI is a string comparison, so this value is not
+cosmetic:
+
+| Environment | Value |
+|---|---|
+| Local | `http://localhost:3001` — 3000 is permanently taken, see CLAUDE.md |
+| Preview | the **stable branch alias**, `https://jmtarot-git-<branch>-<scope>.vercel.app` |
+| Production | `https://www.jmtarot.com` |
+
+**Read the preview alias out of the Vercel dashboard rather than constructing
+it.** Branch names containing slashes, or over the length limit, get mangled,
+and a constructed guess fails as Google's `redirect_uri_mismatch` — an error page
+that does not tell you which URI it wanted. (It is in the `redirect_uri` query
+parameter of the URL you were sent to; read it and paste that exact string.)
+
+Every one of those hosts, plus `http://localhost:3001`, needs its own
+`…/api/auth/callback/google` entry in the Google console's Authorized redirect
+URIs. Google caps a client at 100 of them. A throwaway branch therefore cannot
+do Google login — that is acceptable, since it can still be screenshotted and
+hardware testing happens on a named branch.
+
+`*.vercel.app` **cannot** be a Google Authorized domain: it is a public suffix,
+so Search Console will not let anyone verify it. That is why the consent screen
+stays in **Testing** mode — where only the ≤100 manually-added test accounts can
+sign in — until `www.jmtarot.com` is bought and pointed at Vercel. "Public
+release" and "buy the domain" are the same task.
+
+Generate the secret locally:
 
 ```sh
-node -e "console.log(require('bcryptjs').hashSync(process.argv[1], 12))" 'the-password'
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"   # AUTH_SECRET
 ```
 
-### The `$` trap — read this before pasting `AUTH_USERS`
+`AUTH_SECRET` is the HKDF input for the key that encrypts the session cookie, so
+**changing it signs everybody out**. That is also the only global kill switch
+this design has: JWT sessions cannot be revoked server-side.
 
-A bcrypt hash contains `$2b$` and `$12$`, and **every dotenv-style parser tries
-to expand those as variables**, silently deleting them. The same value
-therefore needs two different spellings:
+### The `$` trap — it now applies to `.env.local` only
+
+**Values set in the Vercel dashboard are literal. Never escape anything there.**
+Values in a `.env` file are not: Next expands `$VAR` when it loads one, so a
+`$`-bearing value has to be written `\$` in `.env.local` and plainly in the
+dashboard.
+
+Nothing in §2's list contains a `$`, so this trap no longer bites a deployment.
+It still bites locally, because `AUTH_USERS` is a JSON array of bcrypt hashes and
+a hash contains `$2b$` and `$12$`:
 
 | Where | How to write the hash |
 |---|---|
 | `.env.local` on your machine | escaped: `\$2b\$12\$...` |
-| Vercel's **Key / Value** fields | literal: `$2b$12$...`, no backslashes |
+| Vercel | not at all — the variable is deleted from both environments |
 
-**Do not use Vercel's bulk `.env` paste box for `AUTH_USERS`.** It wants
-`KEY=value` lines, so a bare JSON array is rejected outright — and if it does
-accept something, you cannot tell from the dashboard whether the `$` sequences
-survived. Use the individual **Key** and **Value** inputs, where the value is
-taken literally.
+The symptom of getting it wrong is a 500 about a malformed `AUTH_USERS` on a hash
+that parses perfectly when you read the file yourself. The same trap reaches
+`DATABASE_URL`, where a `$` in the password fails auth against a password that is
+demonstrably correct.
 
-### Bulletproof alternative: the CLI
+### Verify a value survived
 
-This avoids both the dashboard parser and shell expansion, because the value
-never passes through a shell.
+The dashboard is not proof. Read it back:
 
 ```sh
 npm i -g vercel
 vercel login          # opens a URL to confirm in a browser
 vercel link           # connect this folder to the project
-
-# The QUOTED heredoc is load-bearing: unquoted, bash eats $2b and $12
-# before the file is even written.
-cat > /tmp/au.txt <<'EOF'
-[{"u":"miftah","h":"$2b$12$..."},{"u":"jodith","h":"$2b$12$..."}]
-EOF
-
-vercel env add AUTH_USERS production < /tmp/au.txt
-vercel env add AUTH_USERS preview    < /tmp/au.txt
-rm /tmp/au.txt
-```
-
-### Verify the value survived
-
-The dashboard is not proof. Read it back:
-
-```sh
 vercel env pull /tmp/check.env
-grep -o 'AUTH_USERS=.*' /tmp/check.env    # the hashes must still contain $2b$12$
+grep -E 'AUTH_(SECRET|GOOGLE|URL|USERS)' /tmp/check.env
 rm /tmp/check.env
 ```
 
-If the `$2b$12$` prefixes are missing, the value was mangled in transit and
-every login will fail with a generic "wrong password".
+`AUTH_USERS` appearing in that output is a finding, not a reassurance — delete it.
 
 ## 3. Verify the deployment
 
 - `/` redirects to `/login`
-- Both accounts log in; a wrong password gives the generic error
+- The login page shows one **Continue with Google** button, and links to
+  `/terms` and `/privacy` that both load **while signed out**
+- Google's consent screen says **JMTarot**, not a raw client id
+- Sign in returns you to the app, and a `users` row appears with the right
+  `google_sub`. Sign in a second time and it is still **one** row, with
+  `last_seen_at` moved
 - One reading completes for each service: Kartu Harian, Tiga Kartu, Ya atau Tidak
 
-A login that works locally but fails in production almost always means
-`AUTH_USERS` is malformed. It fails closed by design — see
-`src/lib/auth/users.ts`.
+Two failures worth recognising on sight:
+
+- **`redirect_uri_mismatch`** is Google-side and means the registered URI does not
+  match `AUTH_URL` character for character. The URI it wanted is in the
+  `redirect_uri` query parameter of the URL you were sent to.
+- **"Sign-in works, then every page bounces back to `/login` forever"**, with a
+  200 in the access log, is almost always `AUTH_SECRET` missing from that
+  environment. Auth fails closed and nothing logs an error.
+
+### One thing only a phone can verify
+
+**Add to Home Screen, then sign in from standalone mode.** This is the largest
+unverified risk in the auth work. In iOS standalone mode, navigating to another
+origin (`accounts.google.com`) can hand the user to Safari or an in-app browser,
+and the session cookie can land in a jar the standalone shell cannot see. The
+failure mode is "sign-in works in Safari and the installed app can never sign
+in", which breaks the product's whole delivery model. It cannot be tested in WSL,
+in Windows Chrome, or on a simulator that does not exist here.
 
 ## 4. Install on a phone
 

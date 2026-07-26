@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "RES_OPTIONS=no-aaaa next dev",
+    "build": "RES_OPTIONS=no-aaaa next build",
+    "start": "RES_OPTIONS=no-aaaa next start",
     "typecheck": "tsc --noEmit",
     "db:up": "docker compose up -d && until pg_isready -h 127.0.0.1 -p 5432 -q; do sleep 1; done && echo 'postgres ready'",
     "db:down": "docker compose down",
@@ -21,7 +21,7 @@
     "test:all": "vitest run",
     "cards": "python3 tools/generate_cards.py",
     "assets": "python3 tools/normalize_cards.py",
-    "smoke": "tsx scripts/smoke-llm.ts"
+    "smoke": "RES_OPTIONS=no-aaaa tsx scripts/smoke-llm.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
@@ -29,6 +29,7 @@
     "drizzle-orm": "^0.45.2",
     "jose": "^6.2.4",
     "next": "^16.2.11",
+    "next-auth": "5.0.0-beta.32",
     "postgres": "^3.4.9",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
