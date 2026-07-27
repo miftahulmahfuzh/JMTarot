@@ -73,6 +73,51 @@ describe('on Vercel', () => {
   });
 });
 
+describe('IPv6 is keyed by /64', () => {
+  const onVercel = () => vi.stubEnv('VERCEL', '1');
+
+  it('keys an IPv6 caller by /64, because one subscriber has 2^64 addresses', () => {
+    /*
+     * **PER-ADDRESS LIMITING ON IPv6 IS NOT A WEAK LIMIT, IT IS NO LIMIT.** A
+     * phone on a mobile network can walk a new source address per request without
+     * trying, so every request would arrive with a fresh budget and V7's whole
+     * slug-enumeration argument would rest on nothing. The /64 is the smallest
+     * unit a residential or mobile allocation is handed out in, so it is the
+     * smallest unit that corresponds to a caller.
+     */
+    onVercel();
+    const a = new Headers({ 'x-real-ip': '2001:db8:1234:5678:1:2:3:4' });
+    const b = new Headers({ 'x-real-ip': '2001:db8:1234:5678:9:9:9:9' });
+    expect(clientIp(a)).toBe(clientIp(b));
+    expect(clientIp(a)).toBe('2001:db8:1234:5678::/64');
+  });
+
+  it('keeps two different /64s apart', () => {
+    // The other half: coarsening must not merge separate customers.
+    onVercel();
+    const a = new Headers({ 'x-real-ip': '2001:db8:1234:5678:1:2:3:4' });
+    const b = new Headers({ 'x-real-ip': '2001:db8:1234:9999:1:2:3:4' });
+    expect(clientIp(a)).not.toBe(clientIp(b));
+  });
+
+  it('leaves IPv4 alone -- a /24 is a neighbourhood, not a household', () => {
+    onVercel();
+    expect(clientIp(new Headers({ 'x-real-ip': '203.0.113.7' }))).toBe('203.0.113.7');
+  });
+
+  it('does not guess at a compressed form', () => {
+    /*
+     * `::` makes the /64 ambiguous without expansion, and an ambiguous key is
+     * worse than a coarse one: two different callers could normalize together,
+     * which is one caller exhausting another's budget. Keying the full address is
+     * the weaker limit and the honest one.
+     */
+    onVercel();
+    const h = new Headers({ 'x-real-ip': '2001:db8::1' });
+    expect(clientIp(h)).toBe('2001:db8::1');
+  });
+});
+
 describe('off Vercel', () => {
   it('falls back to `local`', () => {
     /*
