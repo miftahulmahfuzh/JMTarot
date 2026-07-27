@@ -279,7 +279,7 @@ export type PendingEvent = {
  * and a type cannot check those.
  *
  * A Set rather than `EVENT_NAMES.includes(v)`: this runs once per event in
- * every batch, and `includes` on a 43-element array is a linear scan against
+ * every batch, and `includes` on a 44-element array is a linear scan against
  * attacker-controlled input.
  */
 const NAME_SET: ReadonlySet<string> = new Set(EVENT_NAMES);

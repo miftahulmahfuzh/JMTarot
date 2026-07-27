@@ -798,7 +798,7 @@ and **none of it is on the path of a byte the user is waiting for.**
 
 ```
 src/lib/analytics/
-  events.ts        the closed taxonomy: 43 names, a prop shape each, two
+  events.ts        the closed taxonomy: 44 names, a prop shape each, two
                    compile-time guards. NO IMPORTS -- it is the data dictionary
                    and it is read by people, not only by code.
   track.ts         SERVER. AsyncLocalStorage store, ONE after() per request,
