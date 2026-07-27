@@ -1,5 +1,5 @@
 import raw from './cards.json';
-import type { Card, Draw, Polarity } from './types';
+import type { Card, Draw, Locale, Polarity } from './types';
 
 export const CARDS = raw as Card[];
 
@@ -52,10 +52,25 @@ export function shuffleDeck(reversals = true): Draw[] {
  * Orientation decides which of the two lines is true, the same way it decides
  * polarity and the yes/no verdict. Going through this function rather than
  * reading `card.meaning.upright` is what keeps a reversed card from being
- * described as if it were upright.
+ * described as if it were upright -- and now what keeps an English querent from
+ * being handed the Indonesian line. There are two ways to get this wrong by hand
+ * instead of one, which makes the indirection worth more than it was.
  */
-export function cardMeaning({ card, reversed }: Draw): string {
-  return reversed ? card.meaning.reversed : card.meaning.upright;
+export function cardMeaning({ card, reversed }: Draw, locale: Locale): string {
+  const pair = card.meaning[locale];
+  return reversed ? pair.reversed : pair.upright;
+}
+
+/**
+ * The three keywords, in one locale.
+ *
+ * Same argument as `cardMeaning`, and the same reason it is a function rather
+ * than a property read: these go to the model as grounding in the user turn, so a
+ * locale mismatch here does not render wrongly, it makes the prompt disagree with
+ * the reading it asks for.
+ */
+export function cardKeywords(card: Card, locale: Locale): string[] {
+  return card.keywords[locale];
 }
 
 /** Reversal inverts a card's charge. Neutral cards have none to invert. */

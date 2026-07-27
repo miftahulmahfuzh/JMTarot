@@ -22,7 +22,7 @@ export async function POST(request: Request) {
   if (!gate.ok) return gate.response;
 
   const parsed = FactsBody.safeParse(await readJson(request));
-  if (!parsed.success) return badRequest();
+  if (!parsed.success) return await badRequest();
 
   /*
    * THE NAMES GO THROUGH THE SANITIZER TOO, and it is not paranoia: the nickname
@@ -42,7 +42,7 @@ export async function POST(request: Request) {
   // A name made entirely of delimiters strips to nothing, and both columns are
   // `not null`. Zod's min(1) ran against the raw string, so this is the second
   // check and the one that matters.
-  if (fullName.length === 0 || nickname.length === 0) return badRequest();
+  if (fullName.length === 0 || nickname.length === 0) return await badRequest();
 
   try {
     await upsertProfileFacts(db, gate.user.id, {
@@ -55,7 +55,7 @@ export async function POST(request: Request) {
     // reported rather than swallowed -- the step keeps its three filled fields
     // and says so.
     console.error('onboarding facts write failed', { userId: gate.user.id, err });
-    return serverError();
+    return await serverError();
   }
 
   return NextResponse.json({ ok: true });

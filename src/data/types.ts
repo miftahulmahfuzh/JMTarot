@@ -23,18 +23,35 @@ export type Card = {
   stage: Stage;
   polarity: Polarity;
   yesno: YesNo;
-  /** Indonesian, like all reader-facing copy. */
-  keywords: string[];
   /**
-   * The one-line gloss the card detail overlay shows, in Indonesian.
+   * Three per locale. Grounding for the model in the user turn, and the chips on
+   * the reader picker.
    *
-   * Two lines, not one with a negation bolted on: an upright card and the same
-   * card reversed say different things, and showing the upright line under a
-   * card that is visibly upside-down contradicts the card on screen. Pick with
-   * `cardMeaning()`, never by reading `.upright` directly.
+   * `Localized<string[]>` and not a `keywords_en` flat field (I18): one place a
+   * card's data lives, and `Record<Locale, T>` makes a missing locale a compile
+   * error, which a suffixed field cannot. Read it through `cardKeywords(card,
+   * locale)`.
    */
-  meaning: { upright: string; reversed: string };
+  keywords: Localized<string[]>;
+  /**
+   * The one-line gloss the card detail overlay shows, per locale.
+   *
+   * TWO LINES PER LOCALE, not one with a negation bolted on: an upright card and
+   * the same card reversed say different things, and showing the upright line
+   * under a card that is visibly upside-down contradicts the card on screen. Pick
+   * with `cardMeaning()`, never by reading `.upright` directly — which now guards
+   * the locale as well as the orientation, so reading it by hand can get two
+   * things wrong instead of one.
+   *
+   * The English is WRITTEN, not translated, and `tools/generate_cards.py` asserts
+   * per card that the two locales differ. See `MEANINGS_EN`'s header there for
+   * what it was written up from.
+   */
+  meaning: Localized<CardMeaning>;
 };
+
+/** One card's pair of glosses, in one locale. */
+export type CardMeaning = { upright: string; reversed: string };
 
 /** A card as it came out of the deck: identity plus orientation. */
 export type Draw = {
@@ -52,28 +69,53 @@ export type Draw = {
  */
 export type Locale = 'id' | 'en';
 
+/**
+ * A value that exists once per locale. A missing locale is a compile error.
+ *
+ * Declared beside `Locale` for the same reason `Locale` is here: `src/data/**` and
+ * `src/lib/db/schema.ts` both need it and neither may depend on
+ * `@/lib/i18n/**`. `src/lib/i18n/locale.ts` re-exports it; it must not redefine
+ * it.
+ */
+export type Localized<T> = Record<Locale, T>;
+
 export type ServiceId = 'daily' | 'spread3' | 'yesno';
 
 export type ReaderId = 'thessaly' | 'margaret' | 'adrian';
 
 export type Reader = {
   id: ReaderId;
+  /** Identical in both locales. A name is not translated. */
   name: string;
-  /** English, like the card names -- it reads as a title, not a translation. */
+  /**
+   * English, like the card names -- it reads as a title, not a translation, and
+   * it is identical in both locales. Changing that would touch the data, both
+   * prompt forks and the portrait alt text (plan §7.13, open question 6).
+   */
   title: string;
-  bio: string;
-  specialties: string[];
-  /** Past / present / future, in this reader's own register. */
-  positionFraming: [string, string, string];
+  /** UI only. Localized anyway, because it is the longest prose on the picker. */
+  bio: Localized<string>;
+  specialties: Localized<string[]>;
+  /**
+   * Past / present / future, in this reader's own register.
+   *
+   * DUAL-ROLE COPY (I14): slot captions on the draw screen AND input to the
+   * three-card prompt, which tells the model to open each paragraph with the
+   * position name as written. That is why it lives here rather than in the message
+   * catalog -- splitting one string across two systems guarantees the screen and
+   * the prompt eventually disagree about what the middle slot is called.
+   */
+  positionFraming: Localized<[string, string, string]>;
 };
 
 export type Service = {
   id: ServiceId;
-  name: string;
-  tagline: string;
+  /** Dual-role, like `positionFraming`: a heading AND the prompt's `Layanan:` line. */
+  name: Localized<string>;
+  tagline: Localized<string>;
   cardCount: number;
   /** Slot caption for single-card services; null for the three-card spread. */
-  singleLabel: string | null;
+  singleLabel: Localized<string> | null;
   oncePerDay: boolean;
 };
 

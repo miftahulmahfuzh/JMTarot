@@ -11,6 +11,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { ONBOARDING_MAX_ANSWER_CHARS, ONBOARDING_QUESTION_KEYS } from '@/data/onboarding';
 import { requireUser, type CurrentUser } from '@/lib/auth/server';
+import { getT } from '@/lib/i18n/t';
 import { hit } from '@/lib/ratelimit';
 
 /**
@@ -45,7 +46,7 @@ export async function onboardingGate(): Promise<
     return {
       ok: false,
       response: NextResponse.json(
-        { error: 'Terlalu banyak permintaan. Coba lagi nanti.' },
+        { error: (await getT())('onboarding.error.rateLimit') },
         { status: 429, headers: { 'retry-after': String(gate.retryAfterSeconds) } },
       ),
     };
@@ -63,14 +64,24 @@ export async function readJson(request: Request): Promise<unknown> {
   }
 }
 
-export function badRequest(): NextResponse {
+/*
+ * ASYNC NOW, BECAUSE THE MESSAGE IS KEYED. `getT()` is memoized per request with
+ * React `cache()`, so the extra await costs one header read for the whole request
+ * however many of these fire.
+ *
+ * `serverError` reuses `onboarding.error.saveFailed` rather than keeping its own
+ * near-duplicate: the pre-W6 tree had 'Gagal menyimpan. Coba lagi.' here and
+ * 'Belum tersimpan. Coba lagi.' in the stepper, two sentences saying one thing to
+ * one person. One key, one string.
+ */
+export async function badRequest(): Promise<NextResponse> {
   // Deliberately opaque. The client is our own stepper, which does not read the
   // message, and a validation detail is a free description of the schema.
-  return NextResponse.json({ error: 'Permintaan tidak valid.' }, { status: 400 });
+  return NextResponse.json({ error: (await getT())('onboarding.error.badRequest') }, { status: 400 });
 }
 
-export function serverError(): NextResponse {
-  return NextResponse.json({ error: 'Gagal menyimpan. Coba lagi.' }, { status: 500 });
+export async function serverError(): Promise<NextResponse> {
+  return NextResponse.json({ error: (await getT())('onboarding.error.saveFailed') }, { status: 500 });
 }
 
 /**

@@ -4,15 +4,28 @@
 home screen.
 
 Three reader personas, three reading services, the 22 Major Arcana. Readings
-are written by an LLM at request time, in Indonesian, in the voice of whichever
-reader you picked. Private: two accounts behind a login, no database, and a
-reading is never stored.
+are written by an LLM at request time, **in Indonesian or English**, in the voice
+of whichever reader you picked.
+
+Sign in with Google. Your readings are stored, and the app uses them: a
+card-frequency verdict on the reader picker, a reading that references your last
+one, and a per-day summary in your reader's own voice.
+
+**Language comes from your profile and a cookie, never from the URL.** There is no
+`/en/...` tree — nine routes stay nine, and no link in the app is locale-aware. An
+`en-GB` browser gets English on its first visit through `Accept-Language`; the
+toggle on the reader picker and the login page changes it and remembers. `?lang=en`
+is a **development-only** override for screenshots, ignored in production.
 
 > This was an offline Expo/React Native iOS app until 2026-07-25. The App Store
 > costs $99/yr; a website costs nothing and ships from Linux in one `git push`.
 > Everything that mattered survived — the readers, the deck, the Indonesian
 > copy, the fan draw — and one thing got better: with a server in the loop,
 > readings are generated instead of pre-written.
+>
+> The line above about "two accounts behind a login, no database, and a reading is
+> never stored" was true when it was written and is not any more. There is Google
+> sign-in, a Postgres database, and stored readings; see `CLAUDE.md`.
 >
 > The iOS tree is preserved on [`feat/ios`](../../tree/feat/ios). The rewrite is
 > planned in full in
@@ -147,8 +160,10 @@ from those tokens rather than inventing values.
 
 The card artwork is a *finished* card face: its own frame, numeral and title
 are part of the image. That is why the design's procedural cream card front was
-dropped while the procedural back was kept, and why card names stay in English
-— an Indonesian caption would contradict the title printed on the card.
+dropped while the procedural back was kept, and why card names stay in English **in
+both locales** — an Indonesian caption would contradict the title printed on the
+card, and so would translating one for an English reader who is looking at the same
+image.
 
 ## Licence
 

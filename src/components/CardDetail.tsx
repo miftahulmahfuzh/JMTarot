@@ -1,5 +1,6 @@
 'use client';
 
+import { useT } from '@/lib/i18n/LocaleProvider';
 import { useEffect, useRef } from 'react';
 import { cardMeaning } from '@/data/deck';
 import type { Draw } from '@/data/types';
@@ -28,6 +29,7 @@ type Props = {
  * answerable from the fan, and the querent has to be able to ask it.
  */
 export function CardDetail({ draw, position, onClose, onReturn }: Props) {
+  const t = useT();
   const closeRef = useRef<HTMLButtonElement | null>(null);
 
   /*
@@ -93,7 +95,9 @@ export function CardDetail({ draw, position, onClose, onReturn }: Props) {
         <div className={styles.heading}>
           <h2 className={styles.name} id={titleId}>
             {draw.card.name}
-            {draw.reversed ? <span className={styles.reversed}> &middot; Terbalik</span> : null}
+            {draw.reversed ? (
+              <span className={styles.reversed}> &middot; {t('card.reversed')}</span>
+            ) : null}
           </h2>
           <div className={styles.numeral}>{draw.card.numeral}</div>
         </div>
@@ -103,15 +107,15 @@ export function CardDetail({ draw, position, onClose, onReturn }: Props) {
           cardMeaning(). A reversed card showing its upright gloss would be
           contradicted by the artwork sitting directly above it.
         */}
-        <p className={styles.meaning}>{cardMeaning(draw)}</p>
+        <p className={styles.meaning}>{cardMeaning(draw, t.locale)}</p>
 
         <div className={styles.actions}>
           <button type="button" className={styles.close} onClick={onClose} ref={closeRef}>
-            Tutup
+            {t('common.close')}
           </button>
           {onReturn ? (
             <button type="button" className={styles.return} onClick={onReturn}>
-              Kembalikan ke dek
+              {t('card.return')}
             </button>
           ) : null}
         </div>

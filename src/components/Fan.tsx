@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent, RefObject } from 'react';
+import { useT } from '@/lib/i18n/LocaleProvider';
 import { usePrefersReducedMotion } from '@/lib/usePrefersReducedMotion';
 import type { Draw } from '@/data/types';
 import { CardBack } from './CardBack';
@@ -59,6 +60,7 @@ type Flight = { dx: number; dy: number; scale: number };
  * bookkeeping, and every card has to be reachable anyway.
  */
 export function Fan({ deck, picks, cardCount, onCardTap, slotRefs }: Props) {
+  const t = useT();
   const fanRef = useRef<HTMLDivElement | null>(null);
   const [flights, setFlights] = useState<(Flight | null)[]>([]);
   const [drag, setDrag] = useState<{ index: number; dy: number } | null>(null);
@@ -213,8 +215,8 @@ export function Fan({ deck, picks, cardCount, onCardTap, slotRefs }: Props) {
               tabIndex={complete && !chosen ? -1 : 0}
               aria-label={
                 chosen
-                  ? `Kartu ${slot + 1}: ${draw.card.name}, ketuk untuk lihat kartunya`
-                  : 'Ambil kartu'
+                  ? t('draw.card.aria.picked', { slot: slot + 1, name: draw.card.name })
+                  : t('draw.card.aria.take')
               }
               aria-pressed={chosen}
               onPointerDown={onPointerDown(i)}

@@ -7,6 +7,7 @@ import { ReaderViewed } from '@/components/ReaderViewed';
 import { TrackLink } from '@/components/TrackLink';
 import { READERS, readerById, readerPortrait } from '@/data/readers';
 import { SERVICES } from '@/data/services';
+import { getT } from '@/lib/i18n/t';
 import styles from './page.module.css';
 
 /** Three readers, known at build time. */
@@ -23,6 +24,8 @@ export default async function ServicePicker({
   const reader = readerById(readerId);
   if (!reader) notFound();
 
+  const t = await getT();
+
   return (
     <main className={styles.shell}>
       {/* Renders nothing. Kept out of the server component so this page stays
@@ -33,14 +36,14 @@ export default async function ServicePicker({
       {/* Standalone mode has no browser chrome and no back gesture. See the
           note in the stylesheet -- this is not decoration. */}
       <Link href="/" className={styles.back}>
-        &larr; Pembaca lain
+        {t('nav.back.readers')}
       </Link>
 
       <div className={styles.bannerWrap}>
         <div className={styles.portrait}>
           <Image
             src={readerPortrait(reader.id)}
-            alt={`${reader.name}, ${reader.title}`}
+            alt={t('picker.reader.portraitAlt', { name: reader.name, title: reader.title })}
             width={1024}
             height={512}
             priority
@@ -54,20 +57,28 @@ export default async function ServicePicker({
         </div>
       </div>
 
-      <p className={styles.bio}>{reader.bio}</p>
+      <p className={styles.bio}>{reader.bio[t.locale]}</p>
 
       {/* What this reader remembers about today. Renders nothing until the
           first byte, and nothing at all for a querent who has not read today
           (M14) -- which is the common case and must stay the cheapest.
 
-          A CLIENT COMPONENT SO THIS PAGE STAYS STATIC. `generateStaticParams`
-          prerenders all three readers; an awaited DB read here would silently
-          make them dynamic, with no error and no warning. `npm run build`
-          listing /thessaly, /margaret and /adrian as prerendered is the
-          canary. */}
+          STILL A CLIENT COMPONENT, BUT THE REASON CHANGED WITH W6. This used to
+          say "so this page stays static", and `npm run build` listing
+          /thessaly, /margaret and /adrian as prerendered was the canary. That
+          canary is gone: the root layout awaits `getLocale()` for `<html lang>`,
+          which opts the whole tree into dynamic rendering, and the build now
+          lists every route as ƒ. Plan §8 says to expect exactly that.
+
+          What survives is the reason that actually mattered: an awaited DB read
+          plus a possible model call HERE blocks the first byte of the page, and
+          roadmap §6 forbids that whether or not the page was static. So it still
+          mounts empty and fills in -- and the check is no longer a line in the
+          build output but the requirement itself, which is that the three
+          readers and their services render before any memory feature resolves. */}
       <DaySummary readerId={reader.id} readerName={reader.name} />
 
-      <Eyebrow>Pilih layanan</Eyebrow>
+      <Eyebrow>{t('picker.service.eyebrow')}</Eyebrow>
 
       <div className={styles.services}>
         {SERVICES.map((service) => (
@@ -79,17 +90,17 @@ export default async function ServicePicker({
             props={{ reader_id: reader.id, service_id: service.id }}
           >
             <span>
-              <span className={styles.serviceName}>{service.name}</span>
-              <span className={styles.tagline}>{service.tagline}</span>
+              <span className={styles.serviceName}>{service.name[t.locale]}</span>
+              <span className={styles.tagline}>{service.tagline[t.locale]}</span>
             </span>
             <span className={styles.count}>
-              {service.cardCount} kartu
+              {t.plural('picker.service.cardCount', service.cardCount)}
             </span>
           </TrackLink>
         ))}
       </div>
 
-      <p className={styles.disclaimer}>Untuk hiburan semata.</p>
+      <p className={styles.disclaimer}>{t('common.disclaimer.short')}</p>
     </main>
   );
 }

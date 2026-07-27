@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { SESSION_HEADER } from '@/lib/analytics/localdate';
 import { getSessionId } from '@/lib/analytics/track.client';
-import { c } from '@/lib/memory/copy';
+import { useT } from '@/lib/i18n/LocaleProvider';
 import { todayKey } from '@/lib/storage';
 import styles from './DaySummary.module.css';
 
@@ -17,11 +17,16 @@ import styles from './DaySummary.module.css';
  * A first-time visitor gets a 204 and never knows the component was here.
  *
  * WHY IT IS A CLIENT COMPONENT, and this is the §6 constraint that shapes the
- * whole design: `src/app/[reader]/page.tsx` is STATICALLY PRERENDERED via
- * `generateStaticParams`. An `await`ed database read in that page would silently
- * make all three reader pages dynamic -- no error, no warning, just a slower app
- * and a §6 violation. `npm run build` listing `/thessaly`, `/margaret` and
- * `/adrian` as prerendered is the canary, and it is checked in Task 10.
+ * whole design. This used to read "`src/app/[reader]/page.tsx` is STATICALLY
+ * PRERENDERED via `generateStaticParams`", with the build output listing
+ * `/thessaly`, `/margaret` and `/adrian` as the canary. W6 ENDED THAT: the root
+ * layout awaits `getLocale()` for `<html lang>`, so every route is now ƒ and
+ * there is no prerendering left to protect. Plan §8 says to expect it.
+ *
+ * The constraint that outlived the canary is the one that was always the point:
+ * an `await`ed database read plus a possible model call in that page BLOCKS THE
+ * FIRST BYTE, and roadmap §6 forbids that regardless of how the route is
+ * rendered. So this still mounts empty and fills in.
  *
  * IT STREAMS, unlike `FrequencyLine`. The endpoint sends 45 words in the
  * reader's own voice, and watching them arrive reads as the reader speaking --
@@ -30,6 +35,7 @@ import styles from './DaySummary.module.css';
  * is deliberate.
  */
 export function DaySummary({ readerId, readerName }: { readerId: string; readerName: string }) {
+  const t = useT();
   const [text, setText] = useState('');
 
   useEffect(() => {
@@ -88,12 +94,10 @@ export function DaySummary({ readerId, readerName }: { readerId: string; readerN
    * heading, is disorienting to a screen reader -- and unlike the frequency
    * line, this one is in a named reader's voice, so the label says whose.
    *
-   * The locale is hardcoded to 'id' here because W6 has not landed and
-   * `users.locale` is 'id' for every account. The KEY does not change when it
-   * does, which is why the string is in the catalog rather than inline.
+   * W6 landed; the hardcoded 'id' is gone and the key is unchanged.
    */
   return (
-    <p className={styles.summary} aria-label={c('id', 'memory.summary.a11yLabel', { reader: readerName })}>
+    <p className={styles.summary} aria-label={t('memory.summary.a11yLabel', { reader: readerName })}>
       {text}
     </p>
   );

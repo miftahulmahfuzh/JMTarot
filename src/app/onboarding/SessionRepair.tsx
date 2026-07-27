@@ -12,10 +12,12 @@
  */
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
+import { useT } from '@/lib/i18n/LocaleProvider';
 import { repairSessionFlag } from './actions';
 import styles from './onboarding.module.css';
 
 export function SessionRepair() {
+  const t = useT();
   const router = useRouter();
   const [failed, setFailed] = useState(false);
 
@@ -60,11 +62,11 @@ export function SessionRepair() {
     <main className={styles.shell}>
       <div className={styles.card}>
         <p className={styles.note} role="status" aria-live="polite">
-          {failed ? 'Sesi belum tersegarkan.' : 'Sebentar…'}
+          {failed ? t('onboarding.session.repairFailed') : t('onboarding.session.repairing')}
         </p>
         {failed ? (
           <a className={styles.cta} href="/onboarding">
-            Coba lagi
+            {t('common.retry')}
           </a>
         ) : null}
       </div>

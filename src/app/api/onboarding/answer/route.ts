@@ -27,7 +27,7 @@ export async function POST(request: Request) {
   if (!gate.ok) return gate.response;
 
   const parsed = AnswerBody.safeParse(await readJson(request));
-  if (!parsed.success) return badRequest();
+  if (!parsed.success) return await badRequest();
 
   const { key, text, choice, skipped } = parsed.data;
 
@@ -60,7 +60,7 @@ export async function POST(request: Request) {
   } catch {
     // A closed value outside its set, or prose on a closed question. The client
     // cannot produce either; a hand-rolled request can.
-    return badRequest();
+    return await badRequest();
   }
 
   try {
@@ -73,7 +73,7 @@ export async function POST(request: Request) {
      * sensitive column in the product is not acceptable.
      */
     console.error('onboarding answer write failed', { userId: gate.user.id, key, err });
-    return serverError();
+    return await serverError();
   }
 
   /*

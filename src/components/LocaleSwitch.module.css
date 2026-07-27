@@ -1,0 +1,58 @@
+/*
+ * The language toggle. `Indonesia · English`, the active one lifted.
+ *
+ * NO NEW HEX, NO NEW FONT SIZE, NO NEW EASING CURVE. Cinzel at 10px with
+ * `--ls-button`, the same type the `.chip` and `.counter` already use, and the
+ * colours are `--gold-text` for the active option against `--faint` for the other.
+ * The plan says so explicitly and CLAUDE.md says so generally; a language switcher
+ * is a particularly bad place to introduce a token, because it sits under the
+ * disclaimer on the two calmest screens in the app.
+ */
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 8px 0 0;
+}
+
+.option {
+  font-family: var(--font-display), serif;
+  font-size: 10px;
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--faint);
+  background: none;
+  border: none;
+  /*
+   * 44px tall including padding, so the tap target is a thumb rather than a
+   * 10px word. The negative horizontal padding is deliberate: the text stays
+   * optically centred with the disclaimer above it while the hit area does not.
+   */
+  padding: 14px 6px;
+  cursor: pointer;
+}
+
+.option:hover:not(:disabled) {
+  color: var(--gold-lift);
+}
+
+/*
+ * The active one is not a button, so it gets no hover and no pointer. It is
+ * rendered as a `<span>` -- see the component: a control that does nothing when
+ * pressed should not look pressable.
+ */
+.active {
+  color: var(--gold-text);
+}
+
+.option:disabled {
+  /* In flight. Not `opacity`, which would dim the active label too. */
+  cursor: default;
+}
+
+.sep {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 11px;
+  color: var(--gold-hairline);
+}

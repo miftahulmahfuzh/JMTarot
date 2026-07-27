@@ -3,24 +3,51 @@
     "id": "thessaly",
     "name": "Thessaly",
     "title": "The Grounded Guide",
-    "bio": "Thessaly membaca tarot dengan serius tapi tetap dekat dengan situasi sehari-hari. Dia menggabungkan intuisi dengan logika — pendekatannya terang dan membumi.",
-    "specialties": ["Keputusan karier", "Arah hidup", "Penyelesaian masalah"],
-    "positionFraming": ["Yang sudah berlalu", "Yang sedang berjalan", "Yang akan datang"]
+    "bio": {
+      "id": "Thessaly membaca tarot dengan serius tapi tetap dekat dengan situasi sehari-hari. Dia menggabungkan intuisi dengan logika — pendekatannya terang dan membumi.",
+      "en": "Thessaly takes the cards seriously and keeps them close to ordinary life. She works intuition and plain reasoning together, and her readings come out clear and grounded."
+    },
+    "specialties": {
+      "id": ["Keputusan karier", "Arah hidup", "Penyelesaian masalah"],
+      "en": ["Career decisions", "Direction in life", "Working through problems"]
+    },
+    "positionFraming": {
+      "id": ["Yang sudah berlalu", "Yang sedang berjalan", "Yang akan datang"],
+      "en": ["What's behind you", "Where you are", "What's coming"]
+    }
   },
   {
     "id": "margaret",
     "name": "Margaret",
     "title": "The Old Soul",
-    "bio": "Margaret pembaca veteran dengan pengalaman puluhan tahun. Caranya lebih mistis dan mendalam, sering mengaitkan bacaan dengan simbolisme lama dan falsafah hidup. Cocok untuk kamu yang mencari penelusuran diri yang lebih dalam, bukan sekadar jawaban cepat.",
-    "specialties": ["Penemuan diri", "Refleksi batin", "Hubungan keluarga"],
-    "positionFraming": ["Yang telah berlalu", "Yang kini bersemayam", "Yang menanti di depan"]
+    "bio": {
+      "id": "Margaret pembaca veteran dengan pengalaman puluhan tahun. Caranya lebih mistis dan mendalam, sering mengaitkan bacaan dengan simbolisme lama dan falsafah hidup. Cocok untuk kamu yang mencari penelusuran diri yang lebih dalam, bukan sekadar jawaban cepat.",
+      "en": "Margaret has read for decades. Her way is older and more mystical, and she will reach for the symbolism the cards were built on and for what a long life has taught her. She suits you if you are after a slower search through yourself, rather than a quick answer."
+    },
+    "specialties": {
+      "id": ["Penemuan diri", "Refleksi batin", "Hubungan keluarga"],
+      "en": ["Self-discovery", "Inner reflection", "Family ties"]
+    },
+    "positionFraming": {
+      "id": ["Yang telah berlalu", "Yang kini bersemayam", "Yang menanti di depan"],
+      "en": ["What has passed", "What now abides", "What waits ahead"]
+    }
   },
   {
     "id": "adrian",
     "name": "Adrian",
     "title": "The Modern Mystic",
-    "bio": "Adrian membawa tarot dengan gaya santai dan mudah didekati — seperti ngobrol dengan kawan yang paham psikologi. Dia fokus pada cinta, hubungan, dan emosi, dengan cara yang langsung tapi empatik.",
-    "specialties": ["Percintaan & hubungan", "Emosi & harga diri", "Keputusan jangka pendek"],
-    "positionFraming": ["Yang udah lewat", "Yang sekarang", "Yang bakal dateng"]
+    "bio": {
+      "id": "Adrian membawa tarot dengan gaya santai dan mudah didekati — seperti ngobrol dengan kawan yang paham psikologi. Dia fokus pada cinta, hubungan, dan emosi, dengan cara yang langsung tapi empatik.",
+      "en": "Adrian reads the way you would talk it over with a friend who happens to be good at reading people. He is mostly here for love, the people around you, and how you are actually feeling — direct about it, but never cold."
+    },
+    "specialties": {
+      "id": ["Percintaan & hubungan", "Emosi & harga diri", "Keputusan jangka pendek"],
+      "en": ["Love & relationships", "Feelings & self-worth", "Short-term decisions"]
+    },
+    "positionFraming": {
+      "id": ["Yang udah lewat", "Yang sekarang", "Yang bakal dateng"],
+      "en": ["What's done", "Right now", "What's next"]
+    }
   }
 ]

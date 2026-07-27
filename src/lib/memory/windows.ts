@@ -30,7 +30,7 @@
  * once and cached, and this module never touches `profiles`.
  */
 import type { Locale } from '@/data/types';
-import { c } from './copy';
+import { tFor } from '@/lib/i18n/catalog';
 
 export type WindowKey =
   | 'week' | 'd3' | 'd13' | 'd666' | 'month' | 'quarter' | 'year' | 'birthday';
@@ -198,13 +198,13 @@ export function windowBounds(
  * The phrase the frequency prompt is told to use instead of the dates (§3.6).
  *
  * Lives here rather than at the call site so that adding a window to `WINDOWS`
- * without giving it a phrase is a compile error: `CopyKey` is a closed union and
+ * without giving it a phrase is a compile error: `MessageKey` is a closed union and
  * the template below has to resolve to one of its members.
  */
 export function windowPhrase(key: WindowKey, locale: Locale): string {
   // No cast. The template literal's type is
-  // `memory.frequency.windows.${WindowKey}`, and it is assignable to CopyKey
+  // `memory.frequency.windows.${WindowKey}`, and it is assignable to MessageKey
   // only while the catalog has an entry for every window -- which is the whole
   // point. A cast here would turn that guarantee back into a runtime blank.
-  return c(locale, `memory.frequency.windows.${key}`);
+  return tFor(locale)(`memory.frequency.windows.${key}`);
 }

@@ -29,7 +29,7 @@ import {
   type OnboardingQuestionKey,
   type RawAnswer,
 } from '@/data/onboarding';
-import { c, q } from './copy';
+import { useT } from '@/lib/i18n/LocaleProvider';
 import styles from './onboarding.module.css';
 
 type Props = {
@@ -44,6 +44,7 @@ type Props = {
 const COUNTER_AT = 0.8;
 
 export function TextStep({ questionKey, headingId, alreadySaved, onAnswer }: Props) {
+  const t = useT();
   const [text, setText] = useState('');
 
   const trimmed = text.trim();
@@ -60,16 +61,16 @@ export function TextStep({ questionKey, headingId, alreadySaved, onAnswer }: Pro
   return (
     <div className={styles.step}>
       <h1 className={styles.title} id={headingId} tabIndex={-1}>
-        {q(questionKey, 'title')}
+        {t(`onboarding.q.${questionKey}.title`)}
       </h1>
 
       {/* The framing line carries the permission to decline on `worst_thing`,
           and it is rendered ABOVE the field on purpose: it has to arrive before
           the field is focused, not after the user has started typing. */}
-      <p className={styles.framing}>{q(questionKey, 'framing')}</p>
-      <p className={styles.hint}>{q(questionKey, 'hint')}</p>
+      <p className={styles.framing}>{t(`onboarding.q.${questionKey}.framing`)}</p>
+      <p className={styles.hint}>{t(`onboarding.q.${questionKey}.hint`)}</p>
 
-      {alreadySaved ? <p className={styles.hint}>{c('onboarding.answerSaved')}</p> : null}
+      {alreadySaved ? <p className={styles.hint}>{t('onboarding.answerSaved')}</p> : null}
 
       <textarea
         className={styles.textarea}
@@ -99,7 +100,7 @@ export function TextStep({ questionKey, headingId, alreadySaved, onAnswer }: Pro
 
       {over ? (
         <p className={styles.error} role="alert">
-          {c('onboarding.error.tooLong')}
+          {t('onboarding.error.tooLong')}
         </p>
       ) : null}
 
@@ -110,7 +111,7 @@ export function TextStep({ questionKey, headingId, alreadySaved, onAnswer }: Pro
           disabled={trimmed.length === 0 || over}
           onClick={() => onAnswer({ text: trimmed })}
         >
-          {c('onboarding.actions.next')}
+          {t('onboarding.actions.next')}
         </button>
         <button
           type="button"
@@ -124,7 +125,7 @@ export function TextStep({ questionKey, headingId, alreadySaved, onAnswer }: Pro
            */
           onClick={() => onAnswer({ skipped: true })}
         >
-          {c('onboarding.actions.skip')}
+          {t('onboarding.actions.skip')}
         </button>
       </div>
     </div>

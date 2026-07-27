@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { getSessionId } from '@/lib/analytics/track.client';
 import { SESSION_HEADER } from '@/lib/analytics/localdate';
-import { c } from '@/lib/memory/copy';
+import { useT } from '@/lib/i18n/LocaleProvider';
 import { todayKey } from '@/lib/storage';
 import styles from './FrequencyLine.module.css';
 
@@ -35,6 +35,7 @@ import styles from './FrequencyLine.module.css';
  * evening.
  */
 export function FrequencyLine() {
+  const t = useT();
   const [line, setLine] = useState<string | null>(null);
 
   useEffect(() => {
@@ -83,15 +84,12 @@ export function FrequencyLine() {
    * §10 warns about.
    */
   /*
-   * The locale is hardcoded to 'id' at this one call site because W6 has not
-   * landed and there is no client-side locale to read yet. `users.locale` is
-   * 'id' for every account, so this is the only value it could resolve to
-   * today. When W6 arrives it becomes `useLocale()` here and `t()` inside
-   * `copy.ts` -- the KEY does not change, which is the reason the string is in
-   * the catalog rather than inline.
+   * W6 landed and the hardcoded 'id' is gone. The KEY did not change, which is
+   * why this was a one-line migration and why the string was in a catalog
+   * rather than inline in the first place.
    */
   return (
-    <p className={styles.line} aria-label={c('id', 'memory.frequency.a11yLabel')}>
+    <p className={styles.line} aria-label={t('memory.frequency.a11yLabel')}>
       {line}
     </p>
   );

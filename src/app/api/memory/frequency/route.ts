@@ -23,6 +23,7 @@
  */
 import { NextResponse, after } from 'next/server';
 import { requireUser } from '@/lib/auth/server';
+import { getLocale } from '@/lib/i18n/t';
 import { db } from '@/lib/db/client';
 import {
   deleteVerdicts,
@@ -62,6 +63,21 @@ export async function GET(request: Request) {
   if (!auth.ok) return auth.response;
   const user = auth.user;
 
+  /*
+   * THE RESOLVED UI LOCALE, NOT `locale`. Same reasoning as `/api/reading`, and
+   * this route is where the bug was actually VISIBLE: a screenshot of the English
+   * reader picker showed an Indonesian frequency verdict sitting under an English hint.
+   *
+   * `locale` is the `loc` claim, which is D6's "profile" and first in the chain, so
+   * for a real user the two agree. The dev-only `?lang=` override skips the claim on
+   * purpose -- and these two endpoints are the ones a screenshot harness reaches, so
+   * reading the claim here made the whole English-screenshot loop lie.
+   *
+   * `frequency_verdicts` and `daily_summaries` are BOTH keyed on locale already (W5 got
+   * that right), so the cache was never the problem: the wrong key was being looked up.
+   */
+  const locale = await getLocale();
+
   const url = new URL(request.url);
 
   /*
@@ -88,7 +104,7 @@ export async function GET(request: Request) {
   const ctx: AnalyticsContext = {
     userId: user.id,
     sessionId: validSessionId(request.headers.get(SESSION_HEADER)),
-    locale: user.locale,
+    locale: locale,
     localDate: today,
   };
 
@@ -120,13 +136,13 @@ export async function GET(request: Request) {
        * Every window we just rejected loses its cached line. One statement, on
        * the path that is already doing no other work. See `deleteVerdicts`.
        */
-      await deleteVerdicts(db, user.id, evaluated, user.locale);
+      await deleteVerdicts(db, user.id, evaluated, locale);
       return NO_CONTENT;
     }
 
     const top = result.ranked[0];
     const second = result.ranked[1];
-    const cached = await getVerdict(db, user.id, result.window, user.locale);
+    const cached = await getVerdict(db, user.id, result.window, locale);
 
     const fresh = cached?.fingerprint === result.fingerprint;
     /*
@@ -153,7 +169,7 @@ export async function GET(request: Request) {
 
       if (!fresh) {
         // Counts moved. Regenerate behind the response; nothing waits for it.
-        after(() => generate(user.id, user.locale, result).catch(logFailure));
+        after(() => generate(user.id, locale, result).catch(logFailure));
       }
 
       return text(cached.body);
@@ -164,7 +180,7 @@ export async function GET(request: Request) {
      * names cards this querent's window no longer has at the top is worse than
      * a second of delay on a component that started empty.
      */
-    const body = await generate(user.id, user.locale, result).catch((err) => {
+    const body = await generate(user.id, locale, result).catch((err) => {
       logFailure(err);
       return null;
     });

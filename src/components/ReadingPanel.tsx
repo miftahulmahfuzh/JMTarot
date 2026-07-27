@@ -1,5 +1,6 @@
 'use client';
 
+import { useT } from '@/lib/i18n/LocaleProvider';
 import { useEffect, useRef } from 'react';
 import styles from './ReadingPanel.module.css';
 
@@ -16,6 +17,7 @@ type Props = {
 };
 
 export function ReadingPanel({ state, onRetry }: Props) {
+  const t = useT();
   const ref = useRef<HTMLDivElement | null>(null);
   const scrolledOnce = useRef(false);
 
@@ -43,7 +45,7 @@ export function ReadingPanel({ state, onRetry }: Props) {
   return (
     <section className={styles.panel} ref={ref} aria-live="polite">
       {state.status === 'waiting' ? (
-        <div className={styles.waiting}>Membaca kartu&hellip;</div>
+        <div className={styles.waiting}>{t('reading.waiting')}</div>
       ) : null}
 
       {text ? <p className={styles.text}>{text}</p> : null}
@@ -52,16 +54,13 @@ export function ReadingPanel({ state, onRetry }: Props) {
         <>
           <p className={styles.error}>{state.message}</p>
           <button type="button" className={styles.retry} onClick={onRetry}>
-            Coba lagi
+            {t('common.retry')}
           </button>
         </>
       ) : null}
 
       {state.status === 'done' || state.status === 'error' ? (
-        <p className={styles.disclaimer}>
-          Bacaan ini untuk hiburan semata, bukan nasihat medis, hukum, atau
-          keuangan.
-        </p>
+        <p className={styles.disclaimer}>{t('common.disclaimer.long')}</p>
       ) : null}
     </section>
   );

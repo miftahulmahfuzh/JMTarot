@@ -1,8 +1,11 @@
 import Image from 'next/image';
 import { Eyebrow } from '@/components/Eyebrow';
 import { FrequencyLine } from '@/components/FrequencyLine';
+import { LocaleSwitch } from '@/components/LocaleSwitch';
 import { TrackLink } from '@/components/TrackLink';
 import { READERS, readerPortrait } from '@/data/readers';
+import { localeSwitcherEnabled } from '@/lib/i18n/resolve';
+import { getT } from '@/lib/i18n/t';
 import styles from './page.module.css';
 
 /**
@@ -12,12 +15,14 @@ import styles from './page.module.css';
  * `/${reader.id}` failed typed-route validation and the object form was
  * required, was specific to expo-router's typedRoutes and does not apply here.
  */
-export default function Home() {
+export default async function Home() {
+  const t = await getT();
+
   return (
     <main className={styles.shell}>
-      <Eyebrow>Major Arcana</Eyebrow>
-      <h1 className={styles.title}>JMTarot</h1>
-      <p className={styles.hint}>Pilih pembaca yang cocok denganmu.</p>
+      <Eyebrow>{t('common.majorArcana')}</Eyebrow>
+      <h1 className={styles.title}>{t('app.title')}</h1>
+      <p className={styles.hint}>{t('picker.reader.hint')}</p>
 
       {/* Renders nothing until it has a verdict, and nothing at all for a user
           with no pattern yet -- which is most users, most days (M14). Kept a
@@ -38,7 +43,10 @@ export default function Home() {
             <div className={styles.portrait}>
               <Image
                 src={readerPortrait(reader.id)}
-                alt={`${reader.name}, ${reader.title}`}
+                alt={t('picker.reader.portraitAlt', {
+                  name: reader.name,
+                  title: reader.title,
+                })}
                 width={1024}
                 height={512}
                 /* Only the first is above the fold on a phone; the rest can
@@ -51,7 +59,7 @@ export default function Home() {
                 <div className={styles.name}>{reader.name}</div>
                 <div className={styles.readerTitle}>{reader.title}</div>
                 <div className={styles.chips}>
-                  {reader.specialties.map((s) => (
+                  {reader.specialties[t.locale].map((s) => (
                     <span key={s} className={styles.chip}>
                       {s}
                     </span>
@@ -63,7 +71,10 @@ export default function Home() {
         ))}
       </div>
 
-      <p className={styles.disclaimer}>Untuk hiburan semata.</p>
+      <p className={styles.disclaimer}>{t('common.disclaimer.short')}</p>
+      {/* Under the disclaimer, which is the calmest row on the calmest screen.
+          Not on the draw screen -- see the component. */}
+      {localeSwitcherEnabled() ? <LocaleSwitch /> : null}
     </main>
   );
 }

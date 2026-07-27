@@ -1,12 +1,37 @@
 /**
  * Stream one completion from the configured provider to stdout.
  *
- *   npm run smoke
+ *   npm run smoke                      one call: is the key/baseURL/model right?
+ *   npm run smoke -- --all             EIGHTEEN readings: both locales x 3 x 3
+ *   npm run smoke -- --all --locale en NINE, one locale, for iterating
+ *   npm run smoke -- --all --fixed     same hands, so two runs can be diffed
  *
  * The cheapest possible confirmation that LLM_API_KEY, LLM_BASE_URL and
  * LLM_MODEL are all correct, isolated from every UI question. Run it before
- * blaming the app. Task 10 extends this with --reader/--service to print real
- * readings.
+ * blaming the app. `--reader`/`--service` print real readings.
+ *
+ * `--all` IS EIGHTEEN NOW, NOT NINE (W6). The whole risk the i18n workstream carries
+ * is that one locale is quietly worse than the other, and a default that exercised
+ * only one half would hide precisely that. What is `id`-only: the eleven-word Malay
+ * grep. What is `en`-only: a generic-mystic tic list, a closing-offer check, a longer
+ * therapy list, and the contraction-rate proxy -- which cannot exist in Indonesian,
+ * and is a small piece of evidence that forking the prompt layer rather than
+ * translating it was right.
+ *
+ * WHAT IS ASSERTED vs WHAT IS PRINTED. FAILs are mechanical and unambiguous: markdown,
+ * emoji, a mangled card name, a greeting, a forbidden word, a paragraph over its
+ * ceiling, a verdict that does not open the reading, a reader using their own
+ * forbidden vocabulary, Margaret's sentences collapsing toward Thessaly's. WARNs are
+ * for a human, and there is exactly one: the English self-contradiction check, because
+ * `no reason` and `there is no` make a bare `No` ungreppable. Everything else --
+ * per-paragraph word counts, reader overlap, mean sentence length, contraction rate --
+ * PRINTS EVERY RUN, because three runs are supposed to give a distribution to
+ * calibrate against rather than a boolean. That is how the 40-vs-55 ceiling question
+ * got answered.
+ *
+ * AND IT ENDS WITH A BLIND READ. Three readings per locale, names covered, shuffled,
+ * key after forty blank lines. It replaces a paragraph that asked the operator to
+ * cover the names themselves, which nobody ever did.
  *
  * Chunks are written as they arrive and the footer reports timing, so a stream
  * that stalls or arrives all at once is visible rather than inferred.
@@ -26,8 +51,24 @@
  *     run; check a full-length reading.
  */
 import { readFileSync } from 'node:fs';
+import { CARDS, effectiveYesNo } from '@/data/deck';
+import type { ReaderId, ServiceId, YesNo } from '@/data/types';
 import { getProvider } from '@/lib/llm';
+import { isLocale, LOCALES, type Locale } from '@/lib/i18n/locale';
+import { budgetFor, type LengthBudget } from '@/lib/prompt/budget';
 import type { MemoryContext } from '@/lib/prompt/memory';
+
+/*
+ * STATIC IMPORTS ARE SAFE FOR THESE FOUR AND NOT FOR THE REST.
+ *
+ * `main()` imports most modules dynamically because `loadEnv()` has to run before
+ * anything reads `process.env` at module scope -- `memory.ts` reads
+ * `MEMORY_CHAIN_COUNT`, `summary.ts` reads `SUMMARY_MIN_AGE_SECONDS`. `@/data/deck`
+ * and `@/lib/prompt/budget` read no environment at all (checked, not assumed), so
+ * they can be imported normally, and `check()` can then reach them directly instead of
+ * being handed them through a `deps` bag. That bag is what hid the `VERDICT_WORD`
+ * reshape; the fewer things travelling through it, the better.
+ */
 
 /* Loaded by hand: this runs outside Next, so nothing has read .env.local. */
 function loadEnv(path = '.env.local') {
@@ -114,7 +155,29 @@ async function main() {
 
   const reader = arg('reader');
   const service = arg('service');
+
+  /*
+   * W6. `--locale id|en` narrows; ABSENT MEANS BOTH under `--all`.
+   *
+   * So `npm run smoke -- --all` is EIGHTEEN readings now, not nine, and that is the
+   * default on purpose: the whole risk this workstream carries is that one locale is
+   * quietly worse than the other, and a default that only exercised one half would
+   * hide exactly that. `--locale en` is for iterating on one side.
+   *
+   * VALIDATED RATHER THAN CAST. A typo would otherwise reach `buildPrompt`, index a
+   * `Record<Locale, ...>` with a miss, and hand the model `undefined` as its entire
+   * contract -- which does not throw and comes back as a fluent reading generated
+   * with no rules at all. The single worst failure mode in the fork, and one check
+   * makes it impossible.
+   */
+  const localeArg = arg('locale');
+  if (localeArg !== undefined && !isLocale(localeArg)) {
+    console.error(`--locale must be one of ${LOCALES.join(', ')}, got "${localeArg}"`);
+    process.exit(1);
+  }
+
   const all = process.argv.includes('--all');
+  const locales: Locale[] = localeArg ? [localeArg] : all ? [...LOCALES] : ['id'];
   const lotus = process.argv.includes('--lotus');
   const memory = process.argv.includes('--memory');
   const summary = process.argv.includes('--summary');
@@ -173,25 +236,47 @@ async function main() {
   const { VERDICT_WORD } = await import('@/lib/prompt/services');
   const { READERS } = await import('@/data/readers');
   const { SERVICES } = await import('@/data/services');
-  const { CARDS, effectiveYesNo, shuffleDeck } = await import('@/data/deck');
+  const { shuffleDeck } = await import('@/data/deck');
   const { detectCallback, fallbackGist, gistPrompt, gistUserTurn, sanitizeGist } =
     await import('@/lib/prompt/memory');
 
-  const pairs =
+  /**
+   * The pair list, per locale.
+   *
+   * `pairIndex` is the position within ONE locale, not within the flattened list, so
+   * `--fixed` deals the SAME nine hands to `id` and to `en`. Two locales that drew
+   * different cards cannot be compared, and comparing them is the entire reason
+   * `--all` runs both.
+   */
+  const readerServicePairs =
     reader && service
       ? [[reader, service] as const]
       : READERS.flatMap((r) => SERVICES.map((s) => [r.id, s.id] as const));
 
+  const runs = locales.flatMap((l) =>
+    readerServicePairs.map(([r, s], i) => ({ locale: l, r, s, pairIndex: i })),
+  );
+
   const failures: string[] = [];
-  /** reader -> its spread3 text, for the overlap number printed at the end. */
+  /*
+   * WARNINGS ARE NOT FAILURES AND THE SPLIT IS DELIBERATE (Step 3). The English
+   * self-contradiction check cannot be a FAIL -- `no reason`, `there is no`, `no one`
+   * are ordinary prose and a bare `No` collides with all three -- so it is reported
+   * for a human to judge. Shipping it as a FAIL would teach people to ignore the FAIL
+   * line, which is the one thing this script has.
+   */
+  const warnings: string[] = [];
+  /** `<locale>/<reader>` -> its spread3 text, for the overlap and the voice proxies. */
   const spreads = new Map<string, string>();
+  /** Every reading, for the blind print and the per-locale summaries. */
+  const bodies: Array<{ locale: Locale; reader: string; service: string; text: string }> = [];
 
   let offered = 0;
   let used = 0;
   const bySignal = { card: 0, phrase: 0 };
   const gists: Array<{ pair: string; gist: string; fellBack: boolean }> = [];
 
-  for (const [r, s] of pairs) {
+  for (const { locale, r, s, pairIndex } of runs) {
     const count = SERVICES.find((x) => x.id === s)?.cardCount ?? 1;
 
     /*
@@ -207,7 +292,7 @@ async function main() {
      * random spread still produces sane readings.
      */
     const picks = fixedCards
-      ? fixedPicks(pairs.findIndex(([pr, ps]) => pr === r && ps === s), count)
+      ? fixedPicks(pairIndex, count)
       : shuffleDeck()
           .slice(0, count)
           .map((d) => ({ id: d.card.id, reversed: d.reversed }));
@@ -225,6 +310,7 @@ async function main() {
       reader: r,
       service: s,
       picks,
+      locale,
       question: arg('question'),
       context:
         lotus || memoryCtx
@@ -232,13 +318,14 @@ async function main() {
           : undefined,
     });
     const text = await run(
-      `${r} / ${s}`,
+      `${locale}  ${r} / ${s}`,
       prompt.system,
       prompt.user,
       prompt.maxTokens,
       prompt.promptVersion,
     );
-    if (s === 'spread3') spreads.set(r, text);
+    if (s === 'spread3') spreads.set(`${locale}/${r}`, text);
+    bodies.push({ locale, reader: r, service: s, text });
 
     if (memoryCtx) {
       offered += 1;
@@ -279,14 +366,19 @@ async function main() {
       );
     }
 
-    const framing = READERS.find((x) => x.id === r)?.positionFraming ?? [];
-    for (const problem of check(text, r, s, picks, {
-      CARDS,
-      effectiveYesNo,
-      VERDICT_WORD,
+    const framing = READERS.find((x) => x.id === r)?.positionFraming[locale] ?? [];
+    for (const problem of check({
+      text,
+      reader: r as ReaderId,
+      service: s as ServiceId,
+      picks,
+      locale,
       framing,
+      verdictWords: VERDICT_WORD[locale],
+      budget: budgetFor(locale, s as ServiceId, r as ReaderId),
+      warn: (w) => warnings.push(`${locale} ${r}/${s}: ${w}`),
     })) {
-      failures.push(`${r}/${s}: ${problem}`);
+      failures.push(`${locale} ${r}/${s}: ${problem}`);
     }
   }
 
@@ -297,8 +389,27 @@ async function main() {
     for (const f of failures) process.stdout.write(`FAIL  ${f}\n`);
     process.stdout.write(`\n${failures.length} violation(s)\n`);
   }
+  /*
+   * WARNINGS PRINT AFTER THE FAILURES AND ARE NOT COUNTED WITH THEM. The English
+   * self-contradiction check lives here because grepping English for "No" cannot be a
+   * FAIL without being noise -- see `check()`. A separate heading is what stops the
+   * two being read as one number.
+   */
+  if (warnings.length > 0) {
+    process.stdout.write(`\n-- WARN (for a human to judge, not failures) --\n`);
+    for (const w of warnings) process.stdout.write(`WARN  ${w}\n`);
+  }
 
-  if (spreads.size === 3) {
+  /*
+   * `>= 3`, NOT `=== 3`. It was an exact equality and W6's doubling silently switched
+   * the whole overlap report off: `--all` now yields SIX spread3 texts (three readers x
+   * two locales), so `=== 3` was false and the block never ran. Nothing failed, nothing
+   * logged, the section simply was not there -- found by grepping the output for a
+   * heading that should have been printed. An exact-length guard on a collection whose
+   * size is a function of configuration is a bug waiting for the configuration to
+   * change.
+   */
+  if (spreads.size >= 3) {
     /*
      * A HEURISTIC REPORTED AS A NUMBER, NEVER AN ASSERTION (W3 plan §9).
      *
@@ -314,15 +425,109 @@ async function main() {
     const pairsOf: Array<[string, string, number]> = [];
     for (let i = 0; i < texts.length; i += 1) {
       for (let j = i + 1; j < texts.length; j += 1) {
+        // Only compare readers WITHIN one locale. An id-vs-en overlap number is
+        // meaningless -- two different languages share almost no content words, so it
+        // would sit near zero and drag the mean down while saying nothing.
+        if (texts[i][0].split('/')[0] !== texts[j][0].split('/')[0]) continue;
         pairsOf.push([texts[i][0], texts[j][0], jaccard(texts[i][1], texts[j][1])]);
       }
     }
-    const mean = pairsOf.reduce((sum, [, , v]) => sum + v, 0) / pairsOf.length;
-    process.stdout.write(`\nreader overlap, spread3 (${lotus ? 'WITH lotus' : 'plain'}):\n`);
-    for (const [a, b, v] of pairsOf) {
-      process.stdout.write(`  ${a} vs ${b}: ${v.toFixed(3)}\n`);
+    if (pairsOf.length > 0) {
+      process.stdout.write(`\nreader overlap, spread3 (${lotus ? 'WITH lotus' : 'plain'}):\n`);
+      for (const [a, b, v] of pairsOf) {
+        process.stdout.write(`  ${a} vs ${b}: ${v.toFixed(3)}\n`);
+      }
+      for (const loc of locales) {
+        const inLoc = pairsOf.filter(([a]) => a.startsWith(`${loc}/`));
+        if (inLoc.length === 0) continue;
+        const mean = inLoc.reduce((sum, [, , v]) => sum + v, 0) / inLoc.length;
+        process.stdout.write(`  mean (${loc}): ${mean.toFixed(3)}\n`);
+      }
+      process.stdout.write(
+        '  For reference: 0.056 before the Lotus block landed, 0.074 after; 0.050 ->\n' +
+          '  0.063 for the memory block. A JUMP is the signal, not the absolute value.\n',
+      );
     }
-    process.stdout.write(`  mean: ${mean.toFixed(3)}\n`);
+  }
+
+  /*
+   * ================= THE THREE VOICE PROXIES (Step 5) =====================
+   *
+   * A grep cannot judge voice. These three are not the judgement -- they are the thing
+   * that fails loudly while the human is asleep, and each one measures an axis the
+   * personas were written to differ on.
+   */
+  if (spreads.size >= 3) {
+    process.stdout.write(`\n${'#'.repeat(70)}\nVOICE PROXIES\n${'#'.repeat(70)}\n`);
+
+    for (const loc of locales) {
+      const forLocale = READERS.map((r) => ({
+        reader: r.id as ReaderId,
+        texts: bodies.filter((b) => b.locale === loc && b.reader === r.id).map((b) => b.text),
+      })).filter((x) => x.texts.length > 0);
+      if (forLocale.length < 3) continue;
+
+      process.stdout.write(`\n-- ${loc} --\n`);
+
+      /*
+       * 1. FORBIDDEN-VOCABULARY CROSSOVER. A hard FAIL, and the strongest signal here:
+       *    each list was written precisely to hold that reader apart from the other
+       *    two, so a hit is not a stylistic slip -- it is that reader being written by
+       *    the average tarot voice.
+       */
+      for (const { reader, texts } of forLocale) {
+        const joined = texts.join('\n').toLowerCase();
+        for (const word of CROSSOVER[loc][reader]) {
+          const hit =
+            word === '!' ? joined.includes('!') : new RegExp(`\\b${word}\\b`, 'i').test(joined);
+          if (hit) failures.push(`${loc} ${reader}: uses own forbidden word "${word}"`);
+        }
+      }
+
+      /*
+       * 2. MEAN SENTENCE LENGTH. A hard FAIL on the RATIO, not on the absolute
+       *    numbers: the personas differ most on exactly this axis -- Thessaly short
+       *    declaratives, Margaret long subordinated sentences, Adrian in between -- so
+       *    if the ratio collapses, the voices collapsed. All three print every run,
+       *    because the trend is the early warning and it needs no human.
+       */
+      const mean: Partial<Record<ReaderId, number>> = {};
+      for (const { reader, texts } of forLocale) {
+        mean[reader] = meanSentenceWords(texts.join('\n'));
+        process.stdout.write(`  mean sentence words  ${reader.padEnd(9)} ${mean[reader]!.toFixed(1)}\n`);
+      }
+      const m = mean.margaret ?? 0;
+      const t = mean.thessaly ?? 0;
+      if (t > 0 && m < t * 1.5) {
+        failures.push(
+          `${loc}: Margaret's sentences (${m.toFixed(1)}) are not 1.5x Thessaly's ` +
+            `(${t.toFixed(1)}) -- the voices are converging`,
+        );
+      }
+
+      /*
+       * 3. CONTRACTION RATE, `en` ONLY. THIS CHECK CANNOT EXIST IN INDONESIAN, which is
+       *    a small piece of evidence that forking the prompt layer rather than
+       *    translating it was the right call: Adrian's English voice is defined partly
+       *    by contractions and Margaret's forbids them outright, and no Indonesian rule
+       *    can express either.
+       */
+      if (loc === 'en') {
+        const rate: Partial<Record<ReaderId, number>> = {};
+        for (const { reader, texts } of forLocale) {
+          rate[reader] = contractionRate(texts.join('\n'));
+          process.stdout.write(`  contractions/100w    ${reader.padEnd(9)} ${rate[reader]!.toFixed(2)}\n`);
+        }
+        if ((rate.adrian ?? 0) === 0) {
+          failures.push('en adrian: zero contractions -- his voice rules ask for them throughout');
+        }
+        if ((rate.margaret ?? 0) > 0) {
+          failures.push(
+            `en margaret: ${rate.margaret!.toFixed(2)} contractions/100w -- her rules forbid them`,
+          );
+        }
+      }
+    }
   }
 
   if (offered > 0) {
@@ -378,14 +583,72 @@ async function main() {
         '     in it? The fixture says "kenangan berat tentang kehilangan" and\n' +
         '     nothing more; a reading that invents the loss has gone too far.\n',
     );
-  } else {
-    process.stdout.write(
-      '\nWhat this cannot check: whether the three readers are actually\n' +
-        'distinguishable. Cover the names and read them. If you cannot tell who\n' +
-        'wrote which, the app has one reader in three hats -- fix the persona\n' +
-        'paragraphs in src/lib/prompt/readers.ts, not the code.\n',
-    );
   }
+
+  blindPrint(bodies, locales);
+}
+
+/**
+ * THE HUMAN GATE (Step 5, proxy 4).
+ *
+ * REPLACES a closing paragraph that asked the operator to cover the names, which in
+ * practice nobody ever did -- the names were right there. So the harness covers them:
+ * each reader becomes READER A/B/C in a SHUFFLED order, their own name is redacted
+ * from the body, and the key sits at the very bottom after forty blank lines so it
+ * cannot be read by accident while you are still guessing.
+ *
+ * ACTUALLY GUESS. If you cannot match three of three, the personas need sharpening --
+ * and the fix is the persona paragraphs in `readers.id.ts` / `readers.en.ts`, NEVER the
+ * code. That instruction is in CLAUDE.md, in the rewrite plan's risk table and in
+ * roadmap §10.
+ *
+ * `spread3` only. It is the longest of the three and the one with room for a voice to
+ * show; a one-paragraph yes/no is too short to attribute and would make the exercise
+ * feel unfair enough to skip.
+ */
+function blindPrint(
+  bodies: Array<{ locale: Locale; reader: string; service: string; text: string }>,
+  locales: Locale[],
+): void {
+  const spread = bodies.filter((b) => b.service === 'spread3');
+  if (spread.length < 3) return;
+
+  process.stdout.write(`\n${'#'.repeat(70)}\nTHE BLIND READ\n${'#'.repeat(70)}\n`);
+  process.stdout.write(
+    'Three readings per locale, names covered and shuffled. Guess who wrote which,\n' +
+      'THEN scroll to the key at the very bottom. If you cannot get three of three,\n' +
+      'fix the persona paragraphs -- not the code.\n',
+  );
+
+  const key: string[] = [];
+  for (const loc of locales) {
+    const forLocale = spread.filter((b) => b.locale === loc);
+    if (forLocale.length < 3) continue;
+
+    /*
+     * A FIXED SHUFFLE, derived from the locale rather than from `Math.random()`. The
+     * point is that the order is not reader order; it does not need to be
+     * unpredictable, and a deterministic one means two runs of the script can be
+     * diffed against each other.
+     */
+    const order = loc === 'id' ? [1, 2, 0] : [2, 0, 1];
+    process.stdout.write(`\n===== ${loc} =====\n`);
+    order.forEach((idx, position) => {
+      const b = forLocale[idx];
+      if (!b) return;
+      const label = String.fromCharCode(65 + position);
+      // Redact the reader's own name from the body. The base contract forbids a
+      // self-introduction, but a reading that broke that rule would otherwise hand
+      // the answer over -- and a failed rule should not also void the test.
+      const redacted = b.text.replace(new RegExp(b.reader, 'gi'), '[REDACTED]');
+      process.stdout.write(`\n--- READER ${label} ---\n${redacted}\n`);
+      key.push(`${loc}  READER ${label} = ${b.reader}`);
+    });
+  }
+
+  process.stdout.write('\n'.repeat(40));
+  process.stdout.write(`${'-'.repeat(30)}\nTHE KEY\n${'-'.repeat(30)}\n`);
+  for (const line of key) process.stdout.write(`${line}\n`);
 }
 
 /**
@@ -558,98 +821,243 @@ async function runLotus() {
  * Prose quality is not among them, deliberately -- see the note printed above.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function check(text: string, reader: string, service: string, picks: any[], deps: any): string[] {
-  const problems: string[] = [];
-  const { CARDS, effectiveYesNo, VERDICT_WORD } = deps;
+type CheckArgs = {
+  text: string;
+  reader: ReaderId;
+  service: ServiceId;
+  picks: Array<{ id: number; reversed: boolean }>;
+  locale: Locale;
+  framing: string[];
+  verdictWords: Record<YesNo, string>;
+  budget: LengthBudget;
+  /** Advisory findings, for a human to judge. Not failures. See `warnings`. */
+  warn: (message: string) => void;
+};
 
-  if (/\*\*|(?:^|\s)\*\w|^#{1,6}\s|^\s*[-•]\s|^\s*\d+\.\s/m.test(text)) {
+/**
+ * The mechanical checks. ONE OBJECT, FULLY TYPED.
+ *
+ * IT USED TO BE `check(text, reader, service, picks, deps: any)` AND THAT `any` COST A
+ * REAL BUG. W6 Task 9 reshaped `VERDICT_WORD` from `Record<YesNo, string>` to
+ * `Record<Locale, Record<YesNo, string>>`; the call site kept passing the whole thing,
+ * `deps.VERDICT_WORD[verdict]` read `undefined`, and the yes/no opener check silently
+ * passed on every reading. `npm run typecheck` was green throughout. Same class as the
+ * `Layanan: [object Object]` this workstream already paid for, and the same lesson: a
+ * boundary typed `any` fails exactly where a reshape happens, which is exactly when
+ * you need it.
+ *
+ * Positional arguments went with it. Five was already too many to read at the call
+ * site, and the object makes an added check's dependency visible in one place.
+ */
+function check(a: CheckArgs): string[] {
+  const { text, reader, service, picks, locale, framing, verdictWords, budget } = a;
+  const problems: string[] = [];
+  const en = locale === 'en';
+
+  if (/\*\*|(?:^|\s)\*\w|^#{1,6}\s|^\s*[-\u2022]\s|^\s*\d+\.\s/m.test(text)) {
     problems.push('markdown found');
   }
   if (/\p{Extended_Pictographic}/u.test(text)) problems.push('emoji found');
 
   /*
-   * Malay leaking in where Indonesian belongs. The plan listed four words;
-   * "tempoh" got through on the first run, so the net is wider now. These are
-   * all Malay-only -- words that exist in both languages are deliberately
-   * absent, since flagging those would be noise.
+   * Malay leaking in where Indonesian belongs. THE `id` HALF ONLY, now that there are
+   * two: `kerana` is not a risk in English, and running the grep there would be
+   * theatre that makes the check look more thorough than it is.
    */
-  for (const word of [
-    'kerjaya', 'hala tuju', 'sembang', 'awak',
-    'tempoh', 'kerana', 'iaitu', 'ianya', 'manakala', 'seronok', 'kelmarin',
-  ]) {
-    if (new RegExp(`\\b${word}\\b`, 'i').test(text)) problems.push(`Malay word "${word}"`);
+  if (!en) {
+    for (const word of [
+      'kerjaya', 'hala tuju', 'sembang', 'awak',
+      'tempoh', 'kerana', 'iaitu', 'ianya', 'manakala', 'seronok', 'kelmarin',
+    ]) {
+      if (new RegExp(`\\b${word}\\b`, 'i').test(text)) problems.push(`Malay word "${word}"`);
+    }
   }
 
   // Greeting or self-introduction in the opening.
   const opening = text.slice(0, 90);
-  if (/\b(halo|hai|selamat (pagi|siang|sore|malam)|salam)\b/i.test(opening)) {
+  const greeting = en
+    ? /\b(hello|hi|hey|greetings|welcome|good (morning|afternoon|evening)|dear one|beloved|dear seeker)\b/i
+    : /\b(halo|hai|selamat (pagi|siang|sore|malam)|salam)\b/i;
+  if (greeting.test(opening)) {
     problems.push(`greeting in opening: "${opening.split('\n')[0].slice(0, 50)}"`);
   }
-  if (new RegExp(`^\\s*${reader}\\b`, 'i').test(text)) problems.push('opens with own name');
-
-  // Card names must survive verbatim, in English.
-  for (const p of picks) {
-    const name = CARDS[p.id].name;
-    if (!text.includes(name)) problems.push(`card name missing or translated: "${name}"`);
+  if (new RegExp(`\\b${reader}\\b`, 'i').test(opening)) {
+    problems.push('reader introduces itself by name in the opening');
   }
 
-  // Therapy / medical / legal / financial instruction.
-  for (const word of [
-    'trauma', 'terapi', 'terapis', 'diagnosis', 'menyembuhkan', 'penyembuhan',
-    'inner child', 'kesehatan mental', 'depresi', 'obat', 'dokter',
-  ]) {
+  // Card names exactly as given, in English, in both locales.
+  for (const pick of picks) {
+    const name = CARDS[pick.id].name;
+    if (!text.includes(name)) problems.push(`card name missing or altered: "${name}"`);
+  }
+
+  /*
+   * Therapy / medical / legal / financial instruction.
+   *
+   * THE ENGLISH LIST IS LONGER, NOT A TRANSLATION. English tarot and wellness writing
+   * is saturated with this vocabulary in a way Indonesian is not, so the net has to be
+   * wider on that side. `anxiety` is deliberately ABSENT: "that low-grade anxiety
+   * before you send the text" is legitimate in Adrian's voice and the rule is against
+   * DIAGNOSIS -- `anxiety disorder`, `clinical` and `diagnosed` are the ones that are
+   * not.
+   */
+  for (const word of en
+    ? ['trauma', 'therapy', 'therapist', 'diagnose', 'diagnosis', 'diagnosed',
+       'clinical', 'healing', 'heal', 'inner child', 'mental health',
+       'anxiety disorder', 'depression', 'medication', 'shadow work',
+       'nervous system', 'hold space', 'regulate', 'dysregulated']
+    : ['trauma', 'terapi', 'terapis', 'diagnosis', 'menyembuhkan', 'penyembuhan',
+       'inner child', 'kesehatan mental', 'depresi', 'obat', 'dokter']) {
     if (new RegExp(`\\b${word}\\b`, 'i').test(text)) problems.push(`forbidden topic "${word}"`);
   }
 
-  // Each paragraph of a spread must open with the reader's own framing. This
-  // is what makes Margaret's "Yang telah berlalu" differ from Adrian's "Yang
-  // udah lewat"; two of three readers ignored it on the first run.
+  /*
+   * GENERIC-MYSTIC TICS AND THE CLOSING OFFER, `en` only.
+   *
+   * The English analogue of the Malay grep, and the biggest single threat to persona
+   * separation: these are the average tarot voice in any training set, so all three
+   * readers drift toward them TOGETHER -- which is the failure the reader-overlap
+   * number cannot see, because it rises when they converge on anything.
+   */
+  if (en) {
+    for (const tic of [
+      'dear one', 'beloved', 'sweet soul', 'the Universe', 'divine feminine',
+      'energetically', 'vibration', 'manifest', 'abundance', "soul's journey",
+    ]) {
+      if (new RegExp(tic.replace(/'/g, "['\u2019]"), 'i').test(text)) {
+        problems.push(`generic-mystic tic "${tic}"`);
+      }
+    }
+    if (/\b(let me know|feel free to|if you'?d like|happy to|i hope this helps)\b/i.test(text)) {
+      problems.push('closing offer of further help');
+    }
+  }
+
+  // Each paragraph of a spread must open with the reader's own framing. This is what
+  // makes Margaret's "What has passed" differ from Adrian's "What's done"; two of
+  // three readers ignored it on the first Indonesian run.
   if (service === 'spread3') {
-    for (const label of deps.framing as string[]) {
+    for (const label of framing) {
       if (!text.includes(label)) problems.push(`position framing missing: "${label}"`);
     }
+  }
 
-    /*
-     * PER-PARAGRAPH WORD COUNT -- the guard on W5 §6's dilution risk.
-     *
-     * The 40-words-per-paragraph ceiling is a rule the model must hold WHILE
-     * WRITING, and W5 pushes the context roughly 28% longer with the Lotus
-     * block and the <riwayat> block. That makes the ceiling easier to lose, and
-     * losing it is invisible: the reading still reads fine, it is just back to
-     * ~330 words, which is more than anyone reads on a phone. The 1100->650
-     * work that fixed it is what this protects.
-     *
-     * The whole-reading total is printed rather than asserted, because 128-169
-     * is where three readers landed once and is a shape to watch rather than a
-     * contract.
-     */
-    const paras = text.split(/\n\s*\n/).map((x) => x.trim()).filter(Boolean);
-    const counts = paras.map((x) => x.split(/\s+/).filter(Boolean).length);
-    for (const [i, n] of counts.entries()) {
-      if (n > 40) problems.push(`paragraph ${i + 1} is ${n} words, ceiling is 40`);
+  /*
+   * THE PARAGRAPH WORD BUDGET, FOR EVERY SERVICE (Step 4).
+   *
+   * It used to run for `spread3` only, with `40` typed in beside the prompt's own
+   * `40`. It now reads the SAME RESOLVED `LengthBudget` the prompt interpolated --
+   * including Margaret's per-reader override -- so the number in the prose and the
+   * number asserted here cannot drift, and a reader-specific ceiling cannot be in one
+   * and absent from the other.
+   *
+   * Every count is PRINTED whether it passes or fails, because three runs of
+   * `--all` are supposed to give a distribution to calibrate against rather than a
+   * boolean. That is how the 40-vs-55 question got answered.
+   */
+  const paras = text.split(/\n\s*\n/).map((x) => x.trim()).filter(Boolean);
+  const counts = paras.map((x) => x.split(/\s+/).filter(Boolean).length);
+  for (const [i, n] of counts.entries()) {
+    if (n > budget.maxParagraphWords) {
+      problems.push(`paragraph ${i + 1} is ${n} words, ceiling is ${budget.maxParagraphWords}`);
     }
-    const total = counts.reduce((a, b) => a + b, 0);
-    process.stdout.write(
-      `[words] ${reader}/${service}: ${counts.join(' + ')} = ${total}` +
-        `${total < 128 || total > 169 ? '  <- outside the 128-169 band seen at launch' : ''}\n`,
+  }
+  const total = counts.reduce((x, y) => x + y, 0);
+  if (total < budget.minTotalWords || total > budget.maxTotalWords) {
+    problems.push(
+      `total ${total} words, budget ${budget.minTotalWords}-${budget.maxTotalWords}`,
     );
   }
+  process.stdout.write(
+    `[words] ${locale} ${reader}/${service}: ${counts.join(' + ')} = ${total} ` +
+      `(ceiling ${budget.maxParagraphWords}, band ${budget.minTotalWords}-${budget.maxTotalWords})\n`,
+  );
 
   // The yes/no verdict must be the code's, and must lead.
   if (service === 'yesno') {
-    const expected = VERDICT_WORD[effectiveYesNo({ card: CARDS[picks[0].id], reversed: picks[0].reversed })];
+    const expected =
+      verdictWords[effectiveYesNo({ card: CARDS[picks[0].id], reversed: picks[0].reversed })];
     if (!text.trimStart().startsWith(expected)) {
       problems.push(`verdict should open with "${expected}", got "${text.trimStart().slice(0, 24)}"`);
     }
-    for (const other of Object.values(VERDICT_WORD) as string[]) {
-      if (other !== expected && new RegExp(`\\b${other}\\b`).test(text)) {
-        problems.push(`contradicts itself with "${other}" (verdict was "${expected}")`);
+
+    /*
+     * THE SELF-CONTRADICTION CHECK IS A FAIL IN `id` AND A WARN IN `en` (Step 3), and
+     * this is a real limitation of grepping English rather than a shortcut.
+     *
+     * The Indonesian words -- Ya, Tidak, Belum jelas -- are unambiguous enough that a
+     * bare `\b` match means what it looks like. The English ones are not: `No`
+     * collides with `no reason`, `there is no`, `no one`, and `Yes` appears inside
+     * ordinary reassurance. So `en` matches only SENTENCE-INITIAL occurrences and
+     * reports them for a person to read. Saying so beats shipping a check people
+     * learn to ignore.
+     */
+    if (en) {
+      const sentenceInitial = /(?:^|[.!?]\s+)(Yes|No|Not yet)\b/g;
+      for (const m of text.matchAll(sentenceInitial)) {
+        if (m[1] !== expected) {
+          const at = m.index ?? 0;
+          a.warn(`sentence opens with "${m[1]}" (verdict was "${expected}"): "${text.slice(at, at + 60).replace(/\n/g, ' ')}"`);
+        }
+      }
+    } else {
+      for (const other of Object.values(verdictWords)) {
+        if (other !== expected && new RegExp(`\\b${other}\\b`).test(text)) {
+          problems.push(`contradicts itself with "${other}" (verdict was "${expected}")`);
+        }
       }
     }
   }
 
   return problems;
 }
+
+/**
+ * Mean words per sentence. One of the three voice proxies (Step 5).
+ *
+ * Naive sentence splitting on purpose: a real segmenter would be more accurate and
+ * would not change the RATIO between three readers, which is the only thing this is
+ * used for.
+ */
+function meanSentenceWords(text: string): number {
+  const sentences = text.split(/(?<=[.!?])\s+/).filter((x) => x.trim());
+  if (sentences.length === 0) return 0;
+  const words = sentences.map((x) => x.split(/\s+/).filter(Boolean).length);
+  return words.reduce((a, b) => a + b, 0) / sentences.length;
+}
+
+/** Contractions per 100 words. `en` only -- see the proxy report. */
+function contractionRate(text: string): number {
+  const words = text.split(/\s+/).filter(Boolean).length;
+  if (words === 0) return 0;
+  const hits = [...text.matchAll(/\b\w+['\u2019](t|re|ve|ll|m|d|s)\b/g)].length;
+  return (hits / words) * 100;
+}
+
+/**
+ * Each persona's OWN forbidden vocabulary, checked against that persona's OWN output.
+ *
+ * THE STRONGEST MACHINE SIGNAL AVAILABLE for whether the three are still three,
+ * because these lists were written precisely to hold them apart -- CLAUDE.md records
+ * that without them all three drift to the same mid-register mystic, "because that is
+ * the average tarot voice in any training set".
+ *
+ * A hard FAIL, unlike the overlap number, which is a trend. Thessaly saying "the
+ * universe" is not a small stylistic slip; it is Thessaly being written by the
+ * average.
+ */
+const CROSSOVER: Record<Locale, Record<ReaderId, string[]>> = {
+  id: {
+    thessaly: ['semesta', 'energi', 'getaran', 'aura', 'takdir', 'perjalanan jiwa'],
+    margaret: ['nggak', 'kayak', 'banget', 'oke', 'deh', 'sih'],
+    adrian: ['trauma', 'coping', 'attachment', 'trigger', 'red flag'],
+  },
+  en: {
+    thessaly: ['universe', 'energy', 'vibration', 'aura', 'destiny', 'divine', "soul's journey"],
+    margaret: ['gonna', 'kinda', 'super', 'totally', 'okay', 'stuff', '!'],
+    adrian: ['trauma', 'coping', 'attachment style', 'triggered', 'red flag'],
+  },
+};
 
 /**
  * A synthetic recalled reading that SHARES ITS FIRST CARD with the current draw.
