@@ -251,6 +251,7 @@ describe('W5’s memory block', () => {
         localDate: '2026-07-24',
         readerId: 'margaret',
         serviceId: 'spread3',
+        locale: 'id',
         cards: [{ cardId: 18, reversed: true }],
         gist: 'kabar yang setengah belum layak dipercaya',
         hadQuestion: true,

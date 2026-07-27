@@ -20,7 +20,7 @@
  */
 import type { NextRequest } from 'next/server';
 
-import { DEFAULT_LOCALE, isLocale, negotiate, type Locale } from './locale';
+import { DEFAULT_LOCALE, isLocale, negotiate, negotiateOrNull, type Locale } from './locale';
 
 /**
  * `httpOnly` on purpose (I11): nothing client-side reads it. The provider is
@@ -129,4 +129,79 @@ export function localeFromHeaders(
   if (isLocale(header)) return header;
   if (isLocale(cookie)) return cookie;
   return DEFAULT_LOCALE;
+}
+
+/**
+ * What locale to stamp into a `users` row at CREATION, and whether that stamp is
+ * a decision (V2, roadmap VD11 / T17).
+ *
+ * ── THE LOCALE AND THE SOURCE COME FROM DIFFERENT PLACES, AND MEASUREMENT IS ──
+ * ── WHAT SETTLED THAT ─────────────────────────────────────────────────────────
+ *
+ * The first version read header → cookie → `Accept-Language`, and called anything
+ * that produced a locale a negotiation. **That is wrong, and a live sign-in proved
+ * it.** `POST /api/auth/dev-session` with no `Accept-Language` at all recorded
+ * `locale_source = 'negotiated'`:
+ *
+ *   dev:v2test   (accept-language: en-GB)   -> en / negotiated   correct
+ *   dev:v2plain  (no accept-language)       -> id / negotiated   WRONG
+ *
+ * The mechanism is in `src/middleware.ts`, and it is not subtle once seen:
+ * middleware sets `x-jmt-locale` to the RESOLVED locale on every matched request,
+ * and refreshes `jmt_locale` whenever it disagrees with the request — both
+ * UNCONDITIONALLY, including when it had no signal and resolved to
+ * `DEFAULT_LOCALE`. So by the time a sign-in reads them, the header and the cookie
+ * exist for every visitor, and **neither is evidence that anybody negotiated
+ * anything.** V2's plan verified that the header is AVAILABLE on this path; it did
+ * not notice that it is ALWAYS available and is itself sometimes a bare default.
+ *
+ * Left as written, `'default'` would be unreachable through a real sign-in and the
+ * three-value enum would have collapsed to two with nothing failing — which is
+ * exactly the lie T17 exists to prevent, arriving through the door T17 was not
+ * watching.
+ *
+ * So the two answers are derived separately:
+ *
+ *   `locale` — header → cookie → `Accept-Language` → default. **What the visitor
+ *   was actually looking at on `/login`**, which is the right thing to stamp
+ *   whatever its provenance.
+ *
+ *   `source` — `'negotiated'` only on real evidence: `Accept-Language` names a
+ *   locale we have, OR the resolved locale is not the default. The second arm is
+ *   what catches a visitor who pressed the toggle before signing in — a non-default
+ *   locale cannot arise from an absence.
+ *
+ * A pre-sign-in toggle is therefore recorded as `'negotiated'` rather than
+ * `'chosen'`, which under-states it. That is deliberate and safe: only `'default'`
+ * is ever re-stamped, so `'negotiated'` protects the choice just as well, and a
+ * sign-in is not allowed to claim a choice — hence `'chosen'` is absent from the
+ * return type.
+ *
+ * PURE, and it must stay that way — no `next/headers`, no `server-only`. The
+ * caller reads the request; this decides. That split is what makes every rung
+ * testable without going to Google and back.
+ */
+export function resolveForSignIn(
+  headerLocale: string | null | undefined,
+  cookieLocale: string | null | undefined,
+  acceptLanguage: string | null | undefined,
+): { locale: Locale; source: 'negotiated' | 'default' } {
+  /*
+   * `negotiateOrNull` rather than `negotiate`, and this is the whole reason it
+   * exists: `negotiate` answers `'id'` both for "the browser asked for Indonesian"
+   * and for "the browser asked for nothing I have", and this is the one caller in
+   * the app that must not conflate them.
+   */
+  const negotiated = negotiateOrNull(acceptLanguage);
+
+  const locale = isLocale(headerLocale)
+    ? headerLocale
+    : isLocale(cookieLocale)
+      ? cookieLocale
+      : (negotiated ?? DEFAULT_LOCALE);
+
+  const source =
+    negotiated !== null || locale !== DEFAULT_LOCALE ? 'negotiated' : 'default';
+
+  return { locale, source };
 }

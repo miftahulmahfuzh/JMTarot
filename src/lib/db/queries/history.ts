@@ -3,7 +3,7 @@
  * chained readings. See profile.ts for the contract every file here follows.
  */
 import { and, desc, eq, gte, inArray, isNotNull, ne } from 'drizzle-orm';
-import type { ReaderId, ServiceId } from '@/data/types';
+import type { Locale, ReaderId, ServiceId } from '@/data/types';
 import type { DbOrTx } from '../types';
 import {
   readingCards,
@@ -140,6 +140,18 @@ export type RecalledReading = {
   cards: { cardId: number; reversed: boolean }[];
   gist: string;
   hadQuestion: boolean;
+  /**
+   * The language the gist is in, which is the language its READING was generated
+   * in -- `readings.gist` has no locale of its own and does not need one, because
+   * `extractGist` is called with the reading's locale and `gistPrompt` is
+   * locale-forked (see `schema.ts`).
+   *
+   * ADDED BY V2 so `recallChain` can prefer a cached TRANSLATION of the gist when
+   * the current reading is in the other language. Without it the caller cannot tell
+   * which recalled gists need one, and `translateOrCached` cannot short-circuit the
+   * ones that do not.
+   */
+  locale: Locale;
 };
 
 /**
@@ -182,6 +194,7 @@ export async function recallableReadings(
       serviceId: readings.serviceId,
       gist: readings.gist,
       question: readings.question,
+      locale: readings.locale,
     })
     .from(readings)
     .where(
@@ -232,6 +245,7 @@ export async function recallableReadings(
     readerId: r.readerId as ReaderId,
     serviceId: r.serviceId as ServiceId,
     cards: byReading.get(r.id) ?? [],
+    locale: r.locale,
     // Non-null asserted because `isNotNull` is in the where clause above.
     gist: r.gist!,
     /*

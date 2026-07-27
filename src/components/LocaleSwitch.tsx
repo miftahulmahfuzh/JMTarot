@@ -16,6 +16,19 @@ import styles from './LocaleSwitch.module.css';
  * language the prose came out in. A reading keeps the locale it was generated in,
  * permanently — there is no version of that screen where this control is honest.
  *
+ * ── V2 GIVES THAT LAST SENTENCE A SECOND CLAUSE (roadmap R2) ─────────────────
+ *
+ * Still true: `readings.locale` is immutable (VD7), the prose is never rewritten in
+ * place, and this control still has no business on the draw screen. What is no
+ * longer true is that the reading is UNREACHABLE in the other language — a
+ * translation is a DERIVED ROW in `translations`, generated on demand at the point
+ * of render, and the original is never touched. See `## Translation (V2)` in
+ * CLAUDE.md.
+ *
+ * So "permanently" describes the ROW, not the querent's options. Do not read it as
+ * licence to skip the translation path, and do not read it as licence to put this
+ * control on the draw screen either.
+ *
  * `router.refresh()` and not `location.reload()`. The locale is resolved on the
  * server, so the page has to be re-rendered there; `refresh()` re-fetches the RSC
  * payload and keeps client state, which on the reader picker means the frequency

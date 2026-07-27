@@ -20,6 +20,8 @@
 import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import type { Locale } from '@/data/types';
+import { DEFAULT_LOCALE } from '@/lib/i18n/locale';
+import { LOCALE_COOKIE, LOCALE_HEADER, resolveForSignIn } from '@/lib/i18n/resolve';
 import { db } from '@/lib/db/client';
 import { readSessionFacts, upsertUserOnSignIn } from '@/lib/db/queries/profile';
 import { hit } from '@/lib/ratelimit';
@@ -51,6 +53,70 @@ function emailVerified(profile: unknown): boolean {
   if (typeof profile !== 'object' || profile === null) return false;
   const raw = (profile as { email_verified?: unknown }).email_verified;
   return raw === true || raw === 'true';
+}
+
+/**
+ * What language this sign-in's browser asked for, and whether it asked (VD11).
+ *
+ * ── THE CHAIN, AND WHY THERE ARE THREE RUNGS AND NOT ONE ─────────────────────
+ *
+ * Verified against the files rather than assumed, because the whole fix rests on
+ * these reads working inside @auth/core's jwt callback:
+ *
+ *   1. `src/middleware.ts`'s matcher does not exclude `/api/auth/callback/google`,
+ *      and `gate.isPublic()` returns true for `/api/auth/`, so the request is a
+ *      `NextResponse.next({ request: { headers } })` with `x-jmt-locale` set.
+ *   2. Middleware sets `jmt_locale` on the response whenever it disagrees with the
+ *      request -- including on the redirect that sends a signed-out visitor from `/`
+ *      to `/login` -- so by the time anyone reaches a sign-in button the cookie
+ *      exists. It is `sameSite: 'lax'` and Google's callback is a top-level GET
+ *      navigation, which is exactly what `lax` permits.
+ *   3. `Accept-Language` arrives from the browser regardless of either of the above.
+ *
+ * TWO INDEPENDENT SIGNALS AHEAD OF THE THIRD, so no single link is load-bearing. If
+ * `headers()` throws -- @auth/core stepping outside the request's async context --
+ * this returns `'default'` rather than failing the sign-in, which is the whole point
+ * of `'default'` being an honest value rather than a synonym for Indonesian.
+ *
+ * **MEASURED 2026-07-27, BECAUSE IT IS THE ONE CLAIM HERE THAT CANNOT BE
+ * UNIT-TESTED: `headers()` AND `cookies()` DO RESOLVE INSIDE THIS CALLBACK.** Driven
+ * through the Credentials provider -- the same jwt callback the Google path runs --
+ * with `accept-language: en-GB`, the created row was `locale = 'en'`,
+ * `locale_source = 'negotiated'`. Had the read thrown it would have been
+ * `id`/`default`, so the result is its own negative control. V2's plan sketched an
+ * `AsyncLocalStorage` wrapper around `handlers.GET/POST` as the fallback if this
+ * turned out false; it is not needed and was not built.
+ *
+ * NOT `getLocale()`, which is React-`cache()`d and belongs to a render.
+ */
+async function negotiatedLocaleForSignIn(): Promise<{
+  locale: Locale;
+  source: 'negotiated' | 'default';
+}> {
+  try {
+    const { headers, cookies } = await import('next/headers');
+    const [h, jar] = await Promise.all([headers(), cookies()]);
+    return resolveForSignIn(
+      h.get(LOCALE_HEADER),
+      jar.get(LOCALE_COOKIE)?.value,
+      h.get('accept-language'),
+    );
+  } catch (err) {
+    /*
+     * IT LOGS, AND THE FIRST DRAFT DID NOT. A silent fallback here is
+     * indistinguishable in the data from "no visitor has ever had a browser locale":
+     * both produce a table full of `'default'`. That is the shape of failure this
+     * whole workstream keeps finding, so the one case where the mechanism is broken
+     * rather than merely unexercised has to say so.
+     *
+     * The error's CLASS only, per the rule everywhere else in this codebase. Nothing
+     * here holds querent text, but the habit is worth more than the exception.
+     */
+    console.error('sign-in could not read the negotiated locale', {
+      name: err instanceof Error ? err.name : typeof err,
+    });
+    return { locale: DEFAULT_LOCALE, source: 'default' };
+  }
 }
 
 export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
@@ -164,6 +230,16 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
          * into the token -- you would have to write there and read back here, two
          * round trips for one row.
          */
+        /*
+         * VD11. THE ONE MOMENT THE BROWSER'S LANGUAGE IS STILL VISIBLE.
+         *
+         * After this callback returns, the `loc` claim is first in the resolution
+         * chain forever -- so if the row takes the column default here, an `en-GB`
+         * visitor who negotiated English on `/login` is snapped to Indonesian on
+         * their next navigation and there is nothing left to recover it from.
+         */
+        const negotiated = await negotiatedLocaleForSignIn();
+
         let row: Awaited<ReturnType<typeof upsertUserOnSignIn>>;
         try {
           row = await upsertUserOnSignIn(db, {
@@ -172,6 +248,8 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
             emailVerified: account?.provider === 'credentials' || emailVerified(profile),
             displayName: user?.name ?? null,
             avatarUrl: user?.image ?? null,
+            negotiatedLocale: negotiated.locale,
+            localeSource: negotiated.source,
           });
         } catch (err) {
           console.error('sign-in upsert failed; refusing the session', err);

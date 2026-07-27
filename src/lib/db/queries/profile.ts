@@ -20,7 +20,7 @@
  *     widen this one into a junk drawer.
  */
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import type { Locale } from '@/data/types';
+import type { Locale, LocaleSource } from '@/data/types';
 import type { Db, DbOrTx } from '../types';
 import { profiles, users, type NewProfile, type Profile, type User } from '../schema';
 
@@ -202,15 +202,26 @@ export async function touchLastSeen(db: DbOrTx, userId: string): Promise<void> {
  * A soft-deleted user is excluded. Nothing should be writing preferences to an
  * erased account, and the switcher is reachable before `deleted_at` has been
  * noticed anywhere else.
+ *
+ * `source` IS REQUIRED AND NOT DEFAULTED (V2 / T16). The default that would be
+ * chosen -- `'chosen'` -- is right for today's one call site and wrong for whichever
+ * one is added next: V8's `/account` will have a language control too, and a
+ * defaulted parameter is how a screen that sets the locale for some other reason
+ * silently claims the querent chose it. Writing it makes the caller decide.
+ *
+ * IT IS THE ONLY WRITER OF `locale` OUTSIDE ROW CREATION. `upsertUserOnSignIn`
+ * stamps both columns on INSERT and touches neither on conflict; everything else
+ * reads.
  */
 export async function setUserLocale(
   db: DbOrTx,
   userId: string,
   locale: Locale,
+  source: LocaleSource,
 ): Promise<void> {
   await db
     .update(users)
-    .set({ locale })
+    .set({ locale, localeSource: source })
     .where(and(eq(users.id, userId), isNull(users.deletedAt)));
 }
 
@@ -241,6 +252,30 @@ export type SignInUpsertInput = {
   emailVerified: boolean;
   displayName: string | null;
   avatarUrl: string | null;
+  /**
+   * What the browser negotiated, stamped at row CREATION only (V2 / VD11).
+   *
+   * REQUIRED, NOT OPTIONAL, and that is the whole design. `users.locale` is
+   * `not null default 'id'` and the `loc` session claim is FIRST in the resolution
+   * chain -- so an `en-GB` browser negotiated English on `/login`, signed in, took
+   * the column default, and was snapped to Indonesian by a value that had never been
+   * anybody's decision. An optional field here is one that three of the four call
+   * sites forget, and forgetting it is exactly that bug.
+   */
+  negotiatedLocale: Locale;
+  /**
+   * Whether that negotiation actually happened (T17).
+   *
+   * `'default'` ONLY when no signal reached the sign-in at all -- no forwarded
+   * header, no cookie, no usable `Accept-Language`. `negotiate(null)` returns `'id'`,
+   * and recording that as `'negotiated'` would claim a negotiation that never
+   * happened and destroy the column's only purpose, which is telling a default apart
+   * from a decision. `resolveForSignIn` is what makes the distinction.
+   *
+   * `'chosen'` is deliberately NOT in this union: a sign-in can never be a choice.
+   * Only `setUserLocale` writes that value.
+   */
+  localeSource: 'negotiated' | 'default';
 };
 
 /**
@@ -299,9 +334,28 @@ export async function upsertUserOnSignIn(
       select deleted_at from ${users} where google_sub = ${input.googleSub}
     ),
     upserted as (
-      insert into ${users} (google_sub, email, email_verified, display_name, avatar_url)
+      insert into ${users} (google_sub, email, email_verified, display_name, avatar_url,
+                            locale, locale_source)
       values (${input.googleSub}, ${input.email}, ${input.emailVerified},
-              ${input.displayName}, ${input.avatarUrl})
+              ${input.displayName}, ${input.avatarUrl},
+              ${input.negotiatedLocale}, ${input.localeSource})
+      /*
+       * locale AND locale_source ARE NOT IN THIS BRANCH AND MUST NEVER BE
+       * (V2 / VD11 / T15). Adding them looks like consistency with the four columns
+       * below -- Google is authoritative for those -- and it is a silent overwrite of
+       * the querent's own language every time they sign in from a foreign browser: a
+       * phone in one language, a borrowed laptop in another, and the preference
+       * follows whichever was used last. locale_source exists precisely so that
+       * "the column defaulted to id" and "the querent pressed ID" are different
+       * rows, and stamping over the second is the bug it was added to prevent.
+       *
+       * There is an integration test asserting a second sign-in moves neither.
+       *
+       * NO BACKTICKS ANYWHERE IN THIS COMMENT. It lives inside a tagged TEMPLATE
+       * LITERAL, so a backtick ends the template and the whole file stops parsing --
+       * with an error pointing at the SQL rather than at the prose. It cost two runs,
+       * the second one spent writing this warning with backticks in it.
+       */
       on conflict (google_sub) do update set
         email          = excluded.email,
         email_verified = excluded.email_verified,
@@ -384,6 +438,15 @@ async function purgeAndRecreate(
         emailVerified: input.emailVerified,
         displayName: input.displayName,
         avatarUrl: input.avatarUrl,
+        /*
+         * THE SECOND CREATION PATH, AND ROADMAP §4 NAMES IT EXPLICITLY. A VD11 fix
+         * that covered only the CTE above would work until somebody rage-quits and
+         * comes back after the grace period -- at which point they are a stranger by
+         * §7.8's design, and a stranger's language is decided by the column default
+         * again.
+         */
+        locale: input.negotiatedLocale,
+        localeSource: input.localeSource,
       })
       .returning({ id: users.id, locale: users.locale });
 

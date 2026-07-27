@@ -39,4 +39,32 @@ describe('the event taxonomy', () => {
     // A glob-shaped test that passes against an empty array is not a test.
     expect(EVENT_NAMES.length).toBeGreaterThan(30);
   });
+
+  /*
+   * V0.3.0's REGISTER (reconciliation §4): 44 at v0.2.0, plus the fifteen names
+   * roadmap §6 fixes, plus V9's two, is 61 when the release is complete.
+   *
+   * A BOUND RATHER THAN AN EXACT COUNT, because five workstreams still have names to
+   * add and an exact number would make each of them edit this line — which is how a
+   * count assertion becomes a number people bump without reading. What is asserted
+   * exactly is the ceiling: nothing may take the taxonomy past 61 without the
+   * register being revisited.
+   */
+  it('stays inside v0.3.0’s fixed name budget', () => {
+    expect(EVENT_NAMES.length).toBeGreaterThanOrEqual(44);
+    expect(EVENT_NAMES.length).toBeLessThanOrEqual(61);
+  });
+
+  /*
+   * V2's one name, and the absence of the one it deliberately does not have.
+   *
+   * `translation.failed` would be the sixteenth fixed name and break the register.
+   * The failure rides on `outcome` instead — `memory.gist_failed`'s `fell_back` is
+   * the precedent — and `outcome: 'invalid'` is the rate that decides whether the
+   * translation prompt needs work.
+   */
+  it('carries translation.generated and no translation.failed', () => {
+    expect(isEventName('translation.generated')).toBe(true);
+    expect(isEventName('translation.failed')).toBe(false);
+  });
 });

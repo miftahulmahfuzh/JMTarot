@@ -4,11 +4,12 @@ import { sql } from 'drizzle-orm';
 import { ERASURE_GRACE_DAYS } from '@/lib/db/queries/profile';
 
 /**
- * **ONE CRON JOB, THREE DELETES** (reconciliation §7.8 and §7.9b).
+ * **ONE CRON JOB, FOUR DELETES** (reconciliation §7.8 and §7.9b; V2 §8 added the
+ * fourth).
  *
- * Not three jobs. Vercel's free plan allows a small number of cron
- * invocations, they all want the same daily cadence, and three routes doing one
- * `DELETE` each is three things to notice have stopped working.
+ * Not four jobs. Vercel's free plan allows a small number of cron
+ * invocations, they all want the same daily cadence, and four routes doing one
+ * `DELETE` each is four things to notice have stopped working.
  *
  *   1. **Expired soft-deleted accounts.** §7.8 promises "gone at 30 days", not
  *      "gone at 30 days if you come back". `upsertUserOnSignIn`'s lazy purge is
@@ -23,11 +24,24 @@ import { ERASURE_GRACE_DAYS } from '@/lib/db/queries/profile';
  *   3. **The `events` TTL.** 180 days (§7.9b), stated in the privacy policy.
  *      `readings` is deliberately NOT on this clock -- every memory feature
  *      reads it, and the policy says so in those words.
+ *   4. **Orphaned translations** (V2). `translations.entity_id` has NO FOREIGN
+ *      KEY -- Postgres cannot declare a polymorphic one, and that is the
+ *      deliberate cost of one generic table instead of a migration per artifact.
+ *      So deleting a reading leaves its translations behind, and this is the
+ *      answer. The statement lives in `queries/translations.ts` rather than
+ *      inline here, because unlike the three above it is an ordinary query
+ *      function with its own integration test.
  *
  * **THE ORDER MATTERS AND IS NOT ALPHABETICAL.** Erasure runs FIRST so that a
- * purged user's rows are gone before the other two sweeps walk the same tables;
+ * purged user's rows are gone before the other sweeps walk the same tables;
  * running it last would mean redacting flags that are about to be orphaned
  * anyway, and doing the work twice.
+ *
+ * **AND THE FOURTH RUNS LAST, BY THE SAME ARGUMENT EXTENDED.** The user purge
+ * CASCADEs `readings`, `daily_summaries` and `frequency_verdicts` away -- but NOT
+ * their translations, which have no foreign key to be reached by. Those rows
+ * become orphans DURING this invocation. Reaping last catches them the same
+ * night; reaping first leaves them a day.
  *
  * ---
  *
@@ -100,7 +114,12 @@ export async function GET(request: Request) {
   const { db } = await import('@/lib/db/client');
 
   const startedAt = Date.now();
-  const result = { purgedUsers: 0, redactedFlags: 0, deletedEvents: 0 };
+  const result = {
+    purgedUsers: 0,
+    redactedFlags: 0,
+    deletedEvents: 0,
+    orphanedTranslations: 0,
+  };
   const failures: string[] = [];
 
   /*
@@ -149,6 +168,35 @@ export async function GET(request: Request) {
   } catch (err) {
     failures.push('events');
     console.error('[cron] events TTL failed', err instanceof Error ? err.name : 'unknown');
+  }
+
+  /*
+   * **THE FOURTH DELETE, AND IT RUNS LAST** (V2 §8). See the header for the ordering
+   * argument: the user purge above CASCADEs `readings` away and does NOT reach their
+   * translations, because `translations.entity_id` has no foreign key. Those rows
+   * became orphans a few statements ago, and this catches them tonight rather than
+   * tomorrow night.
+   *
+   * The statement is a query function rather than inline SQL, unlike the three
+   * above, because it is several statements with a `to_regclass` guard between them
+   * and it has its own integration test. `sweep.contract.test.ts` asserts it is
+   * still called and still called after the purge.
+   */
+  try {
+    const { deleteOrphanTranslations } = await import('@/lib/db/queries/translations');
+    result.orphanedTranslations = await deleteOrphanTranslations(db);
+  } catch (err) {
+    /*
+     * The error's CLASS only, same rule as the three above and with the sharpest
+     * reason yet: a postgres error quotes its bound parameters, and this table's
+     * `body` column holds a rendering of a reading that answered the querent's typed
+     * question.
+     */
+    failures.push('translations');
+    console.error(
+      '[cron] orphaned-translation sweep failed',
+      err instanceof Error ? err.name : 'unknown',
+    );
   }
 
   /*

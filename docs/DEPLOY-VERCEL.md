@@ -137,6 +137,9 @@ middleware sees it:
 SESSION_TTL_HOURS               24          idle timeout, slides on every request
 SESSION_ABSOLUTE_TTL_DAYS       30          hard ceiling, never slides
 LOTUS_MODEL                     --          falls back to LLM_MODEL
+TRANSLATION_MODEL               --          falls back to LLM_MODEL. V2. Wants the
+                                            READING model, not a cheap one: it is
+                                            prose a person reads, in a reader's voice
 ANALYTICS_STREAM_TIMEOUT_MS     45000       how long after() waits for the stream
 ANALYTICS_RETRY_BUDGET_MS       5000        ceiling on the readings-insert retry
 MODERATION_TIMEOUT_MS           1500        backstop for a hung classifier, not a target

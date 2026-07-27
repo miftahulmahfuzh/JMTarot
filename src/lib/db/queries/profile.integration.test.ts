@@ -7,6 +7,7 @@ import {
   findUserByGoogleSub,
   getProfile,
   readSessionFacts,
+  setUserLocale,
   touchLastSeen,
   upsertProfile,
   upsertUserOnSignIn,
@@ -172,6 +173,13 @@ describe('upsertUserOnSignIn', () => {
     emailVerified: true,
     displayName: 'Querent Nameish',
     avatarUrl: 'https://lh3.googleusercontent.com/a/abc123',
+    /*
+     * V2 / VD11. REQUIRED, NOT OPTIONAL, and that is the point: an optional field
+     * is one that three of the four call sites forget, and forgetting it here means
+     * the column default silently decides a new user's language.
+     */
+    negotiatedLocale: 'id' as const,
+    localeSource: 'default' as const,
   };
 
   /** Backdated by `days`, so a grace-period boundary is a value and not a wait. */
@@ -322,6 +330,8 @@ describe('upsertUserOnSignIn', () => {
         emailVerified: true,
         displayName: 'miftah',
         avatarUrl: null,
+        negotiatedLocale: 'id',
+        localeSource: 'default',
       });
       expect(r.outcome).toBe('created');
       expect(await findUserByGoogleSub(tx, 'dev:miftah')).not.toBeNull();
@@ -368,6 +378,189 @@ describe('readSessionFacts', () => {
         .values({ googleSub: 'facts-gone', email: 'fg@example.com', deletedAt: new Date() })
         .returning();
       expect(await readSessionFacts(tx, u.id)).toBeNull();
+    });
+  });
+});
+
+/**
+ * VD11 — WHAT LOCALE A NEW ROW GETS, AND WHETHER IT COUNTS AS A DECISION.
+ *
+ * `users.locale` is `not null default 'id'`, and the `loc` session claim is FIRST in
+ * the resolution chain — ahead of the cookie and `Accept-Language`. So an `en-GB`
+ * browser negotiated English on `/login`, signed in, took the column default, and
+ * was snapped to Indonesian by a value that had never been anybody's decision. That
+ * is the real bug behind "the language resets".
+ *
+ * Verified in the SQL before any of this was written: `locale` appears in neither
+ * the CTE's insert column list nor its `do update set` branch, so an existing user's
+ * choice was already safe and only creation was wrong.
+ */
+describe('the locale stamp at row creation (VD11)', () => {
+  const base = {
+    googleSub: 'dev:vd11',
+    email: 'vd11@example.com',
+    emailVerified: true,
+    displayName: null,
+    avatarUrl: null,
+  };
+
+  const daysAgo = (days: number) => new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+  it('stamps a created row with the negotiated locale and its provenance', async () => {
+    await withRollback(async (tx) => {
+      const r = await upsertUserOnSignIn(tx, {
+        ...base,
+        negotiatedLocale: 'en',
+        localeSource: 'negotiated',
+      });
+
+      expect(r.outcome).toBe('created');
+      // The RETURNED locale matters as much as the column: it is what the jwt
+      // callback stamps into the `loc` claim, which is first in the chain.
+      expect(r.locale).toBe('en');
+
+      const [row] = await tx.select().from(users).where(eq(users.id, r.id));
+      expect(row.locale).toBe('en');
+      expect(row.localeSource).toBe('negotiated');
+    });
+  });
+
+  /*
+   * T17. `'default'` is not the same as negotiating and landing on Indonesian, and
+   * this is the row the three-value enum exists for: it is the only one a future
+   * sign-in could safely re-stamp.
+   */
+  it('records `default` when the sign-in saw no signal at all', async () => {
+    await withRollback(async (tx) => {
+      const r = await upsertUserOnSignIn(tx, {
+        ...base,
+        negotiatedLocale: 'id',
+        localeSource: 'default',
+      });
+
+      const [row] = await tx.select().from(users).where(eq(users.id, r.id));
+      expect(row.locale).toBe('id');
+      expect(row.localeSource).toBe('default');
+    });
+  });
+
+  /*
+   * T15, AND THE ASSERTION THAT STOPS A FUTURE TIDY-UP.
+   *
+   * `locale` must NOT be in the conflict branch. Adding it there looks like
+   * consistency and is a silent overwrite of the querent's own choice every time
+   * they sign in from a foreign browser — a phone in one language, a borrowed laptop
+   * in another, and the preference follows whichever they used last.
+   */
+  it('does NOT move locale or locale_source on a second sign-in', async () => {
+    await withRollback(async (tx) => {
+      const first = await upsertUserOnSignIn(tx, {
+        ...base,
+        negotiatedLocale: 'en',
+        localeSource: 'negotiated',
+      });
+
+      // The querent then chose Indonesian, explicitly.
+      await setUserLocale(tx, first.id, 'id', 'chosen');
+
+      // ...and later signs in from a browser that negotiates English.
+      const second = await upsertUserOnSignIn(tx, {
+        ...base,
+        negotiatedLocale: 'en',
+        localeSource: 'negotiated',
+      });
+
+      expect(second.outcome).toBe('updated');
+      expect(second.id).toBe(first.id);
+      // THE CHOICE SURVIVES. Both columns.
+      expect(second.locale).toBe('id');
+
+      const [row] = await tx.select().from(users).where(eq(users.id, first.id));
+      expect(row.locale).toBe('id');
+      expect(row.localeSource).toBe('chosen');
+    });
+  });
+
+  /*
+   * THE SECOND CREATION PATH. `purgeAndRecreate` fires when an account was erased
+   * longer ago than the grace period and the sweep has not reached it — a fix that
+   * covered one of two creation paths is a fix that works until somebody rage-quits
+   * and comes back.
+   */
+  it('stamps both columns through purgeAndRecreate too', async () => {
+    await withRollback(async (tx) => {
+      const first = await upsertUserOnSignIn(tx, {
+        ...base,
+        negotiatedLocale: 'id',
+        localeSource: 'default',
+      });
+      await tx
+        .update(users)
+        .set({ deletedAt: daysAgo(ERASURE_GRACE_DAYS + 5) })
+        .where(eq(users.id, first.id));
+
+      const back = await upsertUserOnSignIn(tx, {
+        ...base,
+        negotiatedLocale: 'en',
+        localeSource: 'negotiated',
+      });
+
+      // A stranger, per §7.8 — so the negotiated locale is stamped fresh rather
+      // than inherited from the row that was purged.
+      expect(back.outcome).toBe('recreated');
+      expect(back.id).not.toBe(first.id);
+      expect(back.locale).toBe('en');
+
+      const [row] = await tx.select().from(users).where(eq(users.id, back.id));
+      expect(row.locale).toBe('en');
+      expect(row.localeSource).toBe('negotiated');
+    });
+  });
+});
+
+describe('setUserLocale', () => {
+  it('writes both columns, so an explicit choice is recorded as one', async () => {
+    await withRollback(async (tx) => {
+      const r = await upsertUserOnSignIn(tx, {
+        googleSub: 'dev:setlocale',
+        email: 'setlocale@example.com',
+        emailVerified: true,
+        displayName: null,
+        avatarUrl: null,
+        negotiatedLocale: 'id',
+        localeSource: 'default',
+      });
+
+      await setUserLocale(tx, r.id, 'en', 'chosen');
+
+      const [row] = await tx.select().from(users).where(eq(users.id, r.id));
+      expect(row.locale).toBe('en');
+      // WITHOUT THIS the row is indistinguishable from a default, and the next
+      // sign-in from a foreign browser is licensed to overwrite it.
+      expect(row.localeSource).toBe('chosen');
+    });
+  });
+
+  it('still excludes a soft-deleted user', async () => {
+    // Nothing should be writing preferences to an erased account, and the switcher
+    // is reachable before `deleted_at` has been noticed anywhere else.
+    await withRollback(async (tx) => {
+      const r = await upsertUserOnSignIn(tx, {
+        googleSub: 'dev:setlocale-deleted',
+        email: 'setlocale-deleted@example.com',
+        emailVerified: true,
+        displayName: null,
+        avatarUrl: null,
+        negotiatedLocale: 'id',
+        localeSource: 'default',
+      });
+      await tx.update(users).set({ deletedAt: new Date() }).where(eq(users.id, r.id));
+
+      await setUserLocale(tx, r.id, 'en', 'chosen');
+
+      const [row] = await tx.select().from(users).where(eq(users.id, r.id));
+      expect(row.locale).toBe('id');
+      expect(row.localeSource).toBe('default');
     });
   });
 });

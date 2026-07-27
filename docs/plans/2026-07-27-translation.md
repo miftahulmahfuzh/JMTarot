@@ -1349,3 +1349,101 @@ any failure.
    but that threshold is a guess until there is a week of
    `translation.generated` rows. Add it to `docs/analytics-queries.md` as query
    nine.
+
+---
+
+## Measured
+
+`npm run smoke -- --translate`, live against z.ai `glm-4.6`, 2026-07-27. Two runs:
+**run 1** is the first real one, **run 2** is after the register paragraph described
+below. Same three fixed hands throughout, one `spread3` per reader, so the two runs
+and both directions are comparable.
+
+### What passed first time, and is the point of the workstream
+
+**Zero card-name violations across all twelve translations.** Every name the source
+used came back verbatim — The Chariot, The Hanged Man, The Star, Temperance, The Sun,
+The High Priestess, The Fool, The Hierophant, Wheel of Fortune — in both directions.
+That is the `Pulan` risk, and the names block plus the mechanical check closed it.
+
+**Zero paragraph-structure failures.** Every 4-paragraph source produced 4 paragraphs.
+
+**Zero Malay hits on the `en → id` output, and zero generic-mystic tics on
+`id → en`.** The lists bind in the direction they are meant to and in no other.
+
+### The register finding, and the one prompt change it caused
+
+Run 1's contraction proxy:
+
+```
+en  contractions/100w    thessaly=0.00  margaret=0.00  adrian=0.00
+```
+
+**Adrian's English translations had no contractions at all**, while his NATIVE English
+generation uses them freely ("What's done", "isn't a tragedy") — and his
+`readers.en.ts` block says *"Contractions throughout"* and was being carried verbatim.
+The model weighted the act of translating above the persona. That is roadmap §9's
+named risk arriving exactly as predicted, and it is invisible to every other check: a
+flattened Adrian still reproduces every card name, hits the paragraph count, and
+avoids every forbidden word.
+
+Fixed in the prompt and not in the check, per this plan's own rule: `REGISTER_EN` /
+`REGISTER_ID` in `contract.ts` now state that the reader's voice rules OUTRANK the
+source's register, with contractions named explicitly. Run 2:
+
+```
+en  contractions/100w    thessaly=0.00  margaret=0.00  adrian=0.61
+```
+
+Margaret correctly stays at 0.00 — her rules forbid them — so the change moved the
+reader it was meant to and left the others alone.
+
+### Mean sentence words, over the translations
+
+```
+            run 1                     run 2
+        id            en          id            en
+thessaly  11.9         6.9        7.8          10.2
+margaret  22.9        26.9       19.7          39.0
+adrian    12.3        16.9       18.0          13.7
+```
+
+Margaret against Thessaly is 1.9x / 3.9x in run 1 and 2.5x / 3.8x in run 2, against a
+1.5x floor. **The three readers survive translation on this axis comfortably**, in both
+directions, and the blind-read instruction at the end of the run is worth actually
+following before believing that.
+
+### Word counts, and the band that is NOT converged
+
+```
+run 1   id -> en   thessaly 104   margaret 215   adrian 135
+        en -> id   thessaly  95   margaret 183   adrian 123
+run 2   id -> en                                 adrian 164
+        en -> id   thessaly  86
+```
+
+**The bands were NOT widened, deliberately.** `budget.ts`'s header already records
+that widening further would be chasing variance, and Margaret's paragraph overruns
+appeared in run 1 and vanished in run 2 while Adrian's did the reverse — which is the
+signature of variance rather than of a wrong number. `verifyTranslation` enforces the
+per-paragraph ceiling and deliberately does NOT check the total band: the ceiling is
+the thing a model can count as it writes, and a total outside the band is a
+calibration signal for a person rather than grounds for refusing a cache row.
+
+**One signal is consistent rather than variance, and it contradicts open question 3.**
+That question predicted `en → id` would OVERSHOOT, because Indonesian's affixation
+makes it 5-15% longer in words for the same content. Thessaly went the other way in
+both runs — 95 and 86 against a floor of 105 — because her English is terse and a
+faithful Indonesian re-issue of terse English is shorter still. If that holds over
+more runs, the answer is a per-direction entry in `LENGTH_BUDGET` with the measurement
+written beside it, not a widened band; two runs is not enough to write the number.
+
+### Still to measure
+
+- **The `invalid` rate in production.** §4.4 commits to fixing the prompt rather than
+  the architecture above roughly 2%, and that threshold is a guess until there is a
+  week of `translation.generated` rows. None of the twelve translations above tripped
+  a non-length violation, which is encouraging and is not a rate.
+- **Whether `reading.gist` is worth translating at all** (open question 4). The path is
+  built, opportunistic and free; `translation.generated` with `field: 'gist'` is what
+  answers it.

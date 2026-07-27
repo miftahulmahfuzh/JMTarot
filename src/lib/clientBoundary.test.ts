@@ -130,6 +130,26 @@ describe('the client boundary', () => {
     }
   });
 
+  /*
+   * V2's Task 6. THE FENCE GOES UP BEFORE THE WALL, and it passing today is the
+   * point rather than a weakness: `@/lib/translate/contract.ts` carries prompt
+   * prose — the target locale's format rules, the reader's voice block, the
+   * card-name instruction — so it falls under rule 1 above for exactly the same
+   * reason `@/lib/prompt/**` does.
+   *
+   * NO EXCEPTION, unlike the prompt layer's `sanitize`. Nothing in there is a
+   * constant a client needs: V6's history detail and V7's share page both talk to
+   * `POST /api/translate` or to a server component, never to the translator.
+   */
+  it('lets no client component import the translation layer', () => {
+    for (const file of CLIENT) {
+      const offending = importsOf(file.source).filter((spec) =>
+        spec.startsWith('@/lib/translate/'),
+      );
+      expect({ [file.path]: offending }).toEqual({ [file.path]: [] });
+    }
+  });
+
   it('lets no client component import the database', () => {
     // Not W6's rule, but the same class and the check is free.
     for (const file of CLIENT) {

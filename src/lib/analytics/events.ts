@@ -114,6 +114,9 @@ export const EVENT_NAMES = [
   'ratelimit.backend_degraded',
   'llm.ceiling_reached',
 
+  // — translation (V2) —
+  'translation.generated',
+
   // — the app shell —
   'app.launched',
 
@@ -277,6 +280,41 @@ export type EventMap = {
    */
   'llm.ceiling_reached':       { tier: 'soft' | 'hard'; call_class: 'interactive' | 'deferred';
                                  used: number; ceiling: number };
+
+  /**
+   * ONE NAME, NOT TWO. There is deliberately no `translation.failed`.
+   *
+   * Roadmap §6 fixes fifteen names for v0.3.0 and reconciliation §4 is the register
+   * that has to balance; a sixteenth would break the count, and reconciliation
+   * confirmed this shape is the one it wants anyway. `memory.gist_failed`'s
+   * `fell_back` is the precedent for putting the interesting distinction in a prop
+   * rather than in a second name.
+   *
+   * NO FREE TEXT (rule 1). `chars` is a length, `outcome` and the two locales are
+   * closed sets, `violation` is a classifier, and `entity_id` is a uuid — the same
+   * shape `reading_id` already has in seven other events, and what makes a lost
+   * translation joinable back to its artifact.
+   *
+   * `outcome`:
+   *   'cached'    served from the table. No model call. THE COMMON CASE, and the
+   *               ratio of this to the rest is what says whether the feature costs
+   *               one model call or one per view.
+   *   'ok'        generated and verified first time.
+   *   'repaired'  the first pass failed verification; the deferred repair passed and
+   *               IS what got persisted.
+   *   'invalid'   both passes failed. NOTHING was persisted and the viewer saw one
+   *               bad translation. **THIS IS THE RATE THAT DECIDES WHETHER THE
+   *               PROMPT NEEDS WORK** — above roughly 2%, fix the prompt, not the
+   *               architecture. A design where this were invisible is the one that
+   *               would justify buffering the stream instead.
+   *   'failed'    the call threw or came back empty. Nothing persisted; the caller
+   *               fell back to the source prose.
+   */
+  'translation.generated':     { entity: string; entity_id: string; field: string;
+                                 source_locale: string; locale: string;
+                                 outcome: 'cached' | 'ok' | 'repaired' | 'invalid' | 'failed';
+                                 violation: string | null; chars: number;
+                                 streamed: boolean; total_ms: number };
 
   'app.launched':              { standalone: boolean; referrer_kind: 'direct' | 'internal' | 'external' };
 

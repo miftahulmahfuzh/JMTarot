@@ -5,7 +5,7 @@ export const MAX_QUESTION_LENGTH = 200;
  * EVERY DELIMITER THE PROMPT LAYER WRITES, in any casing, with whitespace
  * anywhere inside the tag and with attributes.
  *
- * Four tags, because four different blocks fence off user-derived text:
+ * Five tags, because five different blocks fence off user-derived text:
  *
  *   <pertanyaan>          the querent's question, in a reading's user turn
  *   <penanya>             the Lotus block, in a reading's user turn (W3 §9)
@@ -14,6 +14,13 @@ export const MAX_QUESTION_LENGTH = 200;
  *                         and `<riwayat-hari-ini>` for the day summary -- one
  *                         alternative covers both, because `[^>]*` takes the
  *                         `-hari-ini` suffix
+ *   <terjemahan>          V2's translation source: prose a model wrote, handed
+ *                         back to a model as material to re-write
+ *
+ * THE COUNT ABOVE AND THE ALTERNATION BELOW MUST AGREE, and `sanitize.test.ts`'s
+ * `the delimiter set` block is what makes them. They had already drifted once --
+ * W5 added `riwayat` as a fifth alternative and left this header saying four,
+ * with no test naming the tag at all.
  *
  * A literal one of these in user text could close its block early and put the
  * rest of that text where instructions live. `<jawaban>` is the newest and the
@@ -35,10 +42,22 @@ export const MAX_QUESTION_LENGTH = 200;
  * content the model reads, not a fence the sanitizer strips, and it carries no
  * surface at all.
  *
+ * `<terjemahan>` IS A FIFTH PURPOSE, NOT A LOCALE VARIANT, and it is the sharpest
+ * of the five after `<jawaban>`. What it fences is not text a user typed: it is
+ * MODEL OUTPUT THAT WAS ITSELF GENERATED FROM USER TEXT, handed to a second model
+ * as material, with the result going straight to a screen. A reading whose prompt
+ * injection partly succeeded produced prose that this block would hand onward as
+ * content, so the fence is doing real work at one remove.
+ *
+ * ONE TOKEN IN BOTH LOCALES, per R17, and the choice of the Indonesian-looking
+ * word is the whole point: an English querent will never type "terjemahan" and
+ * would absolutely type "translation", so the English-looking tag is the one
+ * carrying the surface. Same reasoning that kept `<riwayat>` out of `<history>`.
+ *
  * `[^>]*` covers the attribute on `<jawaban kunci="...">`. It cannot run past a
  * `>` and so cannot swallow arbitrary text between two unrelated tags.
  */
-const DELIMITER = /<\s*\/?\s*(?:pertanyaan|penanya|jawaban|riwayat)(?:[^>]*)>/gi;
+const DELIMITER = /<\s*\/?\s*(?:pertanyaan|penanya|jawaban|riwayat|terjemahan)(?:[^>]*)>/gi;
 
 /*
  * C0 and C1 control characters, minus the whitespace handled separately below.

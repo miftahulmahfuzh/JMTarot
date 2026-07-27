@@ -21,6 +21,7 @@ function recalled(over: Partial<RecalledReading> = {}): RecalledReading {
     localDate: '2026-07-24',
     readerId: 'margaret',
     serviceId: 'spread3',
+    locale: 'id',
     cards: [
       { cardId: 16, reversed: false }, // The Tower
       { cardId: 17, reversed: true }, // The Star

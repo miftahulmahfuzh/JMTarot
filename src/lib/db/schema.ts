@@ -1,5 +1,5 @@
 /**
- * The ten tables of the public release, and nothing else.
+ * The tables of the public release. Ten at W1; v0.3.0 adds to them.
  *
  * SOURCE OF TRUTH, in precedence order:
  *   1. docs/plans/2026-07-26-RECONCILIATION.md §3 -- the folded delta set
@@ -47,7 +47,7 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
-import type { Locale, ReaderId, ServiceId, YesNo } from '@/data/types';
+import type { Locale, LocaleSource, ReaderId, ServiceId, YesNo } from '@/data/types';
 
 /** Every timestamp in this schema. timestamptz, UTC, never a bare `timestamp`. */
 const tsCol = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
@@ -77,6 +77,26 @@ export const users = pgTable('users', {
   displayName: text('display_name'),
   avatarUrl: text('avatar_url'),
   locale: text('locale').$type<Locale>().notNull().default('id'),
+  /**
+   * WHERE `locale` CAME FROM (V2, roadmap VD11).
+   *
+   * 'default' | 'negotiated' | 'chosen'. NULLABLE WITH NO DEFAULT, and NULL is
+   * read as `'chosen'` -- the conservative reading. Read it through
+   * `effectiveLocaleSource()` and never raw; `raw ?? 'default'` is what a
+   * reasonable person writes otherwise, and it would license the sign-in path to
+   * overwrite the preference of every user who predates v0.3.0.
+   *
+   * Without this column a sign-in cannot tell "this row says id because the column
+   * above defaults to id" from "this row says id because the querent pressed ID".
+   * The first should be re-stamped with whatever the browser negotiated; the second
+   * must never be. `locale` alone makes them the same row.
+   *
+   * WRITTEN AT ROW CREATION ONLY, in both creation paths (`upsertUserOnSignIn`'s
+   * CTE and `purgeAndRecreate`), and NEVER in the conflict branch -- or a sign-in
+   * from a foreign browser silently reverts a choice. `setUserLocale` is the only
+   * other writer and it always writes `'chosen'`.
+   */
+  localeSource: text('locale_source').$type<LocaleSource>(),
   createdAt: tsCol('created_at').notNull().defaultNow(),
   lastSeenAt: tsCol('last_seen_at').notNull().defaultNow(),
   /**
@@ -210,7 +230,21 @@ export const lotusAvatars = pgTable('lotus_avatars', {
   userId: uuid('user_id')
     .primaryKey()
     .references(() => users.id, { onDelete: 'cascade' }),
-  /** `{"id": "...", "en": "..."}`. The reading path reads `summary[locale]`. */
+  /**
+   * `{"id": "...", "en": "..."}`. The reading path reads `summary[locale]`.
+   *
+   * GRANDFATHERED, AND THE ASYMMETRY WITH `translations` IS DELIBERATE (VD6).
+   * Every other piece of derived prose in v0.3.0 is keyed by locale in its own
+   * table or translated through `translations`; this one is jsonb and stays jsonb.
+   *
+   * It is not translated. It is DISTILLED PER LOCALE FROM THE SAME SOURCE
+   * ANSWERS, which produces better prose than translating one into the other,
+   * and it is already built and shipped. Widening `translations` to cover it
+   * would mean rewriting a working W3 path for symmetry alone.
+   *
+   * Said here in these words because VD6 asks for it: the asymmetry looks like an
+   * oversight to anyone who arrives at this column from `translations`.
+   */
   summary: jsonb('summary').$type<LotusSummary>().notNull(),
   traits: jsonb('traits').$type<LotusTraits>().notNull(),
   /** Bump to force regeneration (roadmap D10). */
@@ -282,6 +316,17 @@ export const readings = pgTable(
      * chaining never has to carry the full prose. Nullable: extraction can
      * fail, and every row written before that feature ships has none. A null
      * gist excludes the reading from recall and nothing else.
+     *
+     * NO LOCALE OF ITS OWN, AND IT DOES NOT NEED ONE: it inherits
+     * `readings.locale` (V2 §7). `extractGist` is called with the reading's own
+     * locale and `gistPrompt` is locale-forked, so the gist is BY CONSTRUCTION in
+     * the same language as the body it was distilled from. A second column would
+     * be a second place for one fact to be recorded and the first place for the
+     * two to disagree.
+     *
+     * Written down because the absence looks like an oversight from
+     * `translations`, where `reading.gist` is a translatable field in its own
+     * right -- and the next person to notice would add the column.
      */
     gist: text('gist'),
     model: text('model').notNull(),
@@ -562,6 +607,122 @@ export const frequencyVerdicts = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// translations
+// ---------------------------------------------------------------------------
+
+/**
+ * Every piece of derived prose that had to be re-rendered in the other language
+ * (V2, roadmap VD5).
+ *
+ * ONE GENERIC TABLE, not a jsonb column per artifact. A translation carries its
+ * own `model`, `prompt_version` and timestamps, which a jsonb value cannot -- and
+ * a column per artifact is a migration, an upsert path and a place to forget
+ * `updated_at` per artifact.
+ *
+ * ── TWO ENTITIES, NOT FOUR, AND THAT NARROWING IS THE INTERESTING PART ───────
+ *
+ * Roadmap §4 listed `reading`, `daily_summary`, `frequency_verdict` and
+ * `persona`. Reconciliation §5.1 cut it to `reading` and `persona`.
+ * `daily_summaries` is unique on `(user_id, reader_id, local_date, locale)` and
+ * `frequency_verdicts` on `(user_id, window_key, locale)` -- BOTH ARE ALREADY
+ * KEYED BY LOCALE, so a language switch there is an ordinary cache miss followed
+ * by a regeneration IN THE TARGET LANGUAGE: one model call, exactly what a
+ * translation would have cost, and better prose than translating a 45-word
+ * greeting could be. That is VD6's own argument about `lotus_avatars.summary`,
+ * noticed to reach two more tables.
+ *
+ * The two that are here cannot do that. `readings.body` is immutable (VD7) --
+ * the prose IS the artifact, and regenerating it would mean the querent's memory
+ * of the reading and the app's disagree. `personas.user_id` is a primary key with
+ * a single `locale` column, so a switch would OVERWRITE the persona rather than
+ * sit beside it.
+ *
+ * ── `entity_id` HAS NO FOREIGN KEY, AND THAT IS A DELIBERATE COST ────────────
+ *
+ * Postgres cannot declare a polymorphic FK. Orphans are therefore possible:
+ * deleting a reading leaves its translations behind. Three shapes were weighed --
+ * four nullable typed FK columns, four separate tables, or this -- and this wins
+ * because the alternative to one orphan-cleanup statement is a migration per
+ * future artifact. **The daily sweep's fourth delete is the answer**
+ * (`deleteOrphanTranslations`, written by V2 and reviewed by V7).
+ */
+export const translations = pgTable(
+  'translations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /**
+     * `'reading' | 'persona'`.
+     *
+     * Bare `text`, per this file's header rule: V2 owns the union
+     * (`TranslatableEntity` in `@/lib/translate/contract`), and narrowing it here
+     * would make `schema.ts` depend on a module that depends on `schema.ts`.
+     */
+    entity: text('entity').notNull(),
+    /** NO FK. Polymorphic -- see the header. `readings.id`, or `personas.user_id`. */
+    entityId: uuid('entity_id').notNull(),
+    /** `'body' | 'gist'`. Bare text for the same reason as `entity`. */
+    field: text('field').notNull(),
+    /**
+     * What it was translated FROM.
+     *
+     * STORED, NEVER DERIVED. It is the only thing that keeps the row auditable
+     * after the source is gone, and it is what the check constraint below compares
+     * -- a row translated into its own source language is a bug, not data.
+     */
+    sourceLocale: text('source_locale').$type<Locale>().notNull(),
+    /** What it was translated INTO. The lookup key, with the three above. */
+    locale: text('locale').$type<Locale>().notNull(),
+    body: text('body').notNull(),
+    model: text('model').notNull(),
+    /**
+     * `TRANSLATION_PROMPT_VERSION`. HAND-BUMPED, NOT HASHED.
+     *
+     * `MEMORY_PROMPT_VERSION`'s reasoning exactly. `readings.prompt_version` is a
+     * hash because a reading's prompt is three independently-changing layers and
+     * nobody would remember to bump a constant; the translation prompt is one
+     * function in one file, and this column is read to decide whether a CACHED ROW
+     * is stale. A hash would invalidate every translation in the table on a
+     * whitespace edit.
+     */
+    promptVersion: text('prompt_version').notNull(),
+    createdAt: tsCol('created_at').notNull().defaultNow(),
+    /**
+     * THE STALENESS MECHANISM, AND THE REASON THERE IS NO `source_hash` COLUMN.
+     *
+     * Roadmap §4 shipped this table with no staleness key at all, which reconciliation
+     * §5.2 closed with no new column: a translation is stale iff
+     *
+     *     translations.updated_at < source.updated_at
+     *
+     * `personas` maintains `updated_at` by hand inside `onConflictDoUpdate`, and
+     * `readings` is immutable so `created_at` is its comparand.
+     *
+     * `$onUpdate()` IS DECLARED HERE AND IS NOT ENOUGH. It fires on `db.update()`
+     * and NOT inside `onConflictDoUpdate`, so `putTranslation` sets this by hand.
+     * Drop that line and the column freezes at the first insert -- which for this
+     * table is the entire staleness mechanism, so every regenerated source would
+     * serve its first translation forever.
+     */
+    updatedAt: tsCol('updated_at')
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    unique('translations_entity_entity_id_field_locale_uq').on(
+      t.entity,
+      t.entityId,
+      t.field,
+      t.locale,
+    ),
+    /** The orphan sweep, and V6/V7's per-artifact reads and deletes. */
+    index('translations_entity_lookup_idx').on(t.entity, t.entityId),
+    /** A row translated into its own source language is a bug, not data. */
+    check('translations_locale_differs_ck', sql`${t.sourceLocale} <> ${t.locale}`),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Row types
 //
 // `X` is what a select returns; `NewX` is what an insert accepts (columns with
@@ -590,3 +751,5 @@ export type ModerationFlag = typeof moderationFlags.$inferSelect;
 export type NewModerationFlag = typeof moderationFlags.$inferInsert;
 export type FrequencyVerdict = typeof frequencyVerdicts.$inferSelect;
 export type NewFrequencyVerdict = typeof frequencyVerdicts.$inferInsert;
+export type Translation = typeof translations.$inferSelect;
+export type NewTranslation = typeof translations.$inferInsert;

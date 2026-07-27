@@ -123,3 +123,35 @@ describe('vercel.json', () => {
     expect(config.crons).toHaveLength(1);
   });
 });
+
+describe('the fourth delete (V2)', () => {
+  it('reaps orphaned translations, and reports the count', () => {
+    // The counts are what tell you the job is alive: a key that is always zero is
+    // a sweep that has silently stopped matching anything.
+    expect(ROUTE).toContain('deleteOrphanTranslations');
+    expect(ROUTE).toContain('orphanedTranslations');
+  });
+
+  /*
+   * **IT RUNS LAST, AND THAT IS NOT ALPHABETICAL.** The user purge CASCADEs
+   * `readings` away, and their translations are NOT reached by that cascade —
+   * `entity_id` has no foreign key. So they become orphans DURING this invocation,
+   * and reaping last catches them the same night while reaping first leaves them a
+   * day.
+   *
+   * Asserted on source position, which is crude and is the only thing that can be
+   * asserted here: the route is not exercised in tests because it reaches
+   * `next/server` and the `server-only` singleton.
+   */
+  it('runs after the user purge, so same-invocation orphans are caught', () => {
+    expect(ROUTE.indexOf('delete from users')).toBeLessThan(
+      ROUTE.indexOf('deleteOrphanTranslations'),
+    );
+  });
+
+  it('keeps the header’s numbered list in step with the number of deletes', () => {
+    // The header opens with a stated count. It said THREE, and V2 makes it four.
+    expect(ROUTE).toMatch(/FOUR DELETES/);
+    expect(ROUTE).toMatch(/^\s*\*\s*4\.\s/m);
+  });
+});

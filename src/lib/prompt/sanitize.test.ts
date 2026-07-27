@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { sanitizeAnswer, sanitizeQuestion, stripUntrusted } from './sanitize';
 
@@ -223,5 +225,82 @@ describe('sanitizeAnswer', () => {
       const once = sanitizeAnswer(input, MAX);
       expect(sanitizeAnswer(once, MAX)).toBe(once);
     }
+  });
+});
+
+/**
+ * THE DELIMITER SET, ASSERTED AS A SET (V2; reconciliation §5's shared-file row).
+ *
+ * `sanitize.ts`'s header states a COUNT — "four tags, because four different
+ * blocks fence off user-derived text" — and the alternation is the only thing that
+ * enforces it. Nothing checked that the two agreed, and they had already drifted:
+ * W5 added `riwayat` as a fifth alternative and left the header saying four, with
+ * no test naming the tag at all.
+ *
+ * Reconciliation §5 asks V2 and V8 to each update the header's count and the test
+ * that asserts the set. There was no such test, so this is it. V8 adds `sosok`
+ * here and takes the count to six.
+ */
+describe('the delimiter set', () => {
+  /*
+   * ONE ENTRY PER FENCED BLOCK, and the comment says which block, because that is
+   * the thing a future reader has to be able to check. A tag with no block behind
+   * it is dead surface; a block with no tag here is an injection hole.
+   */
+  const FENCED = [
+    ['pertanyaan', 'the querent’s typed question, in a reading’s user turn'],
+    ['penanya', 'the Lotus block, in a reading’s user turn (W3 §9)'],
+    ['jawaban', 'one raw onboarding answer, in the distillation prompt'],
+    ['riwayat', 'W5’s chained-reading block, and <riwayat-hari-ini> for the day summary'],
+    ['terjemahan', 'V2: model prose being handed back to a model to re-write'],
+  ] as const;
+
+  for (const [tag, block] of FENCED) {
+    it(`strips <${tag}> — ${block}`, () => {
+      expect(stripUntrusted(`a <${tag}> b </${tag}> c`)).toBe('a b c');
+      // Casing, padding and attributes, all in one: the three shapes a tag can
+      // arrive in that a naive `includes('<tag>')` would miss.
+      expect(stripUntrusted(`x </ ${tag.toUpperCase()}  foo="1" > y`)).toBe('x y');
+    });
+  }
+
+  /*
+   * THE HEADER'S COUNT AND THE ALTERNATION MUST AGREE. This is the assertion that
+   * would have caught W5's drift, and it is the one V8 will trip.
+   */
+  it('keeps the header comment’s stated count in step with the alternation', () => {
+    const source = readFileSync(join(process.cwd(), 'src/lib/prompt/sanitize.ts'), 'utf8');
+    const alternation = /\(\?:([a-z|]+)\)/.exec(source)?.[1]?.split('|') ?? [];
+
+    expect(alternation.sort()).toEqual(FENCED.map(([t]) => t).slice().sort());
+
+    // Spelled out, because that is how the header writes it. `String(n)` would
+    // pass against "5 tags" while the header said "four".
+    const spelled = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven'];
+    expect(source.toLowerCase()).toContain(`${spelled[FENCED.length]} tags`);
+  });
+
+  /*
+   * The fixpoint loop is over the WHOLE alternation, so every pair of tags can
+   * spell each other. Adding a fifth alternative means the two halves left by
+   * removing any one of the other four can now also spell `terjemahan` — which is
+   * exactly why the loop is not per-tag, and it is free, but only if it is
+   * actually checked against the new member.
+   */
+  it('reaches a fixpoint across the fifth alternative, in both directions', () => {
+    expect(stripUntrusted('</terje<terjemahan>mahan>halo')).toBe('halo');
+    expect(stripUntrusted('</terje<pertanyaan>mahan>halo')).toBe('halo');
+    expect(stripUntrusted('</riwa<terjemahan>yat>halo')).toBe('halo');
+    expect(stripUntrusted('<terjem<riwayat>ahan>halo')).toBe('halo');
+  });
+
+  /*
+   * A zero-width space inside a tag name would defeat the alternation, which is
+   * why the format-character pass runs BEFORE the delimiter pass. Asserted against
+   * the new tag too — the ordering is a property of `stripUntrusted`, but a new
+   * alternative is exactly when somebody reorders the passes.
+   */
+  it('is not fooled by a zero-width space inside the new tag', () => {
+    expect(stripUntrusted('a <terje​mahan> b')).toBe('a b');
   });
 });

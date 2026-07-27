@@ -66,6 +66,7 @@ npm run smoke        # one live LLM call: is the key/baseURL/model right?
 npm run smoke -- --all   # EIGHTEEN readings: 2 locales x 3 readers x 3 services
 npm run smoke -- --all --locale en   # nine, one locale, for iterating
 npm run smoke -- --lotus # one real Lotus distillation, end to end. READ IT.
+npm run smoke -- --translate  # SIX real translations, both directions. READ THEM.
 npm run smoke -- --all --lotus   # the nine WITH a canned Lotus block, fixed hands
 npm run smoke -- --all --fixed   # the nine without one, same hands, for the diff
 ```
@@ -90,8 +91,23 @@ npm run db:nuke      # stop and DROP the volume; start over
 
 npm run db:test:reset      # drop + recreate jmtarot_test
 npm run test:integration   # needs db:up
-npm run test:all           # both projects
+npm run test:all           # both projects -- SEE THE WARNING BELOW
 ```
+
+**`npm run test:all` FAILS ~12-22 OF V9's LIMITER TESTS, AND IT IS A HARNESS RACE
+RATHER THAN A REGRESSION. Run the two projects SEPARATELY to get a true answer.**
+`npm test` passes 1197 and `npm run test:integration` passes 137; running them
+together fails a shifting subset of `src/lib/ratelimit/index.test.ts` and
+`src/lib/llm/meter.test.ts`, with one case timing out at 5002ms. The two projects
+share the one `serverless-redis-http` on 8079, so the unit tests' in-memory
+assumptions collide with the integration suite's real Redis.
+
+**Measured against `4f29b4f`, which predates V2: 22 failures there against 12 with
+V2 on top** -- so it is pre-existing, it is non-deterministic, and the count moving
+is itself the evidence. V2 touched neither file (`git diff --name-only 4f29b4f..HEAD`
+names no ratelimit or meter path). The fix belongs with V9's files: either a
+per-project Redis namespace or `--no-file-parallelism` across projects. Until then
+`test:all` is the one command in this file whose red does not mean anything.
 
 `npm test` deliberately does **not** need Docker and must not start to: it is
 the loop used a hundred times a day, and the integration one a few times a
@@ -123,6 +139,11 @@ TEST_DATABASE_URL=postgres://jmtarot:jmtarot@127.0.0.1:5432/jmtarot_test
 FIELD_ENCRYPTION_KEY=...                      # 32 bytes, base64url
 
 LOTUS_MODEL=                                  # defaults to LLM_MODEL
+TRANSLATION_MODEL=                            # V2. Defaults to LLM_MODEL, and it
+                                              # WANTS the reading model rather than a
+                                              # cheap one: a translation is prose a
+                                              # person reads, in a reader's voice.
+
 LOTUS_STUB=                                   # 1 => skip the model, write the
                                               # template. NEVER in production:
                                               # every user would silently get
@@ -928,7 +949,9 @@ onboarding questionnaire and the Lotus distillation (W3)**, **analytics and
 reading persistence (W4)**, **the three memory features (W5)**, **English and
 Indonesian throughout, interface and readings (W6)**, **the moderation gate,
 `/terms`, `/privacy`, the secrets tripwire and the daily sweep (W7)**, **a
-fleet-wide rate limiter and a global model-call ceiling (V9)**, reader
+fleet-wide rate limiter and a global model-call ceiling (V9)**, **the
+correspondence engine (V1)**, **on-demand translation and locale-tagged
+generation (V2)**, reader
 picker, service picker, the draw (fan, pick, flip, reduced-motion grid), the card
 detail overlay, the streaming reading endpoint, the prompt layer, and the web app
 manifest.
@@ -1314,6 +1337,140 @@ contractions 0.87 / 0.00 / 3.52.
 - **Vercel's log retention, and whether the platform logs POST bodies**, is
   unverified. The privacy policy claims only our half: we never log question
   text ourselves.
+
+## Translation (V2)
+
+V2 of v0.3.0 is done. Every piece of generated prose records the language it came
+out in, and a language switch **translates** what already exists instead of showing
+Indonesian text inside an English app. Plus the bug underneath "the language
+resets": a brand-new `en-GB` user used to be snapped to Indonesian at row creation
+by a column default that was never a choice.
+
+```
+src/lib/translate/
+  keys.ts        LEAF. TRANSLATABLE, the entity/field unions, isTranslatableKey,
+                 TRANSLATION_PROMPT_VERSION. NO prompt layer, NO server-only --
+                 `queries/translations.ts` imports it, and rule 3 of that
+                 directory forbids acquiring the marker even transitively.
+  contract.ts    PURE. sanitizeSource, namesIn, verifyTranslation,
+                 buildTranslationPrompt. Re-exports keys.ts, so callers import
+                 one path. Carries prompt prose -> fenced from the client.
+  translate.ts   server-only. translateOrCached, translateStream, the repair
+                 pass, the upsert, the event.
+src/lib/db/queries/translations.ts   get/put/deleteFor/deleteOrphans/resolve,
+                 plus gistTranslations for the chain block.
+src/app/api/translate/route.ts       POST. Streams iff the registry says so.
+```
+
+**Call `translateOrCached()` or `translateStream()`. Nothing else.** `putTranslation`
+has exactly one caller, because it is the only place verification happens and an
+unverified row in that table is the whole failure the workstream exists to prevent.
+
+### The five things a future session will otherwise undo
+
+1. **`<terjemahan>` is a fifth fence, not a locale variant** (R17). What it fences is
+   not text a user typed — it is MODEL OUTPUT THAT WAS ITSELF GENERATED FROM USER
+   TEXT, handed to a second model as material, with the result going straight to a
+   screen. The Indonesian-looking token is deliberate: an English querent will never
+   type "terjemahan" and would absolutely type "translation".
+2. **The card-name check is MECHANICAL, not only a prompt rule.** Card and reader
+   names are English in both locales, so the invariant is direction-symmetric and
+   exactly checkable with `includes()`. The prompt rule alone is what produced
+   "Pulan" for The Moon. `namesIn` is case-sensitive and word-bounded on purpose: a
+   false `card_name` violation costs a CORRECT translation its cache row.
+3. **REPAIR, DO NOT BUFFER.** A dirty generation is never persisted; the viewer sees
+   it once and a `defer()`ed repair pass is what lands in the table. Buffering the
+   stream to verify before the first byte was considered and refused — it trades VD8
+   away for every translation to protect the failing minority. **If the measured
+   `invalid` rate exceeds ~2%, fix the prompt, not the architecture.**
+4. **Staleness is `translations.updated_at < source.updated_at`, and there is no
+   `source_hash` column.** `putTranslation` sets `updatedAt` BY HAND inside
+   `onConflictDoUpdate` — `$onUpdate()` does not fire there, and for this table that
+   column is the entire mechanism.
+5. **`users.locale_source` NULL means `'chosen'`.** Read it through
+   `effectiveLocaleSource()`, never raw: every pre-v0.3.0 row is NULL and those users
+   may well have pressed the toggle. `raw ?? 'default'` is what a reasonable person
+   writes without the helper, and it would license overwriting exactly those
+   preferences.
+
+### Traps V2 paid for
+
+- **`to_regclass` CANNOT GUARD A RELATION FROM INSIDE THE STATEMENT.** V2's plan §8
+  sketches the orphan sweep with `and to_regclass('public.personas') is not null` in
+  the WHERE clause. Postgres resolves every relation at PARSE time, so the subquery
+  raises `relation does not exist` and the guard beside it never runs. The guard has
+  to decide whether the statement is ISSUED — a separate round trip. That is what
+  lets `'persona'` sit in the registry from day one, inert until V8 lands.
+- **`queries/**` WAS ACQUIRING `server-only` TRANSITIVELY AND NOTHING NOTICED.**
+  `contract.test.ts` only checked direct imports. V2 did it via
+  `translate/contract.ts -> prompt/base.ts` and fixed it by splitting `keys.ts` out;
+  the new transitive check then found the SAME SHAPE pre-existing in W3's
+  `queries/lotus.ts`, which reaches `prompt/lotus.ts` for one integer. That one is
+  allowlisted by name with the fix written down — it is W3's file.
+- **MIDDLEWARE'S FORWARDED LOCALE IS NOT EVIDENCE THAT ANYBODY NEGOTIATED.**
+  `src/middleware.ts` sets `x-jmt-locale` and refreshes `jmt_locale` unconditionally,
+  carrying `DEFAULT_LOCALE` when it had no signal at all. Treating either as a
+  negotiation made `locale_source = 'default'` UNREACHABLE through a real sign-in,
+  with nothing failing. Found by reading the row after a live `dev-session` call, not
+  by reading the code. `resolveForSignIn` derives the locale and the source
+  separately for this reason.
+- **`headers()` AND `cookies()` DO RESOLVE INSIDE @auth/core's jwt CALLBACK** —
+  measured through the Credentials provider, which runs the same callback the Google
+  path does. The plan held an `AsyncLocalStorage` wrapper in reserve; it is not
+  needed and was not built.
+- **A `sql` TEMPLATE LITERAL EATS A BACKTICK IN A COMMENT.** A doc comment inside
+  `upsertUserOnSignIn`'s statement ends the template and the whole file stops
+  parsing, with the error pointing at the SQL rather than the prose.
+- **NEVER LOG THE DRIVER ERROR OR THE LLM CLIENT ERROR.** A postgres error quotes
+  its bound parameters and one of them is the translated body; an LLM client error
+  can carry the whole prompt, which holds the source verbatim.
+- **THE VOICE RULES HAD TO BE STATED AS OUTRANKING THE SOURCE.** Measured: Adrian's
+  English translations came back at **0.00 contractions/100w** while his native
+  English uses them freely, and his persona block says "Contractions throughout" and
+  was being carried verbatim. The model weighted translating above the persona.
+  `REGISTER_EN` / `REGISTER_ID` fixed it (0.00 -> 0.61, Margaret correctly still
+  0.00). That is roadmap §9's named risk, and the contraction proxy is the ONLY check
+  that sees it.
+
+### Verifying it
+
+```sh
+npm test -- translate            # contract, invariants, sanitizer, registry, wiring
+npm test -- i18n                 # resolveForSignIn, effectiveLocaleSource
+npm test -- sanitize             # the fifth alternative, and the delimiter SET
+npm run db:up && npm run test:integration -- 'translations|profile|sweep'
+npm run smoke -- --translate     # SIX REAL TRANSLATIONS, both directions. READ THEM.
+```
+
+`npm run smoke -- --translate` asserts through `verifyTranslation` — the same
+function production gates on — so a pass here and a refusal in production means one
+of the two is wrong and it is not the script. What it adds on top is the two **voice
+proxies applied to translations rather than to native output**: mean sentence length
+(Margaret ≥ 1.5× Thessaly) and contraction rate (`en` only, Adrian > 0, Margaret ==
+0). Those are the only mechanical signal that a translated Margaret has not become
+Thessaly with longer words.
+
+**The measurements are in `docs/plans/2026-07-27-translation.md` under `## Measured`.**
+Zero card-name, paragraph, Malay or tic failures across twelve translations. **The
+word BAND is not converged and was deliberately not widened** — Margaret's paragraph
+overruns appeared in one run and vanished in the next while Adrian's did the reverse,
+which is variance. One signal is consistent and contradicts the plan's own open
+question 3: Thessaly `en → id` comes in SHORT (95, 86 against a floor of 105), not
+long.
+
+**Stop the database and open a translated reading.** It must fall back to the source
+prose with nothing but a log line. A cache read that fails is a cache MISS, never an
+error.
+
+**V2 CHANGES NO BYTE OF THE EIGHTEEN READINGS, AND THAT IS VERIFIED RATHER THAN
+ASSERTED.** `sanitize.ts` gained an alternative no reading prompt emits, `schema.ts`
+gained a table no reading path reads, and `RecalledReading` gained a field that is
+absent from every `memory: null` prompt. Checked by fingerprinting all eighteen
+system-plus-user prompts at `4f29b4f` and at HEAD and diffing: **18/18 identical.**
+Do that rather than reading `npm run smoke -- --all` output for this question -- the
+model is non-deterministic, and two consecutive `--locale en` runs gave 5 and then 4
+different violations against unchanged prompts. Those are the known-unconverged
+English calibration, not a regression.
 
 ## The data layer
 
