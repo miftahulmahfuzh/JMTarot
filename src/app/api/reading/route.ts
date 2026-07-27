@@ -7,7 +7,7 @@ import { getLotusBlock, scheduleLotusRefresh } from '@/lib/prompt/lotus.generate
 import { MAX_QUESTION_LENGTH, sanitizeQuestion } from '@/lib/prompt/sanitize';
 import { tFor } from '@/lib/i18n/catalog';
 import { getLocale } from '@/lib/i18n/t';
-import { hit } from '@/lib/ratelimit';
+import { hit, hitGlobal, hitRefusal, refusalsExhausted } from '@/lib/ratelimit';
 import { gateReading } from '@/lib/moderation/gate';
 import { recordModerationFlag } from '@/lib/moderation/log';
 import { persistReading, touchLastSeen } from '@/lib/analytics/flush';
@@ -161,18 +161,44 @@ export async function POST(request: Request) {
       });
     }
 
-    const gate = hit(user.id);
-    if (!gate.ok) {
+    /*
+     * THREE BUDGETS (W7 §6.7), and they answer with the same copy on purpose:
+     * telling the querent WHICH ceiling they hit tells a prober which one to
+     * work around.
+     *
+     *   hit()             one person holding the button down.
+     *   refusalsExhausted() somebody mapping the blocklist one probe at a time
+     *                     (W7-D13). A READ, not a record -- `hitRefusal()` is
+     *                     called later, only when a refusal actually happens.
+     *   hitGlobal()       fifty throwaway Google accounts each bringing their
+     *                     own budget, which the per-user limiter cannot see.
+     */
+    const tooManyRequests = (retryAfterSeconds: number) => {
       track('reading.rate_limited', {
         reader_id: '?',
         service_id: '?',
-        retry_after_s: gate.retryAfterSeconds,
+        retry_after_s: retryAfterSeconds,
       });
       return NextResponse.json(
         { error: t('reading.error.rateLimit') },
-        { status: 429, headers: { 'retry-after': String(gate.retryAfterSeconds) } },
+        { status: 429, headers: { 'retry-after': String(retryAfterSeconds) } },
       );
-    }
+    };
+
+    const perUser = hit(user.id);
+    if (!perUser.ok) return tooManyRequests(perUser.retryAfterSeconds);
+
+    const probing = refusalsExhausted(user.id);
+    if (probing) return tooManyRequests(probing.retryAfterSeconds);
+
+    /*
+     * LAST, because it RECORDS. Checking the instance ceiling before the two
+     * per-user gates would let one user's rejected requests eat the whole
+     * instance's budget -- a self-inflicted denial of service for everybody else
+     * on the box.
+     */
+    const perInstance = hitGlobal();
+    if (!perInstance.ok) return tooManyRequests(perInstance.retryAfterSeconds);
 
     /*
      * Every early return below buffers ONE event and nothing else. The response
@@ -437,6 +463,15 @@ export async function POST(request: Request) {
     }
 
     if (gated.blocked) {
+      /*
+       * **THE REFUSAL CONSUMES ITS OWN BUDGET** (W7-D13), recorded here rather
+       * than at the top of the handler because only now is it known that a
+       * refusal happened. Five in a window and `refusalsExhausted()` starts
+       * turning the next request away before it reaches the gate -- which is
+       * what stops the endpoint being a free oracle for the pattern list.
+       */
+      hitRefusal(user.id);
+
       track('moderation.refused', {
         // `gated.verdict`, not the `verdict` alias: narrowing follows the
         // discriminant on `gated`, and the alias is still the wide union whose
