@@ -12,8 +12,8 @@
  *   no row                       -> 200, generate and stream
  *
  * THIS STREAMS, WHERE `/api/memory/frequency` DOES NOT, and the two were decided
- * separately rather than by consistency. The verdict is one clause of at most 25
- * words that exists to be read whole; this is up to 45 words in a reader's own
+ * separately rather than by consistency. The verdict is one clause of at most 32
+ * words that exists to be read whole; this is up to 50 words in a reader's own
  * voice, arriving as the reader "speaking" to the querent, and progressive text
  * is worth something there. It is the same treatment the reading result already
  * gets, which is what §5.4 asks for.
@@ -35,7 +35,8 @@ import { getDailySummary, putDailySummary, readingsOnDay } from '@/lib/db/querie
 import { getProvider } from '@/lib/llm';
 import { reserveModelCall } from '@/lib/llm/meter';
 import { isStale } from '@/lib/memory/summary';
-import { buildDaySummaryPrompt, MEMORY_PROMPT_VERSION } from '@/lib/prompt/summary';
+import { buildDaySummaryPrompt, echoToday, MEMORY_PROMPT_VERSION } from '@/lib/prompt/summary';
+import { dayShadowFor } from '@/lib/memory/shadow';
 import { isReaderId } from '@/data/readers';
 import type { Locale, ReaderId } from '@/data/types';
 
@@ -244,6 +245,19 @@ async function generate(args: {
         regeneration: args.regeneration,
         generation_count: args.generationCount + 1,
         total_ms: Math.round(performance.now() - startedAt),
+        /*
+         * V3's two new props. Recomputed here rather than threaded out of
+         * `buildDaySummaryPrompt`: both are pure functions of `args.readings`,
+         * which is the same array the prompt was built from, so there is no
+         * second source of truth to drift -- and the alternative was widening
+         * `CompletionPrompt` with fields only analytics reads.
+         *
+         * `shadow_card_id` is null on a collision, which is the same thing the
+         * prompt does: the line is omitted rather than repeated.
+         */
+        shadow_card_id:
+          dayShadowFor(args.readings.flatMap((r) => r.cards.map((c) => c.cardId)))?.id ?? null,
+        echo_count: echoToday(args.readings).length,
       });
     } catch (err) {
       logFailure(err);

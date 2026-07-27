@@ -93,6 +93,40 @@ export const LENGTH_BUDGET: Record<Locale, Record<ServiceId, LengthBudget>> = {
 };
 
 /**
+ * MARGARET MAY BE 30% LONGER THAN THE OTHER TWO (VD19, Miftah's ruling).
+ *
+ * THIS CLOSES THE OPEN QUESTION THIS FILE HAS CARRIED SINCE W6 — "whether
+ * Margaret is allowed to be longer than the other two" — and it closes it in the
+ * one place a ceiling is written, because V3 reopened the same question from a
+ * second direction with the day summary.
+ *
+ * A MULTIPLIER AND NOT A SECOND HAND-SET NUMBER, and the difference is the
+ * reason rather than the arithmetic. Her extra length is a fact about the
+ * READER: her voice rules mandate "long sentences that carry clauses inside
+ * them", and that is equally true in every service she speaks in. A hand-set
+ * `spread3: 55` said it about one service and left `daily` and `yesno` claiming
+ * she fits 55 and 70 with no evidence either way.
+ *
+ * 1.3 IS CLOSE TO WHAT WAS ALREADY MEASURED, which is why it is credible rather
+ * than round: the old override was 55 against a base of 40, i.e. 37.5%, derived
+ * from five `--all --fixed` runs putting her spread3 paragraphs at 38-55 in both
+ * locales. So `spread3` moves 55 -> 52 and the other two gain a ceiling that
+ * matches how she actually writes.
+ *
+ * IT APPLIES TO CEILINGS ONLY. `minTotalWords` is a floor and a floor scaled by
+ * a reader's verbosity would demand length rather than permit it.
+ *
+ * THE FREQUENCY VERDICT IS HOUSE VOICE AND IS UNAFFECTED (VD19). The day
+ * summary is NOT house voice — it is `readerPrompt()` verbatim — so
+ * `SUMMARY_MAX_WORDS` in `prompt/summary.ts` reads this constant too, and 50
+ * becomes 65 for her and nobody else.
+ *
+ * THIS FIXES WHAT THE CEILING SHOULD BE, NOT WHETHER SHE OBEYS IT. The English
+ * spread3 calibration is still unconverged at 157-243 words across runs.
+ */
+export const MARGARET_MULTIPLIER = 1.3;
+
+/**
  * Per-reader overrides on the default budget.
  *
  * MARGARET IS THE ONLY ENTRY AND SHE IS HERE BECAUSE OF MEASUREMENT, NOT MERCY.
@@ -125,24 +159,33 @@ export const LENGTH_BUDGET: Record<Locale, Record<ServiceId, LengthBudget>> = {
  * DELIBERATELY SPARSE. Two readers use the default and must keep using it: an
  * override per reader is a budget that constrains nobody, and the ceiling is the
  * length control.
+ *
+ * V3 REPLACED THE HAND-SET NUMBERS WITH `MARGARET_MULTIPLIER` (VD19). The table
+ * is kept because the next override may well not be a scalar -- but it is empty,
+ * and an empty table is the honest way to say "one rule covers the only case".
  */
-const READER_OVERRIDE: Partial<Record<ReaderId, Partial<Record<ServiceId, Partial<LengthBudget>>>>> =
-  {
-    margaret: {
-      // 55 is her observed per-paragraph ceiling across five runs, not a round
-      // number. 210 is 4 x 55 rounded down to what she has actually produced.
-      spread3: { maxParagraphWords: 55, maxTotalWords: 210 },
-    },
-  };
+const READER_MULTIPLIER: Partial<Record<ReaderId, number>> = {
+  margaret: MARGARET_MULTIPLIER,
+};
 
 /**
- * The budget for one (locale, service, reader), overrides applied.
+ * The budget for one (locale, service, reader), the reader's multiplier applied.
  *
  * THE ONE FUNCTION BOTH THE PROMPT AND THE CHECK CALL. That is the whole point of
  * this module: the number interpolated into the prose and the number the smoke script
  * asserts against are the same resolved object, so a reader-specific ceiling cannot
  * be in the prompt and absent from the check.
+ *
+ * `Math.round` and not `Math.ceil`, so the multiplier is a scaling and not a
+ * quiet extra word. `minTotalWords` is untouched: see `MARGARET_MULTIPLIER`.
  */
 export function budgetFor(locale: Locale, service: ServiceId, reader: ReaderId): LengthBudget {
-  return { ...LENGTH_BUDGET[locale][service], ...READER_OVERRIDE[reader]?.[service] };
+  const base = LENGTH_BUDGET[locale][service];
+  const k = READER_MULTIPLIER[reader];
+  if (k === undefined) return { ...base };
+  return {
+    maxParagraphWords: Math.round(base.maxParagraphWords * k),
+    minTotalWords: base.minTotalWords,
+    maxTotalWords: Math.round(base.maxTotalWords * k),
+  };
 }

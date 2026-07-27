@@ -221,9 +221,29 @@ export type EventMap = {
   'memory.chain_used':         { reading_id: string; signal: 'card' | 'phrase' };
   'memory.gist_failed':        { reading_id: string; reason: 'call_failed' | 'empty' | 'unusable'; fell_back: boolean };
   'memory.summary_shown':      { reader_id: string; source_count: number; cached: boolean; chars: number };
-  'memory.summary_generated':  { reader_id: string; source_count: number; regeneration: boolean; generation_count: number; total_ms: number };
+  /*
+   * V3 widens two prop shapes and adds NO NAME -- the taxonomy stays at 44, and
+   * roadmap §6's reconciliation target of 61 is untouched by this workstream.
+   *
+   * `shadow_card_id` is what makes "what does the distribution of shadow cards
+   * look like?" answerable without a `frequency_verdicts` column, which would
+   * have been a denormalization of a two-column addition and a modulus.
+   *
+   * `sample` STAYS ON `frequency_generated` AND THAT IS NOT A VD2 VIOLATION.
+   * VD2 forbids counts in the output the QUERENT READS, never in analytics --
+   * `events` rows are how "is the gate set right?" gets answered.
+   *
+   * `memory.frequency_shown` and `memory.summary_shown` are deliberately
+   * UNCHANGED. They fire on the cached path too, where the derived values were
+   * never recomputed, and a field that is sometimes absent would make every
+   * aggregate over them a different measurement -- the `latency_ms` argument.
+   */
+  'memory.summary_generated':  { reader_id: string; source_count: number; regeneration: boolean; generation_count: number; total_ms: number;
+                                 shadow_card_id: number | null; echo_count: number };
   'memory.frequency_shown':    { window: string; top_card_id: number; second_card_id: number | null; sample: number; cached: boolean };
-  'memory.frequency_generated':{ window: string; top_card_id: number; second_card_id: number | null; sample: number; angle: number; total_ms: number };
+  'memory.frequency_generated':{ window: string; top_card_id: number; second_card_id: number | null; sample: number; angle: number; total_ms: number;
+                                 shadow_card_id: number; shadow_collision: 'top' | 'second' | 'none';
+                                 dominance: 'tied' | 'narrow' | 'clear' | 'overwhelming'; pulse: number };
 
   'locale.changed':            { from: string; to: string; surface: 'settings' | 'onboarding' | 'auto' };
 

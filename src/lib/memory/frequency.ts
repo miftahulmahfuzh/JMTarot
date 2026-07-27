@@ -104,6 +104,115 @@ export function passesGate(result: FrequencyResult): boolean {
   return true;
 }
 
+/** The columns of a cached `frequency_verdicts` row the decision below reads. */
+export type CachedVerdict = {
+  fingerprint: string;
+  promptVersion: string;
+  topCardId: number;
+  secondCardId: number | null;
+};
+
+/**
+ * `fresh` -> serve it. `still-true` -> serve it and regenerate behind the
+ * response. `stale` -> do not serve it at all.
+ */
+export type VerdictCacheState = 'fresh' | 'still-true' | 'stale';
+
+/**
+ * Is this cached verdict servable, and does it need repairing? (V3 §6.2)
+ *
+ * EXTRACTED FROM THE ROUTE BECAUSE IT WAS WRONG THERE, and wrong in a way that
+ * nothing could see. The route computed
+ *
+ *     const fresh = cached?.fingerprint === result.fingerprint;
+ *     const stillTrue = cached !== null && cached.promptVersion === V && ...;
+ *     if (cached && (fresh || stillTrue)) return cached.body;
+ *
+ * and `fresh` short-circuits the `||` WITHOUT LOOKING AT `promptVersion`. A user
+ * whose window has not moved since their last visit -- which is most users on
+ * most page loads, by design -- would be served a `memory-v1` row forever.
+ * Bumping the constant to `memory-v2` would then have changed nothing for
+ * exactly the people who have a cached tally to look at, which is the whole
+ * population this release exists for. `daily_summaries` was always fine:
+ * `isStale()` tests the version first and returns before anything else runs.
+ *
+ * THE VERSION CHECK IS HOISTED ABOVE BOTH BRANCHES, not repeated inside them.
+ * That is the shape that cannot be reintroduced by reordering: a hand-bumped
+ * epoch whose invalidation is half-wired is worse than none, because the half
+ * that works hides the half that does not.
+ *
+ * AND A STALE ROW MUST NOT TAKE THE `still-true` PATH EVEN THOUGH IT NAMES THE
+ * RIGHT PAIR. That branch exists because "the sentence is still TRUE, just
+ * slightly out of date"; a `memory-v1` sentence is not still true, it is the
+ * thing the release exists to delete, and it must not be served even once.
+ *
+ * Pure, and here rather than in `queries/frequency.ts` for that directory's
+ * stated reason: it takes a row, not a handle.
+ */
+export function verdictCacheState(
+  cached: CachedVerdict | null,
+  result: FrequencyResult,
+  promptVersion: string,
+): VerdictCacheState {
+  if (cached === null) return 'stale';
+  if (cached.promptVersion !== promptVersion) return 'stale';
+  if (cached.fingerprint === result.fingerprint) return 'fresh';
+
+  const top = result.ranked[0];
+  const second = result.ranked[1];
+  const samePair =
+    top !== undefined &&
+    cached.topCardId === top.cardId &&
+    cached.secondCardId === (second?.cardId ?? null);
+  return samePair ? 'still-true' : 'stale';
+}
+
+/**
+ * How far the top card has pulled ahead of the second, as a WORD (V3-5).
+ *
+ * A bucket and never a number, and that is VD2's mechanical half rather than a
+ * stylistic preference: the prompt is handed this word, so the model cannot
+ * accidentally recite a margin it was never given. `DOMINANCE_GLOSS` in
+ * `prompt/summary.ts` turns it into one Indonesian or English word, and every
+ * one of those eight words was chosen to carry no numeral flavour.
+ */
+export type Dominance = 'tied' | 'narrow' | 'clear' | 'overwhelming';
+
+/**
+ * RANKED ON A RATIO, NOT ON `m - n` (V3-5, correcting roadmap §5).
+ *
+ * A difference is not scale-invariant: 4 over 2 and 10 over 8 have the same
+ * difference and are not the same fact. "Twice as often" means the same thing at
+ * 4:2 as at 20:10, which is what a ratio says and a difference does not.
+ *
+ * THE `m - n === 1` CLAUSE IS AN ABSOLUTE FLOOR AND IT DOES REAL WORK AT SMALL
+ * COUNTS. `3` over `2` is a ratio of 1.5, which the ratio alone would call
+ * `clear`; one extra appearance across five readings is not a clear anything.
+ *
+ * Over the pairs the gate actually admits:
+ *
+ *      3:2 narrow      4:2 overwhelming   5:2 overwhelming
+ *      4:3 narrow      5:3 clear          7:5 clear
+ *      6:4 clear      10:8 narrow        12:4 overwhelming
+ *
+ * `10:8` landing on `narrow`, where `10 - 8 = 2` would have said otherwise, is
+ * the whole argument for the ratio in one row — and `dominance.test.ts` names
+ * that case after the ratio so a later refactor back to a difference fails
+ * there rather than passing everywhere else.
+ *
+ * IT LIVES HERE AND NOT IN `@/lib/numerology` (reconciliation §5.4). These
+ * thresholds are frequency-specific product judgement tuned against real output,
+ * which is this file's stated purpose; a constant one workstream owns while
+ * another tunes it is the wrong seam.
+ */
+export function dominanceOf(m: number, n: number): Dominance {
+  if (m === n) return 'tied';
+  const ratio = m / n;
+  if (m - n === 1 || ratio < 1.35) return 'narrow';
+  if (ratio >= 2) return 'overwhelming';
+  return 'clear';
+}
+
 export type FrequencyArgs = {
   userId: string;
   today: string;
