@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Normalize Major Arcana source art into bundle-ready card assets.
 
-Source art arrived in three generations with different pixel dimensions, colour
-modes and dark-mat widths. This pass makes them uniform without discarding any
-artwork: trim the dark mat, then pad symmetrically back out to exactly 2:3.
+The deck is now generated in one pass by `/generate-tarot-card` at exactly
+1024x1536 -- 2:3, full bleed, no mat -- so this pass is mostly a resize. The trim
+and pad stay as a BACKSTOP, not because anything needs them: they cost nothing on
+art that is already correct (measured: 0px trimmed on all 22) and they are the
+only thing standing between a stray mat and side bars in the app.
 
-Padding (never cropping) is deliberate -- cropping to 2:3 would cut into the
-frame and clip the card titles on the 1024x1536 generation.
+Padding (never cropping) is deliberate. It was originally because cropping to 2:3
+would clip the card titles on the 1024x1536 generation; the regenerated deck has
+no titles, but padding is still the option that cannot silently eat artwork.
 
 Two sizes come out, because the app draws cards at two very different scales.
 The fan renders all 22 at roughly 88x132 CSS pixels; serving 800x1200 art for
@@ -45,29 +48,36 @@ DARK_THRESHOLD = 40
 
 # Card order is the Fool's Journey, 0-21. Index is meaningful: it drives the
 # journey-stage rules in the combination engine and the birth-card mapping.
+#
+# THIS USED TO BE A HAND-MAINTAINED (slug, filename) TABLE, because the source art
+# arrived in three batches with three naming conventions -- `Death.png`,
+# `The hanged man.png`, `high_priestess.png`. The deck was regenerated in one pass
+# by `/generate-tarot-card`, every file is `NN_slug.png`, and the mapping is now
+# the identity. Keeping the table would be keeping a translation layer between a
+# name and itself, and it was the thing that made adding a card error-prone.
 ARCANA = [
-    ("00_fool", "fool.png"),
-    ("01_magician", "magician.png"),
-    ("02_high_priestess", "high_priestess.png"),
-    ("03_empress", "empress.png"),
-    ("04_emperor", "emperor.png"),
-    ("05_hierophant", "hierophant.png"),
-    ("06_lovers", "lovers.png"),
-    ("07_chariot", "chariot.png"),
-    ("08_strength", "strength.png"),
-    ("09_hermit", "hermit.png"),
-    ("10_wheel_of_fortune", "wheel_of_fortune.png"),
-    ("11_justice", "Justice.png"),
-    ("12_hanged_man", "The hanged man.png"),
-    ("13_death", "Death.png"),
-    ("14_temperance", "Temperance.png"),
-    ("15_devil", "The devil.png"),
-    ("16_tower", "The tower.png"),
-    ("17_star", "The star.png"),
-    ("18_moon", "The moon.png"),
-    ("19_sun", "The sun.png"),
-    ("20_judgement", "Judgement.png"),
-    ("21_world", "The world.png"),
+    "00_fool",
+    "01_magician",
+    "02_high_priestess",
+    "03_empress",
+    "04_emperor",
+    "05_hierophant",
+    "06_lovers",
+    "07_chariot",
+    "08_strength",
+    "09_hermit",
+    "10_wheel_of_fortune",
+    "11_justice",
+    "12_hanged_man",
+    "13_death",
+    "14_temperance",
+    "15_devil",
+    "16_tower",
+    "17_star",
+    "18_moon",
+    "19_sun",
+    "20_judgement",
+    "21_world",
 ]
 
 
@@ -129,15 +139,15 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
     THUMB_OUT.mkdir(parents=True, exist_ok=True)
 
-    missing = [f for _, f in ARCANA if not (SRC / f).is_file()]
+    missing = [f"{s}.png" for s in ARCANA if not (SRC / f"{s}.png").is_file()]
     if missing:
         sys.exit(f"missing source art: {', '.join(missing)}")
 
     thumbs, total_in, total_out, total_thumb = [], 0, 0, 0
     print(f"{'card':22s} {'source':>12s} {'trimmed':>12s} {'bars':>6s} {'kb':>7s} {'thumb kb':>9s}")
 
-    for slug, filename in ARCANA:
-        src_path = SRC / filename
+    for slug in ARCANA:
+        src_path = SRC / f"{slug}.png"
         total_in += src_path.stat().st_size
 
         im = flatten(Image.open(src_path))

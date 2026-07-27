@@ -42,18 +42,38 @@ CORNER_FRAC = 10 / 90
 
 # Frame luminance. A mid-tone frame is the whole point: bright enough to read as
 # an object on the near-black --canvas (#0a0812, ~4%), dark enough not to glow.
-FRAME_LUM_MIN, FRAME_LUM_MAX = 22.0, 36.0
+#
+# RE-DERIVED FROM 16 CARDS AFTER THE FIRST BAND FAILED FIVE GOOD ONES. The
+# original 22.0-36.0 was set from a single sample -- the anchor, at 22.5 -- which
+# is not a distribution, and five cards landed at 18.8-21.8 and were rejected for
+# being 1-3 points under a floor that had no evidence behind it. Measured across
+# the batch: 18.76-23.33, mean 22.01, SPREAD 4.58. The old deck, same instrument,
+# spread 42.0 (7.5 navy to 49.4 cream).
+#
+# So this band is now only a GROSS-FAILURE catch -- it has to reject an old cream
+# frame at 49% and an old navy one at 7.5%, and nothing tighter. The real
+# consistency instrument is ANCHOR_LUM_TOL below, which is relative and therefore
+# says the thing we actually care about: does this card's frame match the deck's.
+FRAME_LUM_MIN, FRAME_LUM_MAX = 15.0, 34.0
 
 # A letterbox bar is uniform along its whole length; artwork is not. 1.5 is well
 # clear of WebP/PNG noise on a flat mat and well below any real frame.
 EDGE_UNIFORM_STDDEV = 1.5
 
 # Palette. The style block asks for "desaturated and cold ... one saturated
-# accent and only one", and mean saturation measures exactly that. MEASURED: the
-# first approved card sits at 21.3% against 42-67% for every card of the old
-# deck, so this separates the two treatments outright. The floor guards the other
-# way -- a fully greyscale card has no red accent left to carry.
-SAT_MIN_PCT, SAT_MAX_PCT = 12.0, 32.0
+# accent and only one", and mean saturation measures exactly that.
+#
+# MEASURED over 16 new cards: 11.98-30.75. Old deck, same instrument: 31.9-68.0.
+#
+# AND THE EARLIER CLAIM HERE WAS TOO STRONG. This comment used to say the metric
+# "separates the two treatments outright", from one sample at 21.3%. It does not,
+# quite: the new deck's most saturated card (The Chariot, a burning city, 30.75%)
+# sits about one point under the old deck's LEAST saturated one (31.9%). The band
+# below admits the whole new deck with headroom and rejects 20 of the 22 old
+# cards, which is a useful gate and not a clean separation. Said plainly, because
+# a comment that oversells its instrument is how the instrument gets trusted past
+# its evidence -- which is exactly what happened to the red check below.
+SAT_MIN_PCT, SAT_MAX_PCT = 9.0, 33.0
 
 # The red accent, by hue rather than by channel differences.
 #
@@ -77,7 +97,9 @@ SAT_MIN_PCT, SAT_MAX_PCT = 12.0, 32.0
 # Reported so a card with no red at all is visible; never failed on.
 RED_HUE_MAX, RED_HUE_MIN = 15.0, 350.0
 RED_SAT_FLOOR, RED_VAL_FLOOR = 0.35, 0.10
-RED_ADVISORY_MIN, RED_ADVISORY_MAX = 1.0, 12.0
+# Widened from 1.0-12.0 after The Chariot measured 13.99% -- a burning city is
+# legitimately the reddest card in the deck. Observed across 16: 1.93-13.99.
+RED_ADVISORY_MIN, RED_ADVISORY_MAX = 1.0, 16.0
 
 # Anchor tolerances. Frame luminance is the tight one because it is the metric
 # that broke the last deck; mean colour is loose because the scenes are supposed
@@ -238,7 +260,7 @@ def main() -> None:
     hard.append(
         (
             FRAME_LUM_MIN <= lum <= FRAME_LUM_MAX,
-            f"frame luminance {lum:.1f}% (want {FRAME_LUM_MIN}-{FRAME_LUM_MAX}%), R-B {rb:+.0f}",
+            f"frame luminance {lum:.2f}% (want {FRAME_LUM_MIN}-{FRAME_LUM_MAX}%), R-B {rb:+.0f}",
         )
     )
 
@@ -249,8 +271,8 @@ def main() -> None:
     hard.append(
         (
             SAT_MIN_PCT <= sat <= SAT_MAX_PCT,
-            f"mean saturation {sat:.1f}% (want {SAT_MIN_PCT}-{SAT_MAX_PCT}%; "
-            "the old deck ran 42-67%)",
+            f"mean saturation {sat:.2f}% (want {SAT_MIN_PCT}-{SAT_MAX_PCT}%; "
+            "the old deck ran 31.9-68.0%)",
         )
     )
     soft.append(
@@ -281,8 +303,8 @@ def main() -> None:
         hard.append(
             (
                 abs(lum - a_lum) <= ANCHOR_LUM_TOL,
-                f"frame luminance vs anchor: {lum:.1f}% vs {a_lum:.1f}% "
-                f"(delta {abs(lum-a_lum):.1f}, tol {ANCHOR_LUM_TOL})",
+                f"frame luminance vs anchor: {lum:.2f}% vs {a_lum:.2f}% "
+                f"(delta {abs(lum-a_lum):.2f}, tol {ANCHOR_LUM_TOL})",
             )
         )
         hard.append(
