@@ -103,7 +103,20 @@ reference, the operator copies it to `assets/major_arcanas/_anchor.png`.
   lost 11% of their width to bars that `normalize_cards.py` then padded back.
   **The ratio was never the bug; `full bleed` is the fix**, and check step 4 is
   what proves it landed.
-- **The key is `OPENAI_API_KEY` in `.env.local`**, separate from `LLM_API_KEY`.
+- **The key is `OPENAI_API_KEY`, and `.env.local` IS NOT A RELIABLE PLACE TO KEEP
+  IT ON THIS MACHINE.** Something here strips that variable back out of the file:
+  observed twice in one session, once between the anchor run and the batch, which
+  killed all 21 cards at the first `load_key()` before spending anything. So
+  **check the key is still there before a batch, and prefer passing it in for the
+  duration:**
+
+  ```sh
+  OPENAI_API_KEY=sk-... python3 tools/gen_card_art.py <slug> --reference assets/major_arcanas/_anchor.png
+  ```
+
+  `gen_card_art.py` reads `.env.local` first and the environment second, and
+  prints which one it used — so `key from: environment` in the log is the normal,
+  working case here, not a warning. It is separate from `LLM_API_KEY`:
   `src/lib/llm/openai.ts` does not read it and must not; that adapter is the
   reading-provider fallback and has nothing to do with images.
 - **Default model `gpt-image-2`**, overridable with `--model`. Also available
