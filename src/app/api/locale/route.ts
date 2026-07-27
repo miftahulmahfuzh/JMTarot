@@ -82,8 +82,15 @@ export async function POST(request: Request) {
         import('@/lib/db/queries/profile'),
         import('@/lib/db/client'),
       ]);
-      // BEFORE the refresh. See the header.
-      await setUserLocale(db, user.id, locale);
+      /*
+       * BEFORE the refresh. See the header.
+       *
+       * `'chosen'` (V2 / VD11), and it is the only place in the app that writes that
+       * value: this route is reached by pressing the toggle, which is the definition
+       * of a choice. It is what stops the sign-in path from ever re-stamping the
+       * negotiated locale over it -- see `users.locale_source`.
+       */
+      await setUserLocale(db, user.id, locale, 'chosen');
       await refreshSession();
     } catch (err) {
       /*

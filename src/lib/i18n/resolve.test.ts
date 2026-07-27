@@ -183,6 +183,38 @@ describe('resolveForSignIn', () => {
    */
   it('reports `negotiated` for an explicit id, which is the case a two-value enum loses', () => {
     expect(resolveForSignIn(null, null, 'id')).toEqual({ locale: 'id', source: 'negotiated' });
-    expect(resolveForSignIn(null, 'id', null)).toEqual({ locale: 'id', source: 'negotiated' });
+  });
+
+  /*
+   * ── THE CASE A LIVE SIGN-IN FOUND, AND THE REASON THE RULE CHANGED ──────────
+   *
+   * `POST /api/auth/dev-session` with no `Accept-Language` recorded
+   * `locale_source = 'negotiated'` against a row nobody had negotiated. The first
+   * version of this function treated the forwarded header and the cookie as evidence
+   * of a negotiation, and `src/middleware.ts` writes BOTH unconditionally — the
+   * header on every matched request, the cookie whenever it disagrees — carrying
+   * `DEFAULT_LOCALE` when it had no signal at all.
+   *
+   * So `'default'` was unreachable through a real sign-in and the three-value enum
+   * had quietly become two, with nothing failing. These are the assertions that keep
+   * it three.
+   */
+  it('does not treat middleware’s own default-valued header or cookie as a negotiation', () => {
+    // What curl with no Accept-Language actually produces, once middleware has run.
+    expect(resolveForSignIn('id', 'id', null)).toEqual({ locale: 'id', source: 'default' });
+    expect(resolveForSignIn('id', null, null)).toEqual({ locale: 'id', source: 'default' });
+    expect(resolveForSignIn(null, 'id', null)).toEqual({ locale: 'id', source: 'default' });
+  });
+
+  /*
+   * A NON-DEFAULT locale in the header or cookie IS evidence, because it cannot
+   * arise from an absence: middleware only puts `en` there after negotiating it or
+   * after the visitor pressed the toggle on `/login`. That under-states a real
+   * choice as `'negotiated'`, which is safe — only `'default'` is ever re-stamped,
+   * and a sign-in is not permitted to claim a choice.
+   */
+  it('treats a non-default header or cookie as evidence, since it cannot come from nothing', () => {
+    expect(resolveForSignIn('en', null, null)).toEqual({ locale: 'en', source: 'negotiated' });
+    expect(resolveForSignIn(null, 'en', null)).toEqual({ locale: 'en', source: 'negotiated' });
   });
 });

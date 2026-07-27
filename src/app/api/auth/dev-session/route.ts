@@ -30,6 +30,7 @@ import { nowSeconds } from '@/lib/auth/token';
 import { db } from '@/lib/db/client';
 import { upsertUserOnSignIn } from '@/lib/db/queries/profile';
 import { requireEnv } from '@/lib/env';
+import { LOCALE_COOKIE, LOCALE_HEADER, resolveForSignIn } from '@/lib/i18n/resolve';
 
 export const runtime = 'nodejs';
 
@@ -68,6 +69,30 @@ export async function POST(request: Request) {
 
   const username = parsed.data.username;
 
+  /*
+   * VD11, AND THIS IS ALSO HOW THE REAL THING GETS VERIFIED (V2 Task 17). The one
+   * claim in the sign-in chain that cannot be unit-tested is whether `headers()`
+   * resolves inside @auth/core's jwt callback -- and this route runs the SAME upsert
+   * through the same resolution, so
+   *
+   *   curl -X POST localhost:3001/api/auth/dev-session \
+   *        -H 'accept-language: en-GB,en;q=0.9' -d '{"username":"v2test"}'
+   *
+   * followed by a look at the row is the measurement. Expect `locale = 'en'` and
+   * `locale_source = 'negotiated'`.
+   */
+  const negotiated = resolveForSignIn(
+    request.headers.get(LOCALE_HEADER),
+    /*
+     * Read off the raw request rather than `cookies()`, because this route is
+     * reached by `fetch` from the iframe harnesses as well as by curl, and it is a
+     * dev tool -- the fewer Next request-scope APIs it depends on, the fewer ways it
+     * can fail for a reason that has nothing to do with what is being tested.
+     */
+    cookieFrom(request.headers.get('cookie'), LOCALE_COOKIE),
+    request.headers.get('accept-language'),
+  );
+
   // The real upsert, so `uid` is a real users.id and `onb` reflects the real
   // profiles row. This is what makes the harness's session indistinguishable from
   // one Google produced.
@@ -77,6 +102,8 @@ export async function POST(request: Request) {
     emailVerified: true,
     displayName: username,
     avatarUrl: null,
+    negotiatedLocale: negotiated.locale,
+    localeSource: negotiated.source,
   });
 
   const maxAge = sessionMaxAgeSeconds(process.env.SESSION_TTL_HOURS);
@@ -123,4 +150,21 @@ export async function POST(request: Request) {
   });
 
   return response;
+}
+
+/**
+ * One cookie out of a raw `Cookie` header.
+ *
+ * Six lines rather than `cookies()` because this is a dev tool: it is reached by
+ * curl and by the iframe harnesses under `public/cards/`, and the fewer Next
+ * request-scope APIs it depends on, the fewer ways it fails for a reason unrelated
+ * to whatever is being tested.
+ */
+function cookieFrom(header: string | null, name: string): string | null {
+  if (!header) return null;
+  for (const part of header.split(';')) {
+    const [k, ...v] = part.trim().split('=');
+    if (k === name) return decodeURIComponent(v.join('='));
+  }
+  return null;
 }

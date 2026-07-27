@@ -135,50 +135,73 @@ export function localeFromHeaders(
  * What locale to stamp into a `users` row at CREATION, and whether that stamp is
  * a decision (V2, roadmap VD11 / T17).
  *
- * ── WHY THIS IS NOT `localeFromHeaders` WITH AN EXTRA RETURN VALUE ────────────
+ * ── THE LOCALE AND THE SOURCE COME FROM DIFFERENT PLACES, AND MEASUREMENT IS ──
+ * ── WHAT SETTLED THAT ─────────────────────────────────────────────────────────
  *
- * It has a third rung. `localeFromHeaders` serves callers downstream of
- * middleware, where a missing header means the matcher excluded the route and the
- * cookie is the answer; there is no `Accept-Language` left to consult because
- * middleware already consulted it. The sign-in callback is different: it runs
- * inside Google's redirect, and the raw `Accept-Language` the browser sent is
- * both present and the last honest signal available if the first two are missing.
- * Two independent signals ahead of it is what keeps §6.1's link 5 from being
- * load-bearing on its own.
+ * The first version read header → cookie → `Accept-Language`, and called anything
+ * that produced a locale a negotiation. **That is wrong, and a live sign-in proved
+ * it.** `POST /api/auth/dev-session` with no `Accept-Language` at all recorded
+ * `locale_source = 'negotiated'`:
  *
- * ── AND WHY `source` IS NOT DERIVABLE FROM `locale` ──────────────────────────
+ *   dev:v2test   (accept-language: en-GB)   -> en / negotiated   correct
+ *   dev:v2plain  (no accept-language)       -> id / negotiated   WRONG
  *
- * `negotiate(null)` returns `'id'`. So does `negotiate('id')`. The first is the
- * absence of information and the second is a browser saying what it wants, and
- * the whole value of `users.locale_source` is telling those apart — a row stamped
- * `'negotiated'` must never be re-stamped, and a row stamped `'default'` safely
- * can be. Recording the first as `'negotiated'` would claim a negotiation that
- * never happened and quietly collapse the three-value enum back into two.
+ * The mechanism is in `src/middleware.ts`, and it is not subtle once seen:
+ * middleware sets `x-jmt-locale` to the RESOLVED locale on every matched request,
+ * and refreshes `jmt_locale` whenever it disagrees with the request — both
+ * UNCONDITIONALLY, including when it had no signal and resolved to
+ * `DEFAULT_LOCALE`. So by the time a sign-in reads them, the header and the cookie
+ * exist for every visitor, and **neither is evidence that anybody negotiated
+ * anything.** V2's plan verified that the header is AVAILABLE on this path; it did
+ * not notice that it is ALWAYS available and is itself sometimes a bare default.
  *
- * Hence: `'default'` ONLY when no rung produced a locale we have. Every other
- * path is `'negotiated'`, including the ones that land on `id`.
+ * Left as written, `'default'` would be unreachable through a real sign-in and the
+ * three-value enum would have collapsed to two with nothing failing — which is
+ * exactly the lie T17 exists to prevent, arriving through the door T17 was not
+ * watching.
+ *
+ * So the two answers are derived separately:
+ *
+ *   `locale` — header → cookie → `Accept-Language` → default. **What the visitor
+ *   was actually looking at on `/login`**, which is the right thing to stamp
+ *   whatever its provenance.
+ *
+ *   `source` — `'negotiated'` only on real evidence: `Accept-Language` names a
+ *   locale we have, OR the resolved locale is not the default. The second arm is
+ *   what catches a visitor who pressed the toggle before signing in — a non-default
+ *   locale cannot arise from an absence.
+ *
+ * A pre-sign-in toggle is therefore recorded as `'negotiated'` rather than
+ * `'chosen'`, which under-states it. That is deliberate and safe: only `'default'`
+ * is ever re-stamped, so `'negotiated'` protects the choice just as well, and a
+ * sign-in is not allowed to claim a choice — hence `'chosen'` is absent from the
+ * return type.
  *
  * PURE, and it must stay that way — no `next/headers`, no `server-only`. The
- * caller reads the request; this decides. That split is what makes all four rungs
- * testable without a sign-in, which matters because the real thing can only be
- * exercised by going to Google and back.
+ * caller reads the request; this decides. That split is what makes every rung
+ * testable without going to Google and back.
  */
 export function resolveForSignIn(
   headerLocale: string | null | undefined,
   cookieLocale: string | null | undefined,
   acceptLanguage: string | null | undefined,
 ): { locale: Locale; source: 'negotiated' | 'default' } {
-  if (isLocale(headerLocale)) return { locale: headerLocale, source: 'negotiated' };
-  if (isLocale(cookieLocale)) return { locale: cookieLocale, source: 'negotiated' };
-
   /*
-   * `negotiateOrNull` rather than `negotiate`, and that is the whole reason it
-   * exists: `negotiate` answers `'id'` both for "the browser asked for
-   * Indonesian" and for "the browser asked for nothing I have", and this is the
-   * one caller in the app that must not conflate them.
+   * `negotiateOrNull` rather than `negotiate`, and this is the whole reason it
+   * exists: `negotiate` answers `'id'` both for "the browser asked for Indonesian"
+   * and for "the browser asked for nothing I have", and this is the one caller in
+   * the app that must not conflate them.
    */
   const negotiated = negotiateOrNull(acceptLanguage);
-  return negotiated
-    ? { locale: negotiated, source: 'negotiated' }
-    : { locale: DEFAULT_LOCALE, source: 'default' };
+
+  const locale = isLocale(headerLocale)
+    ? headerLocale
+    : isLocale(cookieLocale)
+      ? cookieLocale
+      : (negotiated ?? DEFAULT_LOCALE);
+
+  const source =
+    negotiated !== null || locale !== DEFAULT_LOCALE ? 'negotiated' : 'default';
+
+  return { locale, source };
 }
