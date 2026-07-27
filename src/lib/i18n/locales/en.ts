@@ -247,6 +247,11 @@ const en: Catalog = {
   'onboarding.error.badRequest': 'That request was not valid.',
   'onboarding.error.notFound': 'There is no such answer.',
 
+  // `SessionRepair.tsx`. Says nothing about a lotus, nothing about progress and
+  // nothing about what went wrong -- see `id.ts`.
+  'onboarding.session.repairing': 'One moment…',
+  'onboarding.session.repairFailed': 'The session did not refresh.',
+
   // ==========================================================================
   // W5 — memory and engagement. Migrated from `src/lib/memory/copy.ts`, where
   // the English was already written for exactly this move.

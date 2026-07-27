@@ -17,7 +17,7 @@ import { SERVICES } from '@/data/services';
 import type { Locale, ReaderId, ServiceId } from '@/data/types';
 import type { CompletionPrompt } from '@/lib/llm/types';
 import type { FrequencyResult } from '@/lib/memory/frequency';
-import { formatLocalDate } from '@/lib/memory/copy';
+import { formatLocalDate } from '@/lib/i18n/format';
 import { windowPhrase } from '@/lib/memory/windows';
 import { READER_PROMPTS } from './readers';
 import { SIDE_FORMAT_RULES } from './side';

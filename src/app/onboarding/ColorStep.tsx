@@ -18,7 +18,8 @@
  */
 import { useState } from 'react';
 import { LOTUS_COLORS, type LotusColor, type RawAnswer } from '@/data/onboarding';
-import { c, q } from './copy';
+import { useT } from '@/lib/i18n/LocaleProvider';
+import type { MessageKey } from '@/lib/i18n/format';
 import styles from './onboarding.module.css';
 
 type Props = {
@@ -32,20 +33,21 @@ const PLATES = {
   black: { swatch: styles.plateBlack, label: 'onboarding.q.color.option.black' },
   white: { swatch: styles.plateWhite, label: 'onboarding.q.color.option.white' },
   grey: { swatch: styles.plateGrey, label: 'onboarding.q.color.option.grey' },
-} as const satisfies Record<LotusColor, { swatch: string; label: Parameters<typeof c>[0] }>;
+} as const satisfies Record<LotusColor, { swatch: string; label: MessageKey }>;
 
 export function ColorStep({ headingId, alreadySaved, onAnswer }: Props) {
+  const t = useT();
   const [chosen, setChosen] = useState<LotusColor | null>(null);
 
   return (
     <div className={styles.step}>
       <h1 className={styles.title} id={headingId} tabIndex={-1}>
-        {q('color', 'title')}
+        {t('onboarding.q.color.title')}
       </h1>
-      <p className={styles.framing}>{q('color', 'framing')}</p>
-      <p className={styles.hint}>{q('color', 'hint')}</p>
+      <p className={styles.framing}>{t('onboarding.q.color.framing')}</p>
+      <p className={styles.hint}>{t('onboarding.q.color.hint')}</p>
 
-      {alreadySaved ? <p className={styles.hint}>{c('onboarding.answerSaved')}</p> : null}
+      {alreadySaved ? <p className={styles.hint}>{t('onboarding.answerSaved')}</p> : null}
 
       <div className={styles.plates} role="radiogroup" aria-labelledby={headingId}>
         {LOTUS_COLORS.map((colour) => (
@@ -61,10 +63,10 @@ export function ColorStep({ headingId, alreadySaved, onAnswer }: Props) {
             >
               {/* The plate itself is a colour, so its accessible name has to come
                   from somewhere. The visible label below is that name. */}
-              <span className={styles.srOnly}>{c(PLATES[colour].label)}</span>
+              <span className={styles.srOnly}>{t(PLATES[colour].label)}</span>
             </button>
             <span className={styles.plateLabel} aria-hidden="true">
-              {c(PLATES[colour].label)}
+              {t(PLATES[colour].label)}
             </span>
           </div>
         ))}
@@ -77,7 +79,7 @@ export function ColorStep({ headingId, alreadySaved, onAnswer }: Props) {
           disabled={chosen === null}
           onClick={() => chosen && onAnswer({ choice: chosen })}
         >
-          {c('onboarding.actions.next')}
+          {t('onboarding.actions.next')}
         </button>
         {/*
           L5 says the colour is REQUIRED and the slider must be touched or
@@ -93,7 +95,7 @@ export function ColorStep({ headingId, alreadySaved, onAnswer }: Props) {
           className={styles.skip}
           onClick={() => onAnswer({ skipped: true })}
         >
-          {c('onboarding.actions.skip')}
+          {t('onboarding.actions.skip')}
         </button>
       </div>
     </div>

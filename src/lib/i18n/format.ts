@@ -142,3 +142,53 @@ export function formatDate(d: Date, locale: Locale): string {
     year: 'numeric',
   }).format(d);
 }
+
+/**
+ * Month names for rendering a `local_date` STRING. Moved here from
+ * `src/lib/memory/copy.ts`, which W6 deleted.
+ *
+ * `Intl.DateTimeFormat` is not used, and that is the point of the whole helper.
+ */
+const MONTHS: Record<Locale, readonly string[]> = {
+  id: [
+    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
+  ],
+  en: [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ],
+};
+
+/**
+ * `'2026-07-26'` -> `'26 Juli'` / `'26 July'`.
+ *
+ * THE COUNTERPART TO `formatDate`, AND THE CONTRAST IS THE REASON BOTH EXIST.
+ * `formatDate` takes a `Date` and is for a moment in time. This takes the
+ * `local_date` string and SPLITS IT rather than parsing it, because
+ * `new Date('2026-07-26')` parses as UTC midnight and renders as 25 July for
+ * anyone west of Greenwich — which is the same class of bug `local_date` exists
+ * to prevent (roadmap §7) and would be a comical one to reintroduce inside the
+ * features that read the column. If you ever find yourself wanting to route this
+ * through `Intl`, you want a `Date`, and you cannot have one: the querent's
+ * calendar day is not a timestamp.
+ *
+ * Day and month only by default, no year: everything the memory blocks recall is
+ * inside a fourteen-day lookback or the same calendar day, so a year would be
+ * noise the model might repeat back. `withYear` exists for the frequency window
+ * bounds, where a 666-day span genuinely crosses years.
+ *
+ * DAY-FIRST IN BOTH LOCALES. Indonesian has no other option, and `26 July` is
+ * ordinary English — while `July 26` inside an Indonesian-shaped prompt block
+ * would be the only line in it with American date order.
+ */
+export function formatLocalDate(
+  localDate: string,
+  locale: Locale,
+  withYear = false,
+): string {
+  const [y, m, d] = localDate.split('-');
+  const month = MONTHS[locale][Number(m) - 1] ?? m;
+  const dayMonth = `${Number(d)} ${month}`;
+  return withYear ? `${dayMonth} ${y}` : dayMonth;
+}

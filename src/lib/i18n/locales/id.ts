@@ -357,6 +357,19 @@ const id = {
   'onboarding.error.badRequest': 'Permintaan tidak valid.',
   'onboarding.error.notFound': 'Jawaban itu tidak ada.',
 
+  /*
+   * NOT IN THE PLAN'S §7 INVENTORY, because `SessionRepair.tsx` did not exist when
+   * that inventory was counted. It is the screen shown when `profiles.completed_at`
+   * is set but the session claim disagrees -- one nobody should ever see, and one
+   * whose alternative is ERR_TOO_MANY_REDIRECTS.
+   *
+   * It deliberately says nothing about a lotus, nothing about progress and nothing
+   * about what went wrong. Keep it that way in both locales: a line explaining the
+   * mechanism here would be the only place in the app that admits there is one.
+   */
+  'onboarding.session.repairing': 'Sebentar…',
+  'onboarding.session.repairFailed': 'Sesi belum tersegarkan.',
+
   // ==========================================================================
   // W5 — memory and engagement. Migrated from `src/lib/memory/copy.ts`, which
   // was already bilingual and is now deleted.

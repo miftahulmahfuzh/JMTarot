@@ -1,6 +1,7 @@
 'use client';
 
 import type { Draw } from '@/data/types';
+import { useT } from '@/lib/i18n/LocaleProvider';
 import { CardBack } from './CardBack';
 import { CardFace } from './CardFace';
 import styles from './FanGrid.module.css';
@@ -21,6 +22,7 @@ type Props = {
  * aim at and no card travelling across the screen.
  */
 export function FanGrid({ deck, picks, cardCount, onCardTap }: Props) {
+  const t = useT();
   const complete = picks.length >= cardCount;
 
   return (
@@ -44,8 +46,8 @@ export function FanGrid({ deck, picks, cardCount, onCardTap }: Props) {
             disabled={complete && !chosen}
             aria-label={
               chosen
-                ? `Kartu ${slot + 1}: ${draw.card.name}, ketuk untuk lihat kartunya`
-                : 'Ambil kartu'
+                ? t('draw.card.aria.picked', { slot: slot + 1, name: draw.card.name })
+                : t('draw.card.aria.take')
             }
             aria-pressed={chosen}
             onClick={() => onCardTap(i)}

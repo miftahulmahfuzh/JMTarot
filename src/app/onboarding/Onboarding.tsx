@@ -34,7 +34,7 @@ import {
 } from '@/data/onboarding';
 import type { Profile } from '@/data/types';
 import { ColorStep } from './ColorStep';
-import { c } from './copy';
+import { useT } from '@/lib/i18n/LocaleProvider';
 import { FactsStep, type Facts } from './FactsStep';
 import { ScaleStep } from './ScaleStep';
 import { TextStep } from './TextStep';
@@ -86,6 +86,7 @@ export type OnboardingProps = {
 };
 
 export function Onboarding({ profile, answeredKeys, initialStep }: OnboardingProps) {
+  const t = useT();
   /**
    * WHERE A RESUMED STEPPER OPENS.
    *
@@ -201,7 +202,7 @@ export function Onboarding({ profile, answeredKeys, initialStep }: OnboardingPro
         <p className={styles.srOnly} role="status" aria-live="polite">
           {questionNumber === null
             ? ''
-            : c('onboarding.progress', { n: questionNumber, total: TOTAL_QUESTIONS })}
+            : t('onboarding.progress', { n: questionNumber, total: TOTAL_QUESTIONS })}
         </p>
 
         {step === STEP_INTRO ? (
@@ -214,12 +215,12 @@ export function Onboarding({ profile, answeredKeys, initialStep }: OnboardingPro
               onClick={() => setStep((s) => Math.max(STEP_INTRO, s - 1))}
               disabled={step === STEP_INTRO}
             >
-              {c('onboarding.actions.back')}
+              {t('onboarding.actions.back')}
             </button>
 
             {questionNumber === null ? null : (
               <p className={styles.progress} aria-hidden="true">
-                {c('onboarding.progress', { n: questionNumber, total: TOTAL_QUESTIONS })}
+                {t('onboarding.progress', { n: questionNumber, total: TOTAL_QUESTIONS })}
               </p>
             )}
 
@@ -335,14 +336,15 @@ function StepBody({
  * the last.
  */
 function Invitation({ onStart }: { onStart: () => void }) {
+  const t = useT();
   return (
     <div className={styles.step}>
-      <span className={styles.eyebrow}>{c('onboarding.intro.eyebrow')}</span>
-      <h1 className={styles.titleLarge}>{c('onboarding.intro.title')}</h1>
-      <p className={styles.body}>{c('onboarding.intro.body')}</p>
-      <p className={styles.note}>{c('onboarding.intro.note')}</p>
+      <span className={styles.eyebrow}>{t('onboarding.intro.eyebrow')}</span>
+      <h1 className={styles.titleLarge}>{t('onboarding.intro.title')}</h1>
+      <p className={styles.body}>{t('onboarding.intro.body')}</p>
+      <p className={styles.note}>{t('onboarding.intro.note')}</p>
       <button type="button" className={styles.cta} onClick={onStart}>
-        {c('onboarding.intro.cta')}
+        {t('onboarding.intro.cta')}
       </button>
     </div>
   );
@@ -373,6 +375,7 @@ function Close({
   answers: Partial<Record<OnboardingQuestionKey, RawAnswer>>;
   headingId: string;
 }) {
+  const t = useT();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -412,16 +415,16 @@ function Close({
       window.location.assign('/');
     } catch {
       setSaving(false);
-      setError(c('onboarding.error.saveFailed'));
+      setError(t('onboarding.error.saveFailed'));
     }
   }
 
   return (
     <div className={styles.step}>
       <h1 className={styles.titleLarge} id={headingId} tabIndex={-1}>
-        {c('onboarding.done.title')}
+        {t('onboarding.done.title')}
       </h1>
-      <p className={styles.body}>{c('onboarding.done.body')}</p>
+      <p className={styles.body}>{t('onboarding.done.body')}</p>
 
       {error ? (
         <p className={styles.error} role="alert">
@@ -430,7 +433,7 @@ function Close({
       ) : null}
 
       <button type="button" className={styles.cta} onClick={finish} disabled={saving}>
-        {c('onboarding.done.cta')}
+        {t('onboarding.done.cta')}
       </button>
     </div>
   );

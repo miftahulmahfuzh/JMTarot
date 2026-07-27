@@ -1,4 +1,14 @@
+'use client';
+
+/*
+ * `'use client'` IS NEW WITH W6 AND IS A DECLARATION, NOT A CHANGE. Every
+ * importer -- Fan, FanGrid, CardDetail, Slots -- is already a client component, so
+ * this file has always been client-only; it simply never said so. It says so now
+ * because it calls `useT()` for its alt text, and a hook in a file that a server
+ * component could legally import is a crash waiting for the first person to try.
+ */
 import { cardImage, cardThumb } from '@/data/deck';
+import { useT } from '@/lib/i18n/LocaleProvider';
 import type { Card } from '@/data/types';
 import styles from './CardFace.module.css';
 
@@ -21,6 +31,7 @@ type Props = {
  * and a re-encode per card, 22 of them on the first draw.
  */
 export function CardFace({ card, reversed = false, size = 'thumb' }: Props) {
+  const t = useT();
   const src = size === 'thumb' ? cardThumb(card.slug) : cardImage(card.slug);
 
   return (
@@ -28,7 +39,11 @@ export function CardFace({ card, reversed = false, size = 'thumb' }: Props) {
       <img
         className={`${styles.art}${reversed ? ` ${styles.reversed}` : ''}`}
         src={src}
-        alt={reversed ? `${card.name}, terbalik` : card.name}
+        alt={
+          reversed
+            ? t('card.alt.reversed', { name: card.name })
+            : t('card.alt.upright', { name: card.name })
+        }
         draggable={false}
         decoding="async"
       />

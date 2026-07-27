@@ -16,7 +16,7 @@
  */
 import { useState, type FormEvent } from 'react';
 import type { Profile } from '@/data/types';
-import { c } from './copy';
+import { useT } from '@/lib/i18n/LocaleProvider';
 import styles from './onboarding.module.css';
 
 export type Facts = { fullName: string; nickname: string; birthDate: string };
@@ -51,6 +51,7 @@ function todayLocal(): string {
 }
 
 export function FactsStep({ profile, headingId, onSubmit }: Props) {
+  const t = useT();
   const [fullName, setFullName] = useState(profile?.fullName ?? '');
   const [nickname, setNickname] = useState(profile?.nickname ?? '');
   const [birthDate, setBirthDate] = useState(profile?.birthDate ?? '');
@@ -77,7 +78,7 @@ export function FactsStep({ profile, headingId, onSubmit }: Props) {
        * fields to a dropped connection, on the one step that cannot be skipped,
        * is how someone abandons onboarding at step 1.
        */
-      setError(c('onboarding.error.saveFailed'));
+      setError(t('onboarding.error.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -86,11 +87,11 @@ export function FactsStep({ profile, headingId, onSubmit }: Props) {
   return (
     <form className={styles.step} onSubmit={submit}>
       <h1 className={styles.title} id={headingId} tabIndex={-1}>
-        {c('onboarding.facts.title')}
+        {t('onboarding.facts.title')}
       </h1>
 
       <label className={styles.field}>
-        <span className={styles.label}>{c('onboarding.facts.fullName.label')}</span>
+        <span className={styles.label}>{t('onboarding.facts.fullName.label')}</span>
         <input
           className={styles.input}
           value={fullName}
@@ -101,11 +102,11 @@ export function FactsStep({ profile, headingId, onSubmit }: Props) {
           maxLength={120}
           required
         />
-        <span className={styles.fieldHint}>{c('onboarding.facts.fullName.hint')}</span>
+        <span className={styles.fieldHint}>{t('onboarding.facts.fullName.hint')}</span>
       </label>
 
       <label className={styles.field}>
-        <span className={styles.label}>{c('onboarding.facts.nickname.label')}</span>
+        <span className={styles.label}>{t('onboarding.facts.nickname.label')}</span>
         <input
           className={styles.input}
           value={nickname}
@@ -122,11 +123,11 @@ export function FactsStep({ profile, headingId, onSubmit }: Props) {
           maxLength={40}
           required
         />
-        <span className={styles.fieldHint}>{c('onboarding.facts.nickname.hint')}</span>
+        <span className={styles.fieldHint}>{t('onboarding.facts.nickname.hint')}</span>
       </label>
 
       <label className={styles.field}>
-        <span className={styles.label}>{c('onboarding.facts.birthDate.label')}</span>
+        <span className={styles.label}>{t('onboarding.facts.birthDate.label')}</span>
         {/*
           A NATIVE date input, not three selects. Three selects is more code and
           worse on a phone, and the native control gets the locale's own field
@@ -144,7 +145,7 @@ export function FactsStep({ profile, headingId, onSubmit }: Props) {
           max={todayLocal()}
           required
         />
-        <span className={styles.fieldHint}>{c('onboarding.facts.birthDate.hint')}</span>
+        <span className={styles.fieldHint}>{t('onboarding.facts.birthDate.hint')}</span>
       </label>
 
       {error ? (
@@ -154,7 +155,7 @@ export function FactsStep({ profile, headingId, onSubmit }: Props) {
       ) : null}
 
       <button type="submit" className={styles.cta} disabled={!filled || saving}>
-        {c('onboarding.actions.next')}
+        {t('onboarding.actions.next')}
       </button>
     </form>
   );

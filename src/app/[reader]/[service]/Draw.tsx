@@ -10,6 +10,7 @@ import { Slots } from '@/components/Slots';
 import { CARDS, shuffleDeck } from '@/data/deck';
 import { slotLabels } from '@/data/services';
 import type { Draw as DrawnCard, Reader, Service } from '@/data/types';
+import { useT } from '@/lib/i18n/LocaleProvider';
 import { togglePick } from '@/lib/draw';
 import { LOCAL_DATE_HEADER, SESSION_HEADER } from '@/lib/analytics/localdate';
 import { getSessionId, track } from '@/lib/analytics/track.client';
@@ -20,6 +21,7 @@ import { motion } from '@/theme/tokens';
 import styles from './page.module.css';
 
 export function Draw({ reader, service }: { reader: Reader; service: Service }) {
+  const t = useT();
   const router = useRouter();
   const cardCount = service.cardCount;
   const labels = slotLabels(service, reader);
@@ -249,7 +251,7 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
           });
           setReading({
             status: 'error',
-            message: 'Terlalu banyak bacaan. Coba lagi nanti.',
+            message: t('reading.error.rateLimit'),
           });
           return;
         }
@@ -266,7 +268,7 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
           });
           setReading({
             status: 'error',
-            message: 'Bacaan tidak bisa dimulai. Coba lagi.',
+            message: t('reading.error.start'),
           });
           return;
         }
@@ -330,11 +332,19 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
         });
         setReading({
           status: 'error',
-          message: 'Koneksi terputus. Coba lagi.',
+          message: t('reading.error.network'),
         });
       }
     },
-    [reader.id, service.id, router],
+    /*
+     * `t` is in here because the callback now closes over it. It is memoized on
+     * the provider's context value, so in practice it is stable for the life of
+     * the page and this changes nothing -- but a locale switch calls
+     * `router.refresh()`, which hands the provider a new catalog object and
+     * therefore a new `t`, and a callback holding the old one would set an error
+     * message in the language the querent just left.
+     */
+    [reader.id, service.id, router, t],
   );
 
   /*
@@ -390,21 +400,32 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
   return (
     <main className={styles.shell}>
       <Link href={`/${reader.id}`} className={styles.back}>
-        &larr; {reader.name}
+        {t('nav.back.reader', { name: reader.name })}
       </Link>
 
       <h1 className={styles.title}>{service.name}</h1>
+      {/*
+        THE COUNT CHECK IS CORRECT HERE AND IS NOT A MISSING `t.plural`.
+        `Intl.PluralRules` answers whether the noun inflects, and for `id` the
+        answer is always no -- so a `.one`/`.other` family would render
+        `Ketuk 1 kartu` at every count, and Indonesian spells that number out.
+        "Digit or word" is a different question in a different language and CLDR
+        has no opinion about it. English gets its article from the same split:
+        `.single` is "Tap a card", not "Tap 1 card". There is a test asserting
+        `draw.hint.tap.one` does not exist, so folding this into a plural family
+        fails rather than silently regressing the Indonesian.
+      */}
       <p className={styles.hint}>
         {complete
-          ? 'Kartumu sudah terbuka. Ketuk salah satu untuk melihatnya lebih besar.'
+          ? t('draw.hint.complete')
           : cardCount === 1
-            ? 'Ketuk satu kartu, atau tarik ke atas.'
-            : `Ketuk ${cardCount} kartu, atau tarik ke atas.`}
+            ? t('draw.hint.tap.single')
+            : t('draw.hint.tap.many', { count: cardCount })}
       </p>
 
       <div className={styles.questionField}>
         <label className={styles.questionLabel} htmlFor="question">
-          Pertanyaan (boleh dikosongkan)
+          {t('draw.question.label')}
         </label>
         <input
           id="question"
@@ -426,7 +447,7 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
             });
           }}
           maxLength={MAX_QUESTION_LENGTH}
-          placeholder="Ada yang mau kamu tanyakan?"
+          placeholder={t('draw.question.placeholder')}
           /* Locked once the request is in flight: editing it afterwards would
              imply the reading is answering something it never saw. */
           disabled={reading.status !== 'idle'}
@@ -475,10 +496,10 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
 
       <div className={styles.footer}>
         <span className={styles.counter}>
-          {picks.length} / {cardCount} kartu
+          {t.plural('draw.counter', picks.length, { picked: picks.length, total: cardCount })}
         </span>
         <button type="button" className={styles.reset} onClick={reset} disabled={busy}>
-          Kocok ulang
+          {t('draw.reset')}
         </button>
       </div>
     </main>

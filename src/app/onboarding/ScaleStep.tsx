@@ -22,7 +22,7 @@ import {
   INTROVERSION_STEP,
   type RawAnswer,
 } from '@/data/onboarding';
-import { c, q } from './copy';
+import { useT } from '@/lib/i18n/LocaleProvider';
 import styles from './onboarding.module.css';
 
 type Props = {
@@ -34,18 +34,19 @@ type Props = {
 const MIDPOINT = (INTROVERSION_MIN + INTROVERSION_MAX) / 2;
 
 export function ScaleStep({ headingId, alreadySaved, onAnswer }: Props) {
+  const t = useT();
   const [value, setValue] = useState(MIDPOINT);
   const [touched, setTouched] = useState(false);
 
   return (
     <div className={styles.step}>
       <h1 className={styles.title} id={headingId} tabIndex={-1}>
-        {q('introversion', 'title')}
+        {t('onboarding.q.introversion.title')}
       </h1>
-      <p className={styles.framing}>{q('introversion', 'framing')}</p>
-      <p className={styles.hint}>{q('introversion', 'hint')}</p>
+      <p className={styles.framing}>{t('onboarding.q.introversion.framing')}</p>
+      <p className={styles.hint}>{t('onboarding.q.introversion.hint')}</p>
 
-      {alreadySaved ? <p className={styles.hint}>{c('onboarding.answerSaved')}</p> : null}
+      {alreadySaved ? <p className={styles.hint}>{t('onboarding.answerSaved')}</p> : null}
 
       <div className={styles.scale}>
         <input
@@ -69,8 +70,8 @@ export function ScaleStep({ headingId, alreadySaved, onAnswer }: Props) {
           aria-labelledby={headingId}
         />
         <div className={styles.scaleEnds}>
-          <span>{c('onboarding.q.introversion.left')}</span>
-          <span>{c('onboarding.q.introversion.right')}</span>
+          <span>{t('onboarding.q.introversion.left')}</span>
+          <span>{t('onboarding.q.introversion.right')}</span>
         </div>
       </div>
 
@@ -81,14 +82,14 @@ export function ScaleStep({ headingId, alreadySaved, onAnswer }: Props) {
           disabled={!touched}
           onClick={() => onAnswer({ choice: String(value) })}
         >
-          {c('onboarding.actions.next')}
+          {t('onboarding.actions.next')}
         </button>
         <button
           type="button"
           className={styles.skip}
           onClick={() => onAnswer({ skipped: true })}
         >
-          {c('onboarding.actions.skip')}
+          {t('onboarding.actions.skip')}
         </button>
       </div>
     </div>

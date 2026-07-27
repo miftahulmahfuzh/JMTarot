@@ -1,6 +1,8 @@
 import { redirect } from 'next/navigation';
 import { signIn } from '@/lib/auth/auth';
 import { currentUser } from '@/lib/auth/server';
+import type { TFunction } from '@/lib/i18n/format';
+import { getT } from '@/lib/i18n/t';
 import styles from './login.module.css';
 
 /**
@@ -14,7 +16,7 @@ import styles from './login.module.css';
  */
 
 /** Auth.js appends `?error=<code>` here because `pages.signIn` points at us. */
-function errorMessage(code: string | undefined): string | null {
+function errorMessage(t: TFunction, code: string | undefined): string | null {
   if (!code) return null;
   switch (code) {
     /*
@@ -23,14 +25,14 @@ function errorMessage(code: string | undefined): string | null {
      * is not verified" tells a stranger which addresses exist here.
      */
     case 'AccessDenied':
-      return 'Akun itu tidak bisa dipakai untuk masuk. Coba akun Google lain.';
+      return t('login.error.accessDenied');
     /*
      * Everything else: Configuration, OAuthCallbackError, Verification, and
      * whatever a future beta adds. NEVER render the raw code -- it is English,
      * it means nothing to the querent, and it leaks which library we run.
      */
     default:
-      return 'Tidak bisa masuk sekarang. Coba lagi sebentar.';
+      return t('login.error.generic');
   }
 }
 
@@ -66,19 +68,18 @@ export default async function Login({
    */
   if (await currentUser()) redirect('/');
 
+  const t = await getT();
   const { callbackUrl, error } = await searchParams;
   const redirectTo = safeCallback(callbackUrl);
-  const message = errorMessage(error);
+  const message = errorMessage(t, error);
 
   return (
     <main className={styles.shell}>
       <div className={styles.card}>
-        <span className={styles.eyebrow}>Major Arcana</span>
-        <h1 className={styles.title}>JMTarot</h1>
+        <span className={styles.eyebrow}>{t('common.majorArcana')}</span>
+        <h1 className={styles.title}>{t('app.title')}</h1>
 
-        <p className={styles.tagline}>
-          Tiga pembaca, dua puluh dua Major Arcana, satu bacaan untuk hari ini.
-        </p>
+        <p className={styles.tagline}>{t('login.tagline')}</p>
 
         {message ? (
           <p className={styles.error} role="alert" aria-live="polite">
@@ -95,16 +96,20 @@ export default async function Login({
         >
           <button className={styles.submit} type="submit">
             <GoogleMark />
-            Masuk dengan Google
+            {t('login.google')}
           </button>
         </form>
 
+        {/* Four keys rather than one sentence, because two of its words are
+            links and `t()` returns a string. The limitation is real and named in
+            `id.ts`: a locale wanting a different clause order cannot get one
+            from these parts. W7 owns the documents behind the two hrefs. */}
         <p className={styles.legal}>
-          Dengan masuk, kamu setuju pada <a href="/terms">Syarat &amp; Ketentuan</a> dan{' '}
-          <a href="/privacy">Kebijakan Privasi</a>.
+          {t('login.legal.lead')} <a href="/terms">{t('common.terms')}</a>{' '}
+          {t('login.legal.and')} <a href="/privacy">{t('common.privacy')}</a>.
         </p>
 
-        <p className={styles.disclaimer}>Untuk hiburan. Bukan nasihat medis, hukum, atau finansial.</p>
+        <p className={styles.disclaimer}>{t('login.disclaimer')}</p>
       </div>
     </main>
   );

@@ -1,0 +1,68 @@
+/*
+ * Shared by `not-found.tsx` and `error.tsx`.
+ *
+ * ONE STYLESHEET FOR BOTH, because they are the same screen with different words
+ * and one of them is a `<Link>` while the other is a `<button>`. Two files would
+ * drift, and the drift would only ever be visible to somebody who managed to
+ * trigger both.
+ *
+ * EVERY VALUE IS AN EXISTING TOKEN. No new hex, no new font size, no new easing
+ * curve -- CLAUDE.md's rule, and these two screens are the least defensible place
+ * to invent one, since nobody looks at them until something is already wrong.
+ * `.shell` matches `page.module.css`; `.title` and `.body` match its title and
+ * hint; `.action` is the `.reset` button from the draw screen.
+ */
+.shell {
+  min-height: 100dvh;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 28px 16px calc(40px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  /* Centred vertically, unlike every other screen: there is nothing below the
+     fold, so top-aligning leaves a page that looks half-loaded. */
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+
+.title {
+  font-family: var(--font-display), serif;
+  font-weight: 500;
+  font-size: var(--fs-title);
+  letter-spacing: var(--ls-title);
+  color: var(--gold-text);
+  margin: 0;
+}
+
+.body {
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: var(--fs-hint);
+  color: var(--muted);
+  margin: 0;
+  /* The English body is longer than the Indonesian on both of these screens;
+     a measure keeps the wrap from going ragged in either. */
+  max-width: 30ch;
+}
+
+.action {
+  margin-top: 8px;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--button-text);
+  border: 1px solid var(--gold-border);
+  background: var(--gold-wash);
+  border-radius: var(--radius-chip);
+  /* 44px tall for a thumb. */
+  padding: 14px 16px;
+}
+
+.action:hover,
+.action:focus-visible {
+  background: var(--gold-wash-strong);
+  outline: none;
+}

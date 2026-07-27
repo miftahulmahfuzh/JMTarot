@@ -16,7 +16,7 @@ import { CARDS } from '@/data/deck';
 import { READERS } from '@/data/readers';
 import { SERVICES } from '@/data/services';
 import type { Locale, ReaderId, ServiceId } from '@/data/types';
-import { formatLocalDate } from '@/lib/memory/copy';
+import { formatLocalDate } from '@/lib/i18n/format';
 import type { RecalledReading } from '@/lib/db/queries/history';
 import type { CompletionPrompt } from '@/lib/llm/types';
 import { SIDE_FORMAT_RULES } from './side';
