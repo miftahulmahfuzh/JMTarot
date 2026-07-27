@@ -104,6 +104,52 @@ export function passesGate(result: FrequencyResult): boolean {
   return true;
 }
 
+/**
+ * How far the top card has pulled ahead of the second, as a WORD (V3-5).
+ *
+ * A bucket and never a number, and that is VD2's mechanical half rather than a
+ * stylistic preference: the prompt is handed this word, so the model cannot
+ * accidentally recite a margin it was never given. `DOMINANCE_GLOSS` in
+ * `prompt/summary.ts` turns it into one Indonesian or English word, and every
+ * one of those eight words was chosen to carry no numeral flavour.
+ */
+export type Dominance = 'tied' | 'narrow' | 'clear' | 'overwhelming';
+
+/**
+ * RANKED ON A RATIO, NOT ON `m - n` (V3-5, correcting roadmap §5).
+ *
+ * A difference is not scale-invariant: 4 over 2 and 10 over 8 have the same
+ * difference and are not the same fact. "Twice as often" means the same thing at
+ * 4:2 as at 20:10, which is what a ratio says and a difference does not.
+ *
+ * THE `m - n === 1` CLAUSE IS AN ABSOLUTE FLOOR AND IT DOES REAL WORK AT SMALL
+ * COUNTS. `3` over `2` is a ratio of 1.5, which the ratio alone would call
+ * `clear`; one extra appearance across five readings is not a clear anything.
+ *
+ * Over the pairs the gate actually admits:
+ *
+ *      3:2 narrow      4:2 overwhelming   5:2 overwhelming
+ *      4:3 narrow      5:3 clear          7:5 clear
+ *      6:4 clear      10:8 narrow        12:4 overwhelming
+ *
+ * `10:8` landing on `narrow`, where `10 - 8 = 2` would have said otherwise, is
+ * the whole argument for the ratio in one row — and `dominance.test.ts` names
+ * that case after the ratio so a later refactor back to a difference fails
+ * there rather than passing everywhere else.
+ *
+ * IT LIVES HERE AND NOT IN `@/lib/numerology` (reconciliation §5.4). These
+ * thresholds are frequency-specific product judgement tuned against real output,
+ * which is this file's stated purpose; a constant one workstream owns while
+ * another tunes it is the wrong seam.
+ */
+export function dominanceOf(m: number, n: number): Dominance {
+  if (m === n) return 'tied';
+  const ratio = m / n;
+  if (m - n === 1 || ratio < 1.35) return 'narrow';
+  if (ratio >= 2) return 'overwhelming';
+  return 'clear';
+}
+
 export type FrequencyArgs = {
   userId: string;
   today: string;
