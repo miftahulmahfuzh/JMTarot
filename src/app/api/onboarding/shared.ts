@@ -32,8 +32,13 @@ import { hit } from '@/lib/ratelimit';
  * limiter -- nine writes during onboarding must not eat into someone's readings
  * for the hour. 60 is generous for a nine-step flow that also re-sends everything
  * at the end, and low enough to stop a script spinning `encryptField` and
- * database writes. `src/lib/ratelimit.ts` is honest that this is best-effort:
- * instances do not share memory and a cold start resets it.
+ * database writes.
+ *
+ * **THIS BUDGET IS FLEET-WIDE AS OF V9** and no longer best-effort per instance.
+ * The paragraph that used to end here said instances do not share memory and a
+ * cold start resets it; both were true of `src/lib/ratelimit.ts` and neither is
+ * true of `src/lib/ratelimit/`. On an Upstash outage it degrades back to exactly
+ * that, and never to unlimited -- see that directory's `index.ts`.
  */
 export async function onboardingGate(): Promise<
   { ok: true; user: CurrentUser } | { ok: false; response: NextResponse }
@@ -41,7 +46,7 @@ export async function onboardingGate(): Promise<
   const auth = await requireUser({ requireOnboarding: false });
   if (!auth.ok) return auth;
 
-  const gate = hit(`onboarding:${auth.user.id}`, Date.now(), 60);
+  const gate = await hit(`onboarding:${auth.user.id}`, Date.now(), 60);
   if (!gate.ok) {
     return {
       ok: false,

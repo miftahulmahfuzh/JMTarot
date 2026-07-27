@@ -26,6 +26,7 @@ import { parseLocalDate, validSessionId } from '@/lib/analytics/localdate';
 import { sanitizeProps } from '@/lib/analytics/flush';
 import { track, trackRaw, withAnalytics, type AnalyticsContext } from '@/lib/analytics/track';
 import { hit } from '@/lib/ratelimit';
+import { clientIp } from '@/lib/ratelimit/clientIp';
 
 /** ALS, and therefore `after()` batching, need the Node runtime. */
 export const runtime = 'nodejs';
@@ -59,27 +60,38 @@ const Envelope = z.object({
 
 const NO_CONTENT = () => new Response(null, { status: 204 });
 
-/**
- * Best-effort client address.
+/*
+ * The address comes from `@/lib/ratelimit/clientIp`, which refuses the leftmost
+ * `x-forwarded-for` entry. THE OLD LOCAL COPY HERE TOOK EXACTLY THAT VALUE and
+ * was therefore bypassable in one header -- an attacker sending a different
+ * first entry per request got a fresh 60-batch budget every time. Harmless while
+ * there was nothing worth doing with this endpoint, and not worth leaving in
+ * place once V9 made the numbers mean something. It also keys IPv6 by /64, where
+ * per-address keying is no limit at all.
  *
- * The same honest caveat `src/lib/ratelimit.ts` carries applies twice over
- * here: the limiter is per-instance, and an IP is a household behind one NAT or
- * a phone hopping cell towers. The real protection is that there is nothing
- * worth doing with this endpoint -- only names in the closed taxonomy are ever
- * written, and `user_id` comes from the session and never from the body.
+ * An IP is still a household behind one NAT or a phone hopping cell towers, and
+ * that caveat is unchanged. What is no longer true is the rest of the old comment
+ * here: the limiter is not per-instance any more, except when it degrades.
+ *
+ * THIS BUDGET STAYS ON THE PER-INSTANCE BACKEND (`memoryOnly()` in
+ * `ratelimit/index.ts`) AND THAT IS A DECISION, NOT AN OVERSIGHT: it is the
+ * highest-volume and lowest-value budget in the app -- `track.client.ts` flushes
+ * on a 2s debounce, at 20 events, and on the hide path -- and letting one browser
+ * tab dominate the limiter's own command budget is the failure mode the limiter
+ * exists to prevent. `RATELIMIT_EVENTS_BACKEND=redis` moves it, the day the cost
+ * of abusing this endpoint stops being bounded rows.
  */
-function clientIp(request: Request): string {
-  const forwarded = request.headers.get('x-forwarded-for');
-  if (forwarded) return forwarded.split(',')[0].trim();
-  return request.headers.get('x-real-ip') ?? 'unknown';
-}
-
 export async function POST(request: Request) {
   try {
     const declared = Number(request.headers.get('content-length') ?? '0');
     if (declared > MAX_BODY_BYTES) return NO_CONTENT();
 
-    const gate = hit(`events:${clientIp(request)}`, Date.now(), RATE_MAX, RATE_WINDOW_MS);
+    const gate = await hit(
+      `events:${clientIp(request.headers)}`,
+      Date.now(),
+      RATE_MAX,
+      RATE_WINDOW_MS,
+    );
     if (!gate.ok) return NO_CONTENT();
 
     const text = await request.text();

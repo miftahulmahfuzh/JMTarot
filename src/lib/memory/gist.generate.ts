@@ -64,11 +64,16 @@ export async function extractGist(
 
   try {
     const { system, maxTokens } = gistPrompt(locale);
-    const { text } = await getProvider().complete({
-      system,
-      user: gistUserTurn(body),
-      maxTokens,
-    });
+    const { text } = await getProvider().complete(
+      { system, user: gistUserTurn(body), maxTokens },
+      /*
+       * DEFERRED. This runs in the reading's `after()`, after the last byte has
+       * reached the querent, and a shed gist falls through to `fallbackGist` --
+       * the reading's own last sentence -- which is a slightly less specific
+       * chain block next time and nothing else. Exactly what the soft tier is for.
+       */
+      { callClass: 'deferred' },
+    );
     gist = sanitizeGist(text);
     if (!gist) reason = text.trim() ? 'unusable' : 'empty';
   } catch (err) {

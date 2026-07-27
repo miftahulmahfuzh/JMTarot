@@ -110,6 +110,10 @@ export const EVENT_NAMES = [
   'moderation.timeout',
   'moderation.allowed_flagged',
 
+  // — limits and quota (V9) —
+  'ratelimit.backend_degraded',
+  'llm.ceiling_reached',
+
   // — the app shell —
   'app.launched',
 
@@ -177,7 +181,25 @@ export type EventMap = {
   'reading.aborted':           { reading_id: string; chars_before_abort: number;
                                  reason: 'user' | 'navigation' | 'timeout'; source: EventSource };
   'reading.retried':           { reader_id: string; service_id: string; attempt: number };
-  'reading.rate_limited':      { reader_id: string; service_id: string; retry_after_s: number };
+  /*
+   * `limit` IS V9's ADDITION, AND IT IS NOT A WIDENING OF WHAT IS COLLECTED ABOUT
+   * A PERSON. The route deliberately answers all four ceilings with identical
+   * copy, because telling the querent which one they hit tells a prober which one
+   * to work around. The event is server-side and a prober cannot read it, so
+   * there is no reason for the DATA to be as coy as the RESPONSE -- and without
+   * it, `reading.rate_limited` in query 9 cannot distinguish "one user is
+   * hammering" from "the window's quota is gone", which are the two most
+   * different things it can mean.
+   *
+   * **`'unknown'` IS THE CLIENT'S VALUE AND IT IS NOT A GAP.** `Draw.tsx` fires
+   * this name too, from a 429 whose body and headers deliberately do not say which
+   * ceiling was hit -- that coyness is the anti-prober decision above, and the
+   * browser is exactly the place it applies. So the client reports honestly that
+   * it was not told. Filter on `limit <> 'unknown'` when attributing a cause, and
+   * on `limit = 'unknown'` to count what a querent actually experienced.
+   */
+  'reading.rate_limited':      { reader_id: string; service_id: string; retry_after_s: number;
+                                 limit: 'user' | 'refusal' | 'global' | 'daily' | 'unknown' };
 
   /*
    * W5's memory features.
@@ -225,6 +247,36 @@ export type EventMap = {
    */
   'moderation.allowed_flagged':{ category: string; confidence_bucket: 'low' | 'medium' | 'high' | null;
                                  reader_id: string; service_id: string };
+
+  /*
+   * The distributed limiter fell back to per-instance memory. **WITHOUT THIS
+   * EVENT THE FALL-BACK IS INVISIBLE**, and the whole of V9 silently reverts to
+   * v0.2.0's behaviour for as long as the outage lasts -- which could be weeks,
+   * because nothing else about the app changes when it happens.
+   *
+   * THROTTLED TO ONE PER INSTANCE PER MINUTE. An Upstash outage degrades every
+   * request, and one row per request would push the analytics path into exactly
+   * the load W4 built `after()` to keep off it. So a count here is a count of
+   * MINUTES, not of requests -- and since the instance count is unknown, it is a
+   * lower bound on instances-times-minutes. Query 9 says so too.
+   *
+   * `surface` is the key PREFIX and never the key: the rest of it is a `users.id`
+   * or an IP, and `events` rows survive account erasure with `user_id` nulled.
+   */
+  'ratelimit.backend_degraded': { backend: 'redis'; reason: 'timeout' | 'error'; surface: string };
+
+  /*
+   * The global ceiling refused a model call. **THIS IS THE REPLACEMENT FOR A
+   * BILLING ALERT, AND THERE IS NO OTHER ONE.** `LLM_API_KEY` is a fixed
+   * subscription, so abuse produces an exhausted quota rather than an invoice,
+   * and an exhausted quota is invisible until a querent's reading fails.
+   *
+   * `tier: 'soft'` means deferred work is being shed and nobody has noticed
+   * anything -- it is the warning. `tier: 'hard'` means readings are being
+   * refused -- it is the outage. Query 9.
+   */
+  'llm.ceiling_reached':       { tier: 'soft' | 'hard'; call_class: 'interactive' | 'deferred';
+                                 used: number; ceiling: number };
 
   'app.launched':              { standalone: boolean; referrer_kind: 'direct' | 'internal' | 'external' };
 
@@ -279,7 +331,7 @@ export type PendingEvent = {
  * and a type cannot check those.
  *
  * A Set rather than `EVENT_NAMES.includes(v)`: this runs once per event in
- * every batch, and `includes` on a 44-element array is a linear scan against
+ * every batch, and `includes` on a 46-element array is a linear scan against
  * attacker-controlled input.
  */
 const NAME_SET: ReadonlySet<string> = new Set(EVENT_NAMES);

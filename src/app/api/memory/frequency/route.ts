@@ -219,7 +219,20 @@ async function generate(
 ): Promise<string | null> {
   const startedAt = performance.now();
   const prompt = buildFrequencyPrompt({ result, locale });
-  const { text: raw } = await getProvider().complete(prompt);
+  const { text: raw } = await getProvider().complete(prompt, {
+    /*
+     * DEFERRED, on BOTH of this function's call paths -- the `after()`
+     * regeneration and the awaited first generation.
+     *
+     * A querent IS waiting on the second one, so the classification deserves its
+     * argument: the tier is about what SHEDDING costs, and there is no spinner
+     * here to shed. `FrequencyLine` renders nothing until there is something and
+     * has no error copy by design (M14), so a 204 is indistinguishable from a
+     * window with no verdict in it. Both callers already `.catch()`, so a
+     * ModelCeilingError degrades to exactly that.
+     */
+    callClass: 'deferred',
+  });
 
   /*
    * One line, whatever the model did with the newline rule. Collapsing rather

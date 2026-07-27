@@ -253,3 +253,87 @@ select count(*), min(created_at)::date as oldest
 from events
 where created_at < now() - interval '180 days';
 ```
+
+---
+
+## 9. Is either global control firing, and is the limiter degraded? (V9)
+
+**THE ONLY WAY ANYBODY FINDS OUT.** There is no billing alert any more, because
+there is no bill: `LLM_API_KEY` is a subscription, so abuse produces an exhausted
+quota rather than an invoice. A quota running out looks like readings failing,
+for everybody, with nothing in any dashboard — so these two names are the whole
+early-warning system. Run it weekly.
+
+```sql
+select
+  date_trunc('hour', created_at)                              as hour,
+  count(*) filter (where name = 'llm.ceiling_reached'
+                     and props->>'tier' = 'soft')             as soft,
+  count(*) filter (where name = 'llm.ceiling_reached'
+                     and props->>'tier' = 'hard')             as hard,
+  count(*) filter (where name = 'ratelimit.backend_degraded') as degraded_minutes,
+  count(*) filter (where name = 'reading.rate_limited')       as rate_limited
+from events
+where created_at > now() - interval '7 days'
+  and name in ('llm.ceiling_reached', 'ratelimit.backend_degraded', 'reading.rate_limited')
+group by 1
+order by 1 desc;
+```
+
+**`degraded_minutes` IS A COUNT OF MINUTES, NOT OF REQUESTS**, because the event
+is throttled to one per instance per minute — and since the instance count is
+unknown, it is a lower bound on instances-times-minutes. **A steady non-zero
+value here means the fleet-wide limiter is not fleet-wide**, and everything else
+on this page is measuring per-instance windows. The likeliest cause is not an
+Upstash outage: it is `UPSTASH_REDIS_REST_URL` never having been set in
+production, or a token mangled by the `$` trap, both of which look exactly like
+working.
+
+`tier: 'soft'` appearing is the **warning** — deferred work is being shed and no
+querent has noticed anything. `tier: 'hard'` is the **outage** — readings are
+being refused.
+
+### Which ceiling refused the reading
+
+`reading.rate_limited` alone cannot tell "one user is hammering" from "the
+window's quota is gone", which are the two most different things it can mean.
+V9's `limit` prop separates them.
+
+```sql
+select
+  props->>'limit'                             as which,
+  count(*)                                    as refusals,
+  count(distinct user_id)                     as users,
+  round(avg((props->>'retry_after_s')::int))  as avg_retry_after_s
+from events
+where name = 'reading.rate_limited'
+  and created_at > now() - interval '7 days'
+group by 1
+order by 2 desc;
+```
+
+**`which = 'unknown'` IS THE CLIENT'S COPY AND IS NOT A GAP.** `Draw.tsx` fires
+this name off a 429 whose body and headers deliberately do not say which ceiling
+it was — telling the querent would tell a prober which one to work around. So
+filter on `limit <> 'unknown'` to attribute a cause, and on `limit = 'unknown'`
+to count what querents actually experienced. The two should track each other; a
+large gap means server-side events are being lost, which is query 1's alarm.
+
+### How close the window is running
+
+There is no counter to read — the ceiling lives in Redis, not in Postgres — so
+this is the closest thing to a fuel gauge, and it is a lower bound: it counts the
+model calls that produced an `events` row, not the ones that did not.
+
+```sql
+select
+  date_trunc('hour', created_at) as hour,
+  count(*) filter (where name = 'reading.requested')          as readings,
+  count(*) filter (where name = 'memory.gist_failed')         as gists_failed,
+  count(*) filter (where name = 'memory.summary_generated')   as summaries,
+  count(*) filter (where name = 'memory.frequency_generated') as verdicts
+from events
+where created_at > now() - interval '2 days'
+group by 1
+order by 1 desc;
+```

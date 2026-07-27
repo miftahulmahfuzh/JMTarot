@@ -248,6 +248,13 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
             reader_id: reader.id,
             service_id: service.id,
             retry_after_s: Number(res.headers.get('retry-after') ?? 0),
+            /*
+             * `'unknown'` because the browser IS NOT TOLD which of the four
+             * ceilings it hit, deliberately: all four answer with identical copy
+             * so that telling the querent does not tell a prober which one to work
+             * around. The server's own copy of this event carries the real value.
+             */
+            limit: 'unknown',
           });
           setReading({
             status: 'error',

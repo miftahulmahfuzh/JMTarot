@@ -79,7 +79,9 @@ connection strings, and the **pooled** one (`-pooler` in the host) is for Vercel
 only — migrations, `db:studio` and `pg_dump` take the direct one.
 
 ```sh
-npm run db:up        # docker compose; Postgres 16 on 127.0.0.1:5432
+npm run db:up        # docker compose; Postgres 16 on 127.0.0.1:5432, plus V9's
+                     # redis + serverless-redis-http on 8079. Redis itself is
+                     # UNPUBLISHED -- 6379 is taken, see Traps.
 npm run db:migrate   # apply committed migrations; idempotent
 npm run db:seed      # two dev users and two weeks of fake history
 npm run db:studio    # drizzle-kit studio, to read the rows by eye
@@ -139,6 +141,25 @@ ANALYTICS_ENABLED=1                           # ONLY '0' disables writes, so a
 ANALYTICS_DEBUG=                              # 1 => log each event as buffered
 ANALYTICS_STREAM_TIMEOUT_MS=45000
 ANALYTICS_RETRY_BUDGET_MS=5000
+
+UPSTASH_REDIS_REST_URL=       # V9. Both or neither. WITHOUT THEM THE LIMITER
+UPSTASH_REDIS_REST_TOKEN=     # SILENTLY REVERTS to per-instance memory --
+                              # which is fine locally and is not fine in prod.
+                              # No Singapore region exists; use Tokyo.
+RATELIMIT_BACKEND=            # `memory` forces local. The 2am kill switch.
+                              # ONLY that exact string does anything -- the
+                              # OPPOSITE defaulting rule to ANALYTICS_ENABLED,
+                              # on purpose: a typo must not disable enforcement.
+RATELIMIT_TIMEOUT_MS=1000     # bounds a hung fetch, not a target (~80-120ms).
+RATELIMIT_GLOBAL_HOURLY=1200  # fleet-wide. 400 in v0.2.0 meant 400 PER INSTANCE.
+RATELIMIT_EVENTS_BACKEND=     # `redis` moves /api/events off memory. See below.
+LLM_WINDOW_CALL_CEILING=280   # MODEL CALLS per ROLLING 5 HOURS, not readings and
+                              # not per day. THIS IS WHAT REPLACED THE SPEND CAP.
+                              # 280 = the Pro tier's ~400/5h x 70%.
+LLM_WINDOW_CALL_SOFT=         # defaults to 70%. Above it, DEFERRED work is shed.
+
+TEST_UPSTASH_REDIS_REST_URL=  # the local serverless-redis-http from
+TEST_UPSTASH_REDIS_REST_TOKEN=# docker-compose.yml. Absent => that suite SKIPS.
 ```
 
 `TEST_DATABASE_URL` is a separate variable and never an override of
@@ -229,6 +250,61 @@ that someone will helpfully "fix" back into existence.
   when you read the file, and `@ : / ?` additionally need percent-encoding
   because they are URL syntax. The dev password is alphanumeric so the question
   never arises.
+
+- **The rate limiter's fallback is silent to the user and loud only in one
+  event.** When Upstash is unreachable every budget falls back to per-instance
+  memory -- never to unlimited, never to a refusal -- so the app looks completely
+  healthy while every stated limit is quietly multiplied by the number of warm
+  instances. `ratelimit.backend_degraded` and query 9 are the only way to see it.
+  A steady non-zero `degraded_minutes` means the fleet-wide limiter is not
+  fleet-wide. **The same is true of simply never setting `UPSTASH_REDIS_REST_URL`
+  in production**, which is the likelier way to end up there.
+
+- **BOTH UPSTASH SDK DEFAULTS ARE WRONG FOR THIS APP, AND BOTH ARE WRONG BY BEING
+  ABSENT.** `redis.ts` sets two options that look redundant and are not.
+
+  `@upstash/ratelimit`'s **`timeout` defaults to ON at five seconds and FAILS OPEN
+  TO UNLIMITED**: `this.timeout = config.timeout ?? 5e3`, and on expiry it
+  resolves `{ success: true, reason: 'timeout' }` -- a pass that never reached
+  Redis. Leaving it unset is not neutral; it is the bad setting. Hence
+  `timeout: 0`, plus `_toResult` independently throwing on `reason: 'timeout'` so
+  that reinstating it degrades to memory rather than passing.
+
+  `@upstash/redis`'s **`retry` defaults to five attempts with a `Math.exp(n) * 50`
+  backoff** -- about 4.3 seconds of waiting. `ratelimit/index.ts` says in as many
+  words that this layer does not retry, and that was true of our code and false of
+  the stack. MEASURED: with the default, an unreachable Upstash reported
+  `reason: 'timeout'` and burned the whole `RATELIMIT_TIMEOUT_MS` on EVERY
+  request, so an outage added a second to every reading; with `retry: false` the
+  same failure surfaces as `reason: 'error'` immediately. Found by pointing the
+  URL at a closed port and reading the log, not by reading the code.
+
+- **THE 429's `retry-after` FROM THE CEILING IS NOT THE WINDOW LENGTH.** Measured
+  live at **291 seconds** on a tripped ceiling, not five hours:
+  `@upstash/ratelimit`'s sliding window reports `reset` as the start of the next
+  sub-window rather than an exact expiry, so the value is anywhere in
+  (0, window]. The memory backend, which knows the oldest timestamp, gives the
+  true figure instead. Both are honest and neither is ever zero, which is the
+  property that matters. Do not "fix" it to a hardcoded window length.
+
+- **`llm:window` IS A ROLLING FIVE HOURS, AND IT IS THE ONE COUNTER IN THIS APP
+  THAT IS NOT THE QUERENT'S CALENDAR DAY.** Everything else -- `local_date`,
+  `todayKey()`, the `string` column type, an integration test that fails if anyone
+  "fixes" it -- is the querent's day. A provider quota is not: z.ai meters prompts
+  per rolling 5-hour cycle, so a daily bucket would never fire before the
+  provider's own limit did, because a script burns the whole cycle in five minutes
+  while a daily counter still reads 400/4000. There is deliberately **no date in
+  the key at all**, which is also why there is no UTC-versus-local question to get
+  wrong. `meter.test.ts` asserts the window slides.
+
+- **Port 6379 is permanently occupied by another project's `chatbot-redis`
+  container**, bound to `0.0.0.0`, exactly like Grafana and port 3000. This
+  project's `docker-compose.yml` therefore does **not** publish its Redis port at
+  all -- `serverless-redis-http` reaches it over the compose network by service
+  name and the integration suite only ever talks to SRH on 8079. Publishing it
+  fails outright with "port is already allocated". SRH also rejects any request
+  without `Content-Type: application/json`, which the `db:up` readiness probe
+  found the hard way.
 
 - **The native `postgresql-16` on this machine is on port 5433, has no `miftah`
   role, and its `pg_hba.conf` is root-only**, so creating a role there needs an
@@ -778,7 +854,8 @@ Built and working end to end: Google sign-in and the middleware gate, **the
 onboarding questionnaire and the Lotus distillation (W3)**, **analytics and
 reading persistence (W4)**, **the three memory features (W5)**, **English and
 Indonesian throughout, interface and readings (W6)**, **the moderation gate,
-`/terms`, `/privacy`, the secrets tripwire and the daily sweep (W7)**, reader
+`/terms`, `/privacy`, the secrets tripwire and the daily sweep (W7)**, **a
+fleet-wide rate limiter and a global model-call ceiling (V9)**, reader
 picker, service picker, the draw (fan, pick, flip, reduced-motion grid), the card
 detail overlay, the streaming reading endpoint, the prompt layer, and the web app
 manifest.
@@ -1139,8 +1216,22 @@ contractions 0.87 / 0.00 / 3.52.
 - **The Jakarta district needs confirming** against PT Citra Suka Buana's deed.
   `Pengadilan Negeri Jakarta Pusat` is the conventional default; if the deed says
   another district, change the one string in `src/app/terms/operator.ts`.
-- **A hard spend cap at z.ai is a required deployment step** and nothing in this
-  repo can enforce it. `docs/DEPLOY-VERCEL.md` §2b.
+- **THERE IS NO HARD SPEND CAP AT Z.AI AND THERE WAS NEVER GOING TO BE.**
+  `LLM_API_KEY` is a fixed annual subscription sold for coding, not a wallet, so
+  there is no bill to cap — verified 2026-07-27 against z.ai's own FAQ, which
+  also rules out a pay-as-you-go balance to overflow into. V9 replaced it: a
+  fleet-wide Upstash limiter, a global ceiling on model calls over a rolling
+  5-hour window (`LLM_WINDOW_CALL_CEILING`), and query 9.
+  `docs/DEPLOY-VERCEL.md` §2b is rewritten. **The risk is now quota exhaustion,
+  which is a denial of service against the querent and has no billing alert
+  attached** — see `docs/plans/2026-07-27-ratelimit.md` §0.
+- **AND THE COMEDOWN IS WORSE THAN THE CAP WAS.** The same FAQ says the Coding
+  Plan is *"strictly limited to use within officially supported tools and
+  products"*, and JMTarot is not one. The consequence of that being enforced is
+  not a warning or an overage — it is **key revocation, which takes the whole app
+  down at once**, with no second provider funded. `LLM_PROVIDER` already has an
+  `anthropic` branch and one adapter serves both, so the code cost of a second
+  key is an env var. Decide before V7 makes the app publicly linkable.
 - **`findahelpline.com` and `112` are NOT in `resources.ts`** because neither
   could be verified — findahelpline returned 403 twice. Both are worth adding
   by hand.

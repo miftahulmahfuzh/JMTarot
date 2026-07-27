@@ -8,7 +8,8 @@
     "audit:secrets": "RES_OPTIONS=no-aaaa NODE_OPTIONS=--conditions=react-server tsx scripts/audit-secrets.ts",
     "start": "RES_OPTIONS=no-aaaa next start",
     "typecheck": "tsc --noEmit",
-    "db:up": "docker compose up -d && until pg_isready -h 127.0.0.1 -p 5432 -q; do sleep 1; done && echo 'postgres ready'",
+    "db:up": "docker compose up -d && until pg_isready -h 127.0.0.1 -p 5432 -q; do sleep 1; done && echo 'postgres ready' && npm run --silent srh:wait",
+    "srh:wait": "for i in $(seq 1 20); do curl -sf -o /dev/null -X POST -H 'Authorization: Bearer jmtarot-test-token' -H 'Content-Type: application/json' -d '[\"PING\"]' http://127.0.0.1:8079 && echo 'srh ready' && exit 0; sleep 1; done; echo 'srh NOT ready -- the redis integration suite will SKIP, not fail'; exit 0",
     "db:down": "docker compose down",
     "db:nuke": "docker compose down -v",
     "db:generate": "drizzle-kit generate",
@@ -27,6 +28,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
+    "@upstash/ratelimit": "^2.0.8",
+    "@upstash/redis": "^1.38.0",
     "bcryptjs": "^3.0.3",
     "drizzle-orm": "^0.45.2",
     "jose": "^6.2.4",

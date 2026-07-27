@@ -302,6 +302,15 @@ export async function classifyQuestion(
   let text: string;
   try {
     ({ text } = await getProvider().complete(prompt, {
+      /*
+       * **INTERACTIVE, AND DO NOT MARK IT DEFERRED.** It is a network call that
+       * gates a reading a person is waiting for. Shedding it at the soft ceiling
+       * would silently move the app into blocklist-only moderation for the busy
+       * half of every day -- which is `MODERATION_CLASSIFIER_ENABLED=0`, arrived
+       * at by accident, with nothing anywhere saying so. It is shed only at the
+       * HARD ceiling, by which point readings are being refused anyway.
+       */
+      callClass: 'interactive',
       signal,
       model: classifierModel(),
       // W7-D4. The one call in this app whose output is parsed rather than read.
