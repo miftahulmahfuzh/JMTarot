@@ -37,6 +37,7 @@ import {
 } from '@/lib/db/queries/lotus';
 import { getProfile } from '@/lib/db/queries/profile';
 import { getProvider } from '@/lib/llm';
+import type { CallClass } from '@/lib/llm/meter';
 import {
   LOTUS_SOURCE_VERSION,
   buildLotusPrompt,
@@ -81,7 +82,19 @@ function stubbed(): boolean {
  * That is what makes the lazy repair (L15) affordable -- scheduling a refresh
  * that turns out to be unnecessary costs one indexed read.
  */
-export async function generateLotus(userId: string): Promise<LotusOutcome> {
+export async function generateLotus(
+  userId: string,
+  /**
+   * **`interactive` BY DEFAULT, AND THE DEFAULT IS THE POINT.** Three of the four
+   * call sites are onboarding writes -- a user just pressed a button and the
+   * distillation is what their next reading is built from -- so a quota running
+   * low must not silently stop distilling for people who are actively signing up.
+   * Only `scheduleLotusRefresh`'s SPECULATIVE repair passes `'deferred'`, because
+   * that one is a guess made behind somebody else's reading and its absence costs
+   * nothing that is not already absent.
+   */
+  callClass: CallClass = 'interactive',
+): Promise<LotusOutcome> {
   const started = Date.now();
   const model = lotusModel();
   const done = (o: Omit<LotusOutcome, 'ms' | 'model'>): LotusOutcome => ({
@@ -143,7 +156,7 @@ export async function generateLotus(userId: string): Promise<LotusOutcome> {
     }
 
     const prompt = buildLotusPrompt(input);
-    const { text } = await getProvider().complete(prompt, { model });
+    const { text } = await getProvider().complete(prompt, { model, callClass });
 
     let parsed: LotusResult;
     try {
@@ -272,7 +285,14 @@ export function scheduleLotusRefresh(userId: string, now = Date.now()): Promise<
     }
   }
 
-  return generateLotus(userId).then(
+  /*
+   * **THE ONLY DEFERRED LOTUS CALL.** This is the speculative repair fired from
+   * the reading path's `after()`: nobody asked for it, nobody is waiting for it,
+   * and its absence leaves the block exactly as absent as it already was. So it
+   * is the first thing shed when the model-call window runs low. The onboarding
+   * write paths call `generateLotus` directly and stay `interactive`.
+   */
+  return generateLotus(userId, 'deferred').then(
     (outcome) => {
       if (outcome.fallback) {
         /*

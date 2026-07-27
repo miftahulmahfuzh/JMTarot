@@ -33,6 +33,7 @@ import { track, withAnalytics, type AnalyticsContext } from '@/lib/analytics/tra
 import { db } from '@/lib/db/client';
 import { getDailySummary, putDailySummary, readingsOnDay } from '@/lib/db/queries/summary';
 import { getProvider } from '@/lib/llm';
+import { reserveModelCall } from '@/lib/llm/meter';
 import { isStale } from '@/lib/memory/summary';
 import { buildDaySummaryPrompt, MEMORY_PROMPT_VERSION } from '@/lib/prompt/summary';
 import { isReaderId } from '@/data/readers';
@@ -151,6 +152,22 @@ async function generate(args: {
      */
     promptVersion: MEMORY_PROMPT_VERSION,
   };
+
+  /*
+   * **THE DAY SUMMARY RESERVES EXPLICITLY, BECAUSE IT STREAMS.** V9's decorator
+   * wraps `complete()` only -- see `src/lib/llm/index.ts` for why a stream is not
+   * wrapped -- so a `streamReading` call site that does not reserve is a model
+   * call that bypasses the ceiling entirely. There are exactly two of those in the
+   * app: the reading, which reserves in `/api/reading`, and this one.
+   *
+   * `deferred`, and shed at the SOFT tier: the fallback below is already a 204,
+   * `DaySummary` renders nothing until there is something, and there is no error
+   * copy for this component by design (M14). So shedding it is indistinguishable
+   * from a day with no summary yet -- which is the definition of a cache miss
+   * nobody can name.
+   */
+  const quota = await reserveModelCall('deferred');
+  if (!quota.ok) return NO_CONTENT;
 
   let iterator: AsyncIterator<string>;
   let first: IteratorResult<string>;
