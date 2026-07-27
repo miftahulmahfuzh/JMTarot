@@ -430,6 +430,72 @@ as a quota lever, or the first person optimising for quality will move it back.
 posted anywhere public". V7 is that day by construction, and V9 did the swap
 before V7 shipped.
 
+## 2c. Prove the limiter is actually on Redis — REQUIRED after setting §2's last two
+
+**SETTING THE TWO VARIABLES IS NOT ENOUGH, AND THE FAILURE IS SILENT IN BOTH
+DIRECTIONS.** The app works identically whether Redis is reached or not. There is
+no error, no log line on the request path, and — the trap — **`query 9` shows
+nothing either**, because `ratelimit.backend_degraded` fires when Redis FAILS, and
+an unconfigured limiter never tries. So "no degradation events" is not evidence.
+
+### First: REDEPLOY. This is the usual reason it does not work.
+
+**Vercel environment variables are bound to a deployment.** Adding them in the
+dashboard does not change the deployment already serving traffic. Until you
+redeploy — Deployments → ⋯ → Redeploy, or any push — production is still running
+with them absent, and every check below will correctly tell you it is on memory.
+
+### Then: the decisive check. Look for our keys in your Upstash database.
+
+Take one reading on `https://www.jmtarot.site`, then ask Upstash directly. Use the
+**production** URL and token from §2:
+
+```sh
+curl -s "$UPSTASH_REDIS_REST_URL/scan/0/match/jmt:rl:*/count/100" \
+  -H "Authorization: Bearer $UPSTASH_REDIS_REST_TOKEN"
+```
+
+**Keys that begin `jmt:rl:` are written by nothing but this app.** Their presence
+in your production database is proof that production wrote them. Expect:
+
+```
+jmt:rl:30:3600:read:<your users.id>     the per-user reading budget
+jmt:rl:1200:3600:global                 the crowd burst guard
+jmt:rl:280:18000:llm:window             THE MODEL-CALL CEILING
+```
+
+The third is the one to care about most: it is the control that replaced the z.ai
+spend cap (§2b), and its presence is the proof that the ceiling is fleet-wide
+rather than per-instance. `18000` is the rolling five hours; `280` is the budget.
+
+An empty `scan` result after a reading means production is **not** using Redis.
+Recheck that you redeployed, then that the token survived paste — a mangled token
+is an *error*, and an error falls back to memory, which looks exactly like
+working. `vercel env pull` and compare bytes rather than eyeballing the dashboard.
+
+### Passively, from then on: the daily cron says so
+
+`/api/cron/sweep` reports it once a day, because nothing else does:
+
+```
+[cron] sweep {"purgedUsers":0,...,"limiter":"redis","ms":412}
+```
+
+**`"limiter":"memory"` in a production log line is the alarm.** It is the one
+signal that distinguishes "never configured" from "working", and it costs no
+extra job, no extra query and no extra endpoint.
+
+### What does NOT prove it
+
+- **The app working normally.** It works either way; that is the entire problem.
+- **No `ratelimit.backend_degraded` events.** Silence means "Redis never failed"
+  OR "Redis was never contacted", and those are opposite conclusions.
+- **Upstash's own usage graph being non-zero**, if you have ever run the
+  integration suite or a local `npm run dev` against the same database. Use a
+  separate database for production, or trust the key scan instead.
+
+---
+
 ## 3. Verify the deployment
 
 - `/` redirects to `/login`
