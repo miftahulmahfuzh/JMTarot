@@ -3,6 +3,12 @@ import { NextResponse } from 'next/server';
 import { authConfig } from '@/lib/auth/config';
 import { decide, LEGACY_SESSION_COOKIE } from '@/lib/auth/gate';
 import { readToken } from '@/lib/auth/token';
+import {
+  LOCALE_COOKIE,
+  LOCALE_COOKIE_MAX_AGE,
+  LOCALE_HEADER,
+  resolveForMiddleware,
+} from '@/lib/i18n/resolve';
 
 /**
  * The gate. Every route needs a session except the ones `isPublic()` names.
@@ -46,7 +52,33 @@ export default auth((request) => {
     onboarded: viewer?.onb === true,
   });
 
-  const response = respond(request, decision);
+  /*
+   * W6: the one place `Accept-Language` is parsed (I10).
+   *
+   * The claim comes off the token we have already decoded above, so the whole
+   * chain costs no I/O and no second JWE decrypt. `viewer.loc` is D6's "profile":
+   * `users.locale` is stamped into the token at sign-in and re-minted by
+   * `POST /api/locale`, because reading the column per request would break the
+   * roadmap's first non-negotiable.
+   */
+  const locale = resolveForMiddleware(request, viewer?.loc ?? null);
+  const response = respond(request, decision, locale);
+
+  /*
+   * Refresh the cookie only when it disagrees, so an ordinary navigation does not
+   * carry a redundant Set-Cookie. This cannot run for paths outside the matcher
+   * and must not: `manifest`, `cards/`, `dukuns/` and `_next/` are excluded, which
+   * is precisely why `manifest.ts` reads the cookie rather than the header (I13).
+   */
+  if (request.cookies.get(LOCALE_COOKIE)?.value !== locale) {
+    response.cookies.set(LOCALE_COOKIE, locale, {
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: LOCALE_COOKIE_MAX_AGE,
+      secure: process.env.NODE_ENV === 'production',
+    });
+  }
 
   /*
    * Evict the legacy cookie.
@@ -70,10 +102,21 @@ export default auth((request) => {
 function respond(
   request: Parameters<Parameters<typeof auth>[0]>[0],
   decision: ReturnType<typeof decide>,
+  locale: string,
 ): NextResponse {
   switch (decision.kind) {
-    case 'next':
-      return NextResponse.next();
+    case 'next': {
+      /*
+       * `NextResponse.next({ request: { headers } })` IS THE ONLY FORM THAT
+       * MUTATES WHAT DOWNSTREAM SERVER COMPONENTS SEE. Setting a header on the
+       * plain response does nothing for RSC, and the failure is silent:
+       * `getLocale()` falls through to the cookie and appears to work, so the
+       * bug only shows up as a locale that lags one navigation behind.
+       */
+      const headers = new Headers(request.headers);
+      headers.set(LOCALE_HEADER, locale);
+      return NextResponse.next({ request: { headers } });
+    }
 
     /*
      * An API caller wants a status code, not a login page. Returning the HTML

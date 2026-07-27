@@ -4,6 +4,8 @@ import type { ReactNode } from 'react';
 import { AppLaunched } from '@/components/AppLaunched';
 import { Backdrop } from '@/components/Backdrop';
 import { StillMode } from '@/components/StillMode';
+import { LocaleProvider } from '@/lib/i18n/LocaleProvider';
+import { getLocaleBundle, getT } from '@/lib/i18n/t';
 import './globals.css';
 
 /*
@@ -31,26 +33,40 @@ const cormorant = Cormorant_Garamond({
   variable: '--font-body',
 });
 
-export const metadata: Metadata = {
-  title: 'JMTarot',
-  description: 'Bacaan tarot Major Arcana bersama tiga pembaca.',
-  /*
-   * Next does not emit the apple-mobile-web-app-* meta tags from the manifest,
-   * and iOS still reads them. Without `capable`, Add to Home Screen produces a
-   * bookmark that opens in Safari instead of a standalone app.
-   */
-  appleWebApp: { capable: true, title: 'JMTarot', statusBarStyle: 'black-translucent' },
-  icons: { icon: '/icon.png', apple: '/apple-icon.png' },
-  /*
-   * `appleWebApp.capable` makes Next emit the modern `mobile-web-app-capable`
-   * and NOT the legacy `apple-mobile-web-app-capable` -- verified against the
-   * served HTML. Safari only started honouring the modern name in iOS 17.4, so
-   * on anything older Add to Home Screen would produce a Safari bookmark
-   * rather than a standalone app, which is precisely the outcome this task
-   * exists to avoid. Emit both and let each iOS version read the one it knows.
-   */
-  other: { 'apple-mobile-web-app-capable': 'yes' },
-};
+/**
+ * W6 turned this from a constant into a function, because `description` is copy.
+ *
+ * EVERY OTHER FIELD CAME ACROSS UNCHANGED AND MUST STAY. `appleWebApp`, `icons`,
+ * the `other` entry and the separate `viewport` export below are each here for a
+ * reason recorded in their own comments; `other` is the one most likely to be
+ * dropped in an edit, and losing it turns Add to Home Screen into a Safari
+ * bookmark on iOS below 17.4.
+ *
+ * `title` and `appleWebApp.title` stay hardcoded: the brand is not translated.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT();
+  return {
+    title: t('app.title'),
+    description: t('meta.description'),
+    /*
+     * Next does not emit the apple-mobile-web-app-* meta tags from the manifest,
+     * and iOS still reads them. Without `capable`, Add to Home Screen produces a
+     * bookmark that opens in Safari instead of a standalone app.
+     */
+    appleWebApp: { capable: true, title: 'JMTarot', statusBarStyle: 'black-translucent' },
+    icons: { icon: '/icon.png', apple: '/apple-icon.png' },
+    /*
+     * `appleWebApp.capable` makes Next emit the modern `mobile-web-app-capable`
+     * and NOT the legacy `apple-mobile-web-app-capable` -- verified against the
+     * served HTML. Safari only started honouring the modern name in iOS 17.4, so
+     * on anything older Add to Home Screen would produce a Safari bookmark
+     * rather than a standalone app, which is precisely the outcome this task
+     * exists to avoid. Emit both and let each iOS version read the one it knows.
+     */
+    other: { 'apple-mobile-web-app-capable': 'yes' },
+  };
+}
 
 export const viewport: Viewport = {
   themeColor: '#0a0812',
@@ -74,9 +90,21 @@ export const viewport: Viewport = {
    */
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  /*
+   * `<html lang>` IS RESOLVED PER REQUEST, and this is what opts the tree into
+   * dynamic rendering — expected, not a regression. `getLocale()`'s comment has
+   * the full argument; the short version is that pinning `lang="id"` and patching
+   * it on the client ships the wrong language to a screen reader on first paint,
+   * and the app was going dynamic anyway now that auth is on every page.
+   *
+   * The build output flipping ● -> ƒ is the symptom of this working. Do not
+   * "fix" it.
+   */
+  const { locale, messages } = await getLocaleBundle();
+
   return (
-    <html lang="id" className={`${cinzel.variable} ${cormorant.variable}`}>
+    <html lang={locale} className={`${cinzel.variable} ${cormorant.variable}`}>
       <body>
         {/* Dev-only screenshot hook; see the component. Stripped from
             production builds. */}
@@ -84,8 +112,16 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         {/* One event per page load. A client component here does not make the
             layout dynamic, so /terms and /privacy stay statically renderable. */}
         <AppLaunched />
+        {/* Outside the provider on purpose: neither has copy, and Backdrop is
+            the one component on every screen whose render should not depend on
+            a context. */}
         <Backdrop />
-        {children}
+        {/* Above the error boundary, so `error.tsx` can use useT(). Verified,
+            not assumed -- an error boundary that throws on a missing context is
+            a bad day. */}
+        <LocaleProvider locale={locale} messages={messages}>
+          {children}
+        </LocaleProvider>
       </body>
     </html>
   );
