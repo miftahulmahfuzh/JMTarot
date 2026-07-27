@@ -20,9 +20,39 @@ there is no workflow file to write:
 | push to `main` | deploys to **Production** |
 | push any other branch, or open a PR | builds a **Preview** at its own URL |
 
+### The build command runs the secrets tripwire, and it can fail the deploy
+
+`npm run build` is `next build && npm run audit:secrets`, so a deployment can
+fail **after** `Compiled successfully` and after the route table has printed.
+That is deliberate — the tripwire's whole job is to stop a leak reaching a
+browser — but it means a red build is not necessarily a red *build*. Read past
+the route table before assuming Next failed.
+
+**Turn OFF "Automatically expose System Environment Variables"** in Project
+Settings → Environment Variables. Nothing in this app reads a `NEXT_PUBLIC_`
+variable, and leaving it on makes Vercel duplicate its whole system namespace
+under that prefix — `NEXT_PUBLIC_VERCEL_URL`, `..._GIT_COMMIT_MESSAGE`,
+`..._PROJECT_ID` and a dozen more — where any code that reads one would inline
+it into the client bundle.
+
+**It broke the first production deploy** (`0b4e4a0`, 2026-07-27): nineteen
+findings, every one of them `NEXT_PUBLIC_VERCEL_*`, none of them from this repo,
+against a build that was clean locally. `audit-secrets.ts` now warns on that
+prefix in one line rather than failing on each — the build container is not an
+environment this repository provisions, and at least
+`NEXT_PUBLIC_VERCEL_OBSERVABILITY_CLIENT_CONFIG` arrives regardless of the
+setting. The check that matters is untouched: **Next inlines a `NEXT_PUBLIC_`
+value where something READS it, not because it is set**, and the audit still
+greps all of `src/**` for that read.
+
+So the setting is defence in depth rather than the fix, which is why it is a
+recommendation here and not a prerequisite. A finding that is *not*
+`NEXT_PUBLIC_` is a real one — most likely an env value reaching the `.rsc`
+payload — and `scripts/audit-secrets.ts`'s header says how to read it.
+
 ## 2. Environment variables
 
-Ten, all needed, for **Production** *and* **Preview**:
+Twelve, all needed, for **Production** *and* **Preview**:
 
 ```
 LLM_PROVIDER               zai
@@ -35,14 +65,32 @@ AUTH_GOOGLE_SECRET         <client secret>
 AUTH_URL                   per environment -- see below
 DATABASE_URL               Neon's POOLED string -- see §6
 FIELD_ENCRYPTION_KEY       <32 random bytes, base64url>
+MODERATION_MODEL           glm-4.5-flash -- REQUIRED, and it is not a default
+CRON_SECRET                <32 random bytes, base64>
 ```
 
-**This list said eight until 2026-07-27, and omitting the last two was wrong
-from W2 onward, not from W3.** `src/lib/auth/auth.ts` imports `db` and the `jwt`
-callback calls `upsertUserOnSignIn`, so **Google sign-in itself reads the
-database** — a deployment without `DATABASE_URL` 500s on the first login, not on
-some later feature. W3 then added the onboarding writes, which is what needs
+**This list said eight until 2026-07-27, and omitting `DATABASE_URL` and
+`FIELD_ENCRYPTION_KEY` was wrong from W2 onward, not from W3.**
+`src/lib/auth/auth.ts` imports `db` and the `jwt` callback calls
+`upsertUserOnSignIn`, so **Google sign-in itself reads the database** — a
+deployment without `DATABASE_URL` 500s on the first login, not on some later
+feature. W3 then added the onboarding writes, which is what needs
 `FIELD_ENCRYPTION_KEY`.
+
+**The last two are W7's, and this list omitted them until the first real deploy.**
+Neither fails loudly, which is exactly why they belong in the required list
+rather than the optional one below:
+
+- **`MODERATION_MODEL`** unset falls back to `LLM_MODEL`, and the gate then adds
+  its own latency to every reading instead of hiding inside the reading's TTFT.
+  Measured, not asserted — §2b and `.env.example` carry the numbers. The app
+  works; it just gets slower in a way no error surfaces.
+- **`CRON_SECRET`** is what Vercel Cron presents as `Authorization: Bearer …` on
+  the daily call to `/api/cron/sweep` that `vercel.json` registers. Unset, the
+  route **503s rather than running unauthenticated** — which is the right
+  failure, but it means the retention sweep silently never runs and `/privacy`'s
+  thirty-day promise quietly stops being true. Generate with
+  `openssl rand -base64 32`.
 
 `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET` come from a Google Cloud OAuth client.
 **`docs/plans/2026-07-26-google-auth.md` §4 is the assume-nothing walkthrough** —
@@ -56,12 +104,25 @@ module scope in `config.ts`, so **a dashboard change needs a redeploy** before
 middleware sees it:
 
 ```
-SESSION_TTL_HOURS            24     idle timeout, slides on every request
-SESSION_ABSOLUTE_TTL_DAYS    30     hard ceiling, never slides
-LOTUS_MODEL                  --     falls back to LLM_MODEL
-ANALYTICS_STREAM_TIMEOUT_MS  45000  how long after() waits for the stream
-ANALYTICS_RETRY_BUDGET_MS    5000   ceiling on the readings-insert retry
+SESSION_TTL_HOURS               24          idle timeout, slides on every request
+SESSION_ABSOLUTE_TTL_DAYS       30          hard ceiling, never slides
+LOTUS_MODEL                     --          falls back to LLM_MODEL
+ANALYTICS_STREAM_TIMEOUT_MS     45000       how long after() waits for the stream
+ANALYTICS_RETRY_BUDGET_MS       5000        ceiling on the readings-insert retry
+MODERATION_TIMEOUT_MS           1500        backstop for a hung classifier, not a target
+MODERATION_CLASSIFIER_ENABLED   1           `0` = blocklist only. The 2am kill switch
+MODERATION_QUESTION_RETENTION_DAYS  30      before the sweep nulls the stored text
+TERMS_VERSION                   2026-07-27  a BUMP FORCES RE-ACCEPTANCE for everyone
+EVENTS_RETENTION_DAYS           180         `readings` is deliberately NOT on this clock
 ```
+
+`.env.example` is the complete list with the reasoning for each, including W5's
+three `MEMORY_*` knobs and W6's `LOCALE_SWITCHER`; the ones above are the ones
+worth knowing exist before you need them. **Two of those defaults are load-bearing
+promises rather than preferences:** `/privacy` states
+`MODERATION_QUESTION_RETENTION_DAYS` and `EVENTS_RETENTION_DAYS` as numbers, so
+changing either in the dashboard without changing the policy makes the policy a
+lie.
 
 **`ANALYTICS_ENABLED` needs no entry: only the literal `'0'` disables writes**,
 so a deployment that never mentions it collects data. That default is
@@ -145,9 +206,13 @@ problem** (this paragraph used to say the release was waiting on
 `www.jmtarot.com`, which was never purchased). The consent screen nonetheless
 stays in **Testing** — ≤100 manually-added test accounts — until Google's
 branding requirements are met: an app homepage that is **not** a login page,
-plus a privacy policy and terms. Signed out, `/` redirects to `/login`, so there
-is currently nothing else to show a reviewer; `/privacy` and `/terms` are W7's
-and still 404.
+plus a privacy policy and terms.
+
+**Two of those three are now done.** W7 shipped `/privacy` and `/terms`, both
+public and reachable with no session cookie — `isPublic()` in
+`src/lib/auth/gate.ts` is what keeps them that way, and §3 verifies it. This
+paragraph used to say they still 404. **What remains is the homepage:** signed
+out, `/` redirects to `/login`, so there is nothing else to show a reviewer.
 
 Generate the secret locally:
 
@@ -216,9 +281,12 @@ because the moderation classifier runs alongside the reading.
 4. **Record the value in the commit message or here**, so the next person knows
    what was chosen rather than whether anything was.
 
-Related, and cheap: `MODERATION_MODEL=glm-4.5-flash` is a production requirement
-rather than an optimisation (see `.env.example`), and it is also six times
-cheaper per classification than the reading model.
+`MODERATION_MODEL=glm-4.5-flash` helps the bill too, at roughly six times
+cheaper per classification than the reading model — but **that is a side effect,
+not the reason.** It is in §2's required list because on the reading model the
+classifier's p95 exceeds the reading's own p50 TTFT and the gate becomes the
+latency. Do not reason about it as a cost lever, or the first person optimising
+for quality will move it back.
 
 **The upgrade trigger for the rate limiter is an event, not a number:** the day a
 link to the app is posted anywhere public, swap `hit()`'s body for
@@ -235,7 +303,12 @@ the moment the URL is outside your control.
   `content-security-policy-report-only` (W7 §6.5)
 - A question containing an obvious Tier-A phrase returns **403** with
   `{"error":"moderation_blocked"}` and no reading text
-- `GET /api/cron/sweep` without the bearer token returns **401**
+- `GET /api/cron/sweep` without the bearer token returns **401**. A **503** there
+  is the other outcome and it is not an error in the route: it means
+  `CRON_SECRET` is unset, so the daily sweep is refusing to run rather than
+  running unauthenticated
+- The build log ends with `audit-secrets: clean.` — see §1. It runs *after*
+  `next build`, so a green Next build is not a green deploy
 - Google's consent screen says **JMTarot**, not a raw client id
 - Sign in returns you to the app, and a `users` row appears with the right
   `google_sub`. Sign in a second time and it is still **one** row, with
