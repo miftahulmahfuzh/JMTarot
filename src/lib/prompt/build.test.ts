@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { MemoryContext } from './memory';
 import { buildPrompt } from './build';
 
 const draw = [
@@ -221,16 +222,98 @@ describe('the lotus block in a reading', () => {
     expect(withLotus).toBe(without);
   });
 
-  it('leaves room for W5 to add its own block without changing the signature', () => {
-    // `context.memory` is W5's field. It exists in the type so that W5 adds a
-    // renderer rather than a signature change.
-    const { user } = buildPrompt({
+  it('is a no-op when W5 passes no memory, so every existing call still works', () => {
+    // `context.memory` is W5's field. W3 reserved it and W5 widened it from a
+    // pre-rendered string to the context object; a null must still change
+    // nothing at all.
+    const { user, system } = buildPrompt({
       reader: 'adrian',
       service: 'daily',
       picks: [draw[0]],
       context: { lotus: null, memory: null },
     });
     expect(user).not.toContain('<penanya>');
+    expect(user).not.toContain('<riwayat>');
+    expect(system).toBe(
+      buildPrompt({ reader: 'adrian', service: 'daily', picks: [draw[0]] }).system,
+    );
+  });
+});
+
+describe('W5’s memory block', () => {
+  const memory: MemoryContext = {
+    recalled: [
+      {
+        id: 'r1',
+        localDate: '2026-07-24',
+        readerId: 'margaret',
+        serviceId: 'spread3',
+        cards: [{ cardId: 18, reversed: true }],
+        gist: 'kabar yang setengah belum layak dipercaya',
+        hadQuestion: true,
+      },
+    ],
+    repeatCardIds: [18],
+    reason: 'repeat',
+  };
+
+  const withMemory = (question?: string) =>
+    buildPrompt({
+      reader: 'thessaly',
+      service: 'spread3',
+      picks: draw,
+      question,
+      context: { memory },
+    });
+
+  it('puts the block in the USER turn and NEVER in the system prompt', () => {
+    /*
+     * M10, and the extension of this file's existing injection test. The gist
+     * is derived from a body that answered the querent's typed question -- two
+     * laundering steps away from their keystrokes, but still theirs. Rules live
+     * where rules live; querent-derived content lives where content lives.
+     */
+    const { system, user } = withMemory('apa yang harus aku lakukan?');
+    expect(user).toContain('<riwayat>');
+    expect(system).not.toContain('<riwayat>\n');
+    expect(system).not.toContain('kabar yang setengah belum layak dipercaya');
+    expect(user).toContain('kabar yang setengah belum layak dipercaya');
+  });
+
+  it('puts the block immediately before <pertanyaan>', () => {
+    const { user } = withMemory('apa yang harus aku lakukan?');
+    expect(user.indexOf('</riwayat>')).toBeLessThan(user.indexOf('<pertanyaan>'));
+    // And after the cards: the cards are what is being read, the history is
+    // context for reading them.
+    expect(user.indexOf('Kartu:')).toBeLessThan(user.indexOf('<riwayat>'));
+  });
+
+  it('appends the instruction AFTER the service task', () => {
+    /*
+     * §6's dilution guard. The instruction restates the 40-word paragraph
+     * ceiling, and it only helps if it is the most recent thing the model has
+     * read -- which means after `servicePrompt`, where the ceiling is stated.
+     */
+    const { system } = withMemory();
+    expect(system.indexOf('TUGASMU')).toBeLessThan(system.indexOf('RIWAYAT (latar'));
+    expect(system.trimEnd().endsWith('tanpa mengaku kamu yang membacanya.')).toBe(true);
+  });
+
+  it('does NOT change prompt_version', () => {
+    // R5: the hash covers the static layers only. A version that moved
+    // depending on whether this querent happened to have a recallable reading
+    // would be a per-user nonce, and `group by prompt_version` would return one
+    // row per reading.
+    const a = withMemory().promptVersion;
+    const b = buildPrompt({ reader: 'thessaly', service: 'spread3', picks: draw }).promptVersion;
+    expect(a).toBe(b);
+  });
+
+  it('renders with no question at all', () => {
+    // The 'repeat' reason does not require one on either side.
+    const { user } = withMemory();
+    expect(user).toContain('<riwayat>');
+    expect(user).toContain('Penanya tidak menuliskan pertanyaan');
   });
 });
 

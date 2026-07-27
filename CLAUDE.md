@@ -609,9 +609,10 @@ reason they load at all.
 
 Built and working end to end: Google sign-in and the middleware gate, **the
 onboarding questionnaire and the Lotus distillation (W3)**, **analytics and
-reading persistence (W4)**, reader picker, service picker, the draw (fan, pick,
-flip, reduced-motion grid), the card detail overlay, the streaming reading
-endpoint, the prompt layer, and the web app manifest.
+reading persistence (W4)**, **the three memory features (W5)**, reader picker,
+service picker, the draw (fan, pick, flip, reduced-motion grid), the card detail
+overlay, the streaming reading endpoint, the prompt layer, and the web app
+manifest.
 
 **Tapping a picked card opens its detail, it does not return it to the deck.**
 Returning moved into a button inside that overlay, because at 88x132 the art is
@@ -628,7 +629,7 @@ and **none of it is on the path of a byte the user is waiting for.**
 
 ```
 src/lib/analytics/
-  events.ts        the closed taxonomy: 38 names, a prop shape each, two
+  events.ts        the closed taxonomy: 43 names, a prop shape each, two
                    compile-time guards. NO IMPORTS -- it is the data dictionary
                    and it is read by people, not only by code.
   track.ts         SERVER. AsyncLocalStorage store, ONE after() per request,
@@ -691,6 +692,116 @@ database and take a reading.** It must stream and complete exactly as normal,
 with nothing but `[analytics] ...` lines in the log. That is the literal
 statement of the requirement this workstream exists to satisfy.
 
+## Memory features (W5)
+
+W5 is done. Three features, all reading from `readings` and `reading_cards`: a
+card-frequency verdict, readings that reference the last reading, and a per-day
+summary in the chosen reader's own voice.
+
+```
+src/lib/memory/
+  windows.ts      PURE. The eight window specs and windowBounds(). No DB.
+  frequency.ts    ranking, the M4 gate, the fingerprint, the ladder walk
+  chain.ts        the request-path recall. NEVER THROWS -- returns null.
+  gist.generate.ts  the model call + the write, in after()
+  summary.ts      isStale(). The M13 throttle.
+  copy.ts         STAGING POST for W6's catalog. `c()` not `t()`, like W3's.
+src/lib/prompt/
+  memory.ts       PURE. gist, chainRelevance, memoryBlock, detectCallback.
+  summary.ts      the frequency verdict AND the day summary prompts
+  side.ts         SIDE_FORMAT_RULES. DELETED BY W6 -- see its header.
+src/app/api/memory/{frequency,summary}/route.ts
+src/components/{FrequencyLine,DaySummary}.tsx
+```
+
+**The pure/impure split is forced, not stylistic.** `queries/contract.test.ts`
+requires the database handle as the first parameter of every exported function
+in `src/lib/db/queries/**`, and `windowBounds`, `passesGate` and `isStale` have
+no handle to take. W5's plan puts them in `queries/frequency.ts`; the contract
+test wins. Same wall W3 hit with the Lotus cache.
+
+**`<riwayat>` is the tag in BOTH locales**, and W5's plan saying `<history>`
+loses to reconciliation R17. Its reasoning decides it: an English querent will
+never type "riwayat" and will absolutely type "history", so the English-looking
+tag is the one carrying injection surface. `riwayat` is in `sanitize.ts`'s
+DELIMITER alternation, which now fences four blocks. Only the `ULANG:`/`AGAIN:`
+marker INSIDE the block is localised -- that is content the model reads, not a
+fence the sanitizer strips.
+
+### The traps W5 paid for
+
+- **NEVER MATCH A BARE `lagi` IN THE CALLBACK DETECTOR.** It is also the
+  progressive aspect marker: "dia lagi mikir" is "he is thinking", not "again".
+  A bare pattern fires on most sentences of casual Indonesian and reports a ~90%
+  callback rate that is entirely noise -- and that ratio is the number deciding
+  whether chaining is cut or tightened, so it would be a CONFIDENT wrong answer.
+  Every Indonesian pattern is multi-word or hyphenated. Same class as the
+  `tempoh` miss in the Malay grep. English: `again` fires, `against` must not.
+- **`gistUserTurn` must NOT use `stripUntrusted` directly.** It collapses
+  newlines, which is right for a question and fatal here: the gist prompt's
+  central instruction is "the conclusion is in the final paragraph", and a
+  flattened body has no final paragraph. It strips per paragraph and rejoins.
+  The failure would read as a bad prompt, not a bad sanitizer.
+- **`sanitizeGist` TRUNCATES where `sanitizeQuestion` REJECTS.** One handles the
+  querent's own words, where silently shortening misrepresents what they asked;
+  the other handles model output under a length rule the model may have ignored,
+  where refusing throws away a usable clause over a formatting failure.
+- **`created_at` is TRANSACTION-START time**, so rows written in one transaction
+  share a timestamp exactly and `order by created_at desc` is not a total order.
+  Production never hits it; `withRollback` hits it on every run. `recallableReadings`
+  orders by `created_at desc, id desc`. Two integration tests failed on this.
+- **A ceiling the model can count as it writes, restated LAST.** Both generated
+  prompts overshot on the first real run -- the day summary at 61 words against
+  45, the frequency line at 29 against 25. Both were fixed by the pattern
+  `services.ts` already uses: state the limit as "N sentences AND M words,
+  whichever comes first", bind it explicitly on the long-sentence reader, and
+  restate it AFTER the thing that invites elaboration. Margaret keeps her one
+  long patient sentence and now fits it in 43 words.
+- **`source_reading_ids` is `uuid[]`, not `text[]`.** Placeholder fixtures are
+  rejected by Postgres, which is the column doing its job.
+- **`readingsOnDay` deliberately has NO filters, unlike `recallableReadings`.**
+  Recall feeds a callback, so a dead stream has nothing to quote. A day summary
+  is a count: "you drew three times today" is true whether or not the third
+  finished, and filtering would make it disagree with what the querent remembers.
+
+### Verifying it
+
+```sh
+npm run smoke -- --summary            # six summaries, three readers x two locales
+npm run smoke -- --frequency          # five verdicts over five card pairs
+npm run smoke -- --all --memory --gist  # the nine, with a chain block and real gists
+npm run smoke -- --all --fixed        # the CONTROL for the above. Same hands.
+```
+
+`public/cards/_freqshot.html` and `_sumshot.html` (gitignored) screenshot the two
+gated pickers at a real 390px with the endpoint stubbed, so neither run costs a
+model call.
+
+**MEASURED 2026-07-27, and it inverts what §6 predicted.** The chain block was
+expected to DILUTE the 40-words-per-paragraph ceiling by pushing it further back
+in the context. Same hands, with and without the block:
+
+```
+                control    with the block
+thessaly          133          136
+margaret          312          216
+adrian            116          152
+```
+
+The block makes Margaret 96 words SHORTER. §4.4's third paragraph -- the one
+that restates the ceiling at the point of temptation -- more than pays for the
+added length. Reader overlap went 0.050 -> 0.063, comparable to the Lotus
+block's recorded 0.056 -> 0.074. `chain_used / chain_offered` was 2/9, inside
+the 15-60% operating band.
+
+**AND IT FOUND A PRE-EXISTING REGRESSION THAT IS NOT W5's.** Margaret's
+`spread3` runs at 312 words in the CONTROL, against the 128-169 band recorded
+above under "The prompt". W5's system prompt with `memory: null` is
+byte-identical to what shipped before it -- there is a test asserting that -- so
+this predates the workstream. The per-paragraph word count in the smoke script
+is what surfaced it. Fixing it means `readers.ts` or `services.ts` and its own
+tuning loop; it is not W5's file and not W5's bug.
+
 ## The data layer
 
 W1 of the public release is done, and W3 is its first consumer. What exists:
@@ -744,10 +855,12 @@ those accounts is that they do not exist there. Nothing was migrated out of
 asks for more than that anyway. It will look like data loss and it is not.
 
 Not built, deliberately deferred: birth card, the daily-card lock (`todayKey()`
-and `birthCard()` are already written), an About page, a reading-history
-**screen**, sharing, and a second LLM provider. **Onboarding has left this list
-— W3 shipped it, and W4 shipped the history's data: every reading, its cards
-and the event trail are persisted; nothing renders them back to the user yet.**
+and `birthCard()` are already written), an About page, a full reading-history
+**screen** (`/jejak`), sharing, and a second LLM provider. **Onboarding left
+this list with W3, and the memory features left it with W5** — the history now
+renders back to the user as a frequency verdict on the reader picker and a
+per-day summary on the service picker. What is still missing is a page that
+lists the readings themselves.
 
 ## Onboarding and the Lotus (W3)
 

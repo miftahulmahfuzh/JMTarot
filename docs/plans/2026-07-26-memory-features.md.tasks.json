@@ -1,0 +1,122 @@
+{
+  "plan": "docs/plans/2026-07-26-memory-features.md",
+  "branch": "feat/w5-memory-features",
+  "decisions": {
+    "w6_gap": "Build W5 bilingual and staged. Both locales' prompt text lives in W5-owned files; window phrases / a11y labels / month names live in a W5-local src/lib/memory/copy.ts staging post, the same pattern W3 used for src/app/onboarding/copy.ts. Side prompts carry their own format rules rather than forking base.ts, which is W6's file. English is unreachable at runtime until W6 flips users.locale.",
+    "week_start": "Monday (ISO-8601). Plan open question 1, settled with Miftah 2026-07-27.",
+    "birthday_window": "Collapses to [today, today] on the birthday itself; the gate hides it. Plan open question 2, settled with Miftah 2026-07-27.",
+    "cross_reader_recall": "Left as M12 specifies: on by default, with the reader named in the block. Plan open question 5 stays open pending one real read on hardware."
+  },
+  "tasks": [
+    {
+      "id": "1",
+      "title": "Task 0: W4/W6 seams",
+      "status": "completed",
+      "blockedBy": []
+    },
+    {
+      "id": "2",
+      "title": "Task 1: Window configuration and the date maths",
+      "status": "completed",
+      "blockedBy": []
+    },
+    {
+      "id": "3",
+      "title": "Task 2: The frequency query and the gate",
+      "status": "completed",
+      "blockedBy": [
+        "2"
+      ]
+    },
+    {
+      "id": "4",
+      "title": "Task 3: The verdict prose and the frequency endpoint",
+      "status": "completed",
+      "blockedBy": [
+        "1",
+        "3"
+      ]
+    },
+    {
+      "id": "5",
+      "title": "Task 4: Surface the verdict on the reader picker",
+      "status": "completed",
+      "blockedBy": [
+        "4"
+      ]
+    },
+    {
+      "id": "6",
+      "title": "Task 5: The gist",
+      "status": "completed",
+      "blockedBy": [
+        "1"
+      ]
+    },
+    {
+      "id": "7",
+      "title": "Task 6: The chain block",
+      "status": "completed",
+      "blockedBy": [
+        "6"
+      ]
+    },
+    {
+      "id": "8",
+      "title": "Task 7: The callback detector",
+      "status": "completed",
+      "blockedBy": [
+        "7"
+      ]
+    },
+    {
+      "id": "9",
+      "title": "Task 8: The summary prompts",
+      "status": "completed",
+      "blockedBy": [
+        "1",
+        "4"
+      ]
+    },
+    {
+      "id": "10",
+      "title": "Task 9: The summary cache and endpoint",
+      "status": "completed",
+      "blockedBy": [
+        "9"
+      ]
+    },
+    {
+      "id": "11",
+      "title": "Task 10: Surface the summary on the service picker",
+      "status": "completed",
+      "blockedBy": [
+        "10"
+      ]
+    },
+    {
+      "id": "12",
+      "title": "Task 11: Extend the smoke script",
+      "status": "completed",
+      "blockedBy": [
+        "8",
+        "9"
+      ]
+    },
+    {
+      "id": "13",
+      "title": "Task 12: Read the output and tune",
+      "status": "completed",
+      "blockedBy": [
+        "12"
+      ]
+    }
+  ],
+  "completed": "2026-07-27",
+  "findings": {
+    "dilution_inverted": "The chain block was expected to dilute the 40-word paragraph ceiling. Measured with fixed hands: Margaret 312 words without it, 216 with. The block makes her SHORTER -- the instruction restating the ceiling more than pays for the added context.",
+    "pre_existing_regression": "Margaret's spread3 runs at 312 words in the control, against the 128-169 band in CLAUDE.md. Not W5's: the system prompt with memory:null is byte-identical to what shipped before, and there is a test asserting it. Surfaced by W5's new per-paragraph word count. Fixing it means readers.ts or services.ts and its own tuning loop.",
+    "chain_ratio": "2/9 (22%), inside the 15-60% band. Both via the phrase signal, none via the card signal.",
+    "tuning_passes": "Three. Day summary 61->53->43 words for Margaret; frequency line 29->22. Both fixed by the services.ts pattern: a ceiling stated as 'N sentences AND M words, whichever first', bound explicitly on the long-sentence reader, and restated AFTER whatever invites elaboration."
+  }
+}

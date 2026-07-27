@@ -78,9 +78,26 @@ export const EVENT_NAMES = [
   'reading.retried',
   'reading.rate_limited',
 
-  // — memory features (W5 fires these) —
-  'summary.shown',
-  'frequency.shown',
+  /*
+   * — memory features (W5 fires these) —
+   *
+   * W4 RESERVED TWO OF THESE AS `summary.shown` AND `frequency.shown`; W5's
+   * plan §4.5 and `## Interfaces I need` name seven, all prefixed `memory.`.
+   * The reconciliation is silent, so this is the resolution: the `memory.`
+   * prefix wins and the two reserved names are renamed. Nothing fired them --
+   * they were forward declarations -- so the rename cost nothing, and it buys
+   * `where name like 'memory.%'` returning the whole feature instead of five
+   * sevenths of it. W4's prop shapes are kept, because they are better than the
+   * ones W5's plan sketched: `cached` and `source_count` answer questions
+   * `reader_id` alone cannot.
+   */
+  'memory.chain_offered',
+  'memory.chain_used',
+  'memory.gist_failed',
+  'memory.summary_shown',
+  'memory.summary_generated',
+  'memory.frequency_shown',
+  'memory.frequency_generated',
 
   // — locale (W6) —
   'locale.changed',
@@ -160,8 +177,26 @@ export type EventMap = {
   'reading.retried':           { reader_id: string; service_id: string; attempt: number };
   'reading.rate_limited':      { reader_id: string; service_id: string; retry_after_s: number };
 
-  'summary.shown':             { reader_id: string; source_count: number; cached: boolean; chars: number };
-  'frequency.shown':           { window: string; top_card_id: number; second_card_id: number | null; sample: number };
+  /*
+   * W5's memory features.
+   *
+   * EVERY ARRAY W5'S PLAN ASKED FOR IS FLATTENED HERE, and that is not a style
+   * preference. The plan specifies `recalled_ids: string[]` and
+   * `repeat_card_ids: number[]`; `sanitizeProps()` DROPS non-scalars, so both
+   * would have arrived as absent keys with nothing logged and nothing thrown --
+   * a prop that silently is not there is worse than one that was never
+   * declared. A count plus the first id answers every question the array was
+   * for: "how often does a chain recall two readings" is `recalled_count`, and
+   * the ids themselves are recoverable by joining `readings` on `reading_id`
+   * and `created_at`, which is where they already live.
+   */
+  'memory.chain_offered':      { reading_id: string; recalled_count: number; reason: 'repeat' | 'question'; repeat_card_id: number | null; repeat_count: number };
+  'memory.chain_used':         { reading_id: string; signal: 'card' | 'phrase' };
+  'memory.gist_failed':        { reading_id: string; reason: 'call_failed' | 'empty' | 'unusable'; fell_back: boolean };
+  'memory.summary_shown':      { reader_id: string; source_count: number; cached: boolean; chars: number };
+  'memory.summary_generated':  { reader_id: string; source_count: number; regeneration: boolean; generation_count: number; total_ms: number };
+  'memory.frequency_shown':    { window: string; top_card_id: number; second_card_id: number | null; sample: number; cached: boolean };
+  'memory.frequency_generated':{ window: string; top_card_id: number; second_card_id: number | null; sample: number; angle: number; total_ms: number };
 
   'locale.changed':            { from: string; to: string; surface: 'settings' | 'onboarding' | 'auto' };
 
@@ -225,7 +260,7 @@ export type PendingEvent = {
  * and a type cannot check those.
  *
  * A Set rather than `EVENT_NAMES.includes(v)`: this runs once per event in
- * every batch, and `includes` on a 38-element array is a linear scan against
+ * every batch, and `includes` on a 43-element array is a linear scan against
  * attacker-controlled input.
  */
 const NAME_SET: ReadonlySet<string> = new Set(EVENT_NAMES);

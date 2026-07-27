@@ -7,6 +7,9 @@ import { getLotusBlock, scheduleLotusRefresh } from '@/lib/prompt/lotus.generate
 import { MAX_QUESTION_LENGTH, sanitizeQuestion } from '@/lib/prompt/sanitize';
 import { hit } from '@/lib/ratelimit';
 import { persistReading, touchLastSeen } from '@/lib/analytics/flush';
+import { extractGist } from '@/lib/memory/gist.generate';
+import { recallChain } from '@/lib/memory/chain';
+import { detectCallback } from '@/lib/prompt/memory';
 import { LOCAL_DATE_HEADER, SESSION_HEADER, parseLocalDate, validSessionId } from '@/lib/analytics/localdate';
 import { teeReading, type ReadingOutcome } from '@/lib/analytics/tee';
 import { defer, track, withAnalytics, type AnalyticsContext } from '@/lib/analytics/track';
@@ -197,6 +200,23 @@ export async function POST(request: Request) {
      */
     const lotus = await getLotusBlock(user.id, user.locale);
 
+    /*
+     * THE CHAIN BLOCK. One indexed read plus one card fetch, and its failure is
+     * NON-FATAL for exactly the reasons the Lotus read above is.
+     *
+     * It is `await`ed on the request path, which roadmap §6 permits on the same
+     * terms: per-user, indexed, and small. It is bounded by MEMORY_CHAIN_COUNT
+     * (2), and `recallChain` swallows a database error and returns null rather
+     * than throwing -- a reading without the block is a valid reading, and a
+     * database hiccup must not cost the user their reading.
+     */
+    const memory = await recallChain({
+      userId: user.id,
+      currentCardIds: picks.map((p) => p.id),
+      currentHasQuestion: Boolean(sanitizeQuestion(question)),
+      localDate: localDate.date,
+    });
+
     let prompt;
     try {
       // buildPrompt re-derives every card from cards.json and, for yes/no,
@@ -211,7 +231,7 @@ export async function POST(request: Request) {
         // An empty summary means "there is a profile but nothing distilled yet".
         // Passing it through would render an empty `<penanya>` block, which is
         // noise in the prompt and a rule the reader would apply to nothing.
-        context: { lotus: lotus && lotus.summary ? lotus : null },
+        context: { lotus: lotus && lotus.summary ? lotus : null, memory },
       });
     } catch (err) {
       console.error('prompt build failed', err);
@@ -235,9 +255,21 @@ export async function POST(request: Request) {
       has_question: Boolean(question),
       question_length: question?.length ?? 0,
       lotus_present: Boolean(lotus && lotus.summary),
-      memory_block_present: false, // W5
+      memory_block_present: memory !== null,
       prompt_version: prompt.promptVersion,
     });
+
+    if (memory) {
+      track('memory.chain_offered', {
+        reading_id: readingId,
+        recalled_count: memory.recalled.length,
+        reason: memory.reason,
+        // Flattened: sanitizeProps drops arrays silently. The ids themselves are
+        // recoverable by joining `readings` on reading_id and created_at.
+        repeat_card_id: memory.repeatCardIds[0] ?? null,
+        repeat_count: memory.repeatCardIds.length,
+      });
+    }
 
     /*
      * THE LAZY REPAIR (W3's L15), and it keeps its OWN after() rather than
@@ -329,6 +361,41 @@ export async function POST(request: Request) {
         },
         picks.map((p, i) => ({ cardId: p.id, reversed: p.reversed, position: i })),
       );
+
+      /*
+       * W5's gist, AFTER the row and never before it.
+       *
+       * The ordering is the same argument the Lotus repair above makes, applied
+       * one level down: deferred work runs in registration order inside one
+       * callback, so a model call ahead of `persistReading` would delay the row
+       * every memory feature depends on and would lose it outright if the
+       * platform cut the invocation short. `extractGist` never throws, so it
+       * cannot take `touchLastSeen` down with it.
+       */
+      await extractGist({ readingId, body: outcome.body || null, locale: user.locale });
+
+      /*
+       * DID THE CALLBACK ACTUALLY FIRE (§4.5)? Pure code over the finished
+       * body, no second model call -- paying a classifier to answer "did it say
+       * kemarin" would cost more than the feature it measures.
+       *
+       * `chain_used / chain_offered` is the number that decides whether this
+       * feature is cut, kept or tightened, so it is only fired when a block was
+       * actually offered: counting readings that never saw one would put the
+       * ratio's denominator in the wrong place and make it look far healthier
+       * than it is.
+       */
+      if (memory && outcome.body) {
+        const hit = detectCallback({
+          body: outcome.body,
+          currentCardIds: picks.map((p) => p.id),
+          recalledCardIds: memory.recalled.flatMap((r) => r.cards.map((c) => c.cardId)),
+          locale: user.locale,
+        });
+        if (hit.fired && hit.signal) {
+          track('memory.chain_used', { reading_id: readingId, signal: hit.signal });
+        }
+      }
 
       // Fire and log, never retried: the next request writes it again anyway.
       await touchLastSeen(user.id);
