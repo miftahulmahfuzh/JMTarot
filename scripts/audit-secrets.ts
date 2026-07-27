@@ -1,0 +1,621 @@
+/**
+ * The tripwire. Runs on every `npm run build`, including Vercel's (W7-D15).
+ *
+ *   npm run audit:secrets     re-run against the existing .next, no rebuild
+ *
+ * Miftah's requirement: *"make sure all our technical secrets (passwords,
+ * private tokens, api keys) and business secrets (every llm prompt) cannot be
+ * exposed through frontend."* A read-through satisfies that today and is
+ * worthless tomorrow. **THE DELIVERABLE IS THE CHECK, NOT THE READ-THROUGH.**
+ *
+ * ---
+ *
+ * **THE SCAN SET IS WRITTEN OUT RATHER THAN `grep -r .next`, AND THE EXCLUSION
+ * IS THE WHOLE REASON.** Measured against a real build:
+ *
+ *   .next/static/**                    ships to the browser        SCAN
+ *   .next/server/app/**.html           prerendered, served as-is   SCAN
+ *   .next/server/app/**.rsc|.meta      the RSC flight payload      SCAN  <- forgotten
+ *   public/**                          served raw                  SCAN
+ *   .next/server/chunks/**             server only                 EXCLUDE
+ *
+ * `Kamu adalah pembaca tarot` lives in `.next/server/chunks/` and is SUPPOSED
+ * to. A scanner that flags it is a scanner somebody switches off within a week,
+ * and then the whole thing is decoration. **Do not "fix" that exclusion.**
+ *
+ * The `.rsc` payloads are the row people forget. A server component that reads
+ * `process.env.LLM_MODEL` and passes it as a prop does not put the value in
+ * `.next/static` -- it serializes it into the flight payload, which the browser
+ * downloads on navigation. A scanner that only looks at `static` reports green
+ * on a real leak.
+ *
+ * **THE NEEDLES ARE DERIVED, NOT HARDCODED** (W7-D16). The script imports every
+ * module under `src/lib/prompt/**` and `src/lib/moderation/**` and extracts
+ * needles from their exported strings. A hardcoded list goes stale the first
+ * time somebody rewords a persona paragraph, and a stale tripwire is worse than
+ * none because it reads as green.
+ *
+ * **NEVER ECHO A MATCH.** A CI log is a disclosure channel; printing the matched
+ * text turns the tripwire into the leak. Findings report the needle's ORIGIN,
+ * the file and the byte offset.
+ *
+ * ---
+ *
+ * **PROVEN TO FIRE, 2026-07-27. An untested tripwire is decoration.**
+ *
+ * Control: import `BASE_CONTRACT_ID` into `ReadingPanel.tsx` (a `'use client'`
+ * component) and render 220 characters of it. Result: six findings across
+ * `.next/static/chunks/`, naming `base.id.ts#BASE_CONTRACT_ID`,
+ * `base.id.ts#FORMAT_RULES_ID` and their `base.ts` re-exports; **exit code 1**,
+ * so `next build && npm run audit:secrets` fails and Vercel does not deploy.
+ * Reverted, rebuilt, exit code 0.
+ *
+ * **THE FIRST CONTROL DID NOT FIRE, AND THAT IS WORTH KNOWING.** It was
+ * `export const LEAK = BASE_CONTRACT_ID.slice(0, 220)` with nothing importing
+ * `LEAK` -- Next tree-shook the unused export and the string never reached the
+ * bundle. The audit was right to stay silent. **This scans what SHIPS, not what
+ * is imported**, which is the correct scope and also a stated limit: dead code
+ * referencing a secret is not a finding, and `clientBoundary.test.ts` plus
+ * `server-only` are the layers that cover the source side.
+ *
+ * **THE BOUNDARY WALK WAS CONTROLLED SEPARATELY, AND IT IS THE HALF THAT CLOSES
+ * A KNOWN GAP.** Control: a throwaway `src/lib/_control.ts` importing
+ * `base.id.ts`, imported in turn by `ReadingPanel.tsx`. `clientBoundary.test.ts`
+ * PASSED all six of its tests -- it only sees DIRECT imports, and says so in its
+ * own header. The walk failed with the whole chain named:
+ *
+ *   Draw.tsx -> ReadingPanel.tsx -> lib/_control.ts -> lib/prompt/base.id.ts
+ *
+ * That path is the deliverable. "Something reaches the prompt layer" is not
+ * fixable; that line is.
+ */
+import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { join, relative, extname, sep } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { config } from 'dotenv';
+
+config({ path: '.env.local', quiet: true });
+
+const ROOT = process.cwd();
+
+type Finding = { rule: string; detail: string; file: string; offset: number };
+
+const findings: Finding[] = [];
+const warnings: string[] = [];
+
+function fail(rule: string, detail: string, file: string, offset: number) {
+  findings.push({ rule, detail, file, offset });
+}
+
+// ---------------------------------------------------------------------------
+// The scan set (§6.1)
+// ---------------------------------------------------------------------------
+
+/** Extensions worth reading. Fonts and images cannot carry a prompt usefully. */
+const TEXTUAL = new Set(['.js', '.mjs', '.cjs', '.css', '.map', '.json', '.html', '.rsc', '.meta', '.segments', '.txt', '.svg', '.webmanifest', '']);
+
+function walk(dir: string, out: string[] = []): string[] {
+  if (!existsSync(dir)) return out;
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) walk(full, out);
+    else out.push(full);
+  }
+  return out;
+}
+
+function scanSet(): string[] {
+  const files: string[] = [];
+
+  files.push(...walk(join(ROOT, '.next', 'static')));
+
+  /*
+   * `.next/server/app/**`, but only the artefacts that reach a browser. The
+   * sibling `.js` files in that directory are server modules and carry the
+   * prompt legitimately, exactly like `chunks/`.
+   */
+  for (const file of walk(join(ROOT, '.next', 'server', 'app'))) {
+    if (/\.(html|rsc|meta|segments)$/.test(file)) files.push(file);
+  }
+
+  files.push(...walk(join(ROOT, 'public')));
+
+  return files.filter((f) => TEXTUAL.has(extname(f).toLowerCase()));
+}
+
+// ---------------------------------------------------------------------------
+// (a) Derived prompt needles (§6.2a, W7-D16)
+// ---------------------------------------------------------------------------
+
+const NEEDLE_LENGTH = 48;
+const MIN_STRING = 80;
+
+/** Every string reachable from a module's exports, one level into records and arrays. */
+function stringsIn(value: unknown, depth = 0): string[] {
+  if (typeof value === 'string') return [value];
+  if (depth > 2 || value === null || typeof value !== 'object') return [];
+  return Object.values(value as Record<string, unknown>).flatMap((v) => stringsIn(v, depth + 1));
+}
+
+/** First 48 characters, 48 from the midpoint, last 48. */
+function needlesFrom(text: string): string[] {
+  if (text.length < MIN_STRING) return [];
+  const mid = Math.floor((text.length - NEEDLE_LENGTH) / 2);
+  return [
+    text.slice(0, NEEDLE_LENGTH),
+    text.slice(mid, mid + NEEDLE_LENGTH),
+    text.slice(-NEEDLE_LENGTH),
+  ];
+}
+
+/**
+ * Letters, digits and single spaces, lowercased.
+ *
+ * The second matching pass runs on this form. A bundler that re-escapes a quote,
+ * a non-ASCII dash or a newline breaks a verbatim match while leaving the words
+ * intact -- the skeleton survives all three, at the cost of some precision it
+ * does not need, because a 48-character run of prompt prose does not occur by
+ * accident.
+ */
+function skeleton(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+async function derivedNeedles(): Promise<{ needle: string; origin: string }[]> {
+  /**
+   * **TWO MODULES ARE EXCLUDED, AND IT IS THE SAME KIND OF DECISION AS
+   * EXCLUDING `.next/server/chunks/**`:** they are SUPPOSED to be in the client
+   * bundle, so needling them would make the audit red forever and the audit
+   * would then be switched off.
+   *
+   *   moderation/resources.ts  the refusal renders hotline numbers in the
+   *                            browser (W7-D14's third exception). A phone
+   *                            number is public information -- publishing it is
+   *                            the feature.
+   *   moderation/types.ts      the category union is rendered by the client.
+   *
+   * Caught on the audit's first run: six findings, all of them
+   * `ALL_CRISIS_RESOURCES` in `.next/static`, all of them correct behaviour.
+   *
+   * Note the asymmetry that makes this safe: `blocklist.ts`, `classify.ts` and
+   * `gate.ts` are NOT excluded, so the pattern list and the classifier prompt --
+   * the parts that are genuinely secret -- are still needled.
+   */
+  const CLIENT_BY_DESIGN = ['moderation/resources.ts', 'moderation/types.ts'];
+
+  const modules = [
+    ...walk(join(ROOT, 'src', 'lib', 'prompt')),
+    ...walk(join(ROOT, 'src', 'lib', 'moderation')),
+  ].filter(
+    (f) =>
+      /\.ts$/.test(f) &&
+      !/\.test\.ts$/.test(f) &&
+      !CLIENT_BY_DESIGN.some((c) => f.endsWith(c.replace('/', sep))),
+  );
+
+  const out: { needle: string; origin: string }[] = [];
+
+  for (const file of modules) {
+    const rel = relative(ROOT, file);
+    let mod: Record<string, unknown>;
+    try {
+      mod = (await import(pathToFileURL(file).href)) as Record<string, unknown>;
+    } catch (err) {
+      /*
+       * A module that cannot be imported contributes NO NEEDLES, which makes the
+       * audit quietly weaker. Warn loudly rather than failing: the usual cause is
+       * a module that reaches the database driver, and blocking a deploy on that
+       * would get the whole script disabled.
+       */
+      warnings.push(`could not import ${rel} for needles: ${(err as Error).message.slice(0, 100)}`);
+      continue;
+    }
+
+    for (const [name, value] of Object.entries(mod)) {
+      for (const text of stringsIn(value)) {
+        for (const needle of needlesFrom(text)) {
+          out.push({ needle, origin: `${rel}#${name}` });
+        }
+      }
+    }
+  }
+
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// (b) Environment variable names and VALUES (§6.2b)
+// ---------------------------------------------------------------------------
+
+const SECRET_ENV = [
+  'LLM_API_KEY',
+  'LLM_BASE_URL',
+  'LLM_MODEL',
+  'LLM_PROVIDER',
+  'MODERATION_MODEL',
+  'LOTUS_MODEL',
+  'AUTH_SECRET',
+  'AUTH_USERS',
+  'AUTH_GOOGLE_SECRET',
+  'AUTH_GOOGLE_ID',
+  'FIELD_ENCRYPTION_KEY',
+  'DATABASE_URL',
+  'TEST_DATABASE_URL',
+  'CRON_SECRET',
+];
+
+/**
+ * A value is worth searching for only if a coincidence is implausible.
+ *
+ * `LLM_PROVIDER=zai` is three characters and appears inside ordinary words; a
+ * value grep on it would fail every build for nothing. The NAME grep still
+ * covers it.
+ */
+const MIN_VALUE_LENGTH = 12;
+
+function valueForms(value: string): string[] {
+  const forms = new Set<string>([value]);
+  forms.add(Buffer.from(value, 'utf8').toString('base64'));
+  forms.add(Buffer.from(value, 'utf8').toString('base64url'));
+  forms.add(encodeURIComponent(value));
+  // A bundler escapes `/` in a string literal inside a script sometimes.
+  forms.add(value.replace(/\//g, '\\/'));
+  return [...forms].filter((f) => f.length >= MIN_VALUE_LENGTH);
+}
+
+// ---------------------------------------------------------------------------
+// (c) Shapes, regardless of name (§6.2c)
+// ---------------------------------------------------------------------------
+
+const SHAPES: { name: string; re: RegExp; warn?: true; credential?: true }[] = [
+  { name: 'private key block', re: /-----BEGIN [A-Z ]*PRIVATE KEY-----/, credential: true },
+  { name: 'anthropic key', re: /sk-ant-[A-Za-z0-9_-]{20,}/, credential: true },
+  { name: 'google client SECRET', re: /GOCSPX-[A-Za-z0-9_-]{20,}/, credential: true },
+  { name: 'google api key', re: /AIza[0-9A-Za-z_-]{35}/, credential: true },
+  { name: 'bcrypt hash', re: /\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}/, credential: true },
+  { name: 'jwt', re: /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./, credential: true },
+  { name: 'dsn with inline password', re: /postgres(?:ql)?:\/\/[^\s"']+:[^\s"'@]+@/, credential: true },
+  /*
+   * Business information rather than credentials, and they FAIL anyway: the
+   * client has no business knowing which provider or which model writes its
+   * readings.
+   */
+  { name: 'provider endpoint', re: /api\.z\.ai/ },
+  { name: 'model name', re: /\bglm-4/ },
+  /*
+   * **WARNS, DOES NOT FAIL, AND THE REASON IS IN THIS COMMENT SO NOBODY
+   * "FIXES" IT.** The Google OAuth CLIENT ID is public by design -- it is in
+   * every authorization URL the browser follows -- so it may legitimately
+   * appear. Promoting this to a failure gets the finding suppressed globally,
+   * which would also suppress the client SECRET pattern above it.
+   */
+  { name: 'google client id (public by design)', re: /[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com/, warn: true },
+];
+
+// ---------------------------------------------------------------------------
+// (d) The NEXT_PUBLIC_ proof (§6.2d)
+// ---------------------------------------------------------------------------
+
+/**
+ * **JMTarot HAS NO `NEXT_PUBLIC_` VARIABLES.** Anything so prefixed is inlined
+ * into the client bundle by Next at build time -- that is its entire purpose,
+ * and it is the single easiest way to leak a key.
+ *
+ * The allowlist is empty and adding to it requires a comment saying why.
+ */
+const NEXT_PUBLIC_ALLOWLIST: string[] = [];
+
+function checkNextPublic() {
+  for (const key of Object.keys(process.env)) {
+    if (!key.startsWith('NEXT_PUBLIC_')) continue;
+    if (NEXT_PUBLIC_ALLOWLIST.includes(key)) continue;
+    fail('NEXT_PUBLIC_', `${key} is set and not on the allowlist`, '(process.env)', 0);
+  }
+
+  /*
+   * **`process.env.NEXT_PUBLIC_`, NOT A BARE `NEXT_PUBLIC_`.** The first version
+   * matched the bare prefix and immediately fired on `src/lib/i18n/resolve.ts`,
+   * whose doc comment explains why `LOCALE_SWITCHER` deliberately does NOT carry
+   * the prefix. A tripwire that fires on a comment warning against the thing it
+   * checks for is the definition of one people delete.
+   *
+   * What is actually dangerous is a READ, because that is what Next inlines.
+   */
+  for (const file of walk(join(ROOT, 'src'))) {
+    if (!/\.tsx?$/.test(file)) continue;
+    const source = readFileSync(file, 'utf8');
+    const m = /process\.env\.NEXT_PUBLIC_|process\.env\[['\`"]NEXT_PUBLIC_/.exec(source);
+    if (m) fail('NEXT_PUBLIC_', 'a NEXT_PUBLIC_ read in source', relative(ROOT, file), m.index);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The static client-boundary walk (§6.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * **TRANSITIVE, WHICH IS THE WHOLE POINT.** `clientBoundary.test.ts` already
+ * checks DIRECT imports and says so in its own header: "a client component
+ * importing a plain module that imports the prompt layer would pass this and
+ * still bundle it. That is a real gap." This closes it.
+ *
+ * It reports the PATH THROUGH THE GRAPH rather than the endpoint, because
+ * "Draw.tsx -> useThing.ts -> helper.ts -> @/lib/prompt/base" is fixable and
+ * "something reaches the prompt layer" is not.
+ *
+ * Complementary to `server-only`, not a duplicate of it: the marker fails at
+ * BUILD with the importing file named, and this fails in one second with the
+ * whole chain named. Two halves of the same fence.
+ */
+const FORBIDDEN: { prefix: string; allow: string[] }[] = [
+  // `sanitize.ts` is the documented exception: Draw.tsx needs MAX_QUESTION_LENGTH
+  // for the input's maxLength, and it must be the SAME constant the server
+  // rejects against. `budget.ts` is word ceilings -- numbers, no prose.
+  { prefix: 'lib/prompt/', allow: ['lib/prompt/sanitize.ts', 'lib/prompt/budget.ts'] },
+  { prefix: 'lib/llm/', allow: [] },
+  { prefix: 'lib/db/', allow: [] },
+  // W7-D14's two deliberate exceptions: a category name is not a secret, and a
+  // hotline number is public information the refusal has to render.
+  { prefix: 'lib/moderation/', allow: ['lib/moderation/types.ts', 'lib/moderation/resources.ts'] },
+  // `viewer.tsx` IS the client context, and `gate.ts`/`token.ts` are pure
+  // decision functions with no credential in them.
+  { prefix: 'lib/auth/', allow: ['lib/auth/viewer.tsx', 'lib/auth/gate.ts', 'lib/auth/token.ts'] },
+];
+
+/** Resolve an import specifier to a file under src/, or null if it leaves the tree. */
+function resolveSpec(fromFile: string, spec: string): string | null {
+  let base: string;
+  if (spec.startsWith('@/')) base = join(ROOT, 'src', spec.slice(2));
+  else if (spec.startsWith('.')) base = join(fromFile, '..', spec);
+  else return null;
+
+  for (const candidate of [
+    base,
+    `${base}.ts`,
+    `${base}.tsx`,
+    join(base, 'index.ts'),
+    join(base, 'index.tsx'),
+  ]) {
+    if (existsSync(candidate) && statSync(candidate).isFile()) return candidate;
+  }
+  return null;
+}
+
+/**
+ * Import specifiers that survive to runtime.
+ *
+ * **`import type` IS SKIPPED, BECAUSE IT IS ERASED AT COMPILE TIME.** It bundles
+ * nothing. `src/lib/auth/viewer.tsx` does `import type { Viewer } from
+ * './server'` and reported as a boundary violation on the first run -- a client
+ * component naming a server type is correct and common, and flagging it would
+ * push people toward duplicating the type instead.
+ */
+function importsOf(source: string): string[] {
+  return [...source.matchAll(/^\s*import\s+(?:([^'"]*?)\sfrom\s+)?['"]([^'"]+)['"]/gm)]
+    .filter((m) => !/^\s*type\b/.test(m[1] ?? ''))
+    .map((m) => m[2]);
+}
+
+/**
+ * A `'use server'` module is an RPC BOUNDARY, not an import.
+ *
+ * Next replaces the import with a fetch stub, so nothing the server action
+ * reaches is bundled for the browser -- that is the entire point of a server
+ * action, and it is the sanctioned way for a client component to call server
+ * code. The walk therefore stops here rather than descending.
+ *
+ * Found on the first run: `SessionRepair.tsx -> actions.ts -> @/lib/auth/auth.ts`
+ * reported as a violation. It is the intended pattern, and a scanner that flags
+ * the intended pattern is one people switch off.
+ */
+function isServerAction(source: string): boolean {
+  return /^\s*(['"])use server\1/m.test(source.split('import')[0]);
+}
+
+function checkClientBoundary() {
+  const all = walk(join(ROOT, 'src')).filter((f) => /\.tsx?$/.test(f) && !/\.test\.tsx?$/.test(f));
+
+  const clients = all.filter((f) => {
+    const src = readFileSync(f, 'utf8');
+    return /^\s*(['"])use client\1/m.test(src.split('import')[0]);
+  });
+
+  if (clients.length < 8) {
+    // A directive that moved, or quoting that changed, would make every
+    // assertion below pass for the wrong reason.
+    fail('boundary', `found only ${clients.length} client components`, 'src/', 0);
+  }
+
+  for (const entry of clients) {
+    // Depth-first, remembering the path so the report is actionable.
+    const seen = new Set<string>();
+    const stack: { file: string; path: string[] }[] = [{ file: entry, path: [relative(ROOT, entry)] }];
+
+    while (stack.length > 0) {
+      const { file, path } = stack.pop()!;
+      if (seen.has(file)) continue;
+      seen.add(file);
+
+      const rel = relative(ROOT, file).replace(/\\/g, '/').replace(/^src\//, '');
+      const rule = FORBIDDEN.find((r) => rel.startsWith(r.prefix));
+      if (rule && !rule.allow.includes(rel) && file !== entry) {
+        fail('boundary', path.join(' -> '), relative(ROOT, entry), 0);
+        continue;
+      }
+
+      let source: string;
+      try {
+        source = readFileSync(file, 'utf8');
+      } catch {
+        continue;
+      }
+      if (file !== entry && isServerAction(source)) continue;
+
+      for (const spec of importsOf(source)) {
+        const next = resolveSpec(file, spec);
+        if (next) stack.push({ file: next, path: [...path, relative(ROOT, next)] });
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// (e) .env hygiene (§6.6)
+// ---------------------------------------------------------------------------
+
+function checkEnvHygiene() {
+  const example = join(ROOT, '.env.example');
+  if (existsSync(example)) {
+    const text = readFileSync(example, 'utf8');
+    /*
+     * **CREDENTIAL SHAPES ONLY.** The business-information shapes (`api.z.ai`,
+     * `glm-4`) exist to catch a model name reaching the BROWSER; `.env.example`
+     * is where those values are supposed to be documented, and failing on them
+     * here would mean deleting the documentation to satisfy the scanner.
+     *
+     * The DSN pattern needs one more carve-out for the same reason: the example
+     * file documents the local Docker credential, `postgres://jmtarot:jmtarot@127.0.0.1`.
+     * It is a DSN with an inline password and it is also the intended content of
+     * the file. A LOOPBACK host is the discriminator -- a real leaked DSN points
+     * somewhere reachable.
+     */
+    const LOOPBACK = /postgres(?:ql)?:\/\/[^\s"']+@(?:127\.0\.0\.1|localhost|db)[:/]/;
+    for (const shape of SHAPES) {
+      if (shape.warn || !shape.credential) continue;
+      const m = shape.re.exec(text);
+      if (!m) continue;
+      /*
+       * Tested against the surrounding text, NOT `m[0]`: the DSN pattern stops
+       * at the `@`, so the host -- the only part that says whether this is a
+       * placeholder -- is not inside the match. Getting that wrong made the
+       * carve-out silently inert on the first attempt.
+       */
+      if (shape.name.startsWith('dsn') && LOOPBACK.test(text.slice(m.index, m.index + 120))) continue;
+      // A real key pasted into the committed example file is a classic.
+      fail('.env.example', `contains a ${shape.name}`, '.env.example', m.index);
+    }
+  }
+
+  try {
+    execFileSync('git', ['check-ignore', '-q', '.env.local'], { cwd: ROOT });
+  } catch {
+    fail('.env hygiene', '.env.local is NOT gitignored', '.gitignore', 0);
+  }
+
+  const tracked = execFileSync('git', ['ls-files', '--', '.env*'], { cwd: ROOT, encoding: 'utf8' })
+    .split('\n')
+    .filter((f) => f && f !== '.env.example');
+  for (const f of tracked) {
+    fail('.env hygiene', 'a .env file other than .env.example is tracked', f, 0);
+  }
+}
+
+// ---------------------------------------------------------------------------
+
+async function main() {
+  const files = scanSet();
+  if (files.length === 0) {
+    console.error('audit-secrets: the scan set is EMPTY. Run `npm run build` first.');
+    process.exit(1);
+  }
+
+  const needles = await derivedNeedles();
+  if (needles.length === 0) {
+    /*
+     * A tripwire with no needles passes everything. That is the exact failure
+     * mode W7-D16 exists to prevent, so it is fatal rather than a warning.
+     */
+    console.error('audit-secrets: derived ZERO prompt needles. The audit cannot pass vacuously.');
+    process.exit(1);
+  }
+
+  const skeletonNeedles = needles.map((n) => ({ ...n, skel: skeleton(n.needle) }));
+
+  const envPairs: { name: string; form: string }[] = [];
+  for (const name of SECRET_ENV) {
+    const value = process.env[name];
+    if (!value) continue;
+    for (const form of valueForms(value)) envPairs.push({ name, form });
+  }
+
+  for (const file of files) {
+    const rel = relative(ROOT, file);
+    let text: string;
+    try {
+      text = readFileSync(file, 'utf8');
+    } catch {
+      continue;
+    }
+    const skel = skeleton(text);
+
+    // (a) prompt needles, verbatim then skeleton
+    for (const { needle, origin, skel: needleSkel } of skeletonNeedles) {
+      const at = text.indexOf(needle);
+      if (at !== -1) {
+        fail('prompt text', origin, rel, at);
+        continue;
+      }
+      if (needleSkel.length >= 24) {
+        const skelAt = skel.indexOf(needleSkel);
+        if (skelAt !== -1) fail('prompt text (skeleton)', origin, rel, skelAt);
+      }
+    }
+
+    // (b) env names, then env values
+    for (const name of SECRET_ENV) {
+      const at = text.indexOf(name);
+      if (at !== -1) fail('env name', name, rel, at);
+    }
+    for (const { name, form } of envPairs) {
+      const at = text.indexOf(form);
+      // NEVER the value, only which variable it was.
+      if (at !== -1) fail('env VALUE', name, rel, at);
+    }
+
+    // (c) shapes
+    for (const shape of SHAPES) {
+      const m = shape.re.exec(text);
+      if (!m) continue;
+      if (shape.warn) warnings.push(`${shape.name} in ${rel} at ${m.index}`);
+      else fail('shape', shape.name, rel, m.index);
+    }
+  }
+
+  checkNextPublic();
+  checkClientBoundary();
+  checkEnvHygiene();
+
+  console.log(
+    `audit-secrets: ${files.length} files, ${needles.length} derived needles, ` +
+      `${envPairs.length} env value forms.`,
+  );
+
+  for (const w of warnings) console.warn(`  warn: ${w}`);
+
+  if (findings.length > 0) {
+    console.error(`\naudit-secrets: ${findings.length} FINDING(S)\n`);
+    for (const f of findings) {
+      // Origin, file and offset. Never the matched text.
+      console.error(`  [${f.rule}] ${f.detail}\n      ${f.file} @ byte ${f.offset}`);
+    }
+    console.error(
+      '\nIf a finding is legitimate, do not add a suppression -- work out how the value\n' +
+        'reached the browser. The usual causes are a server component passing an env var\n' +
+        'as a prop (it lands in the .rsc payload, not in .next/static) and a client\n' +
+        "component importing a module it should not. `.next/server/chunks/**` is\n" +
+        'excluded on purpose and is not a finding.\n',
+    );
+    process.exit(1);
+  }
+
+  console.log('audit-secrets: clean.');
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

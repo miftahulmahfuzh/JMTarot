@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "RES_OPTIONS=no-aaaa next dev",
-    "build": "RES_OPTIONS=no-aaaa next build",
+    "build": "RES_OPTIONS=no-aaaa next build && npm run audit:secrets",
+    "audit:secrets": "RES_OPTIONS=no-aaaa NODE_OPTIONS=--conditions=react-server tsx scripts/audit-secrets.ts",
     "start": "RES_OPTIONS=no-aaaa next start",
     "typecheck": "tsc --noEmit",
     "db:up": "docker compose up -d && until pg_isready -h 127.0.0.1 -p 5432 -q; do sleep 1; done && echo 'postgres ready'",

@@ -1,3 +1,5 @@
+import 'server-only';
+
 /**
  * W5's chained readings: the one-clause gist, the relevance gate, the
  * `<riwayat>` block, and the callback detector.

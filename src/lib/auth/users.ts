@@ -1,3 +1,5 @@
+import 'server-only';
+
 /**
  * The password list. LOCAL DEVELOPMENT ONLY.
  *

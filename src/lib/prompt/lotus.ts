@@ -1,3 +1,5 @@
+import 'server-only';
+
 /**
  * The Lotus distillation (roadmap D10). PURE: no DB, no fetch, no `process.env`.
  *

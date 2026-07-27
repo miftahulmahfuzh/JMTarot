@@ -1,3 +1,5 @@
+import 'server-only';
+
 /**
  * A fake `LLMStream`, for tests that need a stream and not a provider.
  *

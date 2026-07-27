@@ -1,3 +1,5 @@
+import 'server-only';
+
 import type { Locale } from '@/data/types';
 import { BASE_CONTRACT_EN, FORMAT_RULES_EN } from './base.en';
 import { BASE_CONTRACT_ID, FORMAT_RULES_ID } from './base.id';

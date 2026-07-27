@@ -1,3 +1,5 @@
+import 'server-only';
+
 import type { Locale, ReaderId } from '@/data/types';
 import { READER_PROMPTS_EN } from './readers.en';
 import { READER_PROMPTS_ID } from './readers.id';

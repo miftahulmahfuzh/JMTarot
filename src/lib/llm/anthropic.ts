@@ -1,3 +1,5 @@
+import 'server-only';
+
 import Anthropic from '@anthropic-ai/sdk';
 import { requireEnv } from '@/lib/env';
 import type {

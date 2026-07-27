@@ -1,3 +1,5 @@
+import 'server-only';
+
 /**
  * The shared Auth.js configuration. EDGE-SAFE, and that is a hard constraint.
  *

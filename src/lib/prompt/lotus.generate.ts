@@ -1,3 +1,5 @@
+import 'server-only';
+
 /**
  * The impure half of the Lotus feature: the cached read, the model call, the
  * write, and the cooldown.

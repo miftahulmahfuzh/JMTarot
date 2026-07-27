@@ -1,3 +1,5 @@
+import 'server-only';
+
 import type { Locale, ReaderId, ServiceId, YesNo } from '@/data/types';
 import { budgetFor } from './budget';
 import { servicePromptEn, VERDICT_WORD_EN } from './services.en';
