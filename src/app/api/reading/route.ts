@@ -9,6 +9,7 @@ import { tFor } from '@/lib/i18n/catalog';
 import { getLocale } from '@/lib/i18n/t';
 import { hit } from '@/lib/ratelimit';
 import { gateReading } from '@/lib/moderation/gate';
+import { recordModerationFlag } from '@/lib/moderation/log';
 import { persistReading, touchLastSeen } from '@/lib/analytics/flush';
 import { extractGist } from '@/lib/memory/gist.generate';
 import { recallChain } from '@/lib/memory/chain';
@@ -407,6 +408,32 @@ export async function POST(request: Request) {
         reader_id: reader,
         service_id: service,
       });
+    }
+
+    /*
+     * THE FLAG ROW, off the response path.
+     *
+     * `after()` and not `defer()`: `defer()`'s queue is drained by W4's single
+     * analytics callback, which on the CLEAN path parks on the stream settling
+     * for up to ANALYTICS_STREAM_TIMEOUT_MS. A refusal has no stream, and a
+     * near-miss should not wait on one either. Its own `after()` keeps the two
+     * independent.
+     *
+     * Registered for BOTH a refusal and a near-miss. `recordModerationFlag`
+     * returns early when there is no category, so a genuinely clean question
+     * writes nothing.
+     */
+    if (verdict.category !== null) {
+      const flagQuestion = cleanQuestion;
+      after(() =>
+        recordModerationFlag({
+          userId: user.id,
+          question: flagQuestion,
+          verdict,
+          locale,
+          action: verdict.blocked ? 'blocked' : 'allowed_flagged',
+        }),
+      );
     }
 
     if (gated.blocked) {

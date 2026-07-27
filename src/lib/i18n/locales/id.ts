@@ -193,6 +193,18 @@ const id = {
   'moderation.blocked.selfHarm.closing':
     'Kami tidak membuka kartu untuk pertanyaan ini. Bukan karena pertanyaanmu salah, tapi karena jawaban yang kamu butuhkan tidak boleh datang dari tebakan. Alasannya ada di',
 
+  /*
+   * --- The legal documents (W7) --------------------------------------------
+   *
+   * ONLY THE CHROME IS KEYED (I15). The seventeen clauses themselves live in
+   * `src/app/terms/terms.{id,en}.tsx` and the twelve privacy sections in
+   * `src/app/privacy/privacy.{id,en}.tsx`, because a 2,000-word document as one
+   * catalog value is unreviewable in a diff -- and these are legal documents,
+   * where reviewing the diff is the entire point.
+   */
+  'legal.back': 'Kembali',
+  'legal.effective': 'Berlaku sejak versi {version}.',
+
   // --- Sign in --------------------------------------------------------------
   'login.tagline':
     'Tiga pembaca, dua puluh dua Major Arcana, satu bacaan untuk hari ini.',

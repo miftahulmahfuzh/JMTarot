@@ -125,6 +125,10 @@ const en: Catalog = {
   'moderation.blocked.selfHarm.closing':
     'We will not turn cards on this question. Not because the question is wrong, but because the answer you need must not come from a guess. Our terms explain why:',
 
+  // --- The legal documents (W7). Chrome only; see `id.ts` and I15. ----------
+  'legal.back': 'Back',
+  'legal.effective': 'In effect from version {version}.',
+
   // --- Sign in --------------------------------------------------------------
   'login.tagline': 'Three readers, twenty-two Major Arcana, one reading for today.',
   'login.google': 'Sign in with Google',

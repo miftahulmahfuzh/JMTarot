@@ -1,0 +1,293 @@
+import Link from 'next/link';
+import { Callout, Clause, LegalDoc, List, P, SubClause } from '@/components/Legal';
+import { OPERATOR } from '../terms/operator';
+import { PROVIDER, RETENTION } from './facts';
+
+/**
+ * Privacy policy, English. **THIS VERSION DOES NOT GOVERN** (W7-D20).
+ *
+ * Natively written, not translated. Section ids must match `privacy.id.tsx`
+ * exactly -- the terms link to `/privacy#8` and section 8 must be section 8 in
+ * both.
+ *
+ * The same three constraints on the z.ai clause apply here, and they are the
+ * most likely thing in this file to be "improved" into something false. See
+ * `privacy.id.tsx`'s header and reconciliation §7.1.
+ */
+export function PrivacyEn({ effective }: { effective: string }) {
+  return (
+    <LegalDoc title="Privacy Policy" effective={effective}>
+      <Clause id="1" n="1." title="Who we are, and how to reach us">
+        <P>
+          JMTarot is operated by {OPERATOR.legalName}, Indonesia. For anything about your personal
+          data, write to <a href={`mailto:${OPERATOR.contactEmail}`}>{OPERATOR.contactEmail}</a>.
+        </P>
+      </Clause>
+
+      <Clause id="2" n="2." title="What we collect">
+        <SubClause id="2-1" n="2.1" title="What Google gives us when you sign in">
+          <P>Four things and a flag, and nothing else:</P>
+          <List
+            items={[
+              'The stable identifier Google issues for your account. This is your real identity in our system.',
+              'Your email address.',
+              'Whether Google says that address is verified.',
+              'Your display name and the link to your profile picture.',
+            ]}
+          />
+          <P>
+            Not your password. Not your contacts, your calendar, or anything else &mdash; we request
+            no other permission.
+          </P>
+        </SubClause>
+
+        <SubClause id="2-2" n="2.2" title="What we ask you once, at the start">
+          <P>
+            Your full name, a nickname, your date of birth, and six personal questions. One of them
+            reads: <em>&ldquo;The heaviest thing you have watched happen.&rdquo;</em>{' '}We quote it
+            here word for word, because a policy that calls that &ldquo;certain personal
+            reflections&rdquo; is worse than no policy at all.
+          </P>
+          <P>Four things about that answer:</P>
+          <List
+            items={[
+              <>
+                <strong>You can skip it</strong>, and the app works completely without it.
+              </>,
+              <>
+                <strong>It is encrypted at rest</strong>{' '}with AES-256-GCM, using a key that is not
+                in the source code and not in the database.
+              </>,
+              <>
+                <strong>Only an abstract summary ever reaches the language model.</strong>{' '}The
+                distillation is instructed to abstract rather than restate: what reaches a reading
+                looks like &ldquo;carries a heavy memory of loss&rdquo;, never the incident. Any
+                name you mention never travels with it.
+              </>,
+              <>
+                <strong>You can clear it at any time</strong>, one answer at a time, without
+                deleting your account.
+              </>,
+            ]}
+          />
+          <P>
+            Why we ask at all, when we refuse to read cards on the same subject, is{' '}
+            <Link href="/terms#7">terms clause 7</Link>.
+          </P>
+        </SubClause>
+
+        <SubClause id="2-3" n="2.3" title="Readings">
+          <Callout>
+            <P>
+              <strong>Every reading is stored and kept.</strong>{' '}This reverses how an earlier
+              version of this app behaved &mdash; it stored no readings at all &mdash; so if you
+              used that version, this is a change.
+            </P>
+          </Callout>
+          <P>
+            What is stored: the reader you chose, the kind of reading, the cards that came up and
+            whether each was upright or reversed, the question you typed, the text of the reading,
+            which model wrote it, and your device&rsquo;s calendar date.
+          </P>
+          <P>
+            The reason is one thing, plainly:{' '}
+            <strong>this is what makes the app remember you</strong>{' '}&mdash; the verdict about which
+            cards keep returning, readings that refer to your last one, and the reader&rsquo;s
+            summary of your day.
+          </P>
+        </SubClause>
+
+        <SubClause id="2-4" n="2.4" title="Analytics">
+          <P>
+            Which screens you open, which reader and which kind of reading you pick, when, and how
+            each reading turned out. We record event categories, not free text: nothing you type
+            goes into an analytics record.
+          </P>
+          <P>
+            No third-party analytics, no advertising, no tracking pixels, nothing cross-site.
+          </P>
+        </SubClause>
+
+        <SubClause id="2-5" n="2.5" title="Moderation">
+          <P>
+            If a question is refused, we record the question, the category, whether a word list or
+            an automatic check refused it, and when &mdash; so we can find and fix wrong refusals.
+          </P>
+          <P>
+            The text is stored encrypted and{' '}
+            <strong>deleted after {RETENTION.moderationQuestionDays} days</strong>; the category and
+            the timestamp are kept. For the child-sexual-content category the text is{' '}
+            <strong>never recorded at all</strong>.
+          </P>
+        </SubClause>
+
+        <SubClause id="2-6" n="2.6" title="Technical data">
+          <P>
+            The session cookie (httpOnly, holding your account identifier and an expiry), the
+            language cookie, and the request logs our host keeps &mdash; IP address, browser, and
+            the path you asked for.
+          </P>
+          <P>We never write the text of your question to a log ourselves.</P>
+        </SubClause>
+      </Clause>
+
+      <Clause id="3" n="3." title="Why we use each of these">
+        <List
+          items={[
+            'The Google data: so you can sign in, and so we know this account is yours.',
+            'The opening answers: so a reading sounds like it is for you rather than for anybody.',
+            'Readings: so the app remembers what you have already asked.',
+            'Analytics: so we know what is broken and what is used.',
+            'Moderation: so a wrong refusal can be found and fixed.',
+          ]}
+        />
+        <P>In short: because you asked us to, and because the Service cannot work otherwise.</P>
+      </Clause>
+
+      <Clause id="4" n="4." title="Who else sees it">
+        <P>Three parties, and no others.</P>
+
+        <SubClause id="4-1" n="4.1" title={`The language model provider (${PROVIDER.name})`}>
+          <Callout>
+            <P>
+              <strong>Your question leaves Indonesia.</strong>{' '}To write each reading and to check
+              each question, we send your question, the cards you drew, and the abstract summary of
+              your opening answers to {PROVIDER.name}.
+            </P>
+          </Callout>
+          <P>
+            <strong>
+              This provider&rsquo;s API terms prohibit using what we send to train or improve their
+              models unless we explicitly agree.
+            </strong>{' '}
+            We have not agreed and will not. That protection attaches to the API service we use, not
+            to their consumer product. Source:{' '}
+            <a href={PROVIDER.termsUrl} target="_blank" rel="noreferrer">
+              {PROVIDER.termsLabel}
+            </a>
+            , checked {PROVIDER.verifiedOn}.
+          </P>
+          <P>
+            Two things we cannot promise on their behalf, because they do not state them:{' '}
+            <strong>how long they keep</strong> what is sent through the API, and{' '}
+            <strong>which country</strong>{' '}it is processed in. Their general terms do acknowledge
+            that content may be processed outside the place you access the service from. We write
+            these down as unknown rather than guessing at them.
+          </P>
+        </SubClause>
+
+        <SubClause id="4-2" n="4.2" title="Google">
+          <P>For sign-in only. We send them nothing about your readings.</P>
+        </SubClause>
+
+        <SubClause id="4-3" n="4.3" title="Our host">
+          <P>Vercel runs the app, so every request passes through them.</P>
+        </SubClause>
+
+        <P>
+          <strong>No advertisers, no data brokers, and no sale of anything, ever.</strong>{' '}We say it
+          outright because most people assume the opposite.
+        </P>
+      </Clause>
+
+      <Clause id="5" n="5." title="Security">
+        <P>
+          The sensitive opening answers and the text of refused questions are encrypted at rest with
+          AES-256-GCM. Everything is served over TLS. The key exists only in the deployment
+          environment &mdash; not in the code, not in the database.
+        </P>
+        <P>
+          The limit is worth stating, because a security claim with no limit is not an honest one:
+          field encryption protects against a leaked copy of the database, not against a running
+          application that has been compromised.
+        </P>
+      </Clause>
+
+      <Clause id="6" n="6." title="How long we keep things">
+        <List
+          items={[
+            'Account, profile, opening answers and Lotus avatar: for the life of your account.',
+            <>
+              <strong>Readings and their cards: for the life of your account</strong>, and
+              deliberately not on the clock below &mdash; every memory feature reads them.
+            </>,
+            'Daily summaries: for the life of your account.',
+            <>
+              Analytics records: <strong>{RETENTION.eventsDays} days</strong>, then deleted.
+            </>,
+            <>
+              Moderation records: the question text for{' '}
+              <strong>{RETENTION.moderationQuestionDays} days</strong>, the record itself
+              indefinitely without the text.
+            </>,
+          ]}
+        />
+      </Clause>
+
+      <Clause id="7" n="7." title="Your choices">
+        <List
+          items={[
+            'Skip any opening question.',
+            'Clear a single answer later, without deleting your account.',
+            'Change the app&rsquo;s language whenever you like.',
+            'Delete your account.',
+          ]}
+        />
+      </Clause>
+
+      <Clause id="8" n="8." title="Deleting your account, precisely">
+        <P>
+          When you ask us to delete it, the account stops working immediately and your data becomes
+          unreachable through the app. The text of any refused question is{' '}
+          <strong>redacted at that moment</strong>, without waiting for the{' '}
+          {RETENTION.moderationQuestionDays}-day schedule.
+        </P>
+        <P>
+          <strong>Within {RETENTION.erasureGraceDays} days</strong>{' '}the real deletion runs: your
+          profile, opening answers, Lotus avatar, every reading and its cards, and your daily
+          summaries are removed from the database. During that window you can undo it by signing in
+          again.
+        </P>
+        <P>
+          What survives: analytics records and moderation records, with no link to your account
+          &mdash; the user column is emptied, and a moderation record no longer holds any text. We
+          say so because &ldquo;we delete all your data&rdquo; would not be true, and people check.
+        </P>
+      </Clause>
+
+      <Clause id="9" n="9." title="Children">
+        <P>
+          The Service is for people 18 and over; see <Link href="/terms#3">terms clause 3</Link>. If
+          you believe a child has an account here, tell us at{' '}
+          <a href={`mailto:${OPERATOR.contactEmail}`}>{OPERATOR.contactEmail}</a>{' '}and we will delete
+          it.
+        </P>
+      </Clause>
+
+      <Clause id="10" n="10." title="Changes to this policy">
+        <P>
+          This policy is versioned alongside the terms. Material changes are announced in the app
+          and ask for your agreement again.
+        </P>
+      </Clause>
+
+      <Clause id="11" n="11." title="Why we ask about hard things and then refuse to read them">
+        <P>
+          The full version is <Link href="/terms#7">terms clause 7</Link>. In short: one is a closed
+          question you may skip and that we only store; the other is an open request for guidance
+          about your safety, which would be answered by a language model with no qualification to
+          answer it. We are willing to hold what you tell us. We are not willing to guess.
+        </P>
+      </Clause>
+
+      <Clause id="12" n="12." title="Language">
+        <Callout>
+          <P>
+            This policy exists in Indonesian and in English.{' '}
+            <strong>The Indonesian version governs.</strong>
+          </P>
+        </Callout>
+      </Clause>
+    </LegalDoc>
+  );
+}

@@ -1,0 +1,143 @@
+/*
+ * Long-form legal prose, on a 375px phone.
+ *
+ * A seventeen-clause document is a scrolling test more than a layout one, so
+ * the whole file is about two things: a comfortable measure, and a heading
+ * rhythm strong enough that you can find clause 6.7 by thumb.
+ *
+ * TOKENS ONLY. `--fs-reading` / `--lh-reading` for body, `--fs-eyebrow` and
+ * `--ls-section-label` for headings, `--gold` and `--gold-hairline` for rules.
+ * No new hex values, font sizes or easing curves.
+ */
+
+.doc {
+  /*
+   * 68ch is the readable measure the plan asks for. On a 375px phone the
+   * viewport binds long before the measure does, so this only takes effect on a
+   * tablet or a desktop -- which is where an unbounded legal document becomes a
+   * 150-character line and genuinely unreadable.
+   */
+  max-inline-size: 68ch;
+  margin-inline: auto;
+  padding: 24px 20px 64px;
+}
+
+.title {
+  font-family: var(--font-display), serif;
+  font-size: 28px;
+  line-height: 1.2;
+  color: var(--text-warm);
+  margin: 0 0 8px;
+}
+
+.effective {
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: 13px;
+  color: var(--faint);
+  margin: 0 0 28px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--gold-hairline);
+}
+
+.clause {
+  margin-block-start: 32px;
+}
+
+.sub {
+  margin-block-start: 20px;
+  /*
+   * A left rule rather than an indent. An indent at 375px costs measure the
+   * document cannot spare; a hairline says "this is subordinate" for 1px.
+   */
+  border-inline-start: 1px solid var(--gold-hairline);
+  padding-inline-start: 14px;
+}
+
+.heading,
+.subHeading {
+  font-family: var(--font-display), serif;
+  color: var(--gold);
+  margin: 0 0 10px;
+  /*
+   * The anchor target lands here. Without the offset, `/terms#6-2` puts the
+   * heading flush against the top edge and reads as if the link missed.
+   */
+  scroll-margin-block-start: 24px;
+}
+
+.heading {
+  font-size: 19px;
+  line-height: 1.35;
+}
+
+.subHeading {
+  font-size: var(--fs-reading);
+  line-height: 1.35;
+  color: var(--text-warm);
+}
+
+/*
+ * The number is tabular and slightly quieter than the title it labels, so a
+ * column of `6.1 6.2 6.3` scans as a column while reading as a sentence.
+ */
+.number {
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
+  margin-inline-end: 4px;
+}
+
+.p {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-reading);
+  line-height: var(--lh-reading);
+  color: var(--text-warm);
+  margin: 0 0 12px;
+}
+
+.list {
+  margin: 0 0 12px;
+  padding-inline-start: 20px;
+}
+
+.li {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-reading);
+  line-height: var(--lh-reading);
+  color: var(--text-warm);
+  margin-block-end: 8px;
+}
+
+.callout {
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-chip);
+  background: var(--gold-wash);
+  padding: 16px;
+  margin-block: 16px;
+}
+
+.callout .p:last-child {
+  margin-bottom: 0;
+}
+
+.doc a {
+  color: var(--gold);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* The back link at the top of the page, outside the measure column. */
+.back {
+  display: inline-block;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-section-label);
+  text-transform: uppercase;
+  color: var(--faint);
+  padding: 16px 20px;
+  text-decoration: none;
+}
+
+.back:hover {
+  color: var(--gold);
+}
