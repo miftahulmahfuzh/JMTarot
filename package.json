@@ -21,7 +21,8 @@
     "test:all": "vitest run",
     "cards": "python3 tools/generate_cards.py",
     "assets": "python3 tools/normalize_cards.py",
-    "smoke": "RES_OPTIONS=no-aaaa tsx scripts/smoke-llm.ts"
+    "smoke": "RES_OPTIONS=no-aaaa NODE_OPTIONS=--conditions=react-server tsx scripts/smoke-llm.ts",
+    "probe:moderation": "RES_OPTIONS=no-aaaa NODE_OPTIONS=--conditions=react-server tsx scripts/probe-moderation.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",

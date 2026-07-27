@@ -49,6 +49,19 @@ export type LLMCallOpts = {
   signal?: AbortSignal;
   /** Overrides `LLM_MODEL` for one call: `LOTUS_MODEL` (W3), `MODERATION_MODEL` (W7). */
   model?: string;
+  /**
+   * Sampling temperature. UNSET MEANS THE PROVIDER'S DEFAULT, which is what
+   * every reading wants -- three readers who always answered identically would
+   * be a worse product, and pinning a number here would quietly change the nine
+   * shipped prompts.
+   *
+   * W7's classifier sets `0` (its D4). It is the one call in this app whose
+   * output is parsed rather than read, and a JSON object that varies run to run
+   * is a parser failure waiting for a Tuesday. It lives on the OPTS rather than
+   * on `CompletionPrompt` for the same reason `model` does: it is a property of
+   * how this one call is made, not of the prompt that was built.
+   */
+  temperature?: number;
 };
 
 /**
