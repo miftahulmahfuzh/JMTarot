@@ -30,15 +30,14 @@ export const VERDICT_WORD_ID: Record<YesNo, string> = {
  */
 export function servicePromptId(
   service: ServiceId,
-  budget: Record<ServiceId, LengthBudget>,
+  b: LengthBudget,
   verdict?: YesNo,
 ): string {
-  const b = budget[service];
   switch (service) {
     case 'daily':
       return `TUGASMU: bacaan Kartu Harian, satu kartu.
 
-PANJANG: tepat dua paragraf, masing-masing 2 sampai 4 kalimat. Jangan lebih.
+PANJANG: tepat dua paragraf. Tiap paragraf 2 sampai 4 kalimat DAN maksimal ${b.maxParagraphWords} kata -- yang mana pun tercapai lebih dulu, di situ paragrafnya berhenti. Batas katanya yang menang, bukan jumlah kalimatnya.
 
 Paragraf pertama: energi hari ini lewat kartu itu.
 Paragraf kedua: satu hal kecil yang konkret untuk diperhatikan hari ini. Satu saja, bukan daftar.
@@ -75,7 +74,7 @@ Jawaban itu berasal dari kartu dan orientasinya, bukan dari penilaianmu. Kamu TI
 
 Mulai bacaanmu dengan kata "${word}" sebagai kata pertama. Lalu 2-3 kalimat tentang mengapa kartu ini berkata begitu.
 
-PANJANG: satu paragraf, 3 sampai 4 kalimat. Singkat memang wujud layanan ini.${
+PANJANG: satu paragraf, 3 sampai 4 kalimat DAN maksimal ${b.maxParagraphWords} kata -- yang mana pun tercapai lebih dulu. Singkat memang wujud layanan ini.${
         verdict === 'maybe'
           ? '\n\n"Belum jelas" bukan sikap ragu-ragu darimu. Itu memang isi kartunya: keadaannya belum matang untuk dijawab. Katakan begitu dengan yakin, dan sebutkan apa yang masih perlu terjadi.'
           : ''

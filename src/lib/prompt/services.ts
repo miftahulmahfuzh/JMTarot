@@ -1,25 +1,37 @@
-import type { Locale, ServiceId, YesNo } from '@/data/types';
-import { LENGTH_BUDGET } from './budget';
+import type { Locale, ReaderId, ServiceId, YesNo } from '@/data/types';
+import { budgetFor } from './budget';
 import { servicePromptEn, VERDICT_WORD_EN } from './services.en';
 import { servicePromptId, VERDICT_WORD_ID } from './services.id';
 
-export { LENGTH_BUDGET, midpoint, type LengthBudget } from './budget';
+export { budgetFor, LENGTH_BUDGET, midpoint, type LengthBudget } from './budget';
 
 /**
  * The task layer's facade.
  *
- * The two locale modules are called with the budget rather than importing it, so the
- * number in the prompt and the number the smoke script asserts are provably the same
- * constant. `LENGTH_BUDGET` is re-exported here because `services.ts` is what
- * everything already imports.
+ * The two locale modules are HANDED a resolved budget rather than importing one, so
+ * the number in the prompt and the number the smoke script asserts against are
+ * provably the same object. `budgetFor` is re-exported here because `services.ts` is
+ * what everything already imports.
+ *
+ * IT TAKES THE READER, WHICH THE PLAN'S §4 SIGNATURE DID NOT. The budget became
+ * per-reader when measurement showed Margaret sitting on the 40-word ceiling in both
+ * locales; see `READER_OVERRIDE` in `budget.ts`. Passing the reader is what keeps the
+ * resolution in one place -- the alternative was for `build.ts` to resolve the budget
+ * and pass a number, which puts the override logic in the caller and lets the smoke
+ * script resolve it differently.
  */
 const BY_LOCALE = {
   id: servicePromptId,
   en: servicePromptEn,
 } satisfies Record<Locale, typeof servicePromptId>;
 
-export function servicePrompt(service: ServiceId, locale: Locale, verdict?: YesNo): string {
-  return BY_LOCALE[locale](service, LENGTH_BUDGET[locale], verdict);
+export function servicePrompt(
+  service: ServiceId,
+  locale: Locale,
+  reader: ReaderId,
+  verdict?: YesNo,
+): string {
+  return BY_LOCALE[locale](service, budgetFor(locale, service, reader), verdict);
 }
 
 /**

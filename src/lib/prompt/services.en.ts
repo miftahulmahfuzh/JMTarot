@@ -40,16 +40,15 @@ export const VERDICT_WORD_EN: Record<YesNo, string> = {
  */
 export function servicePromptEn(
   service: ServiceId,
-  budget: Record<ServiceId, LengthBudget>,
+  b: LengthBudget,
   verdict?: YesNo,
 ): string {
-  const b = budget[service];
 
   switch (service) {
     case 'daily':
       return `YOUR TASK: a Daily Card reading, one card.
 
-LENGTH: exactly two paragraphs, each 2 to 4 sentences. No more.
+LENGTH: exactly two paragraphs. Each paragraph 2 to 4 sentences AND at most ${b.maxParagraphWords} words -- whichever comes first is where the paragraph stops. The word limit wins over the sentence count.
 
 First paragraph: today's energy, through that card.
 Second paragraph: one small concrete thing to watch for today. One, not a list.
@@ -86,7 +85,7 @@ That answer comes from the card and its orientation, not from your judgement. Yo
 
 Begin the reading with the word "${word}" as the first word. Then 2-3 sentences on why this card says so.
 
-LENGTH: one paragraph, 3 to 4 sentences. Being short is the shape of this service.${
+LENGTH: one paragraph, 3 to 4 sentences AND at most ${b.maxParagraphWords} words -- whichever comes first. Being short is the shape of this service.${
         verdict === 'maybe'
           ? `\n\n"Not yet" is not you hedging. It is what the card says: the situation is not ripe enough to answer. Say so with confidence, and name what still has to happen.`
           : ''

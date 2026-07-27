@@ -3,7 +3,7 @@ import type { MemoryContext } from './memory';
 import { baseContract, FORMAT_RULES } from './base';
 import { buildPrompt } from './build';
 import { readerPrompt } from './readers';
-import { LENGTH_BUDGET, midpoint, servicePrompt, VERDICT_WORD } from './services';
+import { budgetFor, LENGTH_BUDGET, midpoint, servicePrompt, VERDICT_WORD } from './services';
 
 const draw = [
   { id: 18, reversed: true },
@@ -562,8 +562,8 @@ describe('the locale fork', () => {
     expect(VERDICT_WORD.en).toEqual({ yes: 'Yes', no: 'No', maybe: 'Not yet' });
 
     // The facade dispatches by locale.
-    const id = servicePrompt('yesno', 'id', 'yes');
-    const en = servicePrompt('yesno', 'en', 'yes');
+    const id = servicePrompt('yesno', 'id', 'thessaly', 'yes');
+    const en = servicePrompt('yesno', 'en', 'thessaly', 'yes');
     expect(id).not.toBe(en);
     expect(id).toContain('TUGASMU');
     expect(en).toContain('YOUR TASK');
@@ -576,10 +576,41 @@ describe('the locale fork', () => {
    * only thing standing between "the prompt says 40" and "the smoke script asserts
    * 35" being simultaneously true.
    */
-  it('interpolates the paragraph ceiling from LENGTH_BUDGET', () => {
-    const system = buildPrompt({ reader: 'margaret', service: 'spread3', picks: draw, locale: 'id' }).system;
-    expect(system).toContain(`maksimal ${LENGTH_BUDGET.id.spread3.maxParagraphWords} kata`);
-    expect(system).toContain(`sekitar ${midpoint(LENGTH_BUDGET.id.spread3)} kata`);
+  it('interpolates the paragraph ceiling from the RESOLVED budget', () => {
+    for (const reader of ['thessaly', 'margaret', 'adrian'] as const) {
+      const b = budgetFor('id', 'spread3', reader);
+      const system = buildPrompt({ reader, service: 'spread3', picks: draw, locale: 'id' }).system;
+      expect(system, reader).toContain(`maksimal ${b.maxParagraphWords} kata`);
+      expect(system, reader).toContain(`sekitar ${midpoint(b)} kata`);
+    }
+  });
+
+  /**
+   * The override reaches the prompt, and only the reader it names.
+   *
+   * This is the assertion that would fail if `servicePrompt` stopped taking the
+   * reader -- which would silently give everyone the default and put the smoke
+   * script's check back out of step with the prose.
+   */
+  it('applies the per-reader budget override to Margaret and nobody else', () => {
+    const ceiling = (reader: 'thessaly' | 'margaret' | 'adrian', locale: 'id' | 'en') =>
+      budgetFor(locale, 'spread3', reader).maxParagraphWords;
+
+    for (const locale of ['id', 'en'] as const) {
+      expect(ceiling('margaret', locale)).toBe(55);
+      expect(ceiling('thessaly', locale)).toBe(LENGTH_BUDGET[locale].spread3.maxParagraphWords);
+      expect(ceiling('adrian', locale)).toBe(LENGTH_BUDGET[locale].spread3.maxParagraphWords);
+    }
+
+    // And it is in the PROSE, not only in the constant.
+    const of = (reader: 'thessaly' | 'margaret') =>
+      buildPrompt({ reader, service: 'spread3', picks: draw, locale: 'en' }).system;
+    expect(of('margaret')).toContain('55-word limit');
+    expect(of('thessaly')).toContain('40-word limit');
+
+    // The override is spread3-only. Her daily and yesno take the default.
+    expect(budgetFor('id', 'daily', 'margaret')).toEqual(LENGTH_BUDGET.id.daily);
+    expect(budgetFor('id', 'yesno', 'margaret')).toEqual(LENGTH_BUDGET.id.yesno);
   });
 
   /**
@@ -618,7 +649,7 @@ describe('the English prompt layer', () => {
   it('no longer holds a placeholder anywhere', () => {
     // The reason `TODO(...)` was the placeholder text rather than plausible English:
     // this assertion is trivial to write and impossible to pass by accident.
-    const all = [baseContract('en'), ...READERS.map(persona), servicePrompt('spread3', 'en')];
+    const all = [baseContract('en'), ...READERS.map(persona), servicePrompt('spread3', 'en', 'margaret')];
     for (const layer of all) expect(layer).not.toContain('TODO(W6');
   });
 
@@ -693,8 +724,8 @@ describe('the English prompt layer', () => {
   });
 
   it('keeps the English task layer structurally identical to the Indonesian', () => {
-    const en = servicePrompt('spread3', 'en');
-    const id = servicePrompt('spread3', 'id');
+    const en = servicePrompt('spread3', 'en', 'thessaly');
+    const id = servicePrompt('spread3', 'id', 'thessaly');
     // Four paragraphs, the position-name rule, the card-naming rule, and the
     // synthesis paragraph -- the four things the Indonesian calibration paid for.
     expect(en).toContain('exactly four paragraphs');

@@ -184,7 +184,7 @@ export function buildPrompt({
   const staticLayers = [
     baseContract(locale),
     readerPrompt(r.id, locale),
-    servicePrompt(s.id, locale, verdict),
+    servicePrompt(s.id, locale, r.id, verdict),
   ];
 
   /*
