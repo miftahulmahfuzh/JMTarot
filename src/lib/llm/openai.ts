@@ -8,6 +8,7 @@ import type {
   LLMStream,
   ReadingPrompt,
   ReadingUsage,
+  ReasoningEffort,
 } from './types';
 
 /**
@@ -57,6 +58,50 @@ function baseUrl(): string {
 
 type ChatMessage = { role: 'system' | 'user'; content: string };
 
+/**
+ * The reasoning budget for this call: the per-call option, else the deployment's
+ * `OPENAI_REASONING_EFFORT`, else nothing at all.
+ *
+ * **SENDING NOTHING IS THE RIGHT DEFAULT AND IT IS ALSO THE DANGEROUS ONE.** The
+ * `gpt-4.1` and `gpt-4o` families REJECT `reasoning_effort` outright, so an
+ * unconditional default would break the configuration that currently works. The
+ * GPT-5 family accepts it and needs `'none'` to fit this app's ceilings at all.
+ * There is no value that is correct for both, so the choice belongs with the
+ * model choice -- in the environment, next to `LLM_MODEL`.
+ *
+ * The trap that leaves is handled downstream rather than here: `streamReading`
+ * refuses to return an empty reading silently. See `EmptyReasoningError`.
+ */
+function effortFor(opts: LLMCallOpts | undefined): ReasoningEffort | undefined {
+  if (opts?.reasoningEffort) return opts.reasoningEffort;
+  const env = process.env.OPENAI_REASONING_EFFORT;
+  return env ? (env as ReasoningEffort) : undefined;
+}
+
+/**
+ * The model spent its whole token budget thinking and produced no prose.
+ *
+ * **THIS EXISTS BECAUSE THE ALTERNATIVE IS A BLANK PAGE THAT REPORTS SUCCESS.**
+ * When a GPT-5-family model reasons past `max_completion_tokens`, the stream
+ * closes normally with `finish_reason: 'length'` and zero content deltas. Nothing
+ * upstream can tell that from a legitimately short reading: the route records a
+ * completed reading, analytics records a success, and the querent gets nothing.
+ * There is no `[Bacaan terputus...]` notice, because the stream did not break.
+ *
+ * Throwing converts that into an ordinary failed reading -- visible in
+ * `readings.status`, in `reading.failed`, and on screen -- which is what it is.
+ */
+export class EmptyReasoningError extends Error {
+  constructor(readonly maxTokens: number) {
+    super(
+      `openai: the model returned no content and stopped on length at ` +
+        `max_completion_tokens=${maxTokens}. This is a reasoning-family model ` +
+        `spending the whole budget on reasoning; set OPENAI_REASONING_EFFORT=none.`,
+    );
+    this.name = 'EmptyReasoningError';
+  }
+}
+
 function body(
   model: string,
   messages: ChatMessage[],
@@ -75,6 +120,7 @@ function body(
      * that sets it, and it needs the 0 to survive.
      */
     ...(opts?.temperature === undefined ? {} : { temperature: opts.temperature }),
+    ...(effortFor(opts) === undefined ? {} : { reasoning_effort: effortFor(opts) }),
     ...(stream ? { stream: true, stream_options: { include_usage: true } } : {}),
   });
 }
@@ -147,7 +193,7 @@ async function* sseLines(res: Response): AsyncGenerator<string> {
 }
 
 type Delta = {
-  choices?: Array<{ delta?: { content?: string | null } }>;
+  choices?: Array<{ delta?: { content?: string | null }; finish_reason?: string | null }>;
   usage?: { prompt_tokens?: number | null; completion_tokens?: number | null } | null;
 };
 
@@ -166,6 +212,8 @@ export function createOpenAIProvider(): LLMProvider {
         // literally true. See the same comment in `anthropic.ts`.
         let inputTokens: number | null = null;
         let outputTokens: number | null = null;
+        let delivered = 0;
+        let finish: string | null = null;
 
         try {
           const res = await post(
@@ -201,8 +249,23 @@ export function createOpenAIProvider(): LLMProvider {
               outputTokens = event.usage.completion_tokens ?? null;
             }
 
+            finish = event.choices?.[0]?.finish_reason ?? finish;
+
             const text = event.choices?.[0]?.delta?.content;
-            if (text) yield text;
+            if (text) {
+              delivered += text.length;
+              yield text;
+            }
+          }
+
+          /*
+           * AFTER the loop, so it cannot fire on a consumer that broke out early
+           * -- an abandoned reading delivered nothing either, and that is not this
+           * failure. Only a stream we drained to the end, that ran out of tokens,
+           * and that produced not one character.
+           */
+          if (delivered === 0 && finish === 'length') {
+            throw new EmptyReasoningError(maxTokens);
           }
         } finally {
           /*

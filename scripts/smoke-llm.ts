@@ -266,6 +266,26 @@ async function main() {
    * line, which is the one thing this script has.
    */
   const warnings: string[] = [];
+  /**
+   * THE THREE VOICE PROXIES, IN THEIR OWN ARRAY, AND THAT IS A BUG FIX.
+   *
+   * They used to push into `failures`, which is printed and counted ~120 lines
+   * ABOVE where they run -- so their verdicts landed in an array nobody read
+   * again, nothing set an exit code, and every run exited 0. **CLAUDE.md says
+   * these "FAIL loudly"; they printed their measurements and could not fail.**
+   *
+   * Nobody noticed because every model tried until 2026-07-27 passed the
+   * sentence-length ratio anyway. `gpt-5.4-nano` is the first configuration to
+   * genuinely trip it -- Margaret at 1.05x Thessaly against a 1.5x rule, which is
+   * the three readers collapsing into one -- and the script reported nothing at
+   * all. Found by doing the arithmetic by hand during a provider evaluation.
+   *
+   * A separate array rather than a moved print, for the reason `warnings` is
+   * separate: these are a property of the READER SET across a whole run, not of
+   * any one reading, and folding them into the per-reading count would make one
+   * number mean two things.
+   */
+  const voiceFailures: string[] = [];
   /** `<locale>/<reader>` -> its spread3 text, for the overlap and the voice proxies. */
   const spreads = new Map<string, string>();
   /** Every reading, for the blind print and the per-locale summaries. */
@@ -480,7 +500,7 @@ async function main() {
         for (const word of CROSSOVER[loc][reader]) {
           const hit =
             word === '!' ? joined.includes('!') : new RegExp(`\\b${word}\\b`, 'i').test(joined);
-          if (hit) failures.push(`${loc} ${reader}: uses own forbidden word "${word}"`);
+          if (hit) voiceFailures.push(`${loc} ${reader}: uses own forbidden word "${word}"`);
         }
       }
 
@@ -499,7 +519,7 @@ async function main() {
       const m = mean.margaret ?? 0;
       const t = mean.thessaly ?? 0;
       if (t > 0 && m < t * 1.5) {
-        failures.push(
+        voiceFailures.push(
           `${loc}: Margaret's sentences (${m.toFixed(1)}) are not 1.5x Thessaly's ` +
             `(${t.toFixed(1)}) -- the voices are converging`,
         );
@@ -519,14 +539,42 @@ async function main() {
           process.stdout.write(`  contractions/100w    ${reader.padEnd(9)} ${rate[reader]!.toFixed(2)}\n`);
         }
         if ((rate.adrian ?? 0) === 0) {
-          failures.push('en adrian: zero contractions -- his voice rules ask for them throughout');
+          voiceFailures.push(
+            'en adrian: zero contractions -- his voice rules ask for them throughout',
+          );
         }
         if ((rate.margaret ?? 0) > 0) {
-          failures.push(
+          voiceFailures.push(
             `en margaret: ${rate.margaret!.toFixed(2)} contractions/100w -- her rules forbid them`,
           );
         }
       }
+    }
+
+    /*
+     * THE VERDICT, INSIDE THIS BLOCK AND AT THE END OF IT, for two reasons that
+     * each cost a wrong first attempt.
+     *
+     * It is HERE rather than 120 lines up in MECHANICAL CHECKS because this is the
+     * first point at which all three proxies have run. That was the bug: the
+     * verdicts were pushed into an array printed long before they executed, so the
+     * section CLAUDE.md calls "FAIL loudly" was structurally silent. See
+     * `voiceFailures`' declaration.
+     *
+     * And it is INSIDE `if (spreads.size >= 3)` because outside it, a run that
+     * never executed the proxies -- `--reader`/`--service`, or any run with fewer
+     * than three spread3 texts -- would print "all clean" and mean nothing by it.
+     * A green line for a check that did not happen is worse than no line.
+     */
+    process.stdout.write('\n-- VERDICT --\n');
+    if (voiceFailures.length === 0) {
+      process.stdout.write('all clean\n');
+    } else {
+      for (const f of voiceFailures) process.stdout.write(`FAIL  ${f}\n`);
+      process.stdout.write(
+        `\n${voiceFailures.length} violation(s). **THIS IS THE READERS CONVERGING**, and\n` +
+          'CLAUDE.md is explicit about the fix: the persona paragraphs, not the code.\n',
+      );
     }
   }
 
@@ -586,6 +634,33 @@ async function main() {
   }
 
   blindPrint(bodies, locales);
+
+  /*
+   * THE EXIT CODE, AND IT IS THE OTHER HALF OF THE BUG FIX.
+   *
+   * Printing `FAIL` and exiting 0 means every automated caller -- a CI job, a
+   * `&&` chain, anyone checking `$?` -- reads a run with violations as a success.
+   * The three voice proxies were worse than unreported before this: they were
+   * unreported AND unfailable.
+   *
+   * LAST, after the blind read, on purpose. A non-zero exit here must not
+   * suppress any output: the blind read is the part a human is supposed to do,
+   * and the whole point of the exercise is that you read the readings even when
+   * -- especially when -- something failed.
+   *
+   * WARNINGS DO NOT COUNT. That is `warnings`' entire reason for existing; see
+   * its declaration.
+   */
+  const total = failures.length + voiceFailures.length;
+  if (total > 0) {
+    process.stdout.write(
+      `\n${'#'.repeat(70)}\n` +
+        `${total} violation(s): ${failures.length} mechanical, ` +
+        `${voiceFailures.length} voice propert${voiceFailures.length === 1 ? 'y' : 'ies'}. ` +
+        `Exiting 1.\n${'#'.repeat(70)}\n`,
+    );
+    process.exitCode = 1;
+  }
 }
 
 /**

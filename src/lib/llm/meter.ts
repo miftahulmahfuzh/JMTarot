@@ -88,6 +88,7 @@ export const MODEL_WINDOW_MS = 5 * 60 * 60 * 1000;
  */
 import type { CallClass } from './types';
 export type { CallClass };
+export type { ReasoningEffort } from './types';
 
 export class ModelCeilingError extends Error {
   constructor(readonly tier: 'soft' | 'hard') {

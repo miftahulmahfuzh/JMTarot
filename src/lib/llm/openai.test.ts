@@ -13,6 +13,10 @@ import { createOpenAIProvider } from './openai';
  */
 const PROMPT = { system: 'sys', user: 'usr', maxTokens: 64, promptVersion: 'id-v1.deadbeef' };
 
+/** The JSON body of the first fetch this test made. */
+const sentBody = () =>
+  JSON.parse((vi.mocked(fetch).mock.calls[0][1] as RequestInit).body as string);
+
 /** A fake `fetch` that yields exactly the byte chunks it is given. */
 function streamingFetch(chunks: string[], status = 200) {
   return vi.fn(async () => {
@@ -164,8 +168,80 @@ describe('streamReading', () => {
   });
 });
 
+describe('reasoning effort, and the blank-reading guard', () => {
+  const finishFrame = (reason: string) =>
+    `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: reason }] })}\n\n`;
+
+  it('sends nothing when neither the option nor the env is set', () => {
+    /*
+     * Unconditional defaulting would break the working config: the gpt-4.1 and
+     * gpt-4o families REJECT `reasoning_effort` outright. No value is right for
+     * both families, so the choice sits next to LLM_MODEL in the environment.
+     */
+    vi.stubGlobal('fetch', streamingFetch([frame('a')]));
+    return drain(createOpenAIProvider().streamReading(PROMPT)).then(() => {
+      expect('reasoning_effort' in sentBody()).toBe(false);
+    });
+  });
+
+  it('sends OPENAI_REASONING_EFFORT when set', async () => {
+    vi.stubEnv('OPENAI_REASONING_EFFORT', 'none');
+    vi.stubGlobal('fetch', streamingFetch([frame('a')]));
+    await drain(createOpenAIProvider().streamReading(PROMPT));
+    expect(sentBody().reasoning_effort).toBe('none');
+  });
+
+  it('lets the per-call option override the environment', async () => {
+    vi.stubEnv('OPENAI_REASONING_EFFORT', 'low');
+    vi.stubGlobal('fetch', streamingFetch([frame('a')]));
+    await drain(createOpenAIProvider().streamReading(PROMPT, { reasoningEffort: 'none' }));
+    expect(sentBody().reasoning_effort).toBe('none');
+  });
+
+  it('THROWS rather than returning a blank reading when reasoning ate the budget', async () => {
+    /*
+     * **THE FAILURE THIS GUARD EXISTS FOR IS SILENT.** A GPT-5-family model that
+     * reasons past `max_completion_tokens` closes the stream NORMALLY with
+     * `finish_reason: 'length'` and zero content deltas -- so the route records a
+     * completed reading, analytics records a success, no `[Bacaan terputus...]`
+     * notice fires, and the querent gets a blank page. Measured on the real API:
+     * two of the app's own nine Indonesian prompts came back at zero characters.
+     */
+    vi.stubGlobal('fetch', streamingFetch([finishFrame('length'), 'data: [DONE]\n\n']));
+    await expect(drain(createOpenAIProvider().streamReading(PROMPT))).rejects.toThrow(
+      /returned no content and stopped on length/,
+    );
+  });
+
+  it('does NOT throw when the model legitimately produced short prose', async () => {
+    // A yesno reading is one short paragraph. Hitting the ceiling with content
+    // delivered is ordinary truncation, not this failure.
+    vi.stubGlobal('fetch', streamingFetch([frame('Ya.'), finishFrame('length')]));
+    expect(await drain(createOpenAIProvider().streamReading(PROMPT))).toBe('Ya.');
+  });
+
+  it('does NOT throw when a consumer abandons the stream', async () => {
+    /*
+     * An abandoned reading delivered nothing either, and that is a different
+     * thing -- the querent navigated away. The check sits AFTER the loop so an
+     * early `break` skips it entirely.
+     */
+    vi.stubGlobal('fetch', streamingFetch([frame('a'), finishFrame('length')]));
+    const stream = createOpenAIProvider().streamReading(PROMPT);
+    for await (const _ of stream) break;
+    expect(await stream.usage).toBeDefined();
+  });
+
+  it('does NOT throw on an empty stream that stopped normally', async () => {
+    // `finish_reason: 'stop'` with no content is a refusal or an empty answer --
+    // the gist and Lotus paths already treat empty as unusable and fall back.
+    vi.stubGlobal('fetch', streamingFetch([finishFrame('stop'), 'data: [DONE]\n\n']));
+    expect(await drain(createOpenAIProvider().streamReading(PROMPT))).toBe('');
+  });
+});
+
 describe('the request body', () => {
-  const sent = () => JSON.parse((vi.mocked(fetch).mock.calls[0][1] as RequestInit).body as string);
+  const sent = sentBody;
 
   it('uses max_completion_tokens, which the newer models require', async () => {
     // `max_tokens` is REJECTED rather than ignored by the current models.

@@ -12,6 +12,23 @@
 export type CallClass = 'interactive' | 'deferred';
 
 /**
+ * How much a reasoning-family model may think before it answers.
+ *
+ * **`'none'` IS NOT AN OPTIMISATION FOR THIS APP, IT IS A REQUIREMENT**, and the
+ * reason is that reasoning tokens are spent out of the SAME budget as the prose.
+ * `MAX_TOKENS` here runs 350-650, which is deliberate -- the length control is the
+ * product -- and a GPT-5-family model at default effort will spend all 650 on
+ * reasoning and return an EMPTY string. Measured 2026-07-27 against the app's own
+ * nine Indonesian prompts: two of nine came back at zero characters, and four of
+ * eighteen streamed readings were cut off mid-word.
+ *
+ * The accepted values are the provider's, verified against the live API rather
+ * than assumed: `'minimal'` is REJECTED, and `'low'` still reasons enough to
+ * truncate at these ceilings.
+ */
+export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh';
+
+/**
  * What a request to the model looks like once the prompt layer is done with it.
  *
  * Deliberately flat strings rather than provider message objects. Everything
@@ -92,6 +109,15 @@ export type LLMCallOpts = {
    * tiers do, and which call site declares what.
    */
   callClass?: CallClass;
+  /**
+   * Reasoning budget, for the providers that have one. Ignored by `anthropic.ts`.
+   *
+   * **UNSET DOES NOT MEAN "no reasoning" -- IT MEANS THE PROVIDER'S DEFAULT**,
+   * which for the GPT-5 family is enough to consume this app's entire token
+   * ceiling and return nothing. `OPENAI_REASONING_EFFORT` sets it per deployment;
+   * this field overrides that for one call. See `ReasoningEffort`.
+   */
+  reasoningEffort?: ReasoningEffort;
 };
 
 /**
