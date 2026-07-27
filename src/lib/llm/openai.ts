@@ -51,9 +51,38 @@ import type {
  *    a zero from OpenAI would be a fact worth seeing, not noise worth hiding.
  */
 
-/** `https://api.openai.com/v1` unless overridden -- an Azure or gateway host. */
+/**
+ * Google's OpenAI-compatible endpoint.
+ *
+ * **GEMINI NEEDS NO ADAPTER OF ITS OWN**, verified end to end: it accepts this
+ * file's exact request shape -- `max_completion_tokens`, `system` as a message,
+ * `stream: true` with `stream_options: {include_usage: true}` -- returns real
+ * `prompt_tokens`, and accepts `temperature: 0`, which the moderation classifier
+ * needs. So `LLM_PROVIDER=gemini` is this adapter with one constant swapped.
+ */
+export const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai';
+
+/**
+ * Where the adapter will actually send traffic.
+ *
+ * **EXPORTED BECAUSE THE SCRIPTS HAD THEIR OWN COPY AND IT WAS WRONG.**
+ * `smoke-llm.ts` and `probe-moderation.ts` printed
+ * `LLM_BASE_URL ?? 'api.anthropic.com'` -- the ANTHROPIC variable -- so a whole
+ * Gemini evaluation reported `baseURL=api.anthropic.com` while talking to Google.
+ * One function, three callers, no second copy to drift.
+ *
+ * `OPENAI_BASE_URL` still overrides, for Azure, a gateway, or a Gemini host that
+ * moves. It is deliberately checked FIRST so an explicit setting always wins.
+ */
+export function resolveBaseUrl(provider = process.env.LLM_PROVIDER ?? 'zai'): string {
+  if (process.env.OPENAI_BASE_URL) return process.env.OPENAI_BASE_URL.replace(/\/+$/, '');
+  if (provider === 'gemini') return GEMINI_BASE_URL;
+  if (provider === 'openai') return 'https://api.openai.com/v1';
+  return process.env.LLM_BASE_URL ?? 'api.anthropic.com';
+}
+
 function baseUrl(): string {
-  return (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
+  return resolveBaseUrl().replace(/\/+$/, '');
 }
 
 type ChatMessage = { role: 'system' | 'user'; content: string };
@@ -211,9 +240,16 @@ const REASONS_BY_DEFAULT = /^(gpt-5|gpt-6|o[0-9])/i;
 /**
  * **THE GUARD THAT MAKES THE `OPENAI_REASONING_EFFORT` REQUIREMENT UNFORGETTABLE.**
  *
- * `gpt-5.6-luna` is the designated emergency fallback (see
- * `docs/provider-comparison.md` §13), and it has one hard prerequisite that is
- * trivially easy to lose in a dashboard: **`OPENAI_REASONING_EFFORT=none`.**
+ * The GPT-5 family sits on the fallback ladder (`gpt-5.6-luna` is the rung below
+ * `gemini-3.5-flash-lite` — see `docs/provider-comparison.md`), and it has one
+ * hard prerequisite that is trivially easy to lose in a dashboard:
+ * **`OPENAI_REASONING_EFFORT=none`.**
+ *
+ * **THIS GUARD IS DELIBERATELY NOT EXTENDED TO GEMINI.** Gemini 3.x flash-lite was
+ * measured with no thinking overhead at a 650-token ceiling — `finish_reason:
+ * stop`, 164 completion tokens — so requiring the variable there would be a false
+ * positive on the very model now recommended. The Gemini *pro* variants were not
+ * measured and may behave differently; check before pointing `LLM_MODEL` at one.
  *
  * WITHOUT IT, MEASURED AGAINST THE APP'S OWN NINE INDONESIAN PROMPTS:
  *   - roughly **two readings in nine come back completely blank** -- reasoning

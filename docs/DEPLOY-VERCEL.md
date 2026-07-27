@@ -321,25 +321,43 @@ six model calls.
 **IF THE KEY DIES, THIS IS THE FAILOVER, AND IT IS FOUR LINES:**
 
 ```
+LLM_PROVIDER=gemini
+LLM_API_KEY=<your Google AI Studio key>
+LLM_MODEL=gemini-3.5-flash-lite
+MODERATION_MODEL=gemini-3.5-flash-lite
+```
+
+No base URL: `gemini` is the OpenAI adapter pointed at Google's
+OpenAI-compatible endpoint, and it is a named provider precisely so this path has
+nothing to forget.
+
+**USE THE PAID TIER — a privacy requirement, not a quota one.** Google marks
+free-tier content as used to improve its products; paid tier is excluded. Every
+request carries the querent's typed question, including the ones routed to the
+self-harm classifier, so the free tier contradicts `/privacy` directly. The free
+limits would be adequate; the terms are not. Enable billing on the project before
+you paste the key.
+
+Readings will be **shorter and stream in fewer, larger chunks** than z.ai — ~6
+chunks against 173, arriving as whole clauses rather than prose writing itself,
+though the whole reading lands in ~1.3s. Two open caveats are in
+`docs/provider-comparison.md` §§14–16: that streaming behaviour has not been
+judged on a real phone, and Gemini produced one Malay word the `id` grep cannot
+catch (`memulakannya` — a morphological leak, not a lexical one).
+
+**THE RUNG BELOW IS `gpt-5.6-luna`, and it takes a FIFTH line:**
+
+```
 LLM_PROVIDER=openai
 LLM_MODEL=gpt-5.6-luna
 MODERATION_MODEL=gpt-5.6-luna
-OPENAI_REASONING_EFFORT=none      # NOT OPTIONAL -- see below
+OPENAI_REASONING_EFFORT=none      # NOT OPTIONAL
 ```
 
-**The fourth line is the one that gets forgotten, and forgetting it produces an
-app that looks healthy.** Reasoning tokens come out of the same budget as the
-prose, and `MAX_TOKENS` here is 350–650, so without it roughly two readings in
-nine return completely blank — with the stream closing normally, so the route
-records a success, no notice fires, and the querent gets an empty page. The
-moderation classifier also 400s, because `temperature: 0` is rejected while
-reasoning is on. The adapter now refuses to start rather than let that happen,
-but set it deliberately rather than discovering the guard.
-
-Readings will be *slightly flatter* than z.ai: five OpenAI models were measured
-and luna is the best of them, at 0.079 reader overlap against z.ai's 0.050
-(`docs/provider-comparison.md` §13). That is the trade — three slightly less
-distinct readers, or no app.
+Without the fifth line roughly two readings in nine come back completely blank,
+with the stream closing normally so nothing reports it, and the classifier 400s.
+The adapter refuses to start rather than let that happen, but set it deliberately
+rather than discovering the guard.
 
 **Nothing in this repository can stop the key being revoked**, and this is no
 longer hypothetical: z.ai's FAQ says the Coding Plan is *"strictly limited to use

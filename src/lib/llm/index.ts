@@ -34,6 +34,20 @@ export function getProvider(): LLMProvider {
       return metered(createAnthropicProvider());
     case 'openai':
       return metered(createOpenAIProvider());
+    /*
+     * **GEMINI IS THE OPENAI ADAPTER WITH A DIFFERENT HOST**, because Google ships
+     * an OpenAI-compatible endpoint that accepts this app's exact request shape.
+     * Verified end to end rather than assumed: streaming with usage frames,
+     * `temperature: 0` for the classifier, and no thinking overhead at the app's
+     * token ceilings.
+     *
+     * It is a NAMED PROVIDER rather than `openai` plus an `OPENAI_BASE_URL` the
+     * operator has to remember, because this is the emergency-failover path and
+     * the day it is used is a bad day. Forgetting the base URL there would send a
+     * Google key to OpenAI and 401 in a way that reads like a bad key.
+     */
+    case 'gemini':
+      return metered(createOpenAIProvider());
     default:
       throw new Error(`Unknown LLM_PROVIDER: ${name}`);
   }

@@ -40,6 +40,7 @@
  */
 import { config } from 'dotenv';
 import { getProvider } from '@/lib/llm';
+import { resolveBaseUrl } from '@/lib/llm/openai';
 import { buildPrompt } from '@/lib/prompt/build';
 import { buildClassifierPrompt, parseClassification } from '@/lib/moderation/classify';
 
@@ -216,24 +217,6 @@ async function readingTtft(runs: number) {
   return stats('reading TTFT', samples);
 }
 
-/**
- * What the ADAPTER will actually talk to, which is not always `LLM_BASE_URL`.
- *
- * **THIS PRINTED A LIE FOR THE WHOLE OF THE GEMINI EVALUATION.** It read
- * `LLM_BASE_URL ?? 'api.anthropic.com'`, but `openai.ts` reads `OPENAI_BASE_URL`
- * -- so every run reported `baseURL=api.anthropic.com` while hitting
- * generativelanguage.googleapis.com. It misleads in both directions: it hides
- * where the traffic is going, and it invites someone to "fix" a Gemini
- * misconfiguration by setting the Anthropic variable, which does nothing.
- */
-function resolvedBaseUrl(): string {
-  const provider = process.env.LLM_PROVIDER ?? 'zai';
-  if (provider === 'openai') {
-    return process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
-  }
-  return process.env.LLM_BASE_URL ?? 'api.anthropic.com';
-}
-
 async function main() {
   for (const key of ['LLM_API_KEY', 'LLM_MODEL']) {
     if (!process.env[key]) {
@@ -246,7 +229,7 @@ async function main() {
   const runs = Number(arg('runs') ?? 20);
   const stabilityOnly = process.argv.includes('--stability');
 
-  console.log(`provider ${process.env.LLM_PROVIDER ?? 'zai'}  base ${resolvedBaseUrl()}`);
+  console.log(`provider ${process.env.LLM_PROVIDER ?? 'zai'}  base ${resolveBaseUrl()}`);
   console.log(`reading model   ${process.env.LLM_MODEL}`);
   console.log(`classifier model ${model ?? `${process.env.LLM_MODEL} (unset MODERATION_MODEL)`}`);
 

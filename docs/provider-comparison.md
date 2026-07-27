@@ -25,9 +25,17 @@ not from documentation.
 > `gpt-5.6-luna`; that was reversed by a provider §13 had not tested.
 >
 > **The decision, in one line: the emergency fallback is
-> `gemini-3.5-flash-lite`, and the default stays z.ai.** Ladder below it:
-> `gpt-5.6-luna` with `OPENAI_REASONING_EFFORT=none`, then `gpt-4.1-mini`, then
+> `gemini-3.5-flash-lite` (`LLM_PROVIDER=gemini`, PAID TIER — §18), and the
+> default stays z.ai.** Ladder below it: `gpt-5.6-luna` with
+> `OPENAI_REASONING_EFFORT=none`, then `gpt-4.1-mini`, then
 > `gemini-3.1-flash-lite`, then `gpt-5.4-nano`, and never `gpt-5.4-mini`.
+>
+> **AND EVERY OVERLAP NUMBER ABOVE §14 IS PARTLY MEASURING VERBOSITY.** §15.2–15.3
+> found that `jaccard()` has no length normalisation, so a model writing shorter
+> paragraphs scores better on that ground alone — and that z.ai's `0.050`, used as
+> the pass mark in §§4, 8, 11 and 13, is a single favourable measurement that came
+> back at **0.068** when re-run. Three rounds of evaluation treated a datapoint as
+> a threshold. **Quote the length-controlled figures in §15.3, or none.**
 >
 > **The title is now wrong.** §§14-19 are about Google Gemini, which is neither
 > z.ai nor OpenAI, and `gemini-3.5-flash-lite` is the first model in this file to

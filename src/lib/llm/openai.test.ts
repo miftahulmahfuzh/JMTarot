@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createOpenAIProvider } from './openai';
+import { createOpenAIProvider, resolveBaseUrl } from './openai';
 
 /**
  * The SSE parser, driven with hand-built chunk boundaries.
@@ -165,6 +165,35 @@ describe('streamReading', () => {
     await expect(drain(createOpenAIProvider().streamReading(PROMPT))).rejects.not.toThrow(
       new RegExp(secret),
     );
+  });
+});
+
+describe('resolveBaseUrl -- one function, three callers, no second copy', () => {
+  /*
+   * The scripts each had their own copy reading the ANTHROPIC variable, so a whole
+   * Gemini evaluation printed `baseURL=api.anthropic.com` while talking to Google.
+   * That is why this is exported and tested rather than inlined three times.
+   */
+  it('sends gemini to Google without anyone setting a base URL', () => {
+    vi.stubEnv('OPENAI_BASE_URL', '');
+    expect(resolveBaseUrl('gemini')).toBe('https://generativelanguage.googleapis.com/v1beta/openai');
+  });
+
+  it('sends openai to OpenAI', () => {
+    vi.stubEnv('OPENAI_BASE_URL', '');
+    expect(resolveBaseUrl('openai')).toBe('https://api.openai.com/v1');
+  });
+
+  it('leaves zai and anthropic on LLM_BASE_URL, which is theirs alone', () => {
+    vi.stubEnv('OPENAI_BASE_URL', '');
+    vi.stubEnv('LLM_BASE_URL', 'https://api.z.ai/api/anthropic');
+    expect(resolveBaseUrl('zai')).toBe('https://api.z.ai/api/anthropic');
+  });
+
+  it('an explicit OPENAI_BASE_URL wins over the provider default', () => {
+    // For Azure, a gateway, or a Gemini host that moves.
+    vi.stubEnv('OPENAI_BASE_URL', 'https://gateway.internal/v1');
+    expect(resolveBaseUrl('gemini')).toBe('https://gateway.internal/v1');
   });
 });
 
