@@ -10,6 +10,7 @@ import {
   refusalsExhausted,
 } from './index';
 import { _resetRedis } from './redis';
+import type { RateLimitBackend } from './types';
 
 /*
  * THE FACADE'S OWN TESTS. Everything about the sliding-window arithmetic is
@@ -213,5 +214,118 @@ describe('backend selection', () => {
     configured();
     vi.stubEnv('RATELIMIT_BACKEND', 'memroy');
     expect(_backendNameFor('read:u1')).toBe('redis');
+  });
+});
+
+describe('THE FALLBACK -- the line this whole workstream turns on', () => {
+  /*
+   * §3's table, as tests:
+   *
+   *                  Redis reachable        Redis down
+   *   fail closed    exact fleet limits     JMTarot IS 100% DOWN (free tier, no SLA)
+   *   fail open      exact fleet limits     unlimited, when something is already wrong
+   *   fall back      exact fleet limits     per-instance -- i.e. what v0.2.0 SHIPPED
+   *
+   * The third row is never worse than the status quo ante, at any moment, in any
+   * state. There is no argument for either of the others once it is on the table.
+   */
+  const broken = (how: 'reject' | 'hang'): RateLimitBackend => ({
+    name: 'redis',
+    consume: () =>
+      how === 'reject' ? Promise.reject(new Error('boom')) : new Promise(() => {}),
+    peek: () => (how === 'reject' ? Promise.reject(new Error('boom')) : new Promise(() => {})),
+  });
+
+  beforeEach(() => {
+    _reset();
+    vi.stubEnv('ANALYTICS_ENABLED', '0');
+  });
+
+  afterEach(() => {
+    _setBackend(null);
+    vi.unstubAllEnvs();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('falls back to the in-memory limiter when Redis REJECTS', async () => {
+    _setBackend(broken('reject'));
+    const r = await hit('u', Date.now(), 2, 60_000);
+    expect(r.ok).toBe(true); // NOT refused
+
+    /*
+     * **THIS SECOND HALF IS THE ASSERTION THAT MATTERS.** It is easy to write a
+     * fallback that returns `{ ok: true, remaining: max }` and call it a day --
+     * that passes the line above and is fail-open to unlimited wearing a disguise.
+     */
+    await hit('u', Date.now(), 2, 60_000);
+    expect((await hit('u', Date.now(), 2, 60_000)).ok).toBe(false); // AND STILL LIMITED
+  });
+
+  it('falls back on a peek too, so a READ cannot become an unlimited pass', async () => {
+    // refusalsExhausted() is a peek. If a failed peek answered `ok`, a prober
+    // would get an unlimited oracle exactly when Upstash was down.
+    _setBackend(broken('reject'));
+    for (let i = 0; i < 5; i++) await hitRefusal('prober');
+    expect(await refusalsExhausted('prober')).not.toBeNull();
+  });
+
+  it('falls back when Redis HANGS, inside RATELIMIT_TIMEOUT_MS', async () => {
+    vi.useFakeTimers();
+    _setBackend(broken('hang'));
+    const p = hit('u');
+    await vi.advanceTimersByTimeAsync(1001);
+    expect((await p).ok).toBe(true);
+  });
+
+  it('does not answer BEFORE the deadline -- the race is not a no-op', async () => {
+    // Negative control for the test above: if `withTimeout` resolved immediately
+    // the assertion there would pass for the wrong reason.
+    vi.useFakeTimers();
+    _setBackend(broken('hang'));
+    let settled = false;
+    void hit('u').then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(900);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(settled).toBe(true);
+  });
+
+  it('NEVER fails open to unlimited', async () => {
+    /*
+     * The line this whole workstream turns on. Fail-closed makes an Upstash
+     * outage a JMTarot outage on a tier with no SLA; fail-open-to-nothing makes
+     * the limiter decorative exactly when something is already wrong. The third
+     * answer -- fall back to what v0.2.0 shipped -- is never worse than the
+     * status quo ante at any moment. If this test is deleted, so is the argument.
+     */
+    _setBackend(broken('reject'));
+    for (let i = 0; i < 30; i++) await hit('u');
+    expect((await hit('u')).ok).toBe(false);
+  });
+
+  it('NEVER fails CLOSED -- an Upstash outage is not a JMTarot outage', async () => {
+    // The other half, and the one a security review will try to "fix".
+    _setBackend(broken('reject'));
+    for (let i = 0; i < 29; i++) expect((await hit('u')).ok).toBe(true);
+  });
+
+  it('is LOUD, once a minute, and never quotes the key', async () => {
+    /*
+     * A silent fallback is how the fleet-wide limiter becomes per-instance memory
+     * again for three weeks without anybody knowing. And NEVER the key: a fetch
+     * error can quote its request and one of these keys is a `users.id`. Same rule
+     * as flush.ts and the moderation path.
+     */
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    _setBackend(broken('reject'));
+    for (let i = 0; i < 20; i++) await hit('user-abc-123');
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    const line = String(warn.mock.calls[0][0]);
+    expect(line).toContain('[ratelimit]');
+    expect(line).not.toContain('user-abc-123');
   });
 });
