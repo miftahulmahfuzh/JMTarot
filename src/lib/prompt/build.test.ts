@@ -395,3 +395,52 @@ describe('promptVersion', () => {
     expect(id.slice(3)).not.toBe(en.slice(3));
   });
 });
+
+/**
+ * THE FORK GATE (W6 Task 9).
+ *
+ * Nine snapshots covering the base contract, all three personas, all three task
+ * layers, the user turn, the framing labels, the keywords and the verdict word.
+ * They were generated against the PRE-SPLIT code and committed before
+ * `base.ts` / `readers.ts` / `services.ts` were touched.
+ *
+ * The point is narrow and it is the whole reason Task 9 exists as a separate
+ * commit: a persona regression must not be able to hide inside a file move. If a
+ * snapshot changes, text moved. DO NOT UPDATE IT -- find what moved.
+ *
+ * Deliberately Indonesian only. There is no English prose to snapshot until Task
+ * 10, and snapshotting a placeholder would mean rewriting these the moment the
+ * real thing lands, which is how a gate becomes a formality.
+ *
+ * FIXED PICKS, NEVER `shuffleDeck()`. It is impure, and a snapshot built from a
+ * random draw fails on the second run for a reason that has nothing to do with
+ * prompts.
+ */
+const FIXED_PICKS: Record<string, { id: number; reversed: boolean }[]> = {
+  daily: [{ id: 18, reversed: true }],
+  spread3: [
+    { id: 0, reversed: false },
+    { id: 13, reversed: true },
+    { id: 21, reversed: false },
+  ],
+  yesno: [{ id: 8, reversed: false }],
+};
+
+describe('the Indonesian prompts survive the locale fork', () => {
+  for (const reader of ['thessaly', 'margaret', 'adrian']) {
+    for (const service of ['daily', 'spread3', 'yesno']) {
+      it(`${reader}/${service} is unchanged`, () => {
+        const { system, user } = buildPrompt({
+          reader,
+          service,
+          picks: FIXED_PICKS[service],
+          locale: 'id',
+        });
+        // System and user together: the fork touches the static layers AND the
+        // user-turn labels, and splitting them into two snapshots would let a
+        // label change pass while the contract snapshot stayed green.
+        expect(`${system}\n\n===== USER =====\n\n${user}`).toMatchSnapshot();
+      });
+    }
+  }
+});
