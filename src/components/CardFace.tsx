@@ -18,6 +18,9 @@ type Props = {
   /**
    * `thumb` is 240x360 and is what the fan and the slots want -- 22 full-size
    * cards would be 4.1MB. `full` is 800x1200, for the result panel.
+   *
+   * It also decides whether the card's NAME is drawn over the art; see the
+   * caption at the bottom of the render.
    */
   size?: 'thumb' | 'full';
 };
@@ -47,6 +50,31 @@ export function CardFace({ card, reversed = false, size = 'thumb' }: Props) {
         draggable={false}
         decoding="async"
       />
+      {/*
+        THE NAME IS DRAWN HERE, NOT BAKED INTO THE ARTWORK.
+
+        Small sizes only. The detail overlay prints the name and the numeral
+        under the card, and two copies of it a centimetre apart is exactly the
+        redundancy this exists to remove.
+
+        A SIBLING of the <img> rather than a child, and that is what keeps it
+        UPRIGHT on a reversed card: `.reversed` rotates the image alone, so the
+        artwork turns over and the name stays readable. The old baked-in titles
+        went upside down with the art, which is authentic for a physical deck and
+        useless on a phone.
+
+        `aria-hidden` because the alt text above already names the card, in the
+        querent's own locale. Without it a screen reader announces it twice.
+
+        Card names stay English in both locales -- the deliberate rule in
+        CLAUDE.md's `## Localization` -- so there is nothing to translate here
+        and `card.name` is a plain string, never a `Localized<>`.
+      */}
+      {size === 'thumb' ? (
+        <div className={styles.name} aria-hidden="true">
+          {card.name}
+        </div>
+      ) : null}
     </div>
   );
 }

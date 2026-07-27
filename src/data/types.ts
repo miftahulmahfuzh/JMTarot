@@ -15,7 +15,14 @@ export type Card = {
   slug: string;
   /** Roman numeral as printed on the card. */
   numeral: string;
-  /** English, because the artwork has its title rendered into the image. */
+  /**
+   * English in both locales, deliberately -- see CLAUDE.md `## Localization`.
+   * This used to say "because the artwork has its title rendered into the
+   * image", which was the reason until the deck was regenerated without any
+   * text in it. The rule outlived its original justification: `CardFace` now
+   * draws this string over the art at small sizes, so translating it would put
+   * an Indonesian name on a card the reading calls by its English one.
+   */
   name: string;
   /** Astrological correspondence, e.g. the Moon's crescent. */
   glyph: string;

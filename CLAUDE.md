@@ -542,10 +542,15 @@ consistent treatment is still the highest-leverage art fix.
 
 The deck is the 22 Majors, ids 0–21 in Fool's Journey order. Reversals are in.
 
-Card **names stay English** because the artwork has its title rendered into the
-image — an Indonesian display name would contradict the card on screen. This is
-also an explicit prompt rule, because the model tries to translate them and
-invents names like "Pulan" for The Moon.
+Card **names stay English**, and **the reason changed without the rule
+changing.** It used to be that the artwork had its title rendered into the
+image, so an Indonesian display name contradicted the card on screen. The
+regenerated deck carries **no text at all** — `src/components/CardFace.tsx`
+draws the name over the art at small sizes instead — so the contradiction is
+gone and the rule stands on its own feet: a reading refers to The Moon, and a
+card labelled anything else disagrees with the text underneath it. This is also
+an explicit prompt rule, because the model tries to translate them and invents
+names like "Pulan" for The Moon.
 
 `stage`, `polarity` and `element` feed the prompt as grounding. Reversal flips
 `polarity` light↔shadow and `yesno` yes↔no; see `src/data/deck.ts`.
@@ -668,9 +673,11 @@ Resolution, once, in middleware: **session `loc` claim → `jmt_locale` cookie �
 
 1. **Card names stay English in both locales.** So do reader names and titles,
    numerals, glyphs, the enum values (`stage`, `polarity`, `element`, `yesno`),
-   the `<pertanyaan>` tag, and every id and slug. The artwork has the card's
-   title rendered into the image, so an Indonesian display name contradicts the
-   card on screen.
+   the `<pertanyaan>` tag, and every id and slug. The original reason was that
+   the artwork had the card's title rendered into the image; **the regenerated
+   deck has no text in it and the rule still holds** — `CardFace` draws the name
+   itself now, and a reading that says The Moon under a card labelled anything
+   else contradicts itself. See `## Card data`.
 2. **`id.ts` owns the key set and a red typecheck is the feature.** Write the
    Indonesian first; TS2739 then names every missing English string. Do not add a
    fallback to the other locale — an unknown key returns THE KEY, on purpose

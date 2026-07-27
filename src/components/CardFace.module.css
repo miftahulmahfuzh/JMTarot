@@ -1,7 +1,13 @@
 /*
- * The face-up card: a gold-edged window onto the artwork, nothing else. The
- * card's title is rendered into the image itself, which is why the names stay
- * English and why nothing is drawn over the art here.
+ * The face-up card: a gold-edged window onto the artwork, plus the card's name
+ * at small sizes.
+ *
+ * THIS FILE USED TO SAY "the card's title is rendered into the image itself,
+ * which is why the names stay English and why nothing is drawn over the art
+ * here". Half of that is now wrong and half is still right. The regenerated deck
+ * carries NO TEXT AT ALL, so the name is drawn here instead; the names still stay
+ * English, but for the reason in CLAUDE.md's `## Localization` rather than
+ * because the artwork forces it.
  */
 
 .face {
@@ -9,12 +15,28 @@
   inset: 0;
   border-radius: var(--radius-card);
   border: 1px solid var(--card-face-border);
-  /* Shows through the padding bars on cards whose trimmed art is narrower than
-     2:3. Matches the mat the pipeline pads with, so the seam is invisible. */
+  /* Was here to hide the padding bars on cards whose trimmed art was narrower
+     than 2:3 -- 44px per side on the old cards 0-10. The regenerated deck is
+     full-bleed and has none, and check_card_art.py fails a card that does, but
+     this stays as the backstop for the one-pixel rounding case. It costs
+     nothing. */
   background: #0f0b1c;
   box-shadow: 0 22px 48px rgba(0, 0, 0, 0.6);
   overflow: hidden;
   backface-visibility: hidden;
+
+  /*
+   * Declared so `.name` can size itself in `cqw` and hold the same proportions
+   * everywhere a face is drawn: a 90px slot, a 78px one below 360px, the Fan's
+   * flying card under `transform: scale()`, and FanGrid's larger cells.
+   *
+   * `.name` IS A DESCENDANT AND THAT IS THE WHOLE REASON THIS WORKS. `cqw` in
+   * the declarations of the element that DECLARES `container-type` resolves
+   * against the nearest ANCESTOR container, not against itself -- the trap
+   * CardBack is split into `.back` and `.plate` for. Nothing on `.face` itself
+   * may use `cqw`.
+   */
+  container-type: inline-size;
 }
 
 .art {
@@ -27,7 +49,46 @@
 }
 
 /* A reversed card is the same artwork turned around, so the rotation goes on
-   the image and not on .face -- the gold border and its shadow must stay put. */
+   the image and not on .face -- the gold border and its shadow must stay put,
+   and so must `.name`. */
 .reversed {
   transform: rotate(180deg);
+}
+
+/*
+ * The card's name, over the foot of the artwork.
+ *
+ * Sized in `cqw` rather than px so one rule covers every scale. At a 90px slot
+ * this is ~6.8px, which sounds too small and is not: it is about what the old
+ * baked-in titles measured, and crisp DOM text beats resampled pixels at that
+ * size. Long names WRAP rather than shrink -- `The High Priestess` is 18
+ * characters and is the binding case -- because a second line stays legible and
+ * a smaller font does not.
+ *
+ * The scrim does the contrast work, not the palette: the artwork behind is
+ * arbitrary, and dark-on-average is not the same as dark in this one strip.
+ */
+.name {
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: 8cqw 5cqw 5.5cqw;
+  font-family: var(--font-display), serif;
+  font-size: 7.6cqw;
+  line-height: 1.15;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: center;
+  text-wrap: balance;
+  color: var(--gold-text);
+  background: linear-gradient(
+    to top,
+    rgba(6, 4, 10, 0.94) 0%,
+    rgba(6, 4, 10, 0.82) 52%,
+    rgba(6, 4, 10, 0) 100%
+  );
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+  /* The whole card is one tap target -- Fan/FanGrid report `onCardTap` and the
+     draw screen decides what it means. A caption that swallowed the tap would
+     make the middle of the bottom edge dead. */
+  pointer-events: none;
 }

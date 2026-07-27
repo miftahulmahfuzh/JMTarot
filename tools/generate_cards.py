@@ -10,9 +10,12 @@ fields the combination engine needs.
 
 Writes src/data/cards.json          structural data the app imports
 
-Card names stay English on purpose, in BOTH locales: the artwork has its title
-rendered into the image ("THE FOOL"), so an Indonesian display name would
-contradict the card the user is looking at. Numerals and glyphs likewise. What is
+Card names stay English on purpose, in BOTH locales. The original reason was that
+the artwork had its title rendered into the image ("THE FOOL"); the regenerated
+deck carries no text and `src/components/CardFace.tsx` draws the name over small
+cards from THIS file's `name` field, so the rule now stands on the plainer
+ground -- a reading refers to The Moon, and a card labelled anything else
+contradicts the text under it. Numerals and glyphs likewise. What is
 localized is `keywords` and `meaning`, both now `Localized<>` -- a sub-object per
 locale, so a missing locale is a compile error in `types.ts` rather than a blank
 string on the card detail overlay.

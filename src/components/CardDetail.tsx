@@ -24,9 +24,17 @@ type Props = {
  * The full-size look at a card the querent has already drawn.
  *
  * Tapping a picked card opens this rather than returning it to the deck --
- * returning is the second button here. At fan size a card is 88x132 with the
- * title rendered into the art at maybe 6px, so "which card is that?" is not
- * answerable from the fan, and the querent has to be able to ask it.
+ * returning is the second button here. At 88x132 the ART is unreadable however
+ * it is labelled, so "what did I just draw?" needs somewhere to be asked.
+ *
+ * WHAT CHANGED, AND WHY THE NAME BELOW IS NOT REDUNDANT ANY MORE. This used to
+ * read "with the title rendered into the art at maybe 6px, so which card is that
+ * is not answerable from the fan". The regenerated deck carries no text, and
+ * `CardFace` draws the name over small cards instead -- so the name IS
+ * answerable at slot size now, and this overlay exists for the artwork and the
+ * meaning line rather than for the name. `CardFace` is passed `size="full"`
+ * here, which is exactly what suppresses its caption: the heading below is the
+ * only place the name and the numeral appear.
  */
 export function CardDetail({ draw, position, onClose, onReturn }: Props) {
   const t = useT();
