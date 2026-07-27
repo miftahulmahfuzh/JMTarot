@@ -15,6 +15,18 @@ not from documentation.
 
 **Nothing is switched.** `LLM_PROVIDER=zai` remains the default.
 
+> **THIS FILE GREW BY ACCRETION AND CONTAINS THREE RECOMMENDATION SECTIONS. §13
+> IS THE CURRENT ONE.** §5 and §9 are kept because their reasoning is still
+> sound and their measurements are still true, but each was written when fewer
+> models had been tested and **both name a different emergency fallback than the
+> one now chosen.** In particular §9 gives the slot to `gpt-5.4-nano` on cost and
+> speed; that was reversed once reading quality was set above both, because
+> nano's 1.05 sentence ratio is three readers sharing one architecture.
+>
+> **The decision, in one line: the emergency fallback is `gpt-5.6-luna` with
+> `OPENAI_REASONING_EFFORT=none`, and the default stays z.ai.** Ladder below it:
+> `gpt-4.1-mini`, then `gpt-5.4-nano`, and never `gpt-5.4-mini`.
+
 ---
 
 ## 1. The short version
@@ -170,7 +182,7 @@ ceilings exist to catch.
 
 ---
 
-## 5. The honest recommendation
+## 5. The honest recommendation *(SUPERSEDED BY §13 — two models had been tested when this was written)*
 
 **Do not flip the default today. Do make the switch a rehearsed one-liner, which
 it now is.**
@@ -633,7 +645,7 @@ It is a **fine emergency fallback** — better than nothing, and better than
 
 ---
 
-## 9. Where this leaves the decision
+## 9. Where this leaves the decision *(SUPERSEDED BY §13 — it names `gpt-5.4-nano` as the fallback on cost; reading quality reversed that)*
 
 **Nothing changes. `LLM_PROVIDER=zai`, `LLM_MODEL=glm-4.6` remains the default,
 and z.ai's 0.050 overlap is still unbeaten by any OpenAI model tried.** The three

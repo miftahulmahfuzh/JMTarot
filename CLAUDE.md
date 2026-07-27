@@ -600,7 +600,31 @@ two services); `openai` uses `openai.ts`. Switching is that variable plus
 `LLM_MODEL`, and nothing else — the thing `llm/index.ts` promised since W4, now
 demonstrated rather than asserted.
 
+**THE EMERGENCY FALLBACK IS `gpt-5.6-luna`, AND IT TAKES FOUR ENV VARS, NOT
+THREE.** `LLM_PROVIDER=openai`, `LLM_MODEL=gpt-5.6-luna`,
+`MODERATION_MODEL=gpt-5.6-luna`, and — **not optional** —
+`OPENAI_REASONING_EFFORT=none`.
+
+Without that fourth line, measured against the app's own nine Indonesian prompts:
+**roughly two readings in nine come back completely blank**, because reasoning
+tokens are spent from the same budget as the prose and `MAX_TOKENS` here is
+350–650; **nothing reports it**, because the stream closes normally, so the route
+records a completed reading, analytics records a success, no `[Bacaan
+terputus...]` fires and the querent gets an empty page; **and the moderation
+classifier 400s outright**, because `temperature: 0` is rejected while reasoning
+is on. That last one is a reasoning-MODE restriction and not a model one —
+verified: effort absent → 400, `low` → 400, `none` → 200.
+
+**`openai.ts` REFUSES TO START on a `gpt-5`/`gpt-6`/`o`-series model with that
+variable unset**, rather than trusting anyone to remember on the one bad day this
+adapter is ever used. Any explicit value satisfies it, including `low`: the rule
+is "you must have decided", not "you must disable reasoning". Prefix-matched, so
+the next model in the family is covered without an edit.
+
 **`docs/provider-comparison.md` has the measurements and the recommendation.**
+Five OpenAI models measured; luna is the best of them and still does not reach
+z.ai's reader distinctness — 0.079 overlap against 0.050 — which is exactly why
+it is the fallback and not the default.
 Read it before changing `LLM_PROVIDER`, because three numbers elsewhere in this
 file are z.ai facts rather than general ones and would need re-deriving:
 `MODERATION_TIMEOUT_MS` (from z.ai's classifier p95), `LLM_WINDOW_CALL_CEILING`

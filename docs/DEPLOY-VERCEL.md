@@ -318,6 +318,29 @@ six model calls.
 
 ### What is still not enforceable from here
 
+**IF THE KEY DIES, THIS IS THE FAILOVER, AND IT IS FOUR LINES:**
+
+```
+LLM_PROVIDER=openai
+LLM_MODEL=gpt-5.6-luna
+MODERATION_MODEL=gpt-5.6-luna
+OPENAI_REASONING_EFFORT=none      # NOT OPTIONAL -- see below
+```
+
+**The fourth line is the one that gets forgotten, and forgetting it produces an
+app that looks healthy.** Reasoning tokens come out of the same budget as the
+prose, and `MAX_TOKENS` here is 350–650, so without it roughly two readings in
+nine return completely blank — with the stream closing normally, so the route
+records a success, no notice fires, and the querent gets an empty page. The
+moderation classifier also 400s, because `temperature: 0` is rejected while
+reasoning is on. The adapter now refuses to start rather than let that happen,
+but set it deliberately rather than discovering the guard.
+
+Readings will be *slightly flatter* than z.ai: five OpenAI models were measured
+and luna is the best of them, at 0.079 reader overlap against z.ai's 0.050
+(`docs/provider-comparison.md` §13). That is the trade — three slightly less
+distinct readers, or no app.
+
 **Nothing in this repository can stop the key being revoked**, and this is no
 longer hypothetical: z.ai's FAQ says the Coding Plan is *"strictly limited to use
 within officially supported tools and products"*, and JMTarot is not one of them.

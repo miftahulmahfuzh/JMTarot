@@ -168,6 +168,57 @@ describe('streamReading', () => {
   });
 });
 
+describe('the OPENAI_REASONING_EFFORT guard', () => {
+  /*
+   * `gpt-5.6-luna` is the designated emergency fallback, and the day it is used
+   * is a bad day by definition. Forgetting one env var then produces an app that
+   * looks healthy and serves blank readings -- so this is enforced, not documented.
+   */
+  it('REFUSES to build a reasoning-family provider with the effort unset', () => {
+    vi.stubEnv('LLM_MODEL', 'gpt-5.6-luna');
+    vi.stubEnv('OPENAI_REASONING_EFFORT', '');
+    expect(() => createOpenAIProvider()).toThrow(/OPENAI_REASONING_EFFORT is unset/);
+  });
+
+  it('names the consequence, not just the variable', () => {
+    // An error that says "unset" teaches nothing. The person reading it at 3am
+    // needs to know that the alternative is silent blank readings.
+    vi.stubEnv('LLM_MODEL', 'gpt-5.6-luna');
+    vi.stubEnv('OPENAI_REASONING_EFFORT', '');
+    expect(() => createOpenAIProvider()).toThrow(/BLANK readings/);
+  });
+
+  it('is satisfied by ANY explicit value, including one that keeps reasoning on', () => {
+    // The rule is "you must have decided", not "you must disable reasoning".
+    vi.stubEnv('LLM_MODEL', 'gpt-5.6-luna');
+    vi.stubEnv('OPENAI_REASONING_EFFORT', 'low');
+    expect(() => createOpenAIProvider()).not.toThrow();
+  });
+
+  it('matches the FAMILY by prefix, so a future gpt-5.7 is covered too', () => {
+    /*
+     * A hardcoded list would silently stop protecting the moment OpenAI ships the
+     * next one, and the failure it guards is invisible. A false positive costs one
+     * env var; a false negative costs blank readings nobody notices.
+     */
+    for (const m of ['gpt-5.6-luna', 'gpt-5.7-whatever', 'gpt-5.4-mini', 'o4-mini']) {
+      vi.stubEnv('LLM_MODEL', m);
+      vi.stubEnv('OPENAI_REASONING_EFFORT', '');
+      expect(() => createOpenAIProvider(), m).toThrow(/reasoning-family/);
+    }
+  });
+
+  it('leaves the non-reasoning families alone -- they REJECT the parameter', () => {
+    // gpt-4.1 and gpt-4o 400 on `reasoning_effort`, so requiring it there would
+    // break the configuration that currently works.
+    for (const m of ['gpt-4.1-mini', 'gpt-4.1-nano', 'gpt-4o-mini']) {
+      vi.stubEnv('LLM_MODEL', m);
+      vi.stubEnv('OPENAI_REASONING_EFFORT', '');
+      expect(() => createOpenAIProvider(), m).not.toThrow();
+    }
+  });
+});
+
 describe('reasoning effort, and the blank-reading guard', () => {
   const finishFrame = (reason: string) =>
     `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: reason }] })}\n\n`;

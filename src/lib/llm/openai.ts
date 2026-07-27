@@ -197,8 +197,64 @@ type Delta = {
   usage?: { prompt_tokens?: number | null; completion_tokens?: number | null } | null;
 };
 
+/**
+ * Models that reason by default, and therefore return NOTHING at this app's
+ * ceilings unless told not to.
+ *
+ * Matched by PREFIX rather than by an exact list, deliberately: the failure this
+ * guards is silent, and a new `gpt-5.7-*` that nobody added to a list would
+ * reintroduce it in full. A false positive costs one explicit env var; a false
+ * negative costs blank readings nobody notices.
+ */
+const REASONS_BY_DEFAULT = /^(gpt-5|gpt-6|o[0-9])/i;
+
+/**
+ * **THE GUARD THAT MAKES THE `OPENAI_REASONING_EFFORT` REQUIREMENT UNFORGETTABLE.**
+ *
+ * `gpt-5.6-luna` is the designated emergency fallback (see
+ * `docs/provider-comparison.md` §13), and it has one hard prerequisite that is
+ * trivially easy to lose in a dashboard: **`OPENAI_REASONING_EFFORT=none`.**
+ *
+ * WITHOUT IT, MEASURED AGAINST THE APP'S OWN NINE INDONESIAN PROMPTS:
+ *   - roughly **two readings in nine come back completely blank** -- reasoning
+ *     tokens are spent from the same budget as the prose, and `MAX_TOKENS` here
+ *     is 350-650 because the length control IS the product;
+ *   - the stream closes NORMALLY, so nothing reports it: the route records a
+ *     completed reading, analytics records a success, no `[Bacaan terputus...]`
+ *     fires, and the querent gets an empty page;
+ *   - and **the moderation classifier 400s outright**, because `temperature: 0`
+ *     is rejected while reasoning is on. That is a reasoning-MODE restriction,
+ *     not a model one -- verified: effort absent -> 400, `low` -> 400,
+ *     `none` -> 200.
+ *
+ * So the day somebody fails over to OpenAI in a hurry -- which is the ONLY day
+ * this adapter is used -- forgetting one variable produces an app that looks
+ * healthy and serves blank readings. **A comment cannot prevent that. This can.**
+ *
+ * It throws at PROVIDER CONSTRUCTION rather than at the first blank reading:
+ * `getProvider()` runs on the first model call of the process, so this surfaces
+ * immediately and identically on every path, instead of once per unlucky reading.
+ *
+ * SETTING IT TO ANYTHING EXPLICIT SATISFIES THE GUARD, including `low`. The rule
+ * is not "you must disable reasoning", it is "you must have decided". Someone who
+ * genuinely wants reasoning on, with the truncation that implies, says so.
+ */
+function assertReasoningDecided(model: string): void {
+  if (!REASONS_BY_DEFAULT.test(model)) return;
+  if (process.env.OPENAI_REASONING_EFFORT) return;
+
+  throw new Error(
+    `openai: LLM_MODEL="${model}" is a reasoning-family model and ` +
+      `OPENAI_REASONING_EFFORT is unset. At this app's token ceilings that returns ` +
+      `BLANK readings (~2 in 9, silently) and 400s the moderation classifier. ` +
+      `Set OPENAI_REASONING_EFFORT=none -- or set it explicitly to something else ` +
+      `if you have read docs/provider-comparison.md and mean it.`,
+  );
+}
+
 export function createOpenAIProvider(): LLMProvider {
   const model = requireEnv('LLM_MODEL');
+  assertReasoningDecided(model);
 
   return {
     streamReading({ system, user, maxTokens }: ReadingPrompt, opts?: LLMCallOpts): LLMStream {
