@@ -130,6 +130,16 @@ describe('the WARN tier', () => {
   it('leaves a caller filtering on fail unaffected by any warn', () => {
     expect(fails('kartunya kembali berkali-kali, dan bagus sekali', 'id')).toEqual([]);
   });
+
+  it('warns on the soft repetitions a smoke run found the list missing', () => {
+    // `berulang-ulang` came back from the Indonesian day summary and matched
+    // nothing, because only `berkali-kali` had been written down.
+    const hits = tallyProblems('The Moon menyinari hari ini berulang-ulang', { locale: 'id' });
+    expect(hits.map((h) => h.tier)).toEqual(['warn']);
+    expect(tallyProblems('it came back again and again', { locale: 'en' }).map((h) => h.tier)).toEqual(
+      ['warn'],
+    );
+  });
 });
 
 describe('the locale halves are separate', () => {

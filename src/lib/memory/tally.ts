@@ -83,8 +83,19 @@ const ID: Rule[] = [
   // `sekali` is the intensifier -- `bagus sekali`, `pelan sekali` -- and
   // Adrian's register uses it constantly.
   { tier: 'warn', pattern: /\bsekali\b/i, label: '"sekali" (intensifier, or a count?)' },
-  // A soft quantifier rather than a tally. Allowed prose; worth reading.
+  /*
+   * Soft quantifiers rather than tallies. Allowed prose; worth reading.
+   *
+   * `berulang-ulang` WAS ADDED AFTER A SMOKE RUN, not from the plan's list: the
+   * Indonesian day summary came back with "The Moon menyinari hari ini
+   * berulang-ulang", which is the same shape as `berkali-kali` and slipped
+   * through because only the latter was written down. It is the reason the
+   * closing note of both runners says to read for a tally BY EYE -- the grep is
+   * a floor, and this is what the floor missed.
+   */
   { tier: 'warn', pattern: /\bberkali-kali\b/i, label: '"berkali-kali"' },
+  { tier: 'warn', pattern: /\bberulang-ulang\b/i, label: '"berulang-ulang"' },
+  { tier: 'warn', pattern: /\bberulang\s+kali\b/i, label: '"berulang kali"' },
 ];
 
 const EN: Rule[] = [
@@ -126,6 +137,8 @@ const EN: Rule[] = [
   { tier: 'warn', pattern: /\bonce\b/i, label: '"once" (conjunction, or a count?)' },
   { tier: 'warn', pattern: /\bnumber\s+of\b/i, label: '"number of"' },
   { tier: 'warn', pattern: /\bseveral\s+times\b/i, label: '"several times"' },
+  // The English shape of `berulang-ulang`. Same tier for the same reason.
+  { tier: 'warn', pattern: /\b(again\s+and\s+again|over\s+and\s+over)\b/i, label: 'a soft repetition' },
 ];
 
 /** Escape a catalog string so it can be removed as a literal. */
