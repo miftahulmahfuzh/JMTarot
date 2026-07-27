@@ -260,38 +260,81 @@ rm /tmp/check.env
 
 `AUTH_USERS` appearing in that output is a finding, not a reassurance — delete it.
 
-## 2b. Set a hard spend cap at z.ai — REQUIRED, and it is not code
+## 2b. There is no spend cap, and the controls that replace it — REQUIRED
 
-**This is the single most important control on the bill, and nothing in this
-repository can enforce it.** Do it before the app is reachable by anyone but you.
+**THIS SECTION USED TO SAY "Set a hard spend cap at z.ai — REQUIRED".** It was
+written on the assumption that `LLM_API_KEY` was a pay-as-you-go wallet. **It is
+not: it is a fixed annual subscription sold for coding.** A subscription is a
+prepaid quota, so there is no monthly bill to cap, and — verified 2026-07-27
+against z.ai's own FAQ — **no such setting exists on this plan**, nor is there a
+pay-as-you-go balance to overflow into: when the quota is spent you wait for the
+next cycle and *"the system will not deduct from your account balance"*. The
+instruction was impossible to follow and nobody followed it, which is worth
+knowing before you go looking for a step that was skipped.
 
-`src/lib/ratelimit.ts` is a per-instance sliding window. Serverless instances do
-not share memory, so it is best-effort by construction, and Google sign-in made
-its key space unbounded: fifty throwaway Google accounts get fifty independent
-budgets. `hitGlobal()` bounds one instance; it cannot bound a fleet. **A
-provider-side cap can, absolutely.**
+**The risk did not go away; it changed shape, and the new shape is worse.**
+Abuse does not produce an invoice — it produces an exhausted quota, which is a
+denial of service against every user of the app. A bill announces itself. A
+quota that runs flat at 4pm on a Tuesday announces itself as readings that fail,
+for everybody, with nothing in any dashboard. **There is no alert to miss,
+because there is no alert.**
 
-The cost roughly doubled with W7, too: each reading is now **two** model calls,
-because the moderation classifier runs alongside the reading.
+And it takes the whole product, not one feature: `LLM_API_KEY` is the single
+backbone for readings, the moderation classifier, gists, day summaries, frequency
+verdicts, the Lotus distillation, translations and the persona. One visit can be
+six model calls.
 
-1. Open the z.ai billing dashboard.
-2. Set a hard monthly spend limit — one that you would be annoyed but not hurt
-   to pay in full.
-3. Set the alert threshold below it, so a runaway shows up before the cap does.
-4. **Record the value in the commit message or here**, so the next person knows
-   what was chosen rather than whether anything was.
+### The three controls that replace it, all of them code
 
-`MODERATION_MODEL=glm-4.5-flash` helps the bill too, at roughly six times
-cheaper per classification than the reading model — but **that is a side effect,
-not the reason.** It is in §2's required list because on the reading model the
-classifier's p95 exceeds the reading's own p50 TTFT and the gate becomes the
-latency. Do not reason about it as a cost lever, or the first person optimising
-for quality will move it back.
+1. **`src/lib/ratelimit/` is fleet-wide.** As of V9 it is Upstash Redis over
+   HTTP, so a limit of 30 readings an hour is 30 and not "30 times however many
+   instances Vercel has warm". Set `UPSTASH_REDIS_REST_URL` and
+   `UPSTASH_REDIS_REST_TOKEN` in §2 — **without them the app still works and the
+   limiter silently reverts to per-instance memory**, which is v0.2.0's
+   behaviour and is not what you want in production. **Choose the
+   `ap-northeast-1` (Tokyo) region: there is no Singapore region**, verified
+   2026-07-27, and Tokyo is ~80–120ms from a Vercel Singapore function against a
+   1000ms timeout.
+2. **`LLM_WINDOW_CALL_CEILING` bounds the window.** It counts model *calls*, not
+   readings, over **a rolling five hours** — which is the shape of the quota it
+   protects, because z.ai meters prompts per rolling 5-hour cycle. A calendar-day
+   bucket could not do the job: a script burns the whole cycle in five minutes
+   while a daily counter still reads 400/4000. Two tiers — below
+   `LLM_WINDOW_CALL_SOFT` everything runs; above it, deferred work (gists,
+   summaries, verdicts, the speculative Lotus repair) is shed and nobody notices;
+   above the hard ceiling, readings get a 429 with a `retry-after` in hours.
+   **The shipped 280 is derived, not guessed**: the Pro tier's ~400 prompts per
+   5h × 70%, with the headroom deliberate because we could not observe what
+   exhaustion looks like on the wire without causing it. **If the plan tier ever
+   changes, re-derive it and put the derivation in the commit message** — and
+   re-check `meter.ts`'s weekly arithmetic, which holds only at Pro.
+3. **Query 9 in `docs/analytics-queries.md` is how you find out.** Two event
+   names, `llm.ceiling_reached` and `ratelimit.backend_degraded`. Run it weekly.
+   `tier: 'soft'` appearing is the warning; `tier: 'hard'` is the outage; a
+   steady `degraded_minutes` means the limiter is not actually fleet-wide.
 
-**The upgrade trigger for the rate limiter is an event, not a number:** the day a
-link to the app is posted anywhere public, swap `hit()`'s body for
-`@upstash/ratelimit` on Redis. Not at a user count, not at a bill threshold —
-the moment the URL is outside your control.
+### What is still not enforceable from here
+
+**Nothing in this repository can stop the key being revoked**, and this is no
+longer hypothetical: z.ai's FAQ says the Coding Plan is *"strictly limited to use
+within officially supported tools and products"*, and JMTarot is not one of them.
+A public consumer product on a coding subscription is a plausible reason for
+revocation, and the consequence is not a warning or an overage charge — it is the
+entire application down at once. `LLM_PROVIDER` already has an `anthropic` branch
+and one adapter serves both; **a second funded key is the only mitigation that
+exists, and it does not exist yet.** Read the plan's acceptable-use terms and
+decide before the app is linked anywhere public.
+
+`MODERATION_MODEL=glm-4.5-flash` draws less quota per classification than the
+reading model, **but that is a side effect and not the reason.** It is in §2's
+required list because on the reading model the classifier's p95 exceeds the
+reading's own p50 TTFT and the gate becomes the latency. Do not reason about it
+as a quota lever, or the first person optimising for quality will move it back.
+
+**The rate limiter's upgrade trigger fired and was acted on.** It said "swap
+`hit()`'s body for `@upstash/ratelimit` on Redis the day a link to the app is
+posted anywhere public". V7 is that day by construction, and V9 did the swap
+before V7 shipped.
 
 ## 3. Verify the deployment
 
@@ -350,9 +393,11 @@ Expect these two, neither of which is a bug:
 
 ## 5. Housekeeping
 
-- **Set a spend cap at your LLM provider.** The app's rate limiter is
-  in-memory, so serverless cold starts reset it. The login gate and a provider
-  cap are the real protections.
+- **The provider controls are in §2b, and they are not a spend cap.** That
+  bullet used to say "Set a spend cap at your LLM provider. The app's rate
+  limiter is in-memory, so serverless cold starts reset it." Both halves are now
+  wrong: the plan has no spend cap to set, and the limiter is Upstash-backed and
+  fleet-wide as of V9. What survives is the habit — check query 9 weekly.
 - **Rotate a token the moment it is pasted anywhere shared** — a chat, an
   issue, a screenshot.
 
