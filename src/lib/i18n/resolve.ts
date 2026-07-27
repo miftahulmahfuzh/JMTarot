@@ -20,7 +20,7 @@
  */
 import type { NextRequest } from 'next/server';
 
-import { DEFAULT_LOCALE, isLocale, negotiate, type Locale } from './locale';
+import { DEFAULT_LOCALE, isLocale, negotiate, negotiateOrNull, type Locale } from './locale';
 
 /**
  * `httpOnly` on purpose (I11): nothing client-side reads it. The provider is
@@ -129,4 +129,56 @@ export function localeFromHeaders(
   if (isLocale(header)) return header;
   if (isLocale(cookie)) return cookie;
   return DEFAULT_LOCALE;
+}
+
+/**
+ * What locale to stamp into a `users` row at CREATION, and whether that stamp is
+ * a decision (V2, roadmap VD11 / T17).
+ *
+ * ── WHY THIS IS NOT `localeFromHeaders` WITH AN EXTRA RETURN VALUE ────────────
+ *
+ * It has a third rung. `localeFromHeaders` serves callers downstream of
+ * middleware, where a missing header means the matcher excluded the route and the
+ * cookie is the answer; there is no `Accept-Language` left to consult because
+ * middleware already consulted it. The sign-in callback is different: it runs
+ * inside Google's redirect, and the raw `Accept-Language` the browser sent is
+ * both present and the last honest signal available if the first two are missing.
+ * Two independent signals ahead of it is what keeps §6.1's link 5 from being
+ * load-bearing on its own.
+ *
+ * ── AND WHY `source` IS NOT DERIVABLE FROM `locale` ──────────────────────────
+ *
+ * `negotiate(null)` returns `'id'`. So does `negotiate('id')`. The first is the
+ * absence of information and the second is a browser saying what it wants, and
+ * the whole value of `users.locale_source` is telling those apart — a row stamped
+ * `'negotiated'` must never be re-stamped, and a row stamped `'default'` safely
+ * can be. Recording the first as `'negotiated'` would claim a negotiation that
+ * never happened and quietly collapse the three-value enum back into two.
+ *
+ * Hence: `'default'` ONLY when no rung produced a locale we have. Every other
+ * path is `'negotiated'`, including the ones that land on `id`.
+ *
+ * PURE, and it must stay that way — no `next/headers`, no `server-only`. The
+ * caller reads the request; this decides. That split is what makes all four rungs
+ * testable without a sign-in, which matters because the real thing can only be
+ * exercised by going to Google and back.
+ */
+export function resolveForSignIn(
+  headerLocale: string | null | undefined,
+  cookieLocale: string | null | undefined,
+  acceptLanguage: string | null | undefined,
+): { locale: Locale; source: 'negotiated' | 'default' } {
+  if (isLocale(headerLocale)) return { locale: headerLocale, source: 'negotiated' };
+  if (isLocale(cookieLocale)) return { locale: cookieLocale, source: 'negotiated' };
+
+  /*
+   * `negotiateOrNull` rather than `negotiate`, and that is the whole reason it
+   * exists: `negotiate` answers `'id'` both for "the browser asked for
+   * Indonesian" and for "the browser asked for nothing I have", and this is the
+   * one caller in the app that must not conflate them.
+   */
+  const negotiated = negotiateOrNull(acceptLanguage);
+  return negotiated
+    ? { locale: negotiated, source: 'negotiated' }
+    : { locale: DEFAULT_LOCALE, source: 'default' };
 }

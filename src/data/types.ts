@@ -86,6 +86,34 @@ export type Locale = 'id' | 'en';
  */
 export type Localized<T> = Record<Locale, T>;
 
+/**
+ * Where `users.locale` came from (V2, roadmap VD11).
+ *
+ * Declared here for the third time for the same reason: `schema.ts` narrows the
+ * column with `$type<LocaleSource>()` and `@/lib/db/**` may not depend on
+ * `@/lib/i18n/**`.
+ *
+ * WHY THE COLUMN EXISTS AT ALL. `users.locale` is `not null default 'id'`, and the
+ * `loc` session claim is FIRST in the resolution chain — ahead of the cookie and
+ * `Accept-Language`. So an `en-GB` browser negotiated English on `/login`, signed
+ * in, took the column default, and was snapped to Indonesian by a value that had
+ * never been anybody's decision. That is the real bug behind "the language
+ * resets".
+ *
+ * Stamping the negotiated locale over a default is right. Stamping it over an
+ * explicit choice is a silent overwrite every time someone signs in from a foreign
+ * browser — and without this column those two are the same row.
+ *
+ *   'default'     no signal reached the sign-in at all. Honest, and not the same
+ *                 thing as negotiating and landing on `id`; see `resolveForSignIn`.
+ *   'negotiated'  a header, a cookie or an Accept-Language decided it.
+ *   'chosen'      the querent pressed the toggle. Never overwritten.
+ *
+ * NULL on pre-v0.3.0 rows and READ AS `'chosen'` — the conservative reading, via
+ * `effectiveLocaleSource()`. Never read the column raw.
+ */
+export type LocaleSource = 'default' | 'negotiated' | 'chosen';
+
 export type ServiceId = 'daily' | 'spread3' | 'yesno';
 
 export type ReaderId = 'thessaly' | 'margaret' | 'adrian';

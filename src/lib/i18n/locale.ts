@@ -20,9 +20,9 @@
  * what makes that safe. Do not redeclare it here — two declarations of a
  * two-member union type agree right up until they do not.
  */
-import type { Locale } from '@/data/types';
+import type { Locale, LocaleSource } from '@/data/types';
 
-export type { Locale };
+export type { Locale, LocaleSource };
 
 export const LOCALES = ['id', 'en'] as const satisfies readonly Locale[];
 
@@ -96,7 +96,27 @@ const ALIASES: Record<string, Locale> = { in: 'id' };
  * it means "anything else will do", which is what DEFAULT_LOCALE already is.
  */
 export function negotiate(acceptLanguage: string | null | undefined): Locale {
-  if (!acceptLanguage) return DEFAULT_LOCALE;
+  return negotiateOrNull(acceptLanguage) ?? DEFAULT_LOCALE;
+}
+
+/**
+ * `negotiate`, but able to say "this header named nothing I have".
+ *
+ * ADDED BY V2, AND `negotiate` IS NOW ONE LINE OVER IT. The distinction is
+ * invisible to every W6 caller — a request with no usable header and a request
+ * asking for Indonesian both want Indonesian — and load-bearing for exactly one:
+ * `resolveForSignIn` writes `users.locale_source`, and stamping `'negotiated'` on
+ * a row whose browser said nothing records a negotiation that never happened. That
+ * would collapse VD11's three-value enum into two and take the column's only
+ * purpose with it.
+ *
+ * A SECOND SCANNER WAS THE ALTERNATIVE AND IT WAS WORSE: it would have needed its
+ * own copy of `ALIASES` and its own view of `q`, in a file whose whole reason for
+ * having a test file is that this parse has edge cases. One function, two return
+ * types, no duplicated table.
+ */
+export function negotiateOrNull(acceptLanguage: string | null | undefined): Locale | null {
+  if (!acceptLanguage) return null;
 
   let best: Locale | null = null;
   let bestQ = 0;
@@ -119,7 +139,7 @@ export function negotiate(acceptLanguage: string | null | undefined): Locale {
     }
   }
 
-  return best ?? DEFAULT_LOCALE;
+  return best;
 }
 
 /** The `q` parameter, or 1 when absent. 0 for anything malformed or out of range. */
@@ -131,4 +151,22 @@ function quality(params: string[]): number {
     return Number.isFinite(q) && q > 0 && q <= 1 ? q : 0;
   }
   return 1;
+}
+
+/**
+ * Read `users.locale_source`, treating NULL as `'chosen'` (V2 / T16).
+ *
+ * READ THE COLUMN THROUGH THIS AND NEVER RAW. Every row created before v0.3.0 has
+ * NULL, and `raw ?? 'default'` is what a reasonable person writes without this
+ * function — which would license the sign-in path to stamp the negotiated locale
+ * over the preference of everyone who has been using the app since W6. Those users
+ * may well have pressed the toggle; there is no way to tell, and `'chosen'` is the
+ * reading where being wrong costs nothing visible.
+ *
+ * An unrecognised value takes the same branch rather than throwing. This reads a
+ * database column on the sign-in path, and a value that got in there somehow is not
+ * a reason to refuse somebody a session.
+ */
+export function effectiveLocaleSource(v: string | null | undefined): LocaleSource {
+  return v === 'default' || v === 'negotiated' ? v : 'chosen';
 }

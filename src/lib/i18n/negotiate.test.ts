@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_LOCALE, intlTag, isLocale, LOCALES, negotiate } from './locale';
+import {
+  DEFAULT_LOCALE,
+  intlTag,
+  isLocale,
+  LOCALES,
+  negotiate,
+  negotiateOrNull,
+} from './locale';
 
 describe('negotiate', () => {
   it('prefers the highest-q known tag', () => {
@@ -84,5 +91,37 @@ describe('intlTag', () => {
 describe('DEFAULT_LOCALE', () => {
   it('is Indonesian, the source language', () => {
     expect(DEFAULT_LOCALE).toBe('id');
+  });
+});
+
+/**
+ * V2 split `negotiate` into this plus a one-line wrapper. The distinction is
+ * invisible to every W6 caller and load-bearing for `resolveForSignIn`, which
+ * writes `users.locale_source` — so it needs its own assertions rather than
+ * riding on `negotiate`'s.
+ */
+describe('negotiateOrNull', () => {
+  it('agrees with negotiate whenever the header names a locale we have', () => {
+    for (const header of ['en', 'id', 'en-GB,en;q=0.9,id;q=0.8', 'in-ID', 'fr,id;q=0.5']) {
+      expect(negotiateOrNull(header)).toBe(negotiate(header));
+    }
+  });
+
+  /*
+   * THE POINT OF THE FUNCTION. `negotiate` cannot tell these two apart from a
+   * header that asked for Indonesian, and one of them is a decision while the
+   * other is the absence of one.
+   */
+  it('returns null where negotiate returns the default it invented', () => {
+    expect(negotiateOrNull(null)).toBeNull();
+    expect(negotiateOrNull(undefined)).toBeNull();
+    expect(negotiateOrNull('')).toBeNull();
+    expect(negotiateOrNull('fr-FR,de;q=0.8')).toBeNull();
+    expect(negotiateOrNull('*')).toBeNull();
+    expect(negotiateOrNull('zz')).toBeNull();
+
+    // ...all of which negotiate() reports as Indonesian, correctly, for its own
+    // callers. That is the conflation this function exists to undo.
+    expect(negotiate('fr-FR,de;q=0.8')).toBe('id');
   });
 });
