@@ -309,11 +309,54 @@ const SHAPES: { name: string; re: RegExp; warn?: true; credential?: true }[] = [
  */
 const NEXT_PUBLIC_ALLOWLIST: string[] = [];
 
+/**
+ * **THE PLATFORM'S OWN NAMESPACE, AND IT IS NOT OURS TO EMPTY.** Broke the first
+ * real Vercel deploy (2026-07-27, commit `0b4e4a0`): nineteen findings, every one
+ * of them `NEXT_PUBLIC_VERCEL_*`, none of them from this repo.
+ *
+ * Vercel duplicates its system environment variables under a `NEXT_PUBLIC_`
+ * prefix -- `..._URL`, `..._ENV`, `..._GIT_COMMIT_MESSAGE`, `..._PROJECT_ID`,
+ * and a dozen more. The build container is not an environment this repository
+ * controls, so the `process.env` enumeration was checking a machine somebody
+ * else provisions. Turning off "Automatically expose System Environment
+ * Variables" in the dashboard removes most of them and is worth doing anyway,
+ * but it is an invisible setting that a re-created project silently loses, and
+ * at least `NEXT_PUBLIC_VERCEL_OBSERVABILITY_CLIENT_CONFIG` arrives from the
+ * build pipeline regardless. A tripwire hostage to a checkbox is one somebody
+ * switches off -- the same reasoning that excludes `.next/server/chunks/**`.
+ *
+ * **THIS COSTS THE AUDIT ALMOST NOTHING, AND HERE IS WHY.** Being *set* was only
+ * ever a proxy. Next inlines a `NEXT_PUBLIC_` value at the point something READS
+ * it, not because it exists, and the read check below scans all of `src/**` and
+ * is untouched -- so an actual leak of one of these still fails the build. The
+ * values themselves are commit metadata and deployment URLs, not credentials.
+ *
+ * **DO NOT VALUE-SCAN THEM INTO `SECRET_ENV` "to be thorough".**
+ * `NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL` is `www.jmtarot.site`, which is in
+ * the manifest and in both legal pages by design. That is a guaranteed red build
+ * on correct code, which is how a tripwire gets deleted.
+ *
+ * `NEXT_PUBLIC_ALLOWLIST` above stays EMPTY. The rule it encodes -- JMTarot
+ * declares no `NEXT_PUBLIC_` variable of its own -- is still true and still
+ * enforced. This is a separate list because it means a different thing.
+ */
+const NEXT_PUBLIC_PLATFORM_PREFIXES = ['NEXT_PUBLIC_VERCEL_'];
+
 function checkNextPublic() {
+  let platform = 0;
   for (const key of Object.keys(process.env)) {
     if (!key.startsWith('NEXT_PUBLIC_')) continue;
     if (NEXT_PUBLIC_ALLOWLIST.includes(key)) continue;
+    if (NEXT_PUBLIC_PLATFORM_PREFIXES.some((p) => key.startsWith(p))) {
+      platform += 1;
+      continue;
+    }
     fail('NEXT_PUBLIC_', `${key} is set and not on the allowlist`, '(process.env)', 0);
+  }
+  // One line, not nineteen. Visible enough to notice the namespace growing,
+  // quiet enough that nobody starts scrolling past the audit's output.
+  if (platform > 0) {
+    warnings.push(`${platform} platform-injected NEXT_PUBLIC_VERCEL_* vars present (not read by src/**)`);
   }
 
   /*

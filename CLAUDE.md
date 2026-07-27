@@ -1090,6 +1090,20 @@ from the same measurement, not from the plan's guessed 2500.
   `scripts/db-seed.ts`, which has no React runtime — and W1 owns the directory.
   `clientBoundary.test.ts` already covers the same ground.
 
+- **VERCEL INJECTS NINETEEN `NEXT_PUBLIC_VERCEL_*` VARS, AND THEY BROKE THE FIRST
+  REAL DEPLOY.** `0b4e4a0` built clean locally and failed on Vercel with nineteen
+  findings, none of them from this repo — the platform duplicates its system env
+  under a `NEXT_PUBLIC_` prefix, and `checkNextPublic()` was enumerating a
+  `process.env` this repository does not own. `audit-secrets.ts` now warns on the
+  `NEXT_PUBLIC_VERCEL_` prefix in one line instead of failing nineteen times;
+  `NEXT_PUBLIC_ALLOWLIST` stays empty, because "JMTarot declares none of its own"
+  is still true and still enforced. **The read grep over `src/**` is untouched and
+  is the half that matters** — Next inlines a value where something READS it, not
+  because it is set — verified by a control that reads
+  `process.env.NEXT_PUBLIC_VERCEL_URL` and still fails the build. Do not
+  value-scan the namespace "to be thorough": `NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL`
+  is `www.jmtarot.site`, which is in the manifest and both legal pages by design.
+
 ### Verifying it
 
 ```sh
