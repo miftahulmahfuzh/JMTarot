@@ -139,6 +139,24 @@ async function run(
   return text;
 }
 
+/**
+ * What the ADAPTER will actually talk to, which is not always `LLM_BASE_URL`.
+ *
+ * **THIS PRINTED A LIE FOR THE WHOLE OF THE GEMINI EVALUATION.** It read
+ * `LLM_BASE_URL ?? 'api.anthropic.com'`, but `openai.ts` reads `OPENAI_BASE_URL`
+ * -- so every run reported `baseURL=api.anthropic.com` while hitting
+ * generativelanguage.googleapis.com. It misleads in both directions: it hides
+ * where the traffic is going, and it invites someone to "fix" a Gemini
+ * misconfiguration by setting the Anthropic variable, which does nothing.
+ */
+function resolvedBaseUrl(): string {
+  const provider = process.env.LLM_PROVIDER ?? 'zai';
+  if (provider === 'openai') {
+    return process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
+  }
+  return process.env.LLM_BASE_URL ?? 'api.anthropic.com';
+}
+
 async function main() {
   loadEnv();
 
@@ -150,7 +168,7 @@ async function main() {
   }
   console.error(
     `provider=${process.env.LLM_PROVIDER ?? 'zai'} model=${process.env.LLM_MODEL} ` +
-      `baseURL=${process.env.LLM_BASE_URL ?? 'api.anthropic.com'}`,
+      `baseURL=${resolvedBaseUrl()}`,
   );
 
   const reader = arg('reader');

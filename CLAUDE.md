@@ -633,8 +633,11 @@ that no spend cap is possible — **an OpenAI project takes a hard budget cap, s
 that premise flips back the moment the provider does.**
 
 **`LLM_BASE_URL` IS ANTHROPIC-ONLY.** The OpenAI adapter reads `OPENAI_BASE_URL`.
-Pointing the first at OpenAI silently does nothing, and `npm run smoke` will
-cheerfully print `baseURL=api.anthropic.com` while talking to OpenAI, because that
+Pointing the first at OpenAI silently does nothing. `npm run smoke` and
+`npm run probe:moderation` USED to print `baseURL=api.anthropic.com` while talking
+to somewhere else entirely — they printed exactly that through a whole Gemini
+evaluation — and both now resolve the variable the adapter will actually read.
+The old text is kept below because it explains what
 line reports the Anthropic variable's default.
 
 ## The prompt
