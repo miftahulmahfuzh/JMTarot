@@ -321,6 +321,12 @@ export async function POST(request: Request) {
       currentCardIds: picks.map((p) => p.id),
       currentHasQuestion: Boolean(sanitizeQuestion(question)),
       localDate: localDate.date,
+      /*
+       * V2 / T12. A recalled gist may be in the other language, and the block quotes
+       * it verbatim. `recallChain` prefers a cached translation and NEVER waits on a
+       * model call -- see `withTranslatedGists`.
+       */
+      locale,
     });
 
     let prompt;

@@ -1153,6 +1153,19 @@ function memoryFixture(picks: Array<{ id: number; reversed: boolean }>): MemoryC
         localDate: '2026-07-24',
         readerId: 'margaret',
         serviceId: 'spread3',
+        /*
+         * The gist's own language (V2), and `'id'` is honest for BOTH halves of
+         * `--all`: the fixture's gist below is Indonesian and is deliberately fed to
+         * the English readings too, which is what exercises the base contract's
+         * "write in ENGLISH even if the text you are reading is written in another
+         * language" rule.
+         *
+         * The field is inert here -- this builds a `MemoryContext` directly, so
+         * `recallChain`'s translation substitution never runs -- but a fixture that
+         * lied about its own language would be the first thing to mislead whoever
+         * next asks whether gist translation is worth keeping (plan open question 4).
+         */
+        locale: 'id',
         cards: [
           { cardId: shared, reversed: !picks[0].reversed },
           { cardId: (shared + 5) % 22, reversed: false },

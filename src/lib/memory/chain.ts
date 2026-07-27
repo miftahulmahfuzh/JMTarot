@@ -11,6 +11,10 @@
  * which is the same value a user with no history gets, and which every caller
  * already handles.
  */
+import type { Locale } from '@/data/types';
+import { defer } from '@/lib/analytics/track';
+import type { RecalledReading } from '@/lib/db/queries/history';
+import type { DbOrTx } from '@/lib/db/types';
 import type { MemoryContext } from '@/lib/prompt/memory';
 import {
   MEMORY_CHAIN_COUNT,
@@ -39,6 +43,14 @@ export async function recallChain(args: {
   currentHasQuestion: boolean;
   localDate: string;
   excludeReadingId?: string;
+  /**
+   * The language THIS reading is being written in (V2 / T12).
+   *
+   * A recalled gist may be in the other one, and the block quotes it verbatim. Where
+   * a translation already exists it is preferred; where it does not, the original is
+   * used and one is scheduled off the request path. See `withTranslatedGists`.
+   */
+  locale: Locale;
 }): Promise<MemoryContext | null> {
   /*
    * THE KILL SWITCH, CHECKED BEFORE THE QUERY. `MEMORY_CHAIN_COUNT=0` has to
@@ -68,11 +80,91 @@ export async function recallChain(args: {
 
     if (!gate.include || gate.reason === null) return null;
 
-    return { recalled, repeatCardIds: gate.repeatCardIds, reason: gate.reason };
+    /*
+     * AFTER THE GATE, so nothing is looked up for a block that is not going to be
+     * rendered. The gate rejects most recalls, and this is one more query.
+     */
+    const translated = await withTranslatedGists(db, recalled, args.locale);
+
+    return { recalled: translated, repeatCardIds: gate.repeatCardIds, reason: gate.reason };
   } catch (err) {
     logFailure(err);
     return null;
   }
+}
+
+/**
+ * Swap in a cached translation for any recalled gist that is in another language,
+ * and schedule the ones that are missing (V2 / T12).
+ *
+ * ── IT NEVER WAITS ON A MODEL CALL, AND THAT IS THE WHOLE DESIGN ─────────────
+ *
+ * The gist is PROMPT INPUT, not screen output. Translating it inline would put a
+ * model call in front of a byte the querent is waiting for, which roadmap §6 forbids
+ * outright — so this reads the cache (one `in` over at most `MEMORY_CHAIN_COUNT`
+ * ids, which is 2, served by `translations_entity_lookup_idx`) and `defer()`s the
+ * generation into the reading's existing `after()`.
+ *
+ * WHERE NOTHING EXISTS THE ORIGINAL IS USED, and the base contract already covers
+ * it: *"Write in ENGLISH even if the text you are reading is written in another
+ * language."* That rule exists for exactly this, which is why the whole path is
+ * opportunistic rather than blocking — and it is also why the plan's open question 4
+ * asks whether it is worth keeping at all. `translation.generated` with
+ * `field: 'gist'` is how that gets answered.
+ *
+ * NEVER THROWS, like everything else in this file. It is called inside `recallChain`'s
+ * `try`, and a failure here loses the substitution rather than the reading.
+ */
+async function withTranslatedGists(
+  db: DbOrTx,
+  recalled: RecalledReading[],
+  target: Locale,
+): Promise<RecalledReading[]> {
+  const foreign = recalled.filter((r) => r.locale !== target);
+  if (foreign.length === 0) return recalled;
+
+  const { gistTranslations } = await import('@/lib/db/queries/translations');
+  const cached = await gistTranslations(
+    db,
+    foreign.map((r) => r.id),
+    target,
+  );
+
+  for (const r of foreign) {
+    if (cached.has(r.id)) continue;
+    /*
+     * `defer()` and never `await`. It runs in the reading's own `after()`, after the
+     * last byte has reached the querent, and `translateOrCached` declares itself
+     * `deferred` to the model-call ceiling for the gist field — so a quota running
+     * low costs the NEXT chained reading a little specificity and costs this one
+     * nothing.
+     *
+     * `sourceUpdatedAt` is the reading's own `created_at`, which the caller does not
+     * have here — but `readings` is immutable (VD7), so a gist translation can never
+     * go stale and the epoch is a correct and permanent comparand. Passing `new
+     * Date()` instead would make every cached row look stale on the next read and
+     * turn this into one model call per reading, forever.
+     */
+    defer(async () => {
+      const { translateOrCached } = await import('@/lib/translate/translate');
+      await translateOrCached({
+        entity: 'reading',
+        entityId: r.id,
+        field: 'gist',
+        source: r.gist,
+        sourceLocale: r.locale,
+        sourceUpdatedAt: new Date(0),
+        target,
+        readerId: null,
+        serviceId: null,
+      });
+    });
+  }
+
+  return recalled.map((r) => {
+    const swap = cached.get(r.id);
+    return swap ? { ...r, gist: swap } : r;
+  });
 }
 
 /**
