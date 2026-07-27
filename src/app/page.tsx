@@ -1,8 +1,10 @@
 import Image from 'next/image';
 import { Eyebrow } from '@/components/Eyebrow';
 import { FrequencyLine } from '@/components/FrequencyLine';
+import { LocaleSwitch } from '@/components/LocaleSwitch';
 import { TrackLink } from '@/components/TrackLink';
 import { READERS, readerPortrait } from '@/data/readers';
+import { localeSwitcherEnabled } from '@/lib/i18n/resolve';
 import { getT } from '@/lib/i18n/t';
 import styles from './page.module.css';
 
@@ -70,6 +72,9 @@ export default async function Home() {
       </div>
 
       <p className={styles.disclaimer}>{t('common.disclaimer.short')}</p>
+      {/* Under the disclaimer, which is the calmest row on the calmest screen.
+          Not on the draw screen -- see the component. */}
+      {localeSwitcherEnabled() ? <LocaleSwitch /> : null}
     </main>
   );
 }

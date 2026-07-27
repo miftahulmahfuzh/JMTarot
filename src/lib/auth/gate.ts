@@ -65,6 +65,15 @@ export function isPublic(pathname: string): boolean {
     pathname === '/terms' ||
     pathname === '/privacy' ||
     pathname === '/api/events' ||
+    /*
+     * W6. The login page carries a language switcher and there is no session yet,
+     * so this has to answer before anyone is signed in -- a querent whose browser
+     * says `en-GB` should not have to sign in through an Indonesian form to find
+     * the toggle. It is the same trap `/api/events` is here for: the obvious
+     * matcher gates a route that must work without a session, and the failure looks
+     * like a dead button rather than like an auth problem.
+     */
+    pathname === '/api/locale' ||
     pathname.startsWith('/api/auth/')
   );
 }

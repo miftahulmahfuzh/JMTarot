@@ -1,7 +1,9 @@
 import { redirect } from 'next/navigation';
 import { signIn } from '@/lib/auth/auth';
+import { LocaleSwitch } from '@/components/LocaleSwitch';
 import { currentUser } from '@/lib/auth/server';
 import type { TFunction } from '@/lib/i18n/format';
+import { localeSwitcherEnabled } from '@/lib/i18n/resolve';
 import { getT } from '@/lib/i18n/t';
 import styles from './login.module.css';
 
@@ -110,6 +112,11 @@ export default async function Login({
         </p>
 
         <p className={styles.disclaimer}>{t('login.disclaimer')}</p>
+
+        {/* Before there is a session, so /api/locale writes only the cookie. A
+            querent whose browser says en-GB should not have to sign in through
+            an Indonesian form to find this. */}
+        {localeSwitcherEnabled() ? <LocaleSwitch /> : null}
       </div>
     </main>
   );

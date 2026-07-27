@@ -85,6 +85,34 @@ export function resolveForMiddleware(
 }
 
 /**
+ * Whether to render the language toggle (`LOCALE_SWITCHER`, plan §6).
+ *
+ * SERVER-SIDE, and it has to be: `LOCALE_SWITCHER` carries no `NEXT_PUBLIC_`
+ * prefix, so inside a `'use client'` module the bundler inlines `undefined` and
+ * the flag silently stops working. It lived in `LocaleSwitch.tsx` for about ten
+ * minutes. The two callers are both server pages, which is the only place it is
+ * meaningful.
+ *
+ * RENDERING ONLY. It does not change the key set, does not change the resolution
+ * order, and does not gate `en` behind a 404 -- an `en-GB` browser gets English
+ * with the toggle hidden, because `negotiate()` is upstream of this and stays that
+ * way. A flag that changed the key set would break the type guarantee, which is
+ * the one thing here worth protecting. It exists because the English readings are
+ * the likeliest thing to be unfinished on launch day, and the interface work
+ * should be able to land without advertising a half-written Margaret.
+ *
+ * NOT `=== '1'`, following `ANALYTICS_ENABLED`'s precedent in this codebase: only
+ * an explicit `'0'` turns it off, so a typo shows the switcher rather than
+ * silently hiding a shipped feature. The two flags default in opposite directions
+ * from the same rule -- collect data rather than silently collect none, show the
+ * control rather than silently hide it -- because in both cases the quiet failure
+ * is the one nobody notices.
+ */
+export function localeSwitcherEnabled(): boolean {
+  return process.env.LOCALE_SWITCHER !== '0';
+}
+
+/**
  * Header first, cookie second, default last. For anything downstream of
  * middleware that has a request but not a `NextRequest`.
  *

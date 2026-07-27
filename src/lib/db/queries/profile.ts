@@ -185,6 +185,35 @@ export async function touchLastSeen(db: DbOrTx, userId: string): Promise<void> {
   await db.update(users).set({ lastSeenAt: new Date() }).where(eq(users.id, userId));
 }
 
+/**
+ * Remember a language choice. W6, asked for in its plan's §5 and not delivered
+ * with W1.
+ *
+ * CALLED ONLY FROM INSIDE `after()`. The cookie and the re-minted session claim
+ * are what make the switch take effect; this column is what makes the choice
+ * follow the querent to a NEW DEVICE, where there is no cookie and the sign-in
+ * stamps `loc` from here. Roadmap §6 is explicit that a language toggle is the
+ * least defensible place in the app to wait on Postgres, and D9 gives `after()`
+ * as the mechanism.
+ *
+ * `void` for the same reason `touchLastSeen` is `void`: nothing needs the row
+ * back, and returning it invites someone to await this on the request path.
+ *
+ * A soft-deleted user is excluded. Nothing should be writing preferences to an
+ * erased account, and the switcher is reachable before `deleted_at` has been
+ * noticed anywhere else.
+ */
+export async function setUserLocale(
+  db: DbOrTx,
+  userId: string,
+  locale: Locale,
+): Promise<void> {
+  await db
+    .update(users)
+    .set({ locale })
+    .where(and(eq(users.id, userId), isNull(users.deletedAt)));
+}
+
 // ---------------------------------------------------------------------------
 // The sign-in path (W2)
 // ---------------------------------------------------------------------------
