@@ -246,6 +246,13 @@ const SECRET_ENV = [
   'DATABASE_URL',
   'TEST_DATABASE_URL',
   'CRON_SECRET',
+  /*
+   * V9. `UPSTASH_REDIS_REST_TOKEN` is the credential; the URL is not secret but
+   * it NAMES THE DATASTORE, which is the same reasoning that already puts
+   * `LLM_BASE_URL` and `DATABASE_URL` on this list.
+   */
+  'UPSTASH_REDIS_REST_TOKEN',
+  'UPSTASH_REDIS_REST_URL',
 ];
 
 /**
