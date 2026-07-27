@@ -592,6 +592,27 @@ send the text" is legitimate in Adrian's voice; the rule is against *diagnosis*.
 An entertainment-only disclaimer appears under every reading and on both
 pickers.
 
+## Providers
+
+Two adapters, one interface, and the second one is **insurance rather than a
+preference**. `LLM_PROVIDER=zai|anthropic` uses `anthropic.ts` (one wire format,
+two services); `openai` uses `openai.ts`. Switching is that variable plus
+`LLM_MODEL`, and nothing else — the thing `llm/index.ts` promised since W4, now
+demonstrated rather than asserted.
+
+**`docs/provider-comparison.md` has the measurements and the recommendation.**
+Read it before changing `LLM_PROVIDER`, because three numbers elsewhere in this
+file are z.ai facts rather than general ones and would need re-deriving:
+`MODERATION_TIMEOUT_MS` (from z.ai's classifier p95), `LLM_WINDOW_CALL_CEILING`
+(from a 5-hour prompt quota OpenAI does not have), and DEPLOY-VERCEL §2b's claim
+that no spend cap is possible — **an OpenAI project takes a hard budget cap, so
+that premise flips back the moment the provider does.**
+
+**`LLM_BASE_URL` IS ANTHROPIC-ONLY.** The OpenAI adapter reads `OPENAI_BASE_URL`.
+Pointing the first at OpenAI silently does nothing, and `npm run smoke` will
+cheerfully print `baseURL=api.anthropic.com` while talking to OpenAI, because that
+line reports the Anthropic variable's default.
+
 ## The prompt
 
 Three layers in `src/lib/prompt/`, assembled by `build.ts`, **each forked per
@@ -1229,9 +1250,12 @@ contractions 0.87 / 0.00 / 3.52.
   Plan is *"strictly limited to use within officially supported tools and
   products"*, and JMTarot is not one. The consequence of that being enforced is
   not a warning or an overage — it is **key revocation, which takes the whole app
-  down at once**, with no second provider funded. `LLM_PROVIDER` already has an
-  `anthropic` branch and one adapter serves both, so the code cost of a second
-  key is an env var. Decide before V7 makes the app publicly linkable.
+  down at once**. **`src/lib/llm/openai.ts` is the answer to that and it is built,
+  tested and measured** — see `docs/provider-comparison.md`. It is NOT switched
+  on: OpenAI is 8× faster to first token, reports real `input_tokens`, and has a
+  better classifier, but **reader overlap on `spread3` goes 0.050 → ~0.086**,
+  which is the one metric this product is built on. So the fallback exists and the
+  default does not move until the persona paragraphs are tuned.
 - **`findahelpline.com` and `112` are NOT in `resources.ts`** because neither
   could be verified — findahelpline returned 403 twice. Both are worth adding
   by hand.
