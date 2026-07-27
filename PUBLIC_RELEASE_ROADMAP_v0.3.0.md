@@ -616,13 +616,18 @@ document.
 *(amended, R6.9. V3 is no longer blocked on V2.)*
 
 ```
-V1                          alone. V3 and V8 both import it.
-V2  V4  V5  V9              parallel. No shared files except events.ts.
+V1  V9                      parallel, both first. V9 is here and not in wave 2
+                            because `hit()` becomes ASYNC and V7 already has
+                            four synchronous call sites -- landing V9 after V7
+                            means editing a file V7 has just written, in the
+                            most security-sensitive workstream of the release.
+                            V9 shares no file with V1.
+V2  V4  V5                  parallel. No shared files except events.ts.
 V3                          needs V1 ONLY (was: V1 + V2).
 V6  V8                      need V4's menu for their entry points.
 V7                          last. Mounts V6's ReadingView, shares V8's persona,
                             completes V8's revokeAllForUser call site, and is
-                            the reason V9 exists -- V9 MUST land first.
+                            the reason V9 exists.
 ```
 
 **V1 first and alone** — V3 and V8 both import it and neither can be written

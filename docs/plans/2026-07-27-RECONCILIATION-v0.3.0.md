@@ -10,17 +10,19 @@ written against it, in parallel, by agents that could not talk to each other.
 > Where a workstream plan disagrees with this file, **the plan is wrong and
 > should be fixed in place**, not worked around.
 >
-> Read **§0 first.** It records three defects in shipped code that the planning
-> pass found, and one of them makes a v0.2.0 feature permanently broken in a way
-> no test currently notices.
+> Read **§0 first.** It records four defects in shipped code that the planning
+> pass found. One makes a v0.2.0 feature permanently broken in a way no test
+> notices, and one is a **live security defect**: the rate limiter on the app's
+> only public write endpoint can be bypassed with a request header.
 
 ---
 
 ## 0. Fix these before anything else
 
-Three findings about code that is already deployed. None of them is v0.3.0's
-work in the sense of being new; all three are things v0.3.0 would otherwise
-build on top of.
+Four findings about code that is already deployed. None of them is v0.3.0's work
+in the sense of being new; all four are things v0.3.0 would otherwise build on
+top of. **§0.4 is a live security defect and is the only one that is exploitable
+right now.**
 
 ### 0.1 `MEMORY_PROMPT_VERSION` invalidates nothing. Live bug.
 
@@ -67,6 +69,42 @@ catching drift. V3 changes both numbers, so this must be fixed in the same
 release or the checks silently stop binding.
 
 Owner: **V3, Task 13.**
+
+### 0.4 The `/api/events` rate limiter is bypassable with a request header. LIVE.
+
+Found by V9. **Verified in the file before being written here**, because it is a
+security claim about deployed code — `src/app/api/events/route.ts:71-75`:
+
+```ts
+function clientIp(request: Request): string {
+  const forwarded = request.headers.get('x-forwarded-for');
+  if (forwarded) return forwarded.split(',')[0].trim();   // <-- LEFTMOST
+  return request.headers.get('x-real-ip') ?? 'unknown';
+}
+```
+
+`x-forwarded-for` is a **client-appendable** header, and the leftmost entry is
+the one the *caller* supplies. A different value per request is a different
+limiter key per request, so the per-IP budget on **the only endpoint in this app
+a stranger can write to** is one header away from unlimited. It also prefers the
+spoofable header over `x-real-ip`, which is the wrong way round.
+
+The function's own comment argues the endpoint is not worth abusing — only names
+from the closed taxonomy are ever written, and `user_id` comes from the session
+and never from the body. **That was a defensible v0.2.0 position and v0.3.0
+retires it.** V7 makes the app publicly linkable and fires `share.viewed` through
+this endpoint anonymously, so its reachability changes by an order of magnitude
+in the same release.
+
+Fix, owned by **V9**: a shared `clientIp(h: Headers)` that prefers `x-real-ip`,
+falls back to the **last** XFF entry rather than the first, and normalises IPv6
+to a /64 — one subscriber is routinely handed 2^64 addresses, so a per-address
+budget is no budget at all. It takes `Headers` rather than `Request` so V7's page
+and a route handler can share one implementation.
+
+**V9's own `clientIp` is written to be correct whether Vercel appends to or
+overwrites `x-forwarded-for`**, because that fact is gated behind its Task 0 (see
+§6) rather than assumed.
 
 ---
 
@@ -483,13 +521,23 @@ Apply these to the roadmap; they are already binding by this file's precedence.
 ### Revised build order
 
 ```
-V1                          alone. V3 and V8 both import it.
+V1  V9                      parallel, both first. See below for why V9 is here
+                            and not in wave 2.
 V2  V4  V5                  parallel. No shared files except events.ts.
 V3                          needs V1 only (was: V1 + V2).
 V6  V8                      need V4's menu for their entry points.
 V7                          last. Mounts V6's ReadingView, shares V8's persona,
-                            and completes V8's revokeAllForUser call site.
+                            completes V8's revokeAllForUser call site, and is
+                            the reason V9 exists.
 ```
+
+**V9 moved from wave 2 to wave 1 on V9's own argument, and it is a good one:
+`hit()` becomes `async`.** V7's plan already contains four synchronous call
+sites. Landing V9 after V7 means editing a file V7 has just written, in a
+workstream that is already the most security-sensitive in the release — so the
+ordering that looks natural (build the thing, then protect it) is the one that
+creates the churn. V9 has no dependency on V1 and shares no file with it, so the
+two run together at no cost.
 
 ### One render-path exemption, granted twice
 
@@ -519,6 +567,20 @@ live questions.**
 | 7.3 | Per-answer clearing on `/account` | **Ships in v0.3.0**, in V8. Decided on evidence: `/privacy` promises it in clauses 3 and 7, both locales. |
 | 7.4 | May Margaret be longer? | **Yes, by 30%.** `MARGARET_MULTIPLIER = 1.3` in `budget.ts`, replacing the hand-set `spread3: 55`. |
 | 7.5 | A share viewer is cookied without agreeing | **Acknowledged, and hardened.** V7 gains an eight-point security amendment; the third party now gets no cookie at all. |
+
+### V9 asserts no unverified fact, and Task 0 is why
+
+Worth recording because it is the right handling of a research gap rather than a
+defect. V9 needed z.ai's subscription terms, Upstash's actual free-tier limits
+and Vercel's `x-forwarded-for` ordering; its research subagent had not reported
+when the plan was finished. **So the plan asserts none of them.** Thirteen
+numbered facts sit in its §1, gated behind **Task 0**, which writes the answers
+into the file before any code is written; §0.1 spells out both branches of the
+spend-cap question; and `clientIp` is written to be correct whether Vercel
+appends to or overwrites the header.
+
+**Do not skip Task 0**, and do not let a later session assume the numbers in §1
+were measured. Two of them decide whether Upstash's free tier is viable at all.
 
 ### 7.2 changes the threat model, and three documents are now wrong
 
