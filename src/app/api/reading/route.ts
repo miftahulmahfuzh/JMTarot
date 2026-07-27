@@ -5,6 +5,8 @@ import { getProvider } from '@/lib/llm';
 import { buildPrompt } from '@/lib/prompt/build';
 import { getLotusBlock, scheduleLotusRefresh } from '@/lib/prompt/lotus.generate';
 import { MAX_QUESTION_LENGTH, sanitizeQuestion } from '@/lib/prompt/sanitize';
+import { tFor } from '@/lib/i18n/catalog';
+import { getLocale } from '@/lib/i18n/t';
 import { hit } from '@/lib/ratelimit';
 import { persistReading, touchLastSeen } from '@/lib/analytics/flush';
 import { extractGist } from '@/lib/memory/gist.generate';
@@ -35,15 +37,21 @@ export const maxDuration = 60;
 /** How long the after() callback waits for the stream before storing what arrived. */
 const STREAM_TIMEOUT_MS = Number(process.env.ANALYTICS_STREAM_TIMEOUT_MS ?? 45_000);
 
-/**
- * The visible notice a broken stream leaves on screen.
+/*
+ * `FAILURE_NOTICE` WAS A MODULE CONSTANT AND IS NOW `t('reading.error.midStream')`,
+ * resolved per request inside the handler. It is still passed INTO `teeReading`,
+ * which is what guarantees it never enters `readings.body` -- it is a system
+ * message, not the reader's prose, and a stored copy would be quoted back at the
+ * querent by W5's chained reading next time.
  *
- * W6 will translate it. It is passed INTO `teeReading`, which guarantees it
- * never enters `readings.body` -- it is a system message, not the reader's
- * prose, and a stored copy would be quoted back at the querent by W5's chained
- * reading next time.
+ * IT MUST BE RESOLVED BEFORE THE `ReadableStream` OPENS. Inside `start(controller)`
+ * there is no request context, so `await headers()` throws or answers about the
+ * wrong request; `tFor(locale)` closes over a value captured in the handler body
+ * instead. The leading `\n\n` and the square brackets live in the catalog value,
+ * not here, because they are what make it read as a system message rather than as
+ * the reader suddenly saying something strange -- there is a test asserting the
+ * framing survives in both locales.
  */
-const FAILURE_NOTICE = '\n\n[Bacaan terputus. Coba lagi sebentar.]';
 
 /*
  * The client sends card IDS AND ORIENTATION, NOTHING ELSE. Every word of card
@@ -100,10 +108,32 @@ export async function POST(request: Request) {
 
   const sessionId = validSessionId(request.headers.get(SESSION_HEADER));
   const localDate = parseLocalDate(request.headers.get(LOCAL_DATE_HEADER));
+
+  /*
+   * THE RESOLVED UI LOCALE, NOT `user.locale`, AND THE DIFFERENCE IS I24.
+   *
+   * `readings.locale` records the language the PROSE CAME OUT IN, because that is
+   * what history and the daily summary have to match on. `user.locale` is the
+   * `loc` claim off the JWT, which is D6's "profile" and the FIRST link in the
+   * resolution chain -- so for a real user the two agree, and that is exactly why
+   * the chain is ordered that way.
+   *
+   * They diverge in one case that matters: the dev-only `?lang=` override (I12)
+   * skips the claim deliberately, because `tools/shot.sh` cannot plant a cookie.
+   * Reading `user.locale` here would make `?lang=en` produce an English interface
+   * narrating an Indonesian reading -- which would quietly break the only way
+   * Tasks 10 and 12 have to check English end to end.
+   *
+   * One value, captured once, used for the prompt, the Lotus block, the gist, the
+   * error copy and the row. Two reads could disagree.
+   */
+  const locale = await getLocale();
+  const t = tFor(locale);
+
   const ctx: AnalyticsContext = {
     userId: user.id,
     sessionId,
-    locale: user.locale,
+    locale,
     localDate: localDate.date,
   };
 
@@ -137,7 +167,7 @@ export async function POST(request: Request) {
         retry_after_s: gate.retryAfterSeconds,
       });
       return NextResponse.json(
-        { error: 'Terlalu banyak bacaan. Coba lagi nanti.' },
+        { error: t('reading.error.rateLimit') },
         { status: 429, headers: { 'retry-after': String(gate.retryAfterSeconds) } },
       );
     }
@@ -165,11 +195,11 @@ export async function POST(request: Request) {
     try {
       raw = await request.json();
     } catch {
-      return invalid('Permintaan tidak valid.', 'body_not_json');
+      return invalid(t('reading.error.badRequest'), 'body_not_json');
     }
 
     const parsed = Body.safeParse(raw);
-    if (!parsed.success) return invalid('Permintaan tidak valid.', 'schema');
+    if (!parsed.success) return invalid(t('reading.error.badRequest'), 'schema');
 
     const { reader, service, picks, question } = parsed.data;
 
@@ -177,12 +207,12 @@ export async function POST(request: Request) {
     // with one card and the prompt quietly describes a reading nobody drew.
     const svc = serviceById(service);
     if (!svc || picks.length !== svc.cardCount) {
-      return invalid(`Layanan ini butuh ${svc?.cardCount ?? '?'} kartu.`, 'card_count');
+      return invalid(t.plural('reading.error.cardCount', svc?.cardCount ?? 0), 'card_count');
     }
 
     // No duplicate cards: one physical deck, one draw.
     if (new Set(picks.map((p) => p.id)).size !== picks.length) {
-      return invalid('Kartu tidak boleh berulang.', 'duplicate_cards');
+      return invalid(t('reading.error.duplicateCard'), 'duplicate_cards');
     }
 
     /*
@@ -198,7 +228,7 @@ export async function POST(request: Request) {
      * onboarding by a few seconds), distillation failed, or they skipped every
      * question. All three produce exactly the reading an un-personalised user gets.
      */
-    const lotus = await getLotusBlock(user.id, user.locale);
+    const lotus = await getLotusBlock(user.id, locale);
 
     /*
      * THE CHAIN BLOCK. One indexed read plus one card fetch, and its failure is
@@ -227,7 +257,7 @@ export async function POST(request: Request) {
         service,
         picks,
         question,
-        locale: user.locale,
+        locale,
         // An empty summary means "there is a profile but nothing distilled yet".
         // Passing it through would render an empty `<penanya>` block, which is
         // noise in the prompt and a rule the reader would apply to nothing.
@@ -244,7 +274,7 @@ export async function POST(request: Request) {
         error_kind: 'build_failed',
         source: 'server',
       });
-      return NextResponse.json({ error: 'Permintaan tidak valid.' }, { status: 400 });
+      return NextResponse.json({ error: t('reading.error.badRequest') }, { status: 400 });
     }
 
     track('reading.requested', {
@@ -285,9 +315,23 @@ export async function POST(request: Request) {
       after(() => scheduleLotusRefresh(user.id));
     }
 
+    /*
+     * RESOLVED HERE, ON THE LAST LINE BEFORE THE STREAM EXISTS.
+     *
+     * `teeReading` hands this string to a `ReadableStream`'s `start(controller)`,
+     * where there is no request context: `await headers()` inside it throws or
+     * answers about the wrong request. `t` was built from a locale captured at the
+     * top of the handler, so this is a plain closure read and cannot fail.
+     *
+     * It must be the READING's locale, which is the request's locale -- the same
+     * one `buildPrompt` was given. If the two ever disagree, the querent gets an
+     * English sentence in the middle of Indonesian prose.
+     */
+    const interrupted = t('reading.error.midStream');
+
     const { stream, done } = teeReading(getProvider().streamReading(prompt), {
       startedAt,
-      failureNotice: FAILURE_NOTICE,
+      failureNotice: interrupted,
     });
 
     /*
@@ -340,7 +384,7 @@ export async function POST(request: Request) {
           userId: user.id,
           readerId: reader,
           serviceId: service,
-          locale: user.locale,
+          locale,
           // Stored as the prompt saw it. sanitizeQuestion is idempotent, so
           // calling it here as well as inside buildPrompt cannot change the
           // string -- there is a property test for that.
@@ -372,7 +416,7 @@ export async function POST(request: Request) {
        * platform cut the invocation short. `extractGist` never throws, so it
        * cannot take `touchLastSeen` down with it.
        */
-      await extractGist({ readingId, body: outcome.body || null, locale: user.locale });
+      await extractGist({ readingId, body: outcome.body || null, locale });
 
       /*
        * DID THE CALLBACK ACTUALLY FIRE (§4.5)? Pure code over the finished
@@ -390,7 +434,7 @@ export async function POST(request: Request) {
           body: outcome.body,
           currentCardIds: picks.map((p) => p.id),
           recalledCardIds: memory.recalled.flatMap((r) => r.cards.map((c) => c.cardId)),
-          locale: user.locale,
+          locale,
         });
         if (hit.fired && hit.signal) {
           track('memory.chain_used', { reading_id: readingId, signal: hit.signal });

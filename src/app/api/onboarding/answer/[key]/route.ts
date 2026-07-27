@@ -29,6 +29,7 @@ import { NextResponse, after } from 'next/server';
 import { isOnboardingQuestionKey } from '@/data/onboarding';
 import { db } from '@/lib/db/client';
 import { deleteAnswer } from '@/lib/db/queries/onboarding';
+import { getT } from '@/lib/i18n/t';
 import { generateLotus } from '@/lib/prompt/lotus.generate';
 import { badRequest, onboardingGate, serverError } from '../../shared';
 
@@ -50,20 +51,20 @@ export async function DELETE(_request: Request, ctx: { params: Promise<{ key: st
    * a cheerful 404 for a question that does not exist -- which reads as "already
    * deleted" and hides a client bug.
    */
-  if (!isOnboardingQuestionKey(key)) return badRequest();
+  if (!isOnboardingQuestionKey(key)) return await badRequest();
 
   let existed: boolean;
   try {
     existed = await deleteAnswer(db, gate.user.id, key);
   } catch (err) {
     console.error('onboarding answer delete failed', { userId: gate.user.id, key, err });
-    return serverError();
+    return await serverError();
   }
 
   if (!existed) {
     // 404 rather than a cheerful 200: reporting success for an erasure that
     // erased nothing is the wrong answer to give about someone's data.
-    return NextResponse.json({ error: 'Jawaban itu tidak ada.' }, { status: 404 });
+    return NextResponse.json({ error: (await getT())('onboarding.error.notFound') }, { status: 404 });
   }
 
   /*

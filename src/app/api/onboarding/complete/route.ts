@@ -56,7 +56,7 @@ export async function POST(request: Request) {
   if (!gate.ok) return gate.response;
 
   const parsed = Body.safeParse(await readJson(request));
-  if (!parsed.success) return badRequest();
+  if (!parsed.success) return await badRequest();
 
   /*
    * Normalise BEFORE opening the transaction. `normaliseAnswer` throws on a
@@ -77,13 +77,13 @@ export async function POST(request: Request) {
       });
     });
   } catch {
-    return badRequest();
+    return await badRequest();
   }
 
   const facts = parsed.data.facts;
   const fullName = facts ? stripUntrusted(facts.fullName) : null;
   const nickname = facts ? stripUntrusted(facts.nickname) : null;
-  if (facts && (fullName!.length === 0 || nickname!.length === 0)) return badRequest();
+  if (facts && (fullName!.length === 0 || nickname!.length === 0)) return await badRequest();
 
   let completedAt: Date | null;
   try {
@@ -135,13 +135,13 @@ export async function POST(request: Request) {
       );
     }
     console.error('onboarding completion failed', { userId: gate.user.id, err });
-    return serverError();
+    return await serverError();
   }
 
   if (!completedAt) {
     // No profiles row: the facts step never landed. The stepper cannot reach
     // this, and a hand-rolled request should not get a 500 for it.
-    return badRequest();
+    return await badRequest();
   }
 
   /*
