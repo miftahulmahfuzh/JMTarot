@@ -8,6 +8,7 @@ import { MAX_QUESTION_LENGTH, sanitizeQuestion } from '@/lib/prompt/sanitize';
 import { tFor } from '@/lib/i18n/catalog';
 import { getLocale } from '@/lib/i18n/t';
 import { hit } from '@/lib/ratelimit';
+import { gateReading } from '@/lib/moderation/gate';
 import { persistReading, touchLastSeen } from '@/lib/analytics/flush';
 import { extractGist } from '@/lib/memory/gist.generate';
 import { recallChain } from '@/lib/memory/chain';
@@ -329,7 +330,117 @@ export async function POST(request: Request) {
      */
     const interrupted = t('reading.error.midStream');
 
-    const { stream, done } = teeReading(getProvider().streamReading(prompt), {
+    /*
+     * THE MODERATION GATE (W7 D8/W7-D6). It sits here, on the last line before
+     * the stream exists, and it is the reason this route no longer always
+     * returns 200.
+     *
+     * `gateReading` runs the blocklist, PRIMES the reading, and races the
+     * classifier against it -- so in the common case the verdict lands while the
+     * provider is still thinking and the added latency is near zero. Measured:
+     * classifier p95 903ms against a reading p50 TTFT of 4591ms. The priming is
+     * invisible and load-bearing; `gate.ts`'s header explains what deleting it
+     * would silently cost.
+     *
+     * IT IS HANDED THE SANITIZED STRING, NOT `question`. Moderating one string
+     * and prompting another is the classic bypass, and it is easy to build by
+     * accident here because `buildPrompt` sanitizes internally while this
+     * handler holds the raw text. `sanitizeQuestion` is idempotent -- there is a
+     * property test -- so calling it again cannot change what the model saw.
+     */
+    const cleanQuestion = sanitizeQuestion(question);
+
+    let gated;
+    try {
+      gated = await gateReading({
+        question: cleanQuestion,
+        locale,
+        start: (signal) => getProvider().streamReading(prompt, { signal }),
+      });
+    } catch (err) {
+      /*
+       * The reading call died BEFORE the verdict landed, so nothing has been
+       * written to the wire and this is a real 500 -- which is better than a 200
+       * whose body is an apology. `ReadingStartError` is the only thing
+       * `gateReading` throws; anything else is a bug and gets the same treatment
+       * rather than a bare crash.
+       *
+       * `console.error(err)` is SAFE here and nowhere near the classifier: this
+       * error came from the READING call, whose request body is the system
+       * prompt and the card list, not the moderation path whose body is the
+       * querent's question.
+       */
+      console.error('reading failed before the moderation verdict', err);
+      track('reading.failed', {
+        reading_id: readingId,
+        reader_id: reader,
+        service_id: service,
+        stage: 'connect',
+        chars_before_failure: 0,
+        error_kind: 'start_failed',
+        source: 'server',
+      });
+      return NextResponse.json({ error: t('reading.error.start') }, { status: 500 });
+    }
+
+    const verdict = gated.verdict;
+
+    /*
+     * Two events for the two things worth counting, and neither is the refusal
+     * itself: `moderation.timeout` says the classifier did not answer and which
+     * way we failed, and `moderation.allowed_flagged` is the near-miss that
+     * makes the FALSE-NEGATIVE side of tuning visible. Both fire whether or not
+     * the reading was refused.
+     */
+    if (verdict.source === 'timeout') {
+      track('moderation.timeout', {
+        failed_open: !verdict.blocked,
+        reason: 'timeout',
+        reader_id: reader,
+        service_id: service,
+      });
+    }
+    if (!verdict.blocked && verdict.category !== null) {
+      track('moderation.allowed_flagged', {
+        category: verdict.category,
+        confidence_bucket: bucket(verdict.confidence),
+        reader_id: reader,
+        service_id: service,
+      });
+    }
+
+    if (gated.blocked) {
+      track('moderation.refused', {
+        // `gated.verdict`, not the `verdict` alias: narrowing follows the
+        // discriminant on `gated`, and the alias is still the wide union whose
+        // `source` includes 'none'.
+        source: gated.verdict.source,
+        category: gated.verdict.category,
+        confidence_bucket: bucket(gated.verdict.confidence),
+        reader_id: reader,
+        service_id: service,
+      });
+
+      /*
+       * `403 application/json`, not an appended notice on a 200 stream (W7-D6).
+       * In both designs the querent sees no text before the verdict, so the
+       * perceived latency is identical -- but a status code the client can
+       * branch on is what lets the refusal render "Syarat & Ketentuan" as a real
+       * LINK, and a link is the stated requirement. A `text/plain` stream cannot
+       * carry one, and the message would render as reading prose.
+       *
+       * NO `readings` ROW AND NO `reading_cards`. `status = 'blocked'` exists in
+       * the schema for a refused reading, but nothing was generated and nothing
+       * was drawn against it; the record that matters is the `moderation_flags`
+       * row, which W7 Task 7 writes from `after()`.
+       */
+      return NextResponse.json(gated.payload, {
+        status: 403,
+        headers: { 'cache-control': 'no-store', 'x-reading-id': readingId },
+      });
+    }
+
+    const { stream, done } = teeReading(gated.stream, {
       startedAt,
       failureNotice: interrupted,
     });
@@ -385,10 +496,10 @@ export async function POST(request: Request) {
           readerId: reader,
           serviceId: service,
           locale,
-          // Stored as the prompt saw it. sanitizeQuestion is idempotent, so
-          // calling it here as well as inside buildPrompt cannot change the
-          // string -- there is a property test for that.
-          question: sanitizeQuestion(question),
+          // THE SAME VALUE THE GATE MODERATED, captured once above. It was
+          // previously re-derived here; one string, one sanitization, so the
+          // row cannot disagree with what the classifier read.
+          question: cleanQuestion,
           status: outcome.status,
           verdict: service === 'yesno' ? effectiveYesNo(draw(picks[0])) : null,
           // '' becomes NULL: §3 says body is "NULL if the stream died", and an
@@ -461,6 +572,20 @@ export async function POST(request: Request) {
       },
     });
   });
+}
+
+/**
+ * Coarsen a classifier confidence for the event taxonomy.
+ *
+ * BUCKETS, NOT THE NUMBER, because self-reported LLM confidence is not
+ * calibrated and a float in an analytics prop invites someone to average it.
+ * `moderation_flags.confidence` keeps the real value for tuning; the event
+ * carries only enough to spot a distribution shift.
+ */
+function bucket(confidence: number | null): 'low' | 'medium' | 'high' | null {
+  if (confidence === null) return null;
+  if (confidence < 0.5) return 'low';
+  return confidence < 0.8 ? 'medium' : 'high';
 }
 
 /** `{ card, reversed }`, the shape effectiveYesNo takes. Ids are already validated. */

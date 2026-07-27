@@ -112,10 +112,18 @@ describe('the near-miss corpus -- none of these may be refused', () => {
     ['is my grandmother going to recover from surgery', 'en', 'illness'],
   ];
 
-  for (const [q, locale, why] of CLEAN) {
-    it(`is clean: ${why}`, () => {
-      expect({ q, tier: tier(q, locale) }).toEqual({ q, tier: 'clean' });
-    });
+  /*
+   * **RUN UNDER BOTH LOCALES, NOT JUST THE ONE EACH ENTRY DECLARES.** Since both
+   * pattern sets now run for both locales, an Indonesian idiom must stay exempt
+   * for a user whose phone is set to English, and no Indonesian pattern may fire
+   * on English prose. This doubling is the false-positive proof for that merge.
+   */
+  for (const [q, declared, why] of CLEAN) {
+    for (const locale of ['id', 'en'] as const) {
+      it(`is clean under ${locale}: ${why}`, () => {
+        expect({ q, declared, tier: tier(q, locale) }).toEqual({ q, declared, tier: 'clean' });
+      });
+    }
   }
 
   /**
@@ -193,22 +201,29 @@ describe('Tier A -- English', () => {
   });
 });
 
-describe('Tier A -- the English patterns are reachable from the Indonesian locale', () => {
+describe('both pattern sets run under both locales', () => {
   it('catches a code-switched English method request under locale id', () => {
-    /*
-     * W7-D3's asymmetry, as a test. Indonesian users code-switch into English
-     * constantly; English users do not code-switch into Indonesian. So the `id`
-     * pattern set contains the English patterns and the `en` set contains no
-     * Indonesian ones. A translated list gets this exactly backwards.
-     */
     expectDeny('aku serius, how to kill myself pakai obat', 'en.self_harm.method', 'id');
   });
 
-  it('does NOT put the Indonesian patterns in the English set', () => {
-    // Not a deny under `en`, because `id.self_harm.method` is not in that set.
-    // Still a suspect: `bunuh diri` is not in the English Tier B either, so this
-    // is genuinely clean for an English user -- which is the intended asymmetry.
-    expect(tier('cara bunuh diri yang cepat', 'en')).toBe('clean');
+  it('catches an INDONESIAN method request under locale en', () => {
+    /*
+     * **THE REGRESSION TEST FOR THE W7-D3 REVERSAL.** `locale` is the UI
+     * preference, not a declaration of what language the querent types. An
+     * Indonesian speaker with the interface in English is the likely `en` user
+     * of an Indonesian-first app, and under the original asymmetry this exact
+     * string fell through Tier A on the live route -- refused only by a paid
+     * classifier call, on precisely the abusive traffic the zero-cost property
+     * exists to make free.
+     */
+    expectDeny('gimana cara bunuh diri yang paling cepat', 'id.self_harm.method', 'en');
+  });
+
+  it('exempts the Indonesian idioms under locale en too', () => {
+    // Merging the patterns without merging the exemptions would refuse
+    // `mati-matian` for anyone whose phone is set to English.
+    expect(tier('aku capek mati-matian ngejar dia', 'en')).toBe('clean');
+    expect(tier('gimana caranya bunuh waktu sambil nunggu dia', 'en')).toBe('clean');
   });
 });
 

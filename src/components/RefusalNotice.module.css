@@ -1,0 +1,120 @@
+/*
+ * The refusal is visually its OWN thing, not a variant of the reading.
+ *
+ * It occupies ReadingPanel's slot, so the one job of this file is to make sure
+ * nobody reads it as prose the reader wrote (W7-D9). Two devices do that and
+ * neither is a new token: the body is upright sans-adjacent body text rather
+ * than the reading's serif measure, and the whole block sits inside a gold
+ * hairline rule rather than flowing straight off the divider.
+ *
+ * TOKENS ONLY. No new hex values, font sizes or easing curves -- every value
+ * below is a var() from `tokens.css`, with the sole exception of the spacing
+ * numbers, which follow the same rhythm ReadingPanel already uses.
+ */
+
+.refusal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-chip);
+  padding: 18px;
+  background: var(--gold-wash);
+}
+
+.title,
+.lead {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-reading);
+  line-height: var(--lh-reading);
+  color: var(--text-warm);
+  margin: 0;
+}
+
+/*
+ * The self-harm lead carries the most weight on the screen, because it is the
+ * only sentence a person in crisis is guaranteed to read. It is the ONE place
+ * the refusal is allowed to be emphatic.
+ */
+.lead {
+  font-weight: 600;
+}
+
+.body,
+.closing,
+.emergency {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--text-warm);
+  margin: 0;
+}
+
+/*
+ * "the T&C link last and small" (W7-D10). Deliberately quieter than everything
+ * above it -- the citation is the least important thing in this block.
+ */
+.closing {
+  color: var(--faint);
+  border-top: 1px solid var(--gold-hairline);
+  padding-top: 12px;
+}
+
+.emergency {
+  font-style: italic;
+  color: var(--faint);
+}
+
+.resourcesLabel {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-section-label);
+  text-transform: uppercase;
+  color: var(--gold);
+  margin: 4px 0 0;
+}
+
+.resources {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.resource {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text-warm);
+}
+
+.resourceLabel {
+  display: block;
+}
+
+.resourceValue {
+  font-weight: 600;
+}
+
+.note {
+  display: block;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--faint);
+}
+
+/*
+ * `min-height: 44px` on the tap target rather than on the text, so the link
+ * stays inline in a sentence and is still reachable with a thumb. The
+ * underline is kept: this is the one link in the app a user is actively being
+ * pointed at, and a gold-only affordance is not enough on a busy background.
+ */
+.link {
+  color: var(--gold);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  display: inline-block;
+  padding: 6px 0;
+}

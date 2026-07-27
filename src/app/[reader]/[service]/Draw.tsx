@@ -255,6 +255,41 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
           });
           return;
         }
+        /*
+         * THE MODERATION REFUSAL (W7). **THIS BRANCH MUST STAY ABOVE THE
+         * `!res.ok` CHECK BELOW**, which would otherwise swallow it as
+         * `http_403` and show the generic "could not start" error -- losing the
+         * clause link, the crisis resources, and any sign that the app made a
+         * deliberate decision rather than falling over.
+         *
+         * `403` is also what an un-onboarded caller gets from middleware, so the
+         * body is what distinguishes them: a refusal carries
+         * `error: 'moderation_blocked'`, and anything else 403-shaped falls
+         * through to the generic path on purpose.
+         */
+        if (res.status === 403) {
+          const payload = await res.json().catch(() => null);
+          if (payload?.error === 'moderation_blocked') {
+            /*
+             * No `track()` here. The SERVER already emitted `moderation.refused`
+             * with the source, the category and the confidence bucket -- it is
+             * the only side that knows them -- and a client copy would double
+             * every row in the one table whose counts decide whether the gate is
+             * too tight.
+             */
+            setReading({ status: 'blocked', payload });
+            /*
+             * **THE DRAW IS NOT RESET** (§3.5). Refusing the reading is not
+             * refusing the draw: the fan and the picked cards stay exactly as
+             * they are, so the existing return-card affordance is available
+             * again and the querent can pull a card back, rewrite the question
+             * and try something else. Calling the reset here would look tidy and
+             * would take the recovery path away.
+             */
+            return;
+          }
+        }
+
         if (!res.ok || !res.body) {
           track('reading.failed', {
             reading_id: readingId,

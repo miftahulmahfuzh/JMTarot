@@ -1,0 +1,100 @@
+'use client';
+
+import Link from 'next/link';
+import { useLocale, useT } from '@/lib/i18n/LocaleProvider';
+import { crisisResources } from '@/lib/moderation/resources';
+import { clauseAnchor, type RefusalPayload } from '@/lib/moderation/types';
+import styles from './RefusalNotice.module.css';
+
+/**
+ * What a refused question renders as.
+ *
+ * **THE APP SPEAKS HERE, NEVER A READER** (W7-D9). No Thessaly, no Margaret, no
+ * Adrian, no oracular register, no card imagery. A refusal delivered in a
+ * reader's voice is grotesque, and for self-harm it is worse than grotesque.
+ * That is why this is its own component rather than another `status` branch
+ * inside `ReadingPanel`'s prose slot: the two are visually adjacent and must
+ * never be mistaken for each other.
+ *
+ * **IT IMPORTS `moderation/types` AND `moderation/resources`, AND NOTHING ELSE
+ * FROM THAT DIRECTORY.** Those two are the deliberate `server-only` exceptions
+ * (W7-D14): a category name is not a secret and a hotline number is public
+ * information. `blocklist.ts`, `classify.ts` and `gate.ts` are fenced, and
+ * `clientBoundary.test.ts` enforces it.
+ *
+ * Built from existing tokens only -- `--fs-reading`, `--fs-eyebrow`, `--gold`,
+ * `--gold-hairline`. No new hex values, sizes or curves.
+ */
+export function RefusalNotice({ payload }: { payload: RefusalPayload }) {
+  const t = useT();
+  const locale = useLocale();
+
+  const termsHref = `/terms#${clauseAnchor(payload.clause)}`;
+  const termsLink = (
+    <Link className={styles.link} href={termsHref}>
+      {t('common.terms')}
+    </Link>
+  );
+
+  /*
+   * **RESOURCES FIRST, REFUSAL SECOND, THE CLAUSE LINK LAST AND SMALL**
+   * (W7-D10). Every element Miftah asked for is present -- the app says it
+   * cannot read the cards, and it links the Terms -- and the ORDER is the
+   * product decision: you do not open with a policy citation to a person
+   * describing suicidal ideation.
+   */
+  if (payload.showCrisisResources) {
+    const resources = crisisResources(locale);
+
+    return (
+      <section className={styles.refusal} aria-live="polite">
+        <p className={styles.lead}>{t('moderation.blocked.selfHarm.lead')}</p>
+
+        {/*
+         * An empty list is a CORRECT state, not a bug -- `resources.ts` enters
+         * nothing it has not verified against a live page. When it is empty the
+         * emergency line below still renders, and that line names no digits, so
+         * it is true in every jurisdiction and invents nothing.
+         */}
+        {resources.length > 0 ? (
+          <>
+            <h2 className={styles.resourcesLabel}>
+              {t('moderation.blocked.selfHarm.resourcesLabel')}
+            </h2>
+            <ul className={styles.resources}>
+              {resources.map((r) => (
+                <li key={r.id} className={styles.resource}>
+                  <span className={styles.resourceLabel}>{r.label[locale]}</span>{' '}
+                  {r.href ? (
+                    <a className={styles.link} href={r.href} target="_blank" rel="noreferrer">
+                      {r.value}
+                    </a>
+                  ) : (
+                    <span className={styles.resourceValue}>{r.value}</span>
+                  )}
+                  {r.note ? <span className={styles.note}>{r.note[locale]}</span> : null}
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : null}
+
+        <p className={styles.emergency}>{t('moderation.blocked.selfHarm.emergency')}</p>
+
+        <p className={styles.closing}>
+          {t('moderation.blocked.selfHarm.closing')} {termsLink}.
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section className={styles.refusal} aria-live="polite">
+      <p className={styles.title}>{t('moderation.blocked.generic.title')}</p>
+      <p className={styles.body}>
+        {t('moderation.blocked.generic.lead')} {termsLink}.{' '}
+        {t('moderation.blocked.generic.tail')}
+      </p>
+    </section>
+  );
+}

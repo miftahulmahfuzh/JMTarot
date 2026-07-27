@@ -122,10 +122,34 @@ function spacedForm(text: string): string {
  * both "numb" and a plausible way to say something worse -- so it is Tier B and
  * the classifier decides.
  *
- * THE `id` SET CONTAINS THE ENGLISH IDIOMS AND THE `en` SET CONTAINS NO
- * INDONESIAN ONES (W7-D3). Indonesian users code-switch into English constantly;
- * English users do not code-switch into Indonesian. The asymmetry is real, and a
- * translated list gets it exactly backwards.
+ * **BOTH LOCALES GET BOTH SETS. THIS REVERSES W7-D3, AND A LIVE TEST IS WHY.**
+ *
+ * D3 argued for an asymmetry: the `id` set carries the English idioms because
+ * Indonesian users code-switch, and the `en` set carries no Indonesian ones
+ * because "English users do not code-switch into Indonesian". The reasoning is
+ * sound about PEOPLE and wrong about this VARIABLE. `locale` here is the UI
+ * preference resolved by W6's middleware -- a cookie, a session claim or an
+ * `Accept-Language` header. It is not a declaration of what language the
+ * querent types in.
+ *
+ * JMTarot is an Indonesian-first app with an English toggle, so the overwhelmingly
+ * likely `en`-locale user is an Indonesian speaker who prefers an English
+ * interface -- or is on a phone set to `en-GB`. Caught on 2026-07-27 driving the
+ * live route: `gimana cara bunuh diri yang paling cepat` under an English UI
+ * locale fell straight through Tier A. It was still refused, because the
+ * classifier is locale-invariant and names the Indonesian traps explicitly -- so
+ * this was a degradation and not a hole -- but it cost a paid network round trip
+ * for a phrase the blocklist is supposed to kill for free, on exactly the
+ * abusive traffic the zero-cost property exists to make cheap.
+ *
+ * The merge is free of the false positives D3 was implicitly protecting against:
+ * no Indonesian pattern token (`cara`, `gimana`, `bunuh diri`, `santet dia`,
+ * `bom`) is an English word, and no Indonesian idiom (`mati lampu`, `harga
+ * mati`) occurs in English text, so masking them there is a no-op. The near-miss
+ * corpus runs the whole English half to prove it.
+ *
+ * `moderation_flags.locale` still records which UI locale was in play, so the
+ * per-locale tuning question D3 wanted to answer is still answerable.
  */
 const IDIOMS_EN = [
   'dying to know',
@@ -150,7 +174,7 @@ const IDIOMS_ID = [
   ...IDIOMS_EN,
 ];
 
-const EXEMPTIONS: Record<Locale, string[]> = { id: IDIOMS_ID, en: IDIOMS_EN };
+const EXEMPTIONS: Record<Locale, string[]> = { id: IDIOMS_ID, en: IDIOMS_ID };
 
 /**
  * One pattern. Two halves that must sit near each other, or one half that stands
@@ -377,11 +401,18 @@ const TIER_B_ID: PatternSpec[] = [
   ...TIER_B_EN,
 ];
 
-/** Tier A first: a deny outranks a suspect, and `sexual_minor` outranks everything. */
-const PATTERNS: Record<Locale, PatternSpec[]> = {
-  id: [...SEXUAL_MINOR, ...TIER_A_ID, ...TIER_B_ID],
-  en: [...SEXUAL_MINOR, ...TIER_A_EN, ...TIER_B_EN],
-};
+/**
+ * Tier A first: a deny outranks a suspect, and `sexual_minor` outranks everything.
+ *
+ * **THE TWO LOCALES RESOLVE TO THE SAME SET**, for the reason written out above
+ * `EXEMPTIONS`. The `Record<Locale, …>` shape is kept rather than collapsed to
+ * one array so that re-introducing a per-locale difference is a data edit rather
+ * than a refactor -- and so `checkBlocklist`'s signature does not have to change
+ * if a genuinely locale-specific pattern ever appears.
+ */
+const ALL_PATTERNS: PatternSpec[] = [...SEXUAL_MINOR, ...TIER_A_ID, ...TIER_B_ID];
+
+const PATTERNS: Record<Locale, PatternSpec[]> = { id: ALL_PATTERNS, en: ALL_PATTERNS };
 
 /**
  * Compile one spec against one haystack shape.
