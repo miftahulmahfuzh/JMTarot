@@ -33,6 +33,20 @@
  * per purpose: one thing for `sanitize.ts` to strip, one thing to test, and an
  * English querent will never type "pertanyaan" whereas they will absolutely type
  * "question".
+ *
+ * TASK 10 ADDED ONE RULE, TO THIS FILE AS WELL AS THE ENGLISH ONE (I23): write in the
+ * target language even if the text you are reading is in another one. Models mirror
+ * the input language, and there are three ways to reach that now. A querent typing an
+ * Indonesian question in the English app. A querent typing an English question in the
+ * Indonesian app. And -- the one that needs no unusual behaviour at all -- a locale
+ * switch mid-day, after which the day summary is asked to summarise Indonesian
+ * readings in English. That is why the rule is in `FORMAT_RULES` too and not only in
+ * the reading contract: the summary and the gist are generated text with the same
+ * failure mode, and neither of them is a reading.
+ *
+ * It changes the Indonesian prompt, so the Task 9 fork snapshots were regenerated in
+ * this commit. The diff is one line per pair and nothing else, which is what the
+ * snapshot is for.
  */
 
 /**
@@ -67,6 +81,7 @@ export const FORMAT_RULES_ID = `ATURAN FORMAT (wajib, tanpa pengecualian):
 BAHASA:
 - Bahasa Indonesia, bukan bahasa Melayu. Pakai "karier" bukan "kerjaya", "arah hidup" bukan "hala tuju", "ngobrol" bukan "sembang", "kamu" bukan "awak".
 - Tulis angka dan istilah sewajarnya, seperti orang Indonesia menulis.
+- Tulis dalam bahasa Indonesia meskipun teks yang kamu baca ditulis dalam bahasa lain. Bahasa keluaranmu ditentukan di sini, bukan oleh bahasa masukan.
 
 BATAS ISI:
 - Ini hiburan. Jangan pernah mendiagnosis apa pun. Jangan menyinggung terapi, trauma, penyembuhan, penyakit, gangguan mental, atau obat.
@@ -86,6 +101,7 @@ ATURAN FORMAT (wajib, tanpa pengecualian):
 BAHASA:
 - Bahasa Indonesia, bukan bahasa Melayu. Pakai "karier" bukan "kerjaya", "arah hidup" bukan "hala tuju", "ngobrol" bukan "sembang", "kamu" bukan "awak".
 - Tulis angka dan istilah sewajarnya, seperti orang Indonesia menulis.
+- Tulis dalam bahasa Indonesia meskipun teks yang kamu baca ditulis dalam bahasa lain. Bahasa keluaranmu ditentukan di sini, bukan oleh bahasa masukan.
 
 BATAS ISI:
 - Ini hiburan. Jangan pernah mendiagnosis apa pun. Jangan menyinggung terapi, trauma, penyembuhan, penyakit, gangguan mental, atau obat.

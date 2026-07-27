@@ -16,11 +16,17 @@ export const VERDICT_WORD_ID: Record<YesNo, string> = {
  * short reading goes bad.
  *
  * THE NUMBERS COME FROM `LENGTH_BUDGET` NOW, INTERPOLATED. They used to be typed
- * into the prose -- `40` twice and `130` once -- and Task 11's smoke assertion
+ * into the prose -- `40` FOUR times and `130` once -- and Task 11's smoke assertion
  * would have carried its own copy. `LENGTH_BUDGET` is the one place, so "re-verify
  * the word counts" becomes a thing you run rather than a thing you remember, and
  * the number in the prompt cannot drift from the number in the check. The rendered
  * text is byte-identical to what was typed there, which the snapshot proves.
+ *
+ * TASK 9 CAUGHT ONLY THREE OF THE FOUR. It replaced "maksimal 40 kata" (twice) and
+ * "sekitar 130 kata", and left "Batas 40 kata" standing -- a literal that would have
+ * stayed at 40 while the constant moved, in the one sentence whose whole job is to
+ * bind the ceiling on the long-sentence reader. Found by grepping for `\b40\b` after
+ * a tuning pass, not by reading the file. Grep for the number, not for the phrase.
  */
 export function servicePromptId(
   service: ServiceId,
@@ -44,7 +50,7 @@ Tutup dengan membumi. Ini satu hari, bukan seluruh hidup, dan nada penutupmu har
 
 PANJANG: tepat empat paragraf. Tiap paragraf 2 sampai 3 kalimat DAN maksimal ${b.maxParagraphWords} kata -- yang mana pun tercapai lebih dulu, di situ paragrafnya berhenti. Seluruh bacaan jadi sekitar ${midpoint(b)} kata. Ini bacaan pendek; kalau bisa lebih ringkas, lebih baik.
 
-Batas 40 kata itu berlaku untuk semua pembaca, termasuk yang gayanya berkalimat panjang dan beranak kalimat. Kalau kalimatmu memang panjang, tulis dua kalimat saja di paragraf itu, bukan tiga; jangan lewati batas katanya.
+Batas ${b.maxParagraphWords} kata itu berlaku untuk semua pembaca, termasuk yang gayanya berkalimat panjang dan beranak kalimat. Kalau kalimatmu memang panjang, tulis SATU atau DUA kalimat saja di paragraf itu, bukan tiga. Satu kalimat panjang yang masih di dalam batas kata lebih baik daripada dua kalimat yang melewatinya. Batas katanya yang menang, bukan jumlah kalimatnya.
 
 Cara memendekkannya: satu gagasan per paragraf, bukan tiga. Jangan mengulang gagasan yang sama dengan kalimat lain, jangan menjelaskan ulang apa arti kartunya setelah kamu sudah mengatakannya, dan buang perumpamaan kedua kalau perumpamaan pertama sudah kena.
 
@@ -54,7 +60,10 @@ SEBUT nama kartunya di kalimat pertama paragraf itu juga, persis seperti tertuli
 
 Paragraf keempat -- dan ini bagian terpenting -- MENYATUKAN ketiganya menjadi satu benang merah. Bukan ringkasan yang mengulang tiga paragraf tadi, melainkan satu pengertian yang hanya muncul kalau ketiga kartu dibaca bersama-sama: bagaimana yang pertama menjelaskan yang kedua, dan ke mana keduanya mengarahkan yang ketiga. Paragraf ini juga tetap 2 sampai 3 kalimat dan maksimal ${b.maxParagraphWords} kata.
 
-Kalau ketiga kartu tampak bertentangan, jangan diperhalus. Pertentangan itu justru sering isi bacaannya.`;
+Kalau ketiga kartu tampak bertentangan, jangan diperhalus. Pertentangan itu justru sering isi bacaannya.
+
+EMPAT paragraf, bukan tiga. Paragraf keempat wajib ada; tanpa penyatuan itu, bacaan ini cuma tiga keterangan kartu yang berdiri sendiri.
+Dan paragraf keempat TIDAK lebih panjang dari tiga paragraf sebelumnya: maksimal ${b.maxParagraphWords} kata, sama seperti yang lain.`;
 
     case 'yesno': {
       const word = verdict ? VERDICT_WORD_ID[verdict] : VERDICT_WORD_ID.maybe;

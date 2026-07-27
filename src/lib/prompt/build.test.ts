@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { MemoryContext } from './memory';
 import { baseContract, FORMAT_RULES } from './base';
 import { buildPrompt } from './build';
+import { readerPrompt } from './readers';
 import { LENGTH_BUDGET, midpoint, servicePrompt, VERDICT_WORD } from './services';
 
 const draw = [
@@ -545,14 +546,13 @@ describe('the locale fork', () => {
     expect(of(false, 'id')).toContain('Ya');
     expect(of(true, 'id')).toContain('Tidak');
 
-    /*
-     * NO ENGLISH PROSE ASSERTION HERE, AND NOT BECAUSE IT WOULD BE AWKWARD.
-     * `servicePromptEn` is a placeholder until Task 10, so `toContain('Yes')` would
-     * be asserting that Task 10 has happened -- a test that fails for a scheduling
-     * reason rather than a correctness one, which is the kind people delete. Task 10
-     * adds it in the commit that makes it meaningful. What IS Task 9's to prove is
-     * below: the words exist per locale and the facade routes to the right module.
-     */
+    // Task 10 wrote the English task layer, so the assertion Task 9 deliberately
+    // left out is now meaningful and is here.
+    expect(of(false, 'en')).toContain(VERDICT_WORD.en.yes);
+    expect(of(true, 'en')).toContain(VERDICT_WORD.en.no);
+    // And it must be handed over as the OPENING word, which is the instruction the
+    // whole service depends on.
+    expect(of(false, 'en')).toContain(`the word "${VERDICT_WORD.en.yes}" as the first word`);
   });
 
   it('spells the verdict per locale and routes the facade to the right module', () => {
@@ -561,13 +561,12 @@ describe('the locale fork', () => {
     // word, which is what the yesno task demands.
     expect(VERDICT_WORD.en).toEqual({ yes: 'Yes', no: 'No', maybe: 'Not yet' });
 
-    // The facade dispatches by locale. The English side is a placeholder, and its
-    // being a DIFFERENT placeholder from the Indonesian prose is the assertion.
+    // The facade dispatches by locale.
     const id = servicePrompt('yesno', 'id', 'yes');
     const en = servicePrompt('yesno', 'en', 'yes');
     expect(id).not.toBe(en);
     expect(id).toContain('TUGASMU');
-    expect(en).toContain('TODO(W6 Task 10)');
+    expect(en).toContain('YOUR TASK');
   });
 
   /**
@@ -602,5 +601,108 @@ describe('the locale fork', () => {
         contract.includes(line) || contractLines.some((c) => c.startsWith(line));
       expect({ line, present }).toEqual({ line, present: true });
     }
+  });
+});
+
+/**
+ * The English layer's own rules, asserted where a grep can (Task 10).
+ *
+ * These do NOT judge prose. They check the properties §9.2 and §9.4 name as the ones
+ * that decide whether the English fork works at all, and each of them is a property a
+ * later edit could remove without anything else noticing.
+ */
+describe('the English prompt layer', () => {
+  const READERS = ['thessaly', 'margaret', 'adrian'] as const;
+  const persona = (r: (typeof READERS)[number]) => readerPrompt(r, 'en');
+
+  it('no longer holds a placeholder anywhere', () => {
+    // The reason `TODO(...)` was the placeholder text rather than plausible English:
+    // this assertion is trivial to write and impossible to pass by accident.
+    const all = [baseContract('en'), ...READERS.map(persona), servicePrompt('spread3', 'en')];
+    for (const layer of all) expect(layer).not.toContain('TODO(W6');
+  });
+
+  it('uses a different card in each English example than the Indonesian one', () => {
+    /*
+     * §9.4's enforcement mechanism, and the whole reason it is a mechanism: if the
+     * English example is about the same card as the Indonesian, it was translated.
+     * A reviewer can check this in five seconds; so can this test.
+     */
+    const pairs = [
+      { reader: 'thessaly', id: 'The Tower', en: 'The Hierophant' },
+      { reader: 'margaret', id: 'The Hermit', en: 'High Priestess' },
+      { reader: 'adrian', id: 'The Lovers', en: 'The Devil' },
+    ] as const;
+    for (const { reader, id, en } of pairs) {
+      expect(readerPrompt(reader, 'id'), reader).toContain(id);
+      expect(readerPrompt(reader, 'en'), reader).toContain(en);
+      expect(readerPrompt(reader, 'en'), reader).not.toContain(id);
+    }
+  });
+
+  it('keeps each reader’s own forbidden list in their own persona', () => {
+    // These lists are what hold the three apart at the edges. The smoke script
+    // checks the OUTPUT against them; this checks they are still being asked for.
+    expect(persona('thessaly')).toContain('the universe');
+    expect(persona('thessaly')).toContain("soul's journey");
+    expect(persona('margaret')).toContain('never sound like a therapist');
+    expect(persona('margaret')).toContain('inner child');
+    expect(persona('adrian')).toContain('attachment style');
+  });
+
+  it('licenses contractions for Adrian and forbids them for Margaret', () => {
+    // The one voice axis that cannot exist in Indonesian, which is a small piece of
+    // evidence that forking the layer rather than translating it was right.
+    expect(persona('adrian')).toContain('Contractions throughout');
+    expect(persona('margaret')).toContain('contractions');
+    expect(persona('margaret')).toContain('DO NOT USE');
+  });
+
+  it('carries the English-specific format rules §9.2 derived', () => {
+    const contract = baseContract('en');
+    // Not vacuous in English: the failures are a gloss, lowercasing, and a dropped
+    // article, and the rule has to name all three.
+    expect(contract).toContain('"The Moon" stays "The Moon"');
+    expect(contract).toContain('never "the moon"');
+    // Stronger than the Indonesian, because it is reflexive in English.
+    expect(contract).toContain('let me know if you want me to go deeper');
+    // The register rule that replaces the Malay grep.
+    expect(contract).toContain('the Universe');
+    expect(contract).toContain('dear one');
+    expect(contract).toContain('thou');
+    // The longer therapy list.
+    for (const word of ['shadow work', 'inner child', 'nervous system', 'hold space'])
+      expect(contract, word).toContain(word);
+    // `anxiety` is deliberately NOT forbidden -- the rule is against diagnosis.
+    expect(contract).not.toContain('anxiety');
+  });
+
+  it('states the target-language rule in BOTH contracts (I23)', () => {
+    expect(baseContract('en')).toContain('Write in ENGLISH even if');
+    expect(baseContract('id')).toContain('Tulis dalam bahasa Indonesia meskipun');
+    // And in FORMAT_RULES too, because the day summary can be asked to summarise
+    // Indonesian readings in English after a mid-day locale switch.
+    expect(FORMAT_RULES.en).toContain('Write in ENGLISH even if');
+    expect(FORMAT_RULES.id).toContain('Tulis dalam bahasa Indonesia meskipun');
+  });
+
+  it('keeps the same delimiter tag in the English contract (I16, R17)', () => {
+    expect(baseContract('en')).toContain('<pertanyaan>');
+    expect(baseContract('en')).toContain('<penanya>');
+    expect(baseContract('en')).not.toContain('<question>');
+  });
+
+  it('keeps the English task layer structurally identical to the Indonesian', () => {
+    const en = servicePrompt('spread3', 'en');
+    const id = servicePrompt('spread3', 'id');
+    // Four paragraphs, the position-name rule, the card-naming rule, and the
+    // synthesis paragraph -- the four things the Indonesian calibration paid for.
+    expect(en).toContain('exactly four paragraphs');
+    expect(en).toContain('BEGIN each paragraph');
+    expect(en).toContain('NAME the card');
+    expect(en).toContain('DRAWS THE THREE TOGETHER');
+    // The ceiling is interpolated in both, from the same constant.
+    for (const layer of [en, id])
+      expect(layer).toContain(String(LENGTH_BUDGET.id.spread3.maxParagraphWords));
   });
 });

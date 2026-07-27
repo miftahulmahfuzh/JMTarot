@@ -28,6 +28,7 @@
 import { readFileSync } from 'node:fs';
 import { getProvider } from '@/lib/llm';
 import type { MemoryContext } from '@/lib/prompt/memory';
+import { isLocale, LOCALES, type Locale } from '@/lib/i18n/locale';
 
 /* Loaded by hand: this runs outside Next, so nothing has read .env.local. */
 function loadEnv(path = '.env.local') {
@@ -114,6 +115,23 @@ async function main() {
 
   const reader = arg('reader');
   const service = arg('service');
+
+  /*
+   * W6. `--locale id|en`, defaulting to `id`.
+   *
+   * VALIDATED RATHER THAN CAST, because a typo would otherwise reach `buildPrompt`,
+   * index a `Record<Locale, ...>` with a miss, and hand the model `undefined` as its
+   * entire contract -- which does not throw and comes back as a fluent reading
+   * generated with no rules at all. That is the single worst failure mode in the
+   * fork and it costs one check to make impossible.
+   */
+  const localeArg = arg('locale') ?? 'id';
+  if (!isLocale(localeArg)) {
+    console.error(`--locale must be one of ${LOCALES.join(', ')}, got "${localeArg}"`);
+    process.exit(1);
+  }
+  const locale: Locale = localeArg;
+
   const all = process.argv.includes('--all');
   const lotus = process.argv.includes('--lotus');
   const memory = process.argv.includes('--memory');
@@ -225,6 +243,7 @@ async function main() {
       reader: r,
       service: s,
       picks,
+      locale,
       question: arg('question'),
       context:
         lotus || memoryCtx
@@ -279,12 +298,22 @@ async function main() {
       );
     }
 
-    const framing = READERS.find((x) => x.id === r)?.positionFraming ?? [];
+    const framing = READERS.find((x) => x.id === r)?.positionFraming[locale] ?? [];
     for (const problem of check(text, r, s, picks, {
       CARDS,
       effectiveYesNo,
-      VERDICT_WORD,
+      /*
+       * `VERDICT_WORD[locale]`, NOT `VERDICT_WORD`. W6 Task 9 reshaped it to
+       * `Record<Locale, Record<YesNo, string>>` and `deps` here is typed `any`, so
+       * the old code compiled and read `undefined` at runtime -- the yesno opener
+       * check would have silently passed on every reading. Same class of bug as the
+       * `Layanan: [object Object]` this workstream already paid for, and the same
+       * lesson: `any` at a boundary defeats the type lock exactly where the reshape
+       * happens.
+       */
+      VERDICT_WORD: VERDICT_WORD[locale],
       framing,
+      locale,
     })) {
       failures.push(`${r}/${s}: ${problem}`);
     }
@@ -573,16 +602,22 @@ function check(text: string, reader: string, service: string, picks: any[], deps
    * all Malay-only -- words that exist in both languages are deliberately
    * absent, since flagging those would be noise.
    */
-  for (const word of [
-    'kerjaya', 'hala tuju', 'sembang', 'awak',
-    'tempoh', 'kerana', 'iaitu', 'ianya', 'manakala', 'seronok', 'kelmarin',
-  ]) {
-    if (new RegExp(`\\b${word}\\b`, 'i').test(text)) problems.push(`Malay word "${word}"`);
+  if (deps.locale === 'id') {
+    for (const word of [
+      'kerjaya', 'hala tuju', 'sembang', 'awak',
+      'tempoh', 'kerana', 'iaitu', 'ianya', 'manakala', 'seronok', 'kelmarin',
+    ]) {
+      if (new RegExp(`\\b${word}\\b`, 'i').test(text)) problems.push(`Malay word "${word}"`);
+    }
   }
 
   // Greeting or self-introduction in the opening.
   const opening = text.slice(0, 90);
-  if (/\b(halo|hai|selamat (pagi|siang|sore|malam)|salam)\b/i.test(opening)) {
+  const greeting =
+    deps.locale === 'id'
+      ? /\b(halo|hai|selamat (pagi|siang|sore|malam)|salam)\b/i
+      : /\b(hello|hi|hey|greetings|welcome|good (morning|afternoon|evening)|dear one|beloved|dear seeker)\b/i;
+  if (greeting.test(opening)) {
     problems.push(`greeting in opening: "${opening.split('\n')[0].slice(0, 50)}"`);
   }
   if (new RegExp(`^\\s*${reader}\\b`, 'i').test(text)) problems.push('opens with own name');
@@ -593,12 +628,46 @@ function check(text: string, reader: string, service: string, picks: any[], deps
     if (!text.includes(name)) problems.push(`card name missing or translated: "${name}"`);
   }
 
-  // Therapy / medical / legal / financial instruction.
-  for (const word of [
-    'trauma', 'terapi', 'terapis', 'diagnosis', 'menyembuhkan', 'penyembuhan',
-    'inner child', 'kesehatan mental', 'depresi', 'obat', 'dokter',
-  ]) {
+  /*
+   * Therapy / medical / legal / financial instruction.
+   *
+   * THE ENGLISH LIST IS LONGER, NOT A TRANSLATION. English tarot and wellness
+   * writing is saturated with this vocabulary in a way Indonesian is not, so the
+   * net has to be wider on that side. `anxiety` is deliberately ABSENT: "that
+   * low-grade anxiety before you send the text" is legitimate in Adrian's voice and
+   * the rule is against DIAGNOSIS -- `anxiety disorder`, `clinical` and `diagnosed`
+   * are the ones that are not.
+   */
+  const forbidden =
+    deps.locale === 'id'
+      ? ['trauma', 'terapi', 'terapis', 'diagnosis', 'menyembuhkan', 'penyembuhan',
+         'inner child', 'kesehatan mental', 'depresi', 'obat', 'dokter']
+      : ['trauma', 'therapy', 'therapist', 'diagnose', 'diagnosis', 'diagnosed',
+         'clinical', 'healing', 'heal', 'inner child', 'mental health',
+         'anxiety disorder', 'depression', 'medication', 'shadow work',
+         'nervous system', 'hold space', 'regulate', 'dysregulated'];
+  for (const word of forbidden) {
     if (new RegExp(`\\b${word}\\b`, 'i').test(text)) problems.push(`forbidden topic "${word}"`);
+  }
+
+  /*
+   * GENERIC-MYSTIC TICS, `en` only. The English analogue of the Malay grep, and the
+   * biggest single threat to persona separation: these are the average tarot voice
+   * in any training set, and all three readers drift toward them together.
+   */
+  if (deps.locale === 'en') {
+    for (const tic of [
+      'dear one', 'beloved', 'sweet soul', 'the Universe', 'divine feminine',
+      'energetically', 'vibration', 'manifest', 'abundance', "soul's journey",
+    ]) {
+      if (new RegExp(`\\b${tic.replace(/'/g, "['\u2019]")}\\b`, 'i').test(text)) {
+        problems.push(`generic-mystic tic "${tic}"`);
+      }
+    }
+    // The closing offer. Reflexive in English assistant prose; would otherwise
+    // appear in all nine.
+    const offer = /\b(let me know|feel free to|if you'?d like|happy to|i hope this helps)\b/i;
+    if (offer.test(text)) problems.push('closing offer of further help');
   }
 
   // Each paragraph of a spread must open with the reader's own framing. This
