@@ -110,6 +110,10 @@ export const EVENT_NAMES = [
   'moderation.timeout',
   'moderation.allowed_flagged',
 
+  // — limits and quota (V9) —
+  'ratelimit.backend_degraded',
+  'llm.ceiling_reached',
+
   // — the app shell —
   'app.launched',
 
@@ -226,6 +230,36 @@ export type EventMap = {
   'moderation.allowed_flagged':{ category: string; confidence_bucket: 'low' | 'medium' | 'high' | null;
                                  reader_id: string; service_id: string };
 
+  /*
+   * The distributed limiter fell back to per-instance memory. **WITHOUT THIS
+   * EVENT THE FALL-BACK IS INVISIBLE**, and the whole of V9 silently reverts to
+   * v0.2.0's behaviour for as long as the outage lasts -- which could be weeks,
+   * because nothing else about the app changes when it happens.
+   *
+   * THROTTLED TO ONE PER INSTANCE PER MINUTE. An Upstash outage degrades every
+   * request, and one row per request would push the analytics path into exactly
+   * the load W4 built `after()` to keep off it. So a count here is a count of
+   * MINUTES, not of requests -- and since the instance count is unknown, it is a
+   * lower bound on instances-times-minutes. Query 9 says so too.
+   *
+   * `surface` is the key PREFIX and never the key: the rest of it is a `users.id`
+   * or an IP, and `events` rows survive account erasure with `user_id` nulled.
+   */
+  'ratelimit.backend_degraded': { backend: 'redis'; reason: 'timeout' | 'error'; surface: string };
+
+  /*
+   * The global ceiling refused a model call. **THIS IS THE REPLACEMENT FOR A
+   * BILLING ALERT, AND THERE IS NO OTHER ONE.** `LLM_API_KEY` is a fixed
+   * subscription, so abuse produces an exhausted quota rather than an invoice,
+   * and an exhausted quota is invisible until a querent's reading fails.
+   *
+   * `tier: 'soft'` means deferred work is being shed and nobody has noticed
+   * anything -- it is the warning. `tier: 'hard'` means readings are being
+   * refused -- it is the outage. Query 9.
+   */
+  'llm.ceiling_reached':       { tier: 'soft' | 'hard'; call_class: 'interactive' | 'deferred';
+                                 used: number; ceiling: number };
+
   'app.launched':              { standalone: boolean; referrer_kind: 'direct' | 'internal' | 'external' };
 
   'analytics.local_date_fallback': { reason: 'absent' | 'malformed' | 'out_of_range'; received: string | null; surface: string };
@@ -279,7 +313,7 @@ export type PendingEvent = {
  * and a type cannot check those.
  *
  * A Set rather than `EVENT_NAMES.includes(v)`: this runs once per event in
- * every batch, and `includes` on a 44-element array is a linear scan against
+ * every batch, and `includes` on a 46-element array is a linear scan against
  * attacker-controlled input.
  */
 const NAME_SET: ReadonlySet<string> = new Set(EVENT_NAMES);

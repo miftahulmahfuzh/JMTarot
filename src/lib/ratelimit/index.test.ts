@@ -13,6 +13,30 @@ import { _resetRedis } from './redis';
 import type { RateLimitBackend } from './types';
 
 /*
+ * `track()` is mocked for this whole file rather than observed through the ALS
+ * buffer, which is not exported, and rather than being left real -- the unit
+ * project runs with ANALYTICS_ENABLED=0 (reconciliation R20), so a real `track`
+ * returns before buffering anything and every assertion below would pass
+ * vacuously. `vi.hoisted` because a `vi.mock` factory is hoisted above the
+ * declarations it closes over.
+ */
+const { tracked } = vi.hoisted(() => ({
+  tracked: [] as Array<{ name: string; props: Record<string, unknown> }>,
+}));
+
+vi.mock('@/lib/analytics/track', () => ({
+  track: (name: string, props: Record<string, unknown>) => {
+    tracked.push({ name, props });
+  },
+}));
+
+/** Clear the log and hand back a reader for it. */
+function trackSpy() {
+  tracked.length = 0;
+  return () => tracked;
+}
+
+/*
  * THE FACADE'S OWN TESTS. Everything about the sliding-window arithmetic is
  * `memory.test.ts`'s; what is asserted here is what the facade adds -- the
  * namespaces, `peek`'s read-only-ness through the public functions, and (Task 11)
@@ -238,7 +262,8 @@ describe('THE FALLBACK -- the line this whole workstream turns on', () => {
 
   beforeEach(() => {
     _reset();
-    vi.stubEnv('ANALYTICS_ENABLED', '0');
+    // Silence the degradation notice; the notice itself is asserted below.
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
 
   afterEach(() => {
@@ -327,5 +352,83 @@ describe('THE FALLBACK -- the line this whole workstream turns on', () => {
     const line = String(warn.mock.calls[0][0]);
     expect(line).toContain('[ratelimit]');
     expect(line).not.toContain('user-abc-123');
+  });
+});
+
+describe('ratelimit.backend_degraded', () => {
+  const broken = (): RateLimitBackend => ({
+    name: 'redis',
+    consume: () => Promise.reject(new Error('boom')),
+    peek: () => Promise.reject(new Error('boom')),
+  });
+
+  const hang = (): RateLimitBackend => ({
+    name: 'redis',
+    consume: () => new Promise(() => {}),
+    peek: () => new Promise(() => {}),
+  });
+
+  beforeEach(() => {
+    _reset();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    _setBackend(null);
+    vi.unstubAllEnvs();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('fires once for one degraded call', async () => {
+    const seen = trackSpy();
+    _setBackend(broken());
+    await hit('u1');
+    expect(seen()).toHaveLength(1);
+    expect(seen()[0].name).toBe('ratelimit.backend_degraded');
+    expect(seen()[0].props).toMatchObject({ backend: 'redis', reason: 'error' });
+  });
+
+  it('fires ONCE for a hundred degraded calls in the same minute', async () => {
+    /*
+     * **THE THROTTLE IS NOT POLITENESS.** An Upstash outage degrades every single
+     * request, and one row per request would push the analytics path into exactly
+     * the load W4 built `after()` to keep off it -- so the outage would become a
+     * second outage. A count in query 9 is therefore a count of MINUTES.
+     */
+    const seen = trackSpy();
+    _setBackend(broken());
+    for (let i = 0; i < 100; i++) await hit(`u${i}`);
+    expect(seen()).toHaveLength(1);
+  });
+
+  it('distinguishes a timeout from an error, because they need different fixes', async () => {
+    vi.useFakeTimers();
+    const seen = trackSpy();
+    _setBackend(hang());
+    const p = hit('u1');
+    await vi.advanceTimersByTimeAsync(1001);
+    await p;
+    expect(seen()[0].props).toMatchObject({ reason: 'timeout' });
+  });
+
+  it('never puts the key in the event -- it is a users.id or an IP', async () => {
+    /*
+     * Same rule as `flush.ts` and the moderation path. `events` rows survive
+     * account erasure with `user_id` nulled, so a raw key here would undo that:
+     * the row would carry the identifier of an account that had been deleted.
+     */
+    const seen = trackSpy();
+    _setBackend(broken());
+    await hit('9f8e7d6c-user-uuid');
+    expect(seen()[0].props.surface).toBe('read');
+    expect(JSON.stringify(seen()[0].props)).not.toContain('9f8e7d6c');
+  });
+
+  it('reports the surface of a peek too, not only a consume', async () => {
+    const seen = trackSpy();
+    _setBackend(broken());
+    await refusalsExhausted('u1');
+    expect(seen()[0].props.surface).toBe('refuse');
   });
 });

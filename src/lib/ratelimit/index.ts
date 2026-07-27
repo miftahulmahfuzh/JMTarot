@@ -50,6 +50,7 @@
  * be treated as somebody probing the blocklist. Prefixing in the facade is what
  * makes that unforgettable.
  */
+import { track } from '@/lib/analytics/track';
 import { memoryBackend, _memorySizes, _resetMemory } from './memory';
 import { redisBackend, redisConfigured } from './redis';
 import type { RateLimitBackend, RateLimitResult } from './types';
@@ -215,8 +216,8 @@ async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
  * a driver or fetch error can quote its request, and one of these keys is a
  * `users.id`. The KIND, and nothing else.
  *
- * **TASK 12 ADDS `ratelimit.backend_degraded` HERE.** The name has to exist in
- * the closed taxonomy first, and `events.ts` is W4's file.
+ * **`track()` IS NOT AWAITED AND CANNOT BE.** It returns `void`, which is W4's
+ * enforcement rather than a convention, and this is on the request path.
  */
 let lastDegradedAt = 0;
 const DEGRADE_NOTICE_MS = 60_000;
@@ -231,6 +232,7 @@ function degraded(key: string, err: unknown) {
   // goes to a platform log.
   const surface = surfaceOf(key);
   console.warn(`[ratelimit] redis ${reason} on ${surface}; falling back to per-instance memory`);
+  track('ratelimit.backend_degraded', { backend: 'redis', reason, surface });
 }
 
 /** The key's namespace, for an event prop. Never the key. */
