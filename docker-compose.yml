@@ -35,5 +35,55 @@ services:
       timeout: 3s
       retries: 10
 
+  # --- V9: a real Upstash REST endpoint, offline ----------------------------
+  #
+  # NO VOLUME, deliberately: a limiter's whole state is a few sliding windows
+  # that expire within the hour, so persisting them across restarts would only
+  # let one test run's keys leak into the next.
+  redis:
+    image: redis:7-alpine
+    container_name: jmtarot-redis
+    restart: unless-stopped
+    # **NO PUBLISHED PORT, AND NOT ONLY FOR TIDINESS.** 6379 on this machine is
+    # permanently held by another project's `chatbot-redis` container, bound to
+    # 0.0.0.0 -- the same situation as port 3000 and its Grafana. Publishing it
+    # here fails with "port is already allocated" and the plan's compose snippet
+    # does exactly that.
+    #
+    # Nothing needs it: `srh` reaches this over the compose network by service
+    # name, and the integration suite only ever talks to `srh` on 8079. Leaving
+    # it unpublished removes a conflict AND a hole rather than trading one for
+    # the other.
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  srh:
+    # `serverless-redis-http` speaks Upstash's REST protocol against a real
+    # Redis, so the integration suite exercises THE ACTUAL LUA SLIDING WINDOW
+    # rather than a mock of it -- which is the only thing worth testing here,
+    # because the property under test is atomicity across two callers.
+    #
+    # It needs no Upstash account and no network beyond the one-time image pull,
+    # same as postgres:16.
+    image: hiett/serverless-redis-http:latest
+    container_name: jmtarot-srh
+    restart: unless-stopped
+    # 8079, because 8080 is a coin toss on any developer machine and this one
+    # already has 3000 permanently taken by another project's Grafana.
+    ports: ['127.0.0.1:8079:80']
+    environment:
+      SRH_MODE: env
+      # A fixed token, committed on purpose and deliberately trivial, exactly
+      # like the postgres password above: this binds to loopback and holds
+      # nothing but expiring counters. IT MUST NEVER BE REUSED.
+      SRH_TOKEN: jmtarot-test-token
+      SRH_CONNECTION_STRING: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
 volumes:
   jmtarot-pgdata:
