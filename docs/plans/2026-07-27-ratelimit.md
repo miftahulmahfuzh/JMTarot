@@ -26,6 +26,167 @@ have), the existing `hit()` interface, `src/lib/analytics/events.ts`,
 
 ---
 
+## Verified 2026-07-27 (Task 0)
+
+**The questions in §1 are NOT deleted; this is the answer sheet beside them.** A
+future session needs to know what was checked as much as what was found. Three
+answers change something in the plan and are marked **→**; two facts could not be
+established from this machine and are marked **OPEN**, with what they block.
+
+### Verified by reading this repository — all six hold
+
+1. **`hit()` has seven call sites, all inside `async` functions.**
+   `api/reading/route.ts:188` (`hit`), `:191` (`refusalsExhausted`), `:200`
+   (`hitGlobal`), `:473` (`hitRefusal`); `api/events/route.ts:82`;
+   `api/onboarding/shared.ts:44`; `lib/auth/auth.ts:245`. Confirmed by grep. The
+   `hit(` matches in `lib/moderation/blocklist.test.ts` are a local test helper of
+   the same name, not this module.
+2. **Nothing on the edge calls the limiter.** `src/middleware.ts` imports
+   `next-auth`, `next/server`, `@/lib/auth/{config,gate,token}` and
+   `@/lib/i18n/resolve` — nothing else. All eleven route handlers under
+   `src/app/api/**` declare `export const runtime = 'nodejs'`.
+3. **`/api/events`'s `clientIp()` keys on the leftmost `x-forwarded-for` value**
+   — `forwarded.split(',')[0].trim()` at `route.ts:73`, exactly as §6 quotes it.
+   The defect is real and is V9's to fix.
+4. **`hit(user.id)` and `hitRefusal(user.id)` pass the same bare key string**,
+   kept apart only by `hits` and `refusals` being two different `Map`s. Trap 1 in
+   §4 is real.
+5. **`src/lib/llm/index.ts` is a 27-line choke point.** `getProvider()` is the
+   only way to reach a model; its own header already says "no caller changes —
+   that is the point of the interface".
+6. **`SECRET_ENV` in `scripts/audit-secrets.ts:234` is a hand-maintained list of
+   exactly fourteen names.** Task 18 makes it sixteen.
+
+### z.ai
+
+1. **The Anthropic-compatible endpoint works on this subscription, and it covers
+   both models.** `npm run smoke`: `provider=zai model=glm-4.6
+   baseURL=https://api.z.ai/api/anthropic`, 80 chunks, first token at 3123ms,
+   `tokens in=null out=81` (the `input_tokens: 0` behaviour CLAUDE.md records).
+   `npm run probe:moderation -- --stability`: `glm-4.5-flash` answered a
+   non-streaming `complete()` in **759ms** and produced **1 distinct output over
+   10 runs** at temperature 0, 0 parse failures. **W7's production requirement
+   holds on this plan.**
+2. **No spend cap, and no pay-as-you-go overflow to cap. This is Branch A.**
+   z.ai's own FAQ (`docs.z.ai/devpack/faq`): when the Coding Plan quota is used
+   up *"you'll need to wait until the next 5-hour cycle for it to refresh. The
+   system will not deduct from your account balance."* A prepaid quota with no
+   overflow has no bill to cap. §0.1's Branch A applies and `## Doc amendments`
+   §2 is used as written, without the Branch B variant.
+3. **→ THE QUOTA IS A ROLLING 5-HOUR WINDOW PLUS A ROLLING 7-DAY ONE. IT IS NOT
+   A DAILY QUOTA.** Published tiers: ~80 prompts / 5h (Lite), ~400 (Pro), ~1600
+   (Max); weekly ~400 / ~2000 / ~8000. **This is exactly the condition open
+   question 2 names**, so `meter.ts`'s shape is a decision and not a
+   transcription — see `### The one thing Task 0 changed` below. **Which tier
+   this key is on is OPEN** (see below), so `LLM_DAILY_CALL_CEILING`'s real value
+   is still underived.
+4. **Exhaustion on the wire is OPEN, and not worth inducing to find out.** The
+   FAQ documents error `1113 Insufficient Balance` for a *balance* condition and
+   says nothing about the shape of a quota-exhaustion response. It could not be
+   observed without burning the live quota, which is the outage this workstream
+   exists to prevent. **What this blocks:** §1's fact (4) worry — that
+   `anthropic.ts` classifies a 429 as transient and retries it against a quota
+   that will not refill for hours. Left as a known unknown; the meter is what
+   keeps us away from the boundary, and `## Open questions` gains a line.
+5. **→ THE ACCEPTABLE-USE ANSWER IS UNFAVOURABLE, WHICH IS THE ONE THING TASK 0
+   MOST NEEDED TO KNOW.** The FAQ states the Coding Plan is *"strictly limited to
+   use within officially supported tools and products"* and enumerates the
+   coding tools and endpoints it may be configured in. **JMTarot is not one of
+   them.** Open question 1 asked for this to be read and recorded; it has been,
+   and the answer moves *"fund a second provider before V7 ships"* from a
+   contingency to a live recommendation. **Nothing in V9 changes because of it**
+   — V9 is what makes the app survive the quota, not the terms — but it belongs
+   in front of Miftah before V7, and it is now stated as fact rather than risk.
+
+### Upstash
+
+6. **Free tier: 500K commands/month** (~16.6K/day) on the pricing page, against
+   **10K/day** in the older FAQ; the conservative number is 10K/day. Exhaustion
+   *"return[s] exception"* — i.e. an error, which under §3 lands on the memory
+   backend rather than on the querent, which is the right shape. Free databases
+   are **archived after ≥30 days of inactivity** with warning emails and no data
+   loss — **not** idle-suspended, so fact (9)'s cold-start-every-morning worry
+   does not apply.
+7. **Commands per `limit()` is OPEN and bounded above.** Upstash does not publish
+   a per-algorithm figure; its own docs only warn that *multi-region* sliding
+   window *"results in large number of commands"*, and we are single-region.
+   Taking the pessimistic reading of 4 commands per call, §2.1's four calls per
+   reading is 16, so 10K/day still buys ~600 readings a day — far above anything
+   this app sees, and `events:` staying on memory (§2.1) is what keeps the
+   unbounded caller off the budget entirely. **Re-measure from Upstash's own
+   usage graph after a week rather than from documentation.**
+8. **→ THERE IS NO SINGAPORE REGION. The nearest is `ap-northeast-1` (Tokyo).**
+   Upstash's FAQ lists AWS us-east-1, us-west-1, eu-west-1 and apn-ne-1, plus GCP
+   us-central-1. So a limiter call from a Vercel Singapore function pays a
+   SG↔Tokyo round trip, ~70–90ms of network before TLS and HTTP framing — not the
+   *"~10–30ms"* §8's `RATELIMIT_TIMEOUT_MS` comment assumes, and not the
+   trans-Pacific hop §1's fact (8) feared either. **`RATELIMIT_TIMEOUT_MS=1000`
+   is kept**: it is still ~8× the expected warm value, and §3's whole argument is
+   that overshooting it costs a degraded limiter and never a failed request. The
+   env comment's number is corrected in Task 18.
+9. Answered inside (6): archival at 30 days, not idle suspension.
+10. `slidingWindow`'s duration argument and `getRemaining`'s return shape are
+    **verified at Task 9 against the installed package**, not from documentation
+    — the docs confirm `getRemaining` exists and that its `reset` is the *start
+    of the next window* rather than an exact expiry, which is fine for a
+    `retryAfterSeconds` that is only ever floored at 1.
+
+### Vercel
+
+11. **→ VERCEL OVERWRITES `x-forwarded-for`; IT DOES NOT APPEND.** From
+    `vercel.com/docs/headers/request-headers`: *"If you are trying to use Vercel
+    behind a proxy, we currently overwrite the `X-Forwarded-For` header and do
+    not forward external IPs. This restriction is in place to prevent IP
+    spoofing."* `x-real-ip` and `x-vercel-forwarded-for` are both documented as
+    *identical to* `x-forwarded-for`, with the difference that
+    `x-vercel-forwarded-for` survives a proxy placed **on top of** Vercel, which
+    could overwrite the other two. **§6's code is correct as written** — §6 says
+    so itself: a one-element list's last element is its only element. Two small
+    consequences, both in Task 6: the comment `// Vercel APPENDS` is factually
+    wrong and must say *overwrites*, and `x-vercel-forwarded-for` is preferred
+    ahead of `x-real-ip` because it is the only one of the three Vercel
+    guarantees under a front proxy.
+12. **`NextRequest` has no `ip` field in the installed `next@16.2.11`** —
+    confirmed by reading
+    `node_modules/next/dist/server/web/spec-extension/request.d.ts`, which
+    declares `cookies`, `nextUrl`, `page`, `ua` and `url` and nothing else.
+    **`@vercel/functions` is not installed and is not being added**: §6 reads
+    headers directly, which works identically on Vercel, under `npm run dev`, and
+    in a unit test holding a hand-built `Headers`. A dependency for one
+    `ipAddress()` call that would still need the header path underneath it is not
+    worth it.
+13. **`@vercel/firewall`'s plan gating is OPEN**, so the code comment says
+    nothing about it. §2.3's rejection stands on its first two grounds, which are
+    the ones that do not depend on the answer: it cannot express a budget keyed on
+    `users.id`, still less a second tighter budget on the same identity, and there
+    is no local equivalent so `npm test` would cover none of it.
+
+### The one thing Task 0 changed
+
+**Fact (3) fires open question 2's conditional.** The plan says: *"If the quota is
+a rolling 5-hour window rather than a daily one, `meter.ts`'s UTC-day bucket is
+the wrong shape and should become a rolling window with the same two tiers — a
+two-line change while nothing depends on the shape, and a migration of a live
+counter afterwards."* The quota is a rolling 5-hour window. Nothing depends on
+the shape yet, so this is the only cheap moment, and it is Miftah's call because
+the *ceiling number* is his to supply either way.
+
+**Everything in Tasks 1–12 is shape-independent** and is built as written.
+
+### Still OPEN, and what each blocks
+
+- **Which Coding Plan tier this key is on (Lite / Pro / Max).** Blocks a real
+  value for the ceiling; the shipped default stays a tripwire until it lands, and
+  §5 and `## Doc amendments` both already say so in caps.
+- **What quota exhaustion looks like on the wire.** Blocks knowing whether
+  `anthropic.ts` will retry into a wall. Not inducible without causing the outage.
+- **Commands per `limit()` call.** Blocks nothing; re-measure from Upstash's usage
+  graph after a week.
+- **`@vercel/firewall`'s plan gating.** Blocks nothing; the rejection does not
+  rest on it.
+
+---
+
 ## 0. Read this before Task 1. The threat model changed underneath the file.
 
 ### 0.1 The primary control does not exist, and three documents say it does
