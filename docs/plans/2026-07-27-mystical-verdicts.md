@@ -1239,3 +1239,114 @@ widenings above and adds no name.
    is the check. But the real check is Miftah reading twelve lines and saying
    whether it feels like perception. **That should happen before V6 and V7 build
    on top of it**, because the day summary is what V5's swipe deck slides in.
+
+---
+
+## Measured
+
+Live z.ai, `glm-4.6`, 2026-07-28. Three `--frequency` runs (twelve lines each,
+both locales) and three `--summary` runs (six each, both locales).
+
+### VD2 held on every one of the thirty-six generations
+
+**Zero tally FAILs. Zero digits. Zero counts by eye.** The mechanical half is
+what did it: the counts are not in either user turn, so the model could not
+recite one. No run needed the instruction to save it, which is the point — the
+instruction is the second line of defence and the grep is the third.
+
+### The frequency verdict
+
+```
+run   id words                    en words                   FAILs
+1     28 30 29 28 23 26           19 23 26 27 31 21          2 (card name)
+2     25 27 28 23 24 26           22 23 26 27 31 19          4 (card name)
+3     24 28 26 26 26 26           21 23 21 26 27 26          0
+```
+
+Mean ≈ 25 against a ceiling of 32, but the distribution **does** reach 31–32, so
+**the ceiling is not tightened.** §5's "if ten lines come in at 22–26, tighten to
+28 and record it as measured" is not what happened; tightening on run 3 alone
+would be chasing one favourable sample, which is exactly the mistake
+`docs/provider-comparison.md` records about z.ai's famous `0.050`.
+
+Six distinct lines per locale per run, four of the five angles reached. They read
+as six sentences rather than one with the nouns swapped.
+
+**Open question 4 is answered, and the answer is not the one the plan
+predicted.** Run 1 showed the pulse gloss being **pasted verbatim** in
+Indonesian — `angin yang tidak betah diam; begitu ada celah, dia lewat` is
+gloss 5 including its semicolon, and it would have appeared identically for
+every pair reducing to 5. The plan says the fix is V1 shipping a short form.
+**It is not needed.** Run 2 forbade the wording *and* the imagery and pushed the
+Indonesian half into abstraction (and a `capitals and all` clause of my own
+making produced `THE HERMIT`); run 3 forbids the **wording** and allows the
+**image**, and comes back clean with the cart-wheel and the late-night lamp
+surviving as rebuilds rather than quotations. **V1's `glosses.ts` is unchanged.**
+
+The four card-name FAILs across runs 1–2 were `the Hermit` (lowercase), `The
+Hanged Men`, `The Foll` and `THE HERMIT`. All are the mechanical card-name check
+doing its job, and all are gone in run 3.
+
+### The day summary
+
+**A REAL REGRESSION V3 INTRODUCED, CAUGHT BY THE SMOKE RUN AND BY NOTHING
+ELSE.** Indonesian Margaret echoed the **entire `<riwayat-hari-ini>` block** back
+before her answer, twice out of two, once narrating *"Wait, I have to check the
+length."* — and was then cut off mid-word by `maxTokens`. Every unit test passed
+throughout.
+
+The cause is V3's own task text: it gained three paragraphs naming **lines inside
+the block** (`BERGEMA`, `BAYANGAN HARI INI`, the shape word) and never said what
+the OUTPUT is. The block became a structure to reproduce. One paragraph in each
+locale fixes it — *"YANG KAMU TULIS HANYALAH KALIMAT SAPAANMU… tanpa menyalin
+satu baris pun"*. Her totals went 103/106 → 45/51.
+
+```
+final run   id  thessaly 49  margaret 45  adrian 52     ceilings 50 / 65 / 50
+            en  thessaly 24  margaret 51  adrian 40
+```
+
+One two-word overrun, on Adrian, in one run of six. That is variance and not
+calibration, so `SUMMARY_MAX_WORDS` stays at 50.
+
+**Blind read: 6 of 6 readers identified with the names covered.** Thessaly's
+short declaratives, Margaret's one long subordinated sentence, Adrian's
+`isn't`/`haven't`/`Just say it.` The six rewritten examples are doing their work.
+
+**Open question 3 is closed by VD19 rather than by measurement.** Margaret gets
+65 because her length is a fact about the reader, and `MARGARET_MULTIPLIER` in
+`budget.ts` is the one place it is written.
+
+### One thing the grep missed, which is why both runners say to read by eye
+
+`berulang-ulang` is the same shape as `berkali-kali` and matched nothing, because
+only the latter was in §7's list. Added at WARN with its English twins, and the
+test names where it came from. **The grep is a floor, not a ceiling** — that
+sentence in the plan earned itself in one run.
+
+### The gate
+
+`npm run typecheck` clean. `npm test` 1300 passed. `npm run test:integration`
+137 passed. `npm run build` clean on the first attempt. `npm run audit:secrets`
+clean — 44 files, 51 needles.
+
+**Database-down check, run live against `npm run dev` with a real dev session:**
+the reader picker renders **200** and the frequency line renders **nothing**,
+which is the requirement. `GET /api/memory/frequency` returns **500** rather than
+204, and `FrequencyLine` discards anything that is not a 200, so the user-visible
+behaviour is correct. **That 500 is PRE-EXISTING W5 BEHAVIOUR AND NOT V3's** —
+the route has never wrapped `firstPassingWindow`/`getVerdict` in a try/catch, and
+V3 did not touch that. Worth someone's attention: a 204 would be the honest
+status and would stop Next logging the failing query.
+
+**And the route was exercised end to end with the database up**, on the seeded
+history, which is the only check that proves the whole chain:
+
+```
+Minggu ini The Chariot dan The Hierophant menegakkan kendali telak di ladang
+yang sengaja dikosongkan usai panen terakhir, ditenun oleh energi The Hanged Man.
+```
+
+Three cards, a dominance word (`telak`), a rebuilt pulse gloss, no count, no
+digit. Compare with what v0.3.0 exists to delete: *"This week The Empress is
+shown three times whilst The Chariot is shown two times."*

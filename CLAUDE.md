@@ -721,8 +721,13 @@ more.** W6 moved every word ceiling into `LENGTH_BUDGET` in
 `src/lib/prompt/budget.ts`, interpolated into the prompt and asserted by the smoke
 script so the two cannot drift; `daily` and `yesno` gained ceilings they never had
 (they stated a sentence count only, and a sentence count does not bind); and
-Margaret carries a per-reader override of 55. `## Localization` has the measurements
-and the open question.
+Margaret carries a per-reader multiplier. `## Localization` has the measurements.
+
+**V3 CLOSED THE OPEN QUESTION THIS PARAGRAPH USED TO CARRY.** VD19 is Miftah's
+ruling: Margaret may be 30% longer than the other two, as
+`MARGARET_MULTIPLIER = 1.3` applied to every reader-voiced ceiling rather than a
+hand-set number on one service. `spread3` 55 → 52, `daily` 55 → 72, `yesno`
+70 → 91, and the day summary 50 → 65. See `## Mystical memory verdicts (V3)`.
 
 ## Localization (W6)
 
@@ -851,12 +856,20 @@ looking, at a real 390px.
 
 **`LENGTH_BUDGET` in `src/lib/prompt/budget.ts` is the one place a word ceiling is
 written**, interpolated into the prompt and asserted by the smoke script, so the two
-cannot drift. `budgetFor(locale, service, reader)` applies **Margaret's per-reader
-override** — 55 words rather than 40 on `spread3`, from measurement across both
-locales, because her voice rules mandate long subordinated sentences and those do not
-fit 40 words. **The English `spread3` calibration is NOT converged**: she has come in
-at 157–243 words across runs. Widening the band further would be chasing variance;
-the open question is whether Margaret is allowed to be longer than the other two.
+cannot drift. `budgetFor(locale, service, reader)` applies **`MARGARET_MULTIPLIER`**
+— 1.3 on every reader-voiced ceiling, because her voice rules mandate long
+subordinated sentences and those do not fit 40 words. **The English `spread3`
+calibration is NOT converged**: she has come in at 157–243 words across runs.
+Widening the band further would be chasing variance.
+
+**THE OPEN QUESTION THIS PARAGRAPH USED TO END WITH — "is Margaret allowed to be
+longer than the other two?" — IS CLOSED. Yes, by 30%** (VD19, Miftah's ruling,
+landed by V3). A multiplier rather than a second hand-set number, because the
+reason is a fact about the *reader* and is therefore equally true in every
+service she speaks in; the old `spread3: 55` against a base of 40 was already
+37.5%, so this is close to what was measured and is now a rule. **It fixes what
+the ceiling should BE, not whether she obeys it.** The frequency verdict is
+house voice and is unaffected.
 
 
 ## Auth
@@ -951,7 +964,8 @@ Indonesian throughout, interface and readings (W6)**, **the moderation gate,
 `/terms`, `/privacy`, the secrets tripwire and the daily sweep (W7)**, **a
 fleet-wide rate limiter and a global model-call ceiling (V9)**, **the
 correspondence engine (V1)**, **on-demand translation and locale-tagged
-generation (V2)**, reader
+generation (V2)**, **mystical memory verdicts — the Shadow Arcana replacing the
+tally (V3)**, reader
 picker, service picker, the draw (fan, pick, flip, reduced-motion grid), the card
 detail overlay, the streaming reading endpoint, the prompt layer, and the web app
 manifest.
@@ -1110,10 +1124,15 @@ fence the sanitizer strips.
 
 ```sh
 npm run smoke -- --summary            # six summaries, three readers x two locales
-npm run smoke -- --frequency          # five verdicts over five card pairs
+npm run smoke -- --frequency          # TWELVE verdicts: six card pairs x two locales
+npm run smoke -- --frequency --locale id   # half of either, for iterating
 npm run smoke -- --all --memory --gist  # the nine, with a chain block and real gists
 npm run smoke -- --all --fixed        # the CONTROL for the above. Same hands.
 ```
+
+**V3 rewrote both of these prompts; see `## Mystical memory verdicts (V3)`.**
+`--frequency` was five `id` verdicts and is now twelve across both locales, one
+of the six pairs is a Fool collision, and both runners fail on a tally.
 
 `public/cards/_freqshot.html` and `_sumshot.html` (gitignored) screenshot the two
 gated pickers at a real 390px with the endpoint stubbed, so neither run costs a
@@ -1143,6 +1162,151 @@ byte-identical to what shipped before it -- there is a test asserting that -- so
 this predates the workstream. The per-paragraph word count in the smoke script
 is what surfaced it. Fixing it means `readers.ts` or `services.ts` and its own
 tuning loop; it is not W5's file and not W5's bug.
+
+## Mystical memory verdicts (V3)
+
+V3 of v0.3.0 is done. **The app has stopped doing arithmetic out loud.** W5's
+two generated lines read the same history and no longer recite it: *"This week
+The Empress is shown three times whilst The Chariot is shown two times"* is the
+sentence this workstream exists to delete.
+
+```
+src/lib/memory/shadow.ts   the ONLY V3 module importing @/lib/numerology.
+                           shadowFor, pulseFor, dayShadowFor, and the composed
+                           FrequencyMechanic the prompt is built from.
+src/lib/memory/tally.ts    PURE, no `server-only` -- the smoke script imports it.
+                           Two tiers, and a window-phrase strip.
+src/lib/memory/frequency.ts  GAINED dominanceOf and verdictCacheState.
+src/lib/prompt/summary.ts  both prompts, the ten new angles, the six rewritten
+                           worked examples, summaryMaxWords.
+src/lib/prompt/budget.ts   MARGARET_MULTIPLIER (VD19).
+```
+
+### THE COUNTS ARE DELETED FROM BOTH PROMPTS, NOT FORBIDDEN IN THEM
+
+This is the whole mechanism and it is the thing to protect. The model is handed
+two card names, **the Shadow Arcana** — `arcanaFor(top.id + second.id)`, the
+traditional quintessence — one **written pulse line**, and one **dominance
+word**. It is never handed `m` or `n`. **A model cannot recite a count it was
+never given**, and an instruction that merely forbids the tally is what fails
+under compression pressure — the same failure that made Thessaly stop naming
+cards when the 40-word ceiling landed. The instruction is the second line of
+defence and `tallyProblems()` in the smoke script is the third.
+
+`summary.test.ts` asserts **the frequency user turn contains no digit at all**,
+in both locales, and is digit-free for `d666` once its window phrase is
+stripped. That is what makes the smoke check exact: a digit in the OUTPUT was
+invented, never copied.
+
+### The five things a future session will otherwise undo
+
+1. **`FrequencyMechanic`'s key set is asserted exactly** (`shadow.test.ts`,
+   inherited from V1 via reconciliation §5.4). Without it VD2 degrades from
+   "impossible" back to "merely forbidden", because the way a tally returns is
+   somebody adding `topCount` for a reason that looks good at the time.
+   `pulseNumber` is the one number on it, it is `reduce(m + n)` and not a count,
+   and it exists for the analytics event.
+2. **`dominanceOf` is a RATIO, not `m - n`** (V3-5, correcting roadmap §5). A
+   difference is not scale-invariant: `10:8` is `narrow` where the difference
+   would call it wider than `4:2`, which is `overwhelming`. `dominance.test.ts`
+   names that case after the ratio so a refactor back fails there and nowhere
+   else. The `m - n === 1` clause is an absolute floor and does real work at
+   small counts.
+3. **`tally.ts` has two tiers and a false-positive corpus, and that is not
+   timidity.** `sekali` also means "very", `once` also means "as soon as", and
+   banning a bare `dua` would ban `dua kartu itu` — the `lagi` trap in a new
+   costume. Every FAIL pattern is multi-word or anchored to `kali`/`times`.
+   **It never runs at request time** (V3-11): M14 says a failed generation
+   renders nothing, so a false positive in the route would delete the feature
+   for that user with nothing on screen. A heuristic may fail a build; it may
+   not fail a person.
+4. **The window phrase is stripped before matching**, because `d666` is
+   `666 hari terakhir` / `The last 666 days` and the prompt INSTRUCTS the model
+   to say it. A naive `/\d/` fails a correct line on a reachable window.
+5. **The collision paragraph names POSITIONS, not cards.** The plan writes it
+   with the card's name and with `The Fool` spelled out; those would be the only
+   card names in a system prompt that is otherwise pure rules (M10), and there
+   is a test. The shadow collides with the pair **iff The Fool is in it**, since
+   `x + 0 ≡ x (mod 22)` — proved exhaustively over all 462 ordered pairs.
+
+### Traps V3 paid for
+
+- **`MEMORY_PROMPT_VERSION` WAS INVALIDATING NOTHING ON THE FREQUENCY SIDE, AND
+  THE BUMP ALONE WOULD NOT HAVE FIXED IT.** The route computed
+  `const fresh = cached?.fingerprint === result.fingerprint` and then
+  `if (cached && (fresh || stillTrue))` — and `fresh` short-circuits the `||`
+  **without looking at `promptVersion`**. A user whose window had not moved since
+  their last visit, which is most users on most page loads by design, would be
+  served their `memory-v1` tally forever. `daily_summaries` was always fine:
+  `isStale()` tests the version first. The decision is now one pure
+  `verdictCacheState()` with the version check **hoisted above both branches**,
+  verified by reverting to the old ordering and watching the test fail.
+- **THE WORKED EXAMPLES WERE TEACHING THE FAILURE.** Four of the six recited a
+  tally, and `summary.ts`'s own header says the example outweighs the
+  description — so adding `DILARANG MENYEBUT JUMLAH` to the task text would have
+  lost to the paragraph underneath it. All six rewritten, and a test runs
+  `tallyProblems` over each.
+- **ONE OF THE FIVE ANGLES ORDERED THE RECITATION OUT LOUD.**
+  `Sebut saja jumlahnya apa adanya` meant one page load in five got a prompt
+  INSTRUCTING the tally. All ten strings replaced; the rotation MECHANISM kept,
+  because it is free and cache-coherent and the shadow varies the nouns rather
+  than the stance.
+- **NAMING LINES INSIDE `<riwayat-hari-ini>` MADE MARGARET REPRODUCE THE BLOCK.**
+  V3's day-summary task text gained three paragraphs about `BERGEMA`,
+  `BAYANGAN HARI INI` and the shape word, and never said what the OUTPUT is — so
+  the block became a structure to emit. Indonesian Margaret echoed the whole
+  thing back before her answer, twice out of two, once narrating *"Wait, I have
+  to check the length."* **Every unit test passed throughout; only the smoke run
+  saw it.** One paragraph per locale fixes it, and 103/106 words became 45/51.
+- **FORBIDDING THE PULSE GLOSS's IMAGERY IS NOT THE SAME AS FORBIDDING ITS
+  WORDING, AND ONLY ONE OF THEM IS RIGHT.** The gloss was being pasted verbatim
+  in Indonesian, semicolon and all, so every pair reducing to 5 would have shown
+  the same clause. Forbidding both the wording and the imagery pushed the
+  Indonesian half into abstraction; forbidding the **wording** and allowing the
+  **image** is clean. So **V1's `glosses.ts` does not need a short form** —
+  V3's open question 4 is answered, the other way from how the plan guessed.
+- **`berulang-ulang` MATCHED NOTHING** because only `berkali-kali` was on §7's
+  list. Found by reading, not by the grep. **The grep is a floor, not a
+  ceiling**, and both smoke runners say so in their closing note.
+
+### The numbers, and what moves them
+
+`FREQUENCY_MAX_WORDS` is **32** (was 25: three facts became five and one is a
+proper noun with an article). `SUMMARY_MAX_WORDS` is **50** (was 45), and
+`summaryMaxWords('margaret')` is **65** — VD19's multiplier, read out of
+`budget.ts` so a reader's ceiling is written once. **Neither ceiling is
+tightened on one favourable run**: measured across three runs the frequency
+lines span 19–32, mean ≈ 25, and tightening to 28 on the best of them would be
+the mistake `docs/provider-comparison.md` records about z.ai's famous `0.050`.
+
+**`MARGARET_MULTIPLIER = 1.3` replaced the hand-set `spread3: 55` and reaches
+EVERY reader-voiced ceiling**, because her length is a fact about the reader and
+not about one service: spread3 55→52, daily 55→72, yesno 70→91, day summary
+50→65. Ceilings only — a floor scaled by verbosity would demand length rather
+than permit it. **The frequency verdict is house voice (M6) and is unaffected.**
+Her three prompt snapshots in `build.test.ts` were regenerated once, after
+diffing line by line: only interpolated numbers moved, and Thessaly's and
+Adrian's six are untouched, which is the evidence it was a budget change and not
+a persona regression.
+
+**Measurements are in `docs/plans/2026-07-27-mystical-verdicts.md` under
+`## Measured`.** Zero tally failures and zero digits across thirty-six live
+generations, and a blind read identifying 6 of 6 readers.
+
+### Still open, and not V3's to close
+
+- **`GET /api/memory/frequency` RETURNS 500 WHEN THE DATABASE IS DOWN**, not
+  204. The user-visible behaviour is still correct — the reader picker renders
+  and `FrequencyLine` discards anything that is not a 200 — but the route has
+  never wrapped `firstPassingWindow`/`getVerdict` in a try/catch. **Pre-existing
+  W5 behaviour, verified against a live dev server.** A 204 would be the honest
+  status and would stop Next logging the failing query.
+- **Whether the mysticism LANDS is not something V3 can verify.** Roadmap §9's
+  first risk is that this reads as generated filler. The Shadow Arcana being a
+  specific card the querent recognises is the mitigation and the smoke run is the
+  check, but the real check is Miftah reading twelve lines. **That should happen
+  before V6 and V7 build on top of it**, because the day summary is what V5's
+  swipe deck slides in.
 
 ## Trust, safety and secrets (W7)
 
