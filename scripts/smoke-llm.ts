@@ -184,6 +184,7 @@ async function main() {
   const summary = process.argv.includes('--summary');
   const gist = process.argv.includes('--gist');
   const frequency = process.argv.includes('--frequency');
+  const translate = process.argv.includes('--translate');
   /* Any comparison run wants fixed hands, for the reason spelled out at the
      `picks` assignment below: two runs that drew different cards cannot be
      diffed. `--memory` joins that list because its whole point is a recalled
@@ -220,6 +221,14 @@ async function main() {
      actually bites or whether the line reads the same every time. */
   if (frequency) {
     await runFrequency();
+    if (!all) return;
+  }
+
+  /* `--translate` is its own run: six real translations over three fixed hands,
+     both directions, with the voice proxies applied to the OUTPUT rather than to
+     native generation. It composes with `--all` like the two above. */
+  if (translate) {
+    await runTranslate();
     if (!all) return;
   }
 
@@ -1279,6 +1288,201 @@ async function runSummary() {
     '\nCOVER THE NAMES AND READ THE THREE. Can you tell who wrote which?\n' +
       'If not, the per-reader deltas in W5 §5.3 are too thin -- fix those\n' +
       'paragraphs, not the code. Same rule as readers.ts.\n',
+  );
+}
+
+/**
+ * `--translate`: SIX REAL TRANSLATIONS, BOTH DIRECTIONS (V2 §9).
+ *
+ * Three `id -> en` and three `en -> id`, one `spread3` per reader over the SAME THREE
+ * FIXED HANDS, so the two directions are comparable with each other and with
+ * `--all --fixed`. Every reading is generated live and then translated, and both
+ * texts are printed adjacently — which is the only way to see whether the translation
+ * is a re-issue in the reader's voice or a rendering of the other language.
+ *
+ * ── IT ASSERTS THROUGH `verifyTranslation`, NOT THROUGH ITS OWN COPY ──────────
+ *
+ * The card-name check, the paragraph count, the therapy list, the Malay grep and the
+ * `en` tic list are exactly the function production runs before it persists anything.
+ * A second implementation here would be a fifth copy of the word lists and a place for
+ * the two to disagree about what passes — which is how `tempoh` went missing the first
+ * time. What this file adds on top is what a static check cannot do: the two VOICE
+ * PROXIES, over translations rather than over native output.
+ *
+ * **THE MALAY GREP RUNS ON THE `en -> id` OUTPUT AND NOWHERE ELSE**, which is W6's
+ * rule 4 applied correctly rather than as theatre — `verifyTranslation` decides that
+ * from the TARGET locale, so it happens by construction here.
+ *
+ * NO DATABASE AND NO ROUTE. It calls `buildTranslationPrompt` and the provider
+ * directly, exactly as `--summary` and `--frequency` do.
+ */
+async function runTranslate() {
+  const { buildTranslationPrompt, verifyTranslation } = await import(
+    '@/lib/translate/contract'
+  );
+  const { TRANSLATABLE } = await import('@/lib/translate/keys');
+  const { budgetFor } = await import('@/lib/prompt/budget');
+  const { READERS } = await import('@/data/readers');
+  const { buildPrompt } = await import('@/lib/prompt/build');
+  const { serviceById } = await import('@/data/services');
+
+  const spec = TRANSLATABLE['reading.body'];
+  const service = serviceById('spread3')!;
+  const problems: string[] = [];
+
+  /** Per target locale and reader, for the voice proxies below. */
+  const out: Record<'id' | 'en', Partial<Record<string, string>>> = { id: {}, en: {} };
+
+  /*
+   * BOTH DIRECTIONS, and `en -> id` is not decoration: Indonesian's affixation makes
+   * it 5-15% longer in WORDS than English for the same content, so that direction is
+   * the one most likely to overshoot a budget calibrated on native Indonesian. The
+   * plan's open question 3 is exactly this, and this run is what answers it.
+   */
+  for (const [source, target] of [
+    ['id', 'en'],
+    ['en', 'id'],
+  ] as const) {
+    process.stdout.write(
+      `\n${'#'.repeat(70)}\nTRANSLATION  ${source.toUpperCase()} -> ${target.toUpperCase()}\n${'#'.repeat(70)}\n`,
+    );
+
+    for (const [i, r] of READERS.entries()) {
+      // The SAME hand for both directions and for `--all --fixed`, so any two runs
+      // can be diffed. Two runs that drew different cards are not comparable.
+      const picks = fixedPicks(i, 3);
+
+      const native = buildPrompt({ reader: r.id, service: service.id, picks, locale: source });
+      const { text: rawSource } = await getProvider().complete({
+        system: native.system,
+        user: native.user,
+        maxTokens: native.maxTokens,
+      });
+      const src = rawSource.trim();
+
+      const prompt = buildTranslationPrompt({
+        source: src,
+        sourceLocale: source,
+        target,
+        spec,
+        readerId: r.id,
+        serviceId: service.id,
+      });
+      const { text: rawOut } = await getProvider().complete(prompt);
+      const translated = rawOut.trim();
+
+      out[target][r.id] = translated;
+
+      const budget = budgetFor(target, service.id, r.id);
+      const words = (t: string) => t.split(/\s+/).filter(Boolean).length;
+
+      process.stdout.write(
+        `\n--- ${r.name}: ${source} (${words(src)} words) ---\n${src}\n` +
+          `\n--- ${r.name}: ${target} (${words(translated)} words, ceiling ` +
+          `${budget.maxParagraphWords}/para, band ${budget.minTotalWords}-${budget.maxTotalWords}) ---\n` +
+          `${translated}\n`,
+      );
+
+      /*
+       * THE SAME FUNCTION THE TRANSLATOR GATES ON. If this passes and production
+       * refuses the row, one of the two is wrong and it is not this file.
+       */
+      for (const v of verifyTranslation({
+        source: src,
+        output: translated,
+        spec,
+        target,
+        readerId: r.id,
+        serviceId: service.id,
+      })) {
+        problems.push(`${source}->${target}/${r.id}: ${v.kind} (${v.detail})`);
+      }
+
+      /*
+       * The TOTAL band, which `verifyTranslation` deliberately does not check -- it
+       * enforces the per-paragraph ceiling, because that is the one the model can
+       * count as it writes and therefore the one worth refusing a row over. A total
+       * outside the band is a calibration signal for a person, not a defect.
+       *
+       * **IF THE FIRST RUN FAILS ON THE BAND THAT IS DATA, NOT A BUG.** Record the
+       * numbers and tune once, the way Margaret's 55 was tuned across five runs. Do
+       * not widen the band to make the run green.
+       */
+      const total = words(translated);
+      if (total < budget.minTotalWords || total > budget.maxTotalWords) {
+        problems.push(
+          `${source}->${target}/${r.id}: total ${total} words, band ` +
+            `${budget.minTotalWords}-${budget.maxTotalWords}`,
+        );
+      }
+    }
+  }
+
+  /*
+   * ── THE TWO VOICE PROXIES, OVER TRANSLATIONS ────────────────────────────────
+   *
+   * Roadmap §9's named risk is *"Margaret translated by a generic prompt comes back
+   * as Thessaly with longer words"*, and that risk is INVISIBLE to every check above:
+   * a flattened Margaret still reproduces every card name, still hits the paragraph
+   * count, still avoids every forbidden word. These two numbers are the only
+   * mechanical signal that the three are still three.
+   */
+  process.stdout.write(`\n${'#'.repeat(70)}\nVOICE PROXIES, OVER THE TRANSLATIONS\n${'#'.repeat(70)}\n`);
+
+  for (const target of ['id', 'en'] as const) {
+    const mean: Record<string, number> = {};
+    for (const r of READERS) {
+      const t = out[target][r.id];
+      if (t) mean[r.id] = meanSentenceWords(t);
+    }
+    process.stdout.write(
+      `\n${target}  mean sentence words   ` +
+        READERS.map((r) => `${r.id}=${(mean[r.id] ?? 0).toFixed(1)}`).join('  ') +
+        `\n`,
+    );
+    /* Margaret's voice rules mandate long subordinated sentences and Thessaly's
+       mandate short declaratives. If a translation flattens that ratio, the fix is
+       the persona blocks the translation prompt carries, not the code. */
+    if (mean.margaret && mean.thessaly && mean.margaret < mean.thessaly * 1.5) {
+      problems.push(
+        `${target}: margaret ${mean.margaret.toFixed(1)} vs thessaly ` +
+          `${mean.thessaly.toFixed(1)} mean sentence words -- under 1.5x`,
+      );
+    }
+
+    /* `en` ONLY. Indonesian has no contractions, so the proxy cannot exist there --
+       running it would report 0.00 for all three and look like a passing check. */
+    if (target === 'en') {
+      const rate: Record<string, number> = {};
+      for (const r of READERS) {
+        const t = out.en[r.id];
+        if (t) rate[r.id] = contractionRate(t);
+      }
+      process.stdout.write(
+        `en  contractions/100w    ` +
+          READERS.map((r) => `${r.id}=${(rate[r.id] ?? 0).toFixed(2)}`).join('  ') +
+          `\n`,
+      );
+      if (rate.adrian !== undefined && rate.adrian === 0) {
+        problems.push('en adrian: zero contractions -- his voice rules ask for them throughout');
+      }
+      if (rate.margaret !== undefined && rate.margaret > 0) {
+        problems.push(
+          `en margaret: ${rate.margaret.toFixed(2)} contractions/100w -- her rules forbid them`,
+        );
+      }
+    }
+  }
+
+  process.stdout.write(`\n${'#'.repeat(70)}\nTRANSLATION CHECKS\n${'#'.repeat(70)}\n`);
+  if (problems.length === 0) process.stdout.write('all clean\n');
+  else for (const p of problems) process.stdout.write(`FAIL  ${p}\n`);
+
+  process.stdout.write(
+    '\nCOVER THE NAMES AND READ THE THREE TRANSLATIONS. Can you still tell who\n' +
+      'wrote which? If not, the fix is the persona blocks the translation prompt\n' +
+      'carries -- `readerPrompt(reader, target)` in buildTranslationPrompt -- and\n' +
+      'NOT the code. Same rule as readers.ts, and the same rule as --summary.\n',
   );
 }
 

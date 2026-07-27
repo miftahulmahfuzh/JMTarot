@@ -20,7 +20,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const recallableReadings = vi.fn();
 vi.mock('@/lib/db/queries/history', () => ({ recallableReadings }));
 
-const gistTranslations = vi.fn(async () => new Map<string, string>());
+/*
+ * The parameters are DECLARED even though the body ignores them, because
+ * `vi.fn(async () => …)` infers a zero-argument signature and `mock.calls[0][1]` then
+ * fails to typecheck against a tuple of length 0. Naming them is what makes the
+ * "only the foreign one was asked about" assertion below expressible.
+ */
+const gistTranslations = vi.fn(
+  async (_db: unknown, _ids: readonly string[], _locale: string) => new Map<string, string>(),
+);
 vi.mock('@/lib/db/queries/translations', () => ({ gistTranslations }));
 
 vi.mock('@/lib/db/client', () => ({ db: {} }));
@@ -37,7 +45,7 @@ vi.mock('@/lib/analytics/track', () => ({
  * The translator is mocked at the module the deferred callback dynamically imports,
  * so "was a model call made on the request path" is answerable by call count.
  */
-const translateOrCached = vi.fn(async () => ({
+const translateOrCached = vi.fn(async (_args: Record<string, unknown>) => ({
   body: 'the old patch is holding nothing',
   outcome: 'ok' as const,
   fellBack: false,
@@ -143,7 +151,7 @@ describe('recallChain and the recalled gist’s language', () => {
     await recallChain(args('en'));
     await deferred[0]();
 
-    const passed = translateOrCached.mock.calls[0][0] as { sourceUpdatedAt: Date };
+    const passed = translateOrCached.mock.calls[0][0] as unknown as { sourceUpdatedAt: Date };
     expect(passed.sourceUpdatedAt.getTime()).toBe(0);
   });
 

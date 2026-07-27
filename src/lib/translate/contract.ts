@@ -442,7 +442,7 @@ function taskId(a: { sourceLocale: Locale; paragraphs: number; voiced: boolean }
 ${who}
 
 Ini BUKAN penerjemahan kata per kata. Tulis apa yang akan kamu tulis kalau dari awal kamu menulisnya dalam bahasa Indonesia: isinya sama, urutannya sama, tapi kalimatnya kalimat Indonesia, bukan kalimat ${from} yang dipindahkan.
-
+${a.voiced ? `\n${REGISTER_ID}\n` : ''}
 Keluarkan HANYA teks hasilnya. Jangan beri pengantar, jangan beri catatan, jangan sebut bahwa ini terjemahan, dan jangan sertakan teks aslinya.`;
 }
 
@@ -456,9 +456,34 @@ function taskEn(a: { sourceLocale: Locale; paragraphs: number; voiced: boolean }
 ${who}
 
 This is NOT a word-for-word translation. Produce the English you would have written had you written it in English from the start: the same content in the same order, but English sentences, not ${from} sentences moved across.
-
+${a.voiced ? `\n${REGISTER_EN}\n` : ''}
 Output ONLY the resulting text. No preamble, no notes, no mention that this is a translation, and do not include the original.`;
 }
+
+/**
+ * REGISTER IS NOT CARRIED BY THE PERSONA BLOCK ALONE, AND MEASUREMENT IS WHY THIS
+ * PARAGRAPH EXISTS.
+ *
+ * `npm run smoke -- --translate`, first real run: Adrian's English TRANSLATIONS came
+ * back at **0.00 contractions per 100 words** while his native English generation
+ * uses them freely ("What's done", "isn't a tragedy"). His `readers.en.ts` block says
+ * *"Contractions throughout"* in as many words and was being carried verbatim — the
+ * model simply weighted the act of translating above it, which is the register every
+ * translation drifts toward.
+ *
+ * That is roadmap §9's named risk arriving exactly as predicted — *"Margaret
+ * translated by a generic prompt comes back as Thessaly with longer words"* — and it
+ * is invisible to every other check: a flattened Adrian still reproduces every card
+ * name, still hits the paragraph count, still avoids every forbidden word. The
+ * contraction proxy is the only thing that sees it.
+ *
+ * So the voice rules are stated to OUTRANK the source, explicitly, rather than merely
+ * being present. `--translate`'s contraction proxy is what says whether this is still
+ * working; if it regresses, this paragraph is the thing to strengthen, not the check.
+ */
+const REGISTER_EN = `YOUR VOICE RULES OUTRANK THE SOURCE. The text you are reading has its own register, and it is not yours. Punctuation, sentence length, formality, and contractions are governed by your voice rules below and NOT by how the original happened to sound. If your rules ask for contractions, write them throughout even where the source has none; if your rules forbid them, use none even where the source is full of them.`;
+
+const REGISTER_ID = `ATURAN SUARAMU MENGALAHKAN TEKS ASLINYA. Teks yang kamu baca punya register sendiri, dan itu bukan registermu. Panjang kalimat, tanda baca, dan tingkat formalitas ditentukan oleh aturan suaramu di bawah, BUKAN oleh bagaimana teks aslinya terdengar. Kalau aturanmu meminta bahasa sehari-hari, tulis begitu meskipun aslinya kaku; kalau aturanmu meminta kalimat panjang beranak kalimat, tulis begitu meskipun aslinya pendek-pendek.`;
 
 /**
  * The names block. HANDING THE MODEL THE LIST is what makes the mechanical check
