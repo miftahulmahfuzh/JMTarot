@@ -162,7 +162,8 @@ export async function POST(request: Request) {
     }
 
     /*
-     * THREE BUDGETS (W7 §6.7), and they answer with the same copy on purpose:
+     * THREE BUDGETS (W7 §6.7) -- four after V9's ceiling lands below -- and they
+     * answer with the same copy on purpose:
      * telling the querent WHICH ceiling they hit tells a prober which one to
      * work around.
      *
@@ -185,10 +186,19 @@ export async function POST(request: Request) {
       );
     };
 
-    const perUser = hit(user.id);
+    /*
+     * Concurrent, and that is EXACTLY equivalent to the sequential form it
+     * replaces: `hit()` records unconditionally today too -- it is checked first
+     * and `refusalsExhausted()` is a read -- so neither's outcome can change the
+     * other's effect. `hitGlobal()` still runs LAST and still runs alone, because
+     * it RECORDS, and letting one user's rejected requests eat the fleet's budget
+     * is a self-inflicted denial of service for everyone else.
+     *
+     * They are `await`ed at all because V9 made every budget a network call. One
+     * round trip instead of two is the whole reason to pay the `Promise.all`.
+     */
+    const [perUser, probing] = await Promise.all([hit(user.id), refusalsExhausted(user.id)]);
     if (!perUser.ok) return tooManyRequests(perUser.retryAfterSeconds);
-
-    const probing = refusalsExhausted(user.id);
     if (probing) return tooManyRequests(probing.retryAfterSeconds);
 
     /*
@@ -197,7 +207,7 @@ export async function POST(request: Request) {
      * instance's budget -- a self-inflicted denial of service for everybody else
      * on the box.
      */
-    const perInstance = hitGlobal();
+    const perInstance = await hitGlobal();
     if (!perInstance.ok) return tooManyRequests(perInstance.retryAfterSeconds);
 
     /*
@@ -469,8 +479,25 @@ export async function POST(request: Request) {
        * refusal happened. Five in a window and `refusalsExhausted()` starts
        * turning the next request away before it reaches the gate -- which is
        * what stops the endpoint being a free oracle for the pattern list.
+       *
+       * **INSIDE `after()`, AND NOT `await`ed.** V9 made this a network call, and
+       * awaiting it would add a Redis round trip to the latency of a 403 that a
+       * person is waiting for -- in order to record something nothing reads until
+       * their next request. `after()` is the same mechanism the moderation-flag
+       * write four lines above uses, on this same path.
+       *
+       * **NOT A BARE `void hitRefusal(...)`:** a floating promise in a serverless
+       * function may be frozen before it resolves, and the refusal budget would
+       * then silently not record -- turning off W7-D13's anti-oracle control,
+       * invisibly.
+       *
+       * **AND NOT `defer()`, WHICH IS WHAT THE PLAN SAID.** `defer()` opens with
+       * `if (!enabled()) return`, so with `ANALYTICS_ENABLED=0` -- which is the
+       * whole unit-test project, and is one env var away in production -- the
+       * refusal would never be recorded at all. An analytics kill switch must not
+       * be able to disable a security control.
        */
-      hitRefusal(user.id);
+      after(() => hitRefusal(user.id));
 
       track('moderation.refused', {
         // `gated.verdict`, not the `verdict` alias: narrowing follows the

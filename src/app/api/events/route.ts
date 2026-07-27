@@ -79,7 +79,7 @@ export async function POST(request: Request) {
     const declared = Number(request.headers.get('content-length') ?? '0');
     if (declared > MAX_BODY_BYTES) return NO_CONTENT();
 
-    const gate = hit(`events:${clientIp(request)}`, Date.now(), RATE_MAX, RATE_WINDOW_MS);
+    const gate = await hit(`events:${clientIp(request)}`, Date.now(), RATE_MAX, RATE_WINDOW_MS);
     if (!gate.ok) return NO_CONTENT();
 
     const text = await request.text();

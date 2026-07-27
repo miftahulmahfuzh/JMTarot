@@ -242,7 +242,7 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
          * the session endpoint. A throttled refresh returns the STALE token: being
          * a few minutes behind on a flag is fine, handing out DB load is not.
          */
-        const gate = hit(`session-update:${uid}`, Date.now(), 20);
+        const gate = await hit(`session-update:${uid}`, Date.now(), 20);
         if (!gate.ok) return carried;
 
         const facts = await readSessionFacts(db, uid);
