@@ -171,6 +171,44 @@ counter afterwards."* The quota is a rolling 5-hour window. Nothing depends on
 the shape yet, so this is the only cheap moment, and it is Miftah's call because
 the *ceiling number* is his to supply either way.
 
+> **RULED 2026-07-27, by Miftah: THE ROLLING 5-HOUR WINDOW. And the key is on the
+> Pro tier, ~400 prompts / 5h.**
+>
+> So `meter.ts` holds **one rolling window keyed `llm:window`**, not
+> `llm:day:<utc>`, and the env vars are `LLM_WINDOW_CALL_CEILING` (**280**) and
+> `LLM_WINDOW_CALL_SOFT` (defaults to 70% ⇒ **196**). The derivation: 400 prompts
+> per 5 hours × 70% = 280, so deferred work is shed at 196 and readings are
+> refused at 280, leaving ~120 prompts of headroom against a limit **whose
+> exhaustion behaviour we could not observe** (z.ai fact 4). The headroom is the
+> price of that unknown, and it is why the ceiling is not 400.
+>
+> **Three things this deletes rather than changes**, and each is worth saying so
+> nobody re-adds it from §5:
+>
+> 1. **There is no date key, so there is no UTC-vs-local-date question at all.**
+>    §5's header argument and `## Doc amendments`'s second new CLAUDE.md trap are
+>    both about a calendar bucket that no longer exists. The trap is REPLACED, not
+>    dropped — with the reason the window is five hours and not a day, which is
+>    the fact a future session actually needs. `dayKey`/`secondsToReset` become
+>    `windowKey`/`secondsToRetry`, and `meter.test.ts`'s 18:00-UTC case becomes an
+>    assertion that the window slides rather than resetting on a boundary.
+> 2. **A daily ceiling could not have done the job.** A script can burn the whole
+>    5-hour quota in five minutes while a daily counter still reads 400/4000, so
+>    the daily bucket would never have fired before the provider's own limit did —
+>    which is the outage it exists to prevent. This is the substantive reason for
+>    the ruling; matching the provider's shape is the consequence, not the motive.
+> 3. **The memory backend stays cheap.** `Map<string, number[]>` holds one
+>    timestamp per call in the window and filters the array on every request, so a
+>    4000-wide daily bucket is an O(4000) walk per reserved call on the fallback
+>    path. 280 is not.
+>
+> The 7-day quota is **deliberately not modelled** (option 3 was declined): two
+> windows double the meter's share of the Upstash command budget and double the
+> surface of the one control that has to be simple enough to trust at 4am. 280 per
+> 5h is 1344/week against a ~2000 weekly quota, so the 5-hour ceiling already
+> holds the weekly one — and that arithmetic is only true at the Pro tier, so it
+> is restated in `meter.ts` beside the number.
+
 **Everything in Tasks 1–12 is shape-independent** and is built as written.
 
 ### Still OPEN, and what each blocks
