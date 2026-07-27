@@ -89,7 +89,7 @@
     {
       "id": "11",
       "title": "Task 10: Surface the summary on the service picker",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         "10"
       ]
@@ -97,7 +97,7 @@
     {
       "id": "12",
       "title": "Task 11: Extend the smoke script",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         "8",
         "9"
@@ -106,10 +106,17 @@
     {
       "id": "13",
       "title": "Task 12: Read the output and tune",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         "12"
       ]
     }
-  ]
+  ],
+  "completed": "2026-07-27",
+  "findings": {
+    "dilution_inverted": "The chain block was expected to dilute the 40-word paragraph ceiling. Measured with fixed hands: Margaret 312 words without it, 216 with. The block makes her SHORTER -- the instruction restating the ceiling more than pays for the added context.",
+    "pre_existing_regression": "Margaret's spread3 runs at 312 words in the control, against the 128-169 band in CLAUDE.md. Not W5's: the system prompt with memory:null is byte-identical to what shipped before, and there is a test asserting it. Surfaced by W5's new per-paragraph word count. Fixing it means readers.ts or services.ts and its own tuning loop.",
+    "chain_ratio": "2/9 (22%), inside the 15-60% band. Both via the phrase signal, none via the card signal.",
+    "tuning_passes": "Three. Day summary 61->53->43 words for Margaret; frequency line 29->22. Both fixed by the services.ts pattern: a ceiling stated as 'N sentences AND M words, whichever first', bound explicitly on the long-sentence reader, and restated AFTER whatever invites elaboration."
+  }
 }

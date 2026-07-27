@@ -1,6 +1,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { DaySummary } from '@/components/DaySummary';
 import { Eyebrow } from '@/components/Eyebrow';
 import { ReaderViewed } from '@/components/ReaderViewed';
 import { TrackLink } from '@/components/TrackLink';
@@ -54,6 +55,17 @@ export default async function ServicePicker({
       </div>
 
       <p className={styles.bio}>{reader.bio}</p>
+
+      {/* What this reader remembers about today. Renders nothing until the
+          first byte, and nothing at all for a querent who has not read today
+          (M14) -- which is the common case and must stay the cheapest.
+
+          A CLIENT COMPONENT SO THIS PAGE STAYS STATIC. `generateStaticParams`
+          prerenders all three readers; an awaited DB read here would silently
+          make them dynamic, with no error and no warning. `npm run build`
+          listing /thessaly, /margaret and /adrian as prerendered is the
+          canary. */}
+      <DaySummary readerId={reader.id} readerName={reader.name} />
 
       <Eyebrow>Pilih layanan</Eyebrow>
 
