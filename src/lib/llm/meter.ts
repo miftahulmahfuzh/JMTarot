@@ -80,8 +80,14 @@ export const MODEL_WINDOW_MS = 5 * 60 * 60 * 1000;
  * THE RULE, for whoever adds the next model call: if a user is waiting for the
  * bytes, it is interactive. Everything else is deferred, including work that
  * feels important.
+ *
+ * **DECLARED IN `types.ts` AND RE-EXPORTED HERE.** That file has no imports and
+ * must keep none -- `LLMCallOpts` names this type, and every consumer of
+ * `LLMCallOpts` would otherwise pull `next/server` in through this module. See
+ * the comment there.
  */
-export type CallClass = 'interactive' | 'deferred';
+import type { CallClass } from './types';
+export type { CallClass };
 
 export class ModelCeilingError extends Error {
   constructor(readonly tier: 'soft' | 'hard') {

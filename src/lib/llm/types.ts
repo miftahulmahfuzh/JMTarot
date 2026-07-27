@@ -1,4 +1,17 @@
 /**
+ * Which half of the model-call ceiling a call draws on.
+ *
+ * **DEFINED HERE RATHER THAN IN `meter.ts`, WHICH IS WHERE IT BELONGS
+ * CONCEPTUALLY**, because this file has no imports and must keep none: `meter.ts`
+ * reaches `@/lib/ratelimit` and `@/lib/analytics/track`, and therefore
+ * `next/server`, so importing the type from there would drag a request-scoped
+ * runtime into every module that merely names an `LLMCallOpts` -- including
+ * `scripts/`, which has no Next runtime at all. `meter.ts` re-exports it, so
+ * `import type { CallClass } from '@/lib/llm/meter'` still reads correctly.
+ */
+export type CallClass = 'interactive' | 'deferred';
+
+/**
  * What a request to the model looks like once the prompt layer is done with it.
  *
  * Deliberately flat strings rather than provider message objects. Everything
@@ -62,6 +75,23 @@ export type LLMCallOpts = {
    * how this one call is made, not of the prompt that was built.
    */
   temperature?: number;
+  /**
+   * Which half of the model-call ceiling this call draws on (`meter.ts`).
+   *
+   * DEFAULT IS `interactive` AND THAT IS THE SAFE DEFAULT: a new call site that
+   * forgets to say is treated as something a person is waiting for, so the
+   * failure of omission is "shed too late", never "shed a reading early".
+   *
+   * THE RULE: if a user is watching a spinner for these bytes, it is
+   * interactive. Everything that happens in `after()`, or whose absence is a
+   * cache miss nobody can name, is deferred -- and deferred is shed FIRST, so
+   * that a quota running low costs a slightly less specific reading rather than
+   * a 429.
+   *
+   * `meter.test.ts` and `callClass.test.ts` hold the two halves of this: what the
+   * tiers do, and which call site declares what.
+   */
+  callClass?: CallClass;
 };
 
 /**
