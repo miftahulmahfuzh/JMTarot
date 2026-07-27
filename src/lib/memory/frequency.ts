@@ -104,6 +104,69 @@ export function passesGate(result: FrequencyResult): boolean {
   return true;
 }
 
+/** The columns of a cached `frequency_verdicts` row the decision below reads. */
+export type CachedVerdict = {
+  fingerprint: string;
+  promptVersion: string;
+  topCardId: number;
+  secondCardId: number | null;
+};
+
+/**
+ * `fresh` -> serve it. `still-true` -> serve it and regenerate behind the
+ * response. `stale` -> do not serve it at all.
+ */
+export type VerdictCacheState = 'fresh' | 'still-true' | 'stale';
+
+/**
+ * Is this cached verdict servable, and does it need repairing? (V3 §6.2)
+ *
+ * EXTRACTED FROM THE ROUTE BECAUSE IT WAS WRONG THERE, and wrong in a way that
+ * nothing could see. The route computed
+ *
+ *     const fresh = cached?.fingerprint === result.fingerprint;
+ *     const stillTrue = cached !== null && cached.promptVersion === V && ...;
+ *     if (cached && (fresh || stillTrue)) return cached.body;
+ *
+ * and `fresh` short-circuits the `||` WITHOUT LOOKING AT `promptVersion`. A user
+ * whose window has not moved since their last visit -- which is most users on
+ * most page loads, by design -- would be served a `memory-v1` row forever.
+ * Bumping the constant to `memory-v2` would then have changed nothing for
+ * exactly the people who have a cached tally to look at, which is the whole
+ * population this release exists for. `daily_summaries` was always fine:
+ * `isStale()` tests the version first and returns before anything else runs.
+ *
+ * THE VERSION CHECK IS HOISTED ABOVE BOTH BRANCHES, not repeated inside them.
+ * That is the shape that cannot be reintroduced by reordering: a hand-bumped
+ * epoch whose invalidation is half-wired is worse than none, because the half
+ * that works hides the half that does not.
+ *
+ * AND A STALE ROW MUST NOT TAKE THE `still-true` PATH EVEN THOUGH IT NAMES THE
+ * RIGHT PAIR. That branch exists because "the sentence is still TRUE, just
+ * slightly out of date"; a `memory-v1` sentence is not still true, it is the
+ * thing the release exists to delete, and it must not be served even once.
+ *
+ * Pure, and here rather than in `queries/frequency.ts` for that directory's
+ * stated reason: it takes a row, not a handle.
+ */
+export function verdictCacheState(
+  cached: CachedVerdict | null,
+  result: FrequencyResult,
+  promptVersion: string,
+): VerdictCacheState {
+  if (cached === null) return 'stale';
+  if (cached.promptVersion !== promptVersion) return 'stale';
+  if (cached.fingerprint === result.fingerprint) return 'fresh';
+
+  const top = result.ranked[0];
+  const second = result.ranked[1];
+  const samePair =
+    top !== undefined &&
+    cached.topCardId === top.cardId &&
+    cached.secondCardId === (second?.cardId ?? null);
+  return samePair ? 'still-true' : 'stale';
+}
+
 /**
  * How far the top card has pulled ahead of the second, as a WORD (V3-5).
  *

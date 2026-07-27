@@ -38,6 +38,7 @@ import {
   cardFrequency,
   firstPassingWindow,
   passesGate,
+  verdictCacheState,
   type FrequencyResult,
 } from '@/lib/memory/frequency';
 import { VERDICT_LADDER, WINDOWS, type WindowKey } from '@/lib/memory/windows';
@@ -144,21 +145,22 @@ export async function GET(request: Request) {
     const second = result.ranked[1];
     const cached = await getVerdict(db, user.id, result.window, locale);
 
-    const fresh = cached?.fingerprint === result.fingerprint;
     /*
-     * "The pair is unchanged, only the counts moved." The cached line names two
-     * cards and puts one above the other; if those two cards and their order
-     * are the same, the sentence is still TRUE, just slightly out of date. Serve
-     * it and fix it behind the response -- the alternative is making the user
-     * wait for a model call to replace a correct line with a correct line.
+     * ONE DECISION, MADE IN ONE PURE FUNCTION (V3 §6.2). This used to be two
+     * booleans and an `||` here, and the `||` short-circuited past the prompt
+     * version -- so a bump invalidated nothing for the users who had a cached
+     * row and an unchanged window, which is most of them. `verdictCacheState`
+     * hoists the version check above both branches; see its header.
+     *
+     * `still-true` means the pair is unchanged and only the counts moved: the
+     * cached line names two cards and puts one above the other, so the sentence
+     * is still TRUE, just slightly out of date. Serve it and fix it behind the
+     * response, rather than making the user wait for a model call that replaces
+     * a correct line with a correct line.
      */
-    const stillTrue =
-      cached !== null &&
-      cached.promptVersion === MEMORY_PROMPT_VERSION &&
-      cached.topCardId === top.cardId &&
-      cached.secondCardId === second.cardId;
+    const state = verdictCacheState(cached, result, MEMORY_PROMPT_VERSION);
 
-    if (cached && (fresh || stillTrue)) {
+    if (cached && state !== 'stale') {
       track('memory.frequency_shown', {
         window: result.window,
         top_card_id: top.cardId,
@@ -167,7 +169,7 @@ export async function GET(request: Request) {
         cached: true,
       });
 
-      if (!fresh) {
+      if (state === 'still-true') {
         // Counts moved. Regenerate behind the response; nothing waits for it.
         after(() => generate(user.id, locale, result).catch(logFailure));
       }

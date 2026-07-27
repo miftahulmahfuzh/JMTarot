@@ -58,6 +58,23 @@ describe('isStale', () => {
     expect(isStale(row(['a'], 0, 'memory-v0'), ['a'], NOW)).toBe(true);
   });
 
+  it('INVALIDATES EVERY memory-v1 ROW, which is what V3 depends on', () => {
+    /*
+     * The other half of V3 §6.2, asserted here so the pair of behaviours is
+     * visible in one place. `daily_summaries` was always fine -- this function
+     * tests the version FIRST and returns before the throttle runs -- and
+     * `frequency_verdicts` was not, because the route's `fresh` branch
+     * short-circuited past the same check. See `verdictCacheState`.
+     *
+     * The literal is deliberate: writing `'memory-v1'` rather than a computed
+     * "previous version" is what makes this test say something once
+     * `MEMORY_PROMPT_VERSION` moves again.
+     */
+    expect(MEMORY_PROMPT_VERSION).toBe('memory-v2');
+    expect(isStale(row(['a'], 0, 'memory-v1'), ['a'], NOW)).toBe(true);
+    expect(isStale(row(['a'], 999_999, 'memory-v1'), ['a'], NOW)).toBe(true);
+  });
+
   it('ignores an id the row knows that the day no longer has', () => {
     // Readings are never deleted, so this should not arise -- but a shrinking
     // set is not a reason to regenerate, and treating it as one would loop.

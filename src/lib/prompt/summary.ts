@@ -37,8 +37,16 @@ import { FORMAT_RULES } from './base';
  * cached summary on a whitespace edit; a hand-bumped epoch invalidates them when
  * a human decides the words changed enough to matter, which is the actual
  * question being asked.
+ *
+ * BUMPED TO `memory-v2` BY V3, AND THE BUMP ONLY WORKS BECAUSE OF A ONE-LINE
+ * ROUTE FIX THAT SHIPPED WITH IT. `/api/memory/frequency` used to decide
+ * freshness with `cached?.fingerprint === result.fingerprint` short-circuiting
+ * an `||` past the version check, so a `memory-v1` row survived every bump for
+ * any user whose window had not moved -- which is most users on most page
+ * loads. See `verdictCacheState` in `src/lib/memory/frequency.ts`. Every cached
+ * tally has to die on this bump; that is the release.
  */
-export const MEMORY_PROMPT_VERSION = 'memory-v1';
+export const MEMORY_PROMPT_VERSION = 'memory-v2';
 
 /** M4's runaway guard on the verdict, and the number the prompt states. */
 export const FREQUENCY_MAX_WORDS = 25;
