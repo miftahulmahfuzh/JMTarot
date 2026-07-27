@@ -50,3 +50,14 @@ tools/_contactsheet.jpg
 # ...but .env.example is the documentation for every variable and is committed.
 # `.env*` would otherwise silently swallow it, and any sibling added later.
 !.env.example
+
+# Card-art candidates from /generate-tarot-card. Scratch by definition: 3MB PNGs,
+# many per card, and only the promoted one matters. Promotion copies it up into
+# assets/major_arcanas/, which IS committed.
+assets/major_arcanas/_candidates/
+
+# tools/check_card_art.py imports normalize_cards.py, which creates this.
+__pycache__/
+
+# EnterWorktree creates isolated worktrees here. Never part of a commit.
+.claude/worktrees/
