@@ -8,18 +8,108 @@
     "cross_reader_recall": "Left as M12 specifies: on by default, with the reader named in the block. Plan open question 5 stays open pending one real read on hardware."
   },
   "tasks": [
-    { "id": "1", "title": "Task 0: W4/W6 seams", "status": "pending", "blockedBy": [] },
-    { "id": "2", "title": "Task 1: Window configuration and the date maths", "status": "pending", "blockedBy": [] },
-    { "id": "3", "title": "Task 2: The frequency query and the gate", "status": "pending", "blockedBy": ["2"] },
-    { "id": "4", "title": "Task 3: The verdict prose and the frequency endpoint", "status": "pending", "blockedBy": ["1", "3"] },
-    { "id": "5", "title": "Task 4: Surface the verdict on the reader picker", "status": "pending", "blockedBy": ["4"] },
-    { "id": "6", "title": "Task 5: The gist", "status": "pending", "blockedBy": ["1"] },
-    { "id": "7", "title": "Task 6: The chain block", "status": "pending", "blockedBy": ["6"] },
-    { "id": "8", "title": "Task 7: The callback detector", "status": "pending", "blockedBy": ["7"] },
-    { "id": "9", "title": "Task 8: The summary prompts", "status": "pending", "blockedBy": ["1", "4"] },
-    { "id": "10", "title": "Task 9: The summary cache and endpoint", "status": "pending", "blockedBy": ["9"] },
-    { "id": "11", "title": "Task 10: Surface the summary on the service picker", "status": "pending", "blockedBy": ["10"] },
-    { "id": "12", "title": "Task 11: Extend the smoke script", "status": "pending", "blockedBy": ["8", "9"] },
-    { "id": "13", "title": "Task 12: Read the output and tune", "status": "pending", "blockedBy": ["12"] }
+    {
+      "id": "1",
+      "title": "Task 0: W4/W6 seams",
+      "status": "completed",
+      "blockedBy": []
+    },
+    {
+      "id": "2",
+      "title": "Task 1: Window configuration and the date maths",
+      "status": "completed",
+      "blockedBy": []
+    },
+    {
+      "id": "3",
+      "title": "Task 2: The frequency query and the gate",
+      "status": "completed",
+      "blockedBy": [
+        "2"
+      ]
+    },
+    {
+      "id": "4",
+      "title": "Task 3: The verdict prose and the frequency endpoint",
+      "status": "completed",
+      "blockedBy": [
+        "1",
+        "3"
+      ]
+    },
+    {
+      "id": "5",
+      "title": "Task 4: Surface the verdict on the reader picker",
+      "status": "pending",
+      "blockedBy": [
+        "4"
+      ]
+    },
+    {
+      "id": "6",
+      "title": "Task 5: The gist",
+      "status": "pending",
+      "blockedBy": [
+        "1"
+      ]
+    },
+    {
+      "id": "7",
+      "title": "Task 6: The chain block",
+      "status": "pending",
+      "blockedBy": [
+        "6"
+      ]
+    },
+    {
+      "id": "8",
+      "title": "Task 7: The callback detector",
+      "status": "pending",
+      "blockedBy": [
+        "7"
+      ]
+    },
+    {
+      "id": "9",
+      "title": "Task 8: The summary prompts",
+      "status": "pending",
+      "blockedBy": [
+        "1",
+        "4"
+      ]
+    },
+    {
+      "id": "10",
+      "title": "Task 9: The summary cache and endpoint",
+      "status": "pending",
+      "blockedBy": [
+        "9"
+      ]
+    },
+    {
+      "id": "11",
+      "title": "Task 10: Surface the summary on the service picker",
+      "status": "pending",
+      "blockedBy": [
+        "10"
+      ]
+    },
+    {
+      "id": "12",
+      "title": "Task 11: Extend the smoke script",
+      "status": "pending",
+      "blockedBy": [
+        "8",
+        "9"
+      ]
+    },
+    {
+      "id": "13",
+      "title": "Task 12: Read the output and tune",
+      "status": "pending",
+      "blockedBy": [
+        "12"
+      ]
+    }
   ]
 }

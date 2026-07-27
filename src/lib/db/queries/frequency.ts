@@ -11,9 +11,10 @@
  * fingerprint and the gate in `src/lib/memory/frequency.ts`. This file is the
  * two scans and nothing else.
  */
-import { and, between, count, eq, sql } from 'drizzle-orm';
+import { and, between, count, eq, inArray, sql } from 'drizzle-orm';
+import type { Locale } from '@/data/types';
 import type { DbOrTx } from '../types';
-import { readingCards } from '../schema';
+import { frequencyVerdicts, readingCards, type FrequencyVerdict } from '../schema';
 
 export type CardCount = {
   cardId: number;
@@ -45,9 +46,18 @@ export type CardCount = {
  * querent's days, not the server's hours, and the whole reason `local_date` is
  * denormalized onto this table is so this stays a single-table scan.
  *
- * Served as an index-only scan by `reading_cards_user_date_card_idx`, then a
- * hash aggregate over at most 22 groups. The window is the ONLY thing that
- * varies between W5's eight cases, which is the point of M1.
+ * Served by `reading_cards_user_date_card_idx`, then a hash aggregate over at
+ * most 22 groups. The window is the ONLY thing that varies between W5's eight
+ * cases, which is the point of M1.
+ *
+ * AN INDEX SCAN, NOT AN INDEX ONLY SCAN, and W5's §3.2 claim of "one index-only
+ * scan" is wrong: the `filter (where reversed)` aggregate references a column
+ * the index does not carry, so matching rows still need a heap fetch. Measured
+ * on 45,000 card rows across 300 users, the 666-day window plans as a bitmap
+ * index scan with both date bounds in the `Index Cond` and executes in 0.12ms,
+ * so this is a note rather than a problem. Making it genuinely index-only means
+ * `include (reversed)` on the index -- W1's table, W1's migration, and not
+ * worth writing until the table is big enough to measure.
  *
  * Reconciliation R7: failed and aborted readings DO count -- the querent drew
  * those cards, and the verdict is about what the deck keeps giving them, not
@@ -119,4 +129,105 @@ export async function readingsInWindow(
       and(eq(readingCards.userId, userId), between(readingCards.localDate, since, until)),
     );
   return Number(row?.n ?? 0);
+}
+
+// ---------------------------------------------------------------------------
+// The verdict cache (§3.4)
+//
+// `frequency_verdicts` and not `daily_summaries`: that table is keyed by day
+// and reader, and this is keyed by window and neither.
+// ---------------------------------------------------------------------------
+
+/** A cache miss is `null` and is not an error -- it is the first page load. */
+export async function getVerdict(
+  db: DbOrTx,
+  userId: string,
+  windowKey: string,
+  locale: Locale,
+): Promise<FrequencyVerdict | null> {
+  const [row] = await db
+    .select()
+    .from(frequencyVerdicts)
+    .where(
+      and(
+        eq(frequencyVerdicts.userId, userId),
+        eq(frequencyVerdicts.windowKey, windowKey),
+        eq(frequencyVerdicts.locale, locale),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * Insert, or replace the line in place.
+ *
+ * `updatedAt` IS SET BY HAND. Drizzle's `$onUpdate()` fires on `db.update()`
+ * and NOT inside `onConflictDoUpdate` -- the trap CLAUDE.md records and the
+ * same one `putDailySummary` and `upsertProfile` each pay for. Drop the line
+ * and the column freezes at the first insert.
+ */
+export async function upsertVerdict(
+  db: DbOrTx,
+  input: {
+    userId: string;
+    windowKey: string;
+    locale: Locale;
+    fingerprint: string;
+    topCardId: number;
+    secondCardId: number;
+    body: string;
+    model: string;
+    promptVersion: string;
+  },
+): Promise<void> {
+  await db
+    .insert(frequencyVerdicts)
+    .values(input)
+    .onConflictDoUpdate({
+      target: [frequencyVerdicts.userId, frequencyVerdicts.windowKey, frequencyVerdicts.locale],
+      set: {
+        fingerprint: input.fingerprint,
+        topCardId: input.topCardId,
+        secondCardId: input.secondCardId,
+        body: input.body,
+        model: input.model,
+        promptVersion: input.promptVersion,
+        updatedAt: new Date(),
+      },
+    });
+}
+
+/**
+ * Drop cached verdicts for one or more windows.
+ *
+ * Called when a window that USED to qualify no longer does (§3.4's last row): a
+ * rolling window slides past the readings that qualified it, and a stale row
+ * would keep asserting a pattern that has stopped existing.
+ *
+ * TAKES A LIST because of how the ladder fails. When `firstPassingWindow`
+ * returns null it has rejected all four ladder windows, and any of them could
+ * be holding a row from the week it did qualify. One statement with an `in`
+ * clause is one round trip on the "nothing to show" path -- which is also the
+ * path with no model call and nothing to render, so it is the cheapest place in
+ * the feature to spend a write.
+ *
+ * A no-op when nothing matches, which is the overwhelming majority of calls.
+ */
+export async function deleteVerdicts(
+  db: DbOrTx,
+  userId: string,
+  windowKeys: readonly string[],
+  locale: Locale,
+): Promise<void> {
+  if (windowKeys.length === 0) return;
+  await db
+    .delete(frequencyVerdicts)
+    .where(
+      and(
+        eq(frequencyVerdicts.userId, userId),
+        inArray(frequencyVerdicts.windowKey, [...windowKeys]),
+        eq(frequencyVerdicts.locale, locale),
+      ),
+    );
 }

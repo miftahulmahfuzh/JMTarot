@@ -16,15 +16,17 @@
 import { sql } from 'drizzle-orm';
 import { afterAll, describe, expect, it } from 'vitest';
 import { users } from '@/lib/db/schema';
-import { closeTestDb, testDb, withRollback } from '@/lib/db/testing/harness';
+import { closeTestDb, withRollback } from '@/lib/db/testing/harness';
 import type { Tx } from '@/lib/db/types';
+import { cardFrequency, firstPassingWindow, passesGate } from '@/lib/memory/frequency';
+import { VERDICT_LADDER } from '@/lib/memory/windows';
 import {
-  cardFrequency,
-  firstPassingWindow,
-  passesGate,
-  rankCounts,
-} from '@/lib/memory/frequency';
-import { cardCounts, readingsInWindow } from './frequency';
+  cardCounts,
+  deleteVerdicts,
+  getVerdict,
+  readingsInWindow,
+  upsertVerdict,
+} from './frequency';
 import { insertReading } from './history';
 
 afterAll(closeTestDb);
@@ -358,6 +360,116 @@ describe('the query plan', () => {
       // Both bounds pushed into the index, not re-checked as a heap filter.
       expect(plan).toMatch(/Index Cond:.*local_date/s);
       expect(plan).toMatch(/Index Cond:.*user_id/s);
+    });
+  });
+});
+
+describe('the verdict cache', () => {
+  const row = {
+    windowKey: 'week',
+    locale: 'id' as const,
+    fingerprint: 'fp-1',
+    topCardId: 8,
+    secondCardId: 12,
+    body: 'Minggu ini Strength berdiri di atas The Hanged Man.',
+    model: 'test',
+    promptVersion: 'memory-v1',
+  };
+
+  it('round-trips a verdict', async () => {
+    await withRollback(async (tx) => {
+      const userId = await makeUser(tx, 'verdict-rt');
+      expect(await getVerdict(tx, userId, 'week', 'id')).toBeNull();
+
+      await upsertVerdict(tx, { userId, ...row });
+      const got = await getVerdict(tx, userId, 'week', 'id');
+      expect(got?.body).toBe(row.body);
+      expect(got?.fingerprint).toBe('fp-1');
+      expect(got?.topCardId).toBe(8);
+    });
+  });
+
+  it('is keyed by window AND locale, so the three do not collide', async () => {
+    await withRollback(async (tx) => {
+      const userId = await makeUser(tx, 'verdict-key');
+      await upsertVerdict(tx, { userId, ...row });
+      await upsertVerdict(tx, { userId, ...row, windowKey: 'year', body: 'tahun' });
+      await upsertVerdict(tx, { userId, ...row, locale: 'en', body: 'english' });
+
+      expect((await getVerdict(tx, userId, 'week', 'id'))?.body).toBe(row.body);
+      expect((await getVerdict(tx, userId, 'year', 'id'))?.body).toBe('tahun');
+      expect((await getVerdict(tx, userId, 'week', 'en'))?.body).toBe('english');
+    });
+  });
+
+  it('replaces the line in place and MOVES updated_at', async () => {
+    /*
+     * The `$onUpdate()` trap CLAUDE.md records: Drizzle fires it on
+     * `db.update()` and NOT inside `onConflictDoUpdate`, so without the
+     * hand-set `updatedAt` the column freezes at the first insert. Nothing
+     * reads it on this table today, which is exactly why the freeze would go
+     * unnoticed until something did.
+     */
+    await withRollback(async (tx) => {
+      const userId = await makeUser(tx, 'verdict-upsert');
+      await upsertVerdict(tx, { userId, ...row });
+      const first = await getVerdict(tx, userId, 'week', 'id');
+
+      await new Promise((r) => setTimeout(r, 5));
+      await upsertVerdict(tx, {
+        userId,
+        ...row,
+        fingerprint: 'fp-2',
+        secondCardId: 3,
+        body: 'baris baru',
+      });
+
+      const second = await getVerdict(tx, userId, 'week', 'id');
+      expect(second?.body).toBe('baris baru');
+      expect(second?.fingerprint).toBe('fp-2');
+      expect(second?.secondCardId).toBe(3);
+      // One row, not two.
+      expect(second?.id).toBe(first?.id);
+      expect(second!.updatedAt.getTime()).toBeGreaterThan(first!.updatedAt.getTime());
+    });
+  });
+
+  it('deletes every ladder window in one statement', async () => {
+    // The "nothing qualifies any more" path: a rolling window slid past the
+    // readings that qualified it and the stale line must not survive.
+    await withRollback(async (tx) => {
+      const userId = await makeUser(tx, 'verdict-del');
+      for (const w of ['week', 'd13', 'month', 'year']) {
+        await upsertVerdict(tx, { userId, ...row, windowKey: w });
+      }
+      await upsertVerdict(tx, { userId, ...row, windowKey: 'd666' });
+
+      await deleteVerdicts(tx, userId, VERDICT_LADDER, 'id');
+
+      for (const w of ['week', 'd13', 'month', 'year']) {
+        expect(await getVerdict(tx, userId, w, 'id'), w).toBeNull();
+      }
+      // Not on the ladder, so untouched.
+      expect(await getVerdict(tx, userId, 'd666', 'id')).not.toBeNull();
+    });
+  });
+
+  it('deleting nothing is a no-op, not an error', async () => {
+    await withRollback(async (tx) => {
+      const userId = await makeUser(tx, 'verdict-del-empty');
+      await expect(deleteVerdicts(tx, userId, [], 'id')).resolves.toBeUndefined();
+      await expect(deleteVerdicts(tx, userId, VERDICT_LADDER, 'id')).resolves.toBeUndefined();
+    });
+  });
+
+  it('does not delete another user’s rows', async () => {
+    await withRollback(async (tx) => {
+      const mine = await makeUser(tx, 'verdict-mine');
+      const theirs = await makeUser(tx, 'verdict-theirs');
+      await upsertVerdict(tx, { userId: theirs, ...row });
+
+      await deleteVerdicts(tx, mine, VERDICT_LADDER, 'id');
+      expect(await getVerdict(tx, theirs, 'week', 'id')).not.toBeNull();
     });
   });
 });
