@@ -51,6 +51,7 @@
  * makes that unforgettable.
  */
 import { memoryBackend, _memorySizes, _resetMemory } from './memory';
+import { redisBackend, redisConfigured } from './redis';
 import type { RateLimitBackend, RateLimitResult } from './types';
 
 export type { RateLimitResult } from './types';
@@ -122,6 +123,14 @@ function num(name: string, fallback: number): number {
  * freeze the answer at import, which is fine in production -- the env does not
  * change under a running function -- and makes it untestable without
  * `vi.resetModules()` around every case.
+ *
+ * **IT MATCHES `read:events:` AS WELL AS `events:`, AND THAT IS NOT BELT AND
+ * BRACES.** `hit()` applies its own `read:` prefix before `backendFor()` sees the
+ * key, so the string arriving here is `read:events:<ip>`. The plan's §4 code
+ * tests `startsWith('events:')` alone, which is FALSE against that -- it would
+ * have put the app's highest-volume endpoint on Redis, the exact opposite of what
+ * the paragraph above argues for. The bare form is kept in case a caller ever
+ * reaches `peek('events:...')`, which takes no prefix.
  */
 function memoryOnly(key: string): boolean {
   if (process.env.RATELIMIT_EVENTS_BACKEND === 'redis') return false;
@@ -133,19 +142,24 @@ function memoryOnly(key: string): boolean {
  *
  * `RATELIMIT_BACKEND=memory` forces everything local -- for `npm run dev`
  * without an Upstash account, and as the 2am kill switch if the limiter itself
- * is the problem. Same shape and same reason as
- * `MODERATION_CLASSIFIER_ENABLED`.
+ * is the problem. Same shape as `MODERATION_CLASSIFIER_ENABLED`, and note the
+ * defaulting rule is the OPPOSITE of `ANALYTICS_ENABLED`'s on purpose: there a
+ * typo must over-collect, here a typo must not silently disable enforcement, so
+ * only the exact string `memory` does anything.
  *
- * **TASK 10 WIRES THE REDIS BRANCH.** Until then this returns memory
- * unconditionally, which is v0.2.0's behaviour exactly -- the point of landing
- * the async facade before the backend is that the seven call sites move in one
- * commit that cannot change any limit.
+ * **WITH THE UPSTASH VARIABLES ABSENT, EVERY BUDGET IS PER-INSTANCE MEMORY.**
+ * That is v0.2.0's behaviour, it is what `npm test` and a local `npm run dev`
+ * get, and it is NOT what production should be -- `docs/DEPLOY-VERCEL.md` §2b
+ * says so, because the failure is silent and the app looks perfectly healthy.
  */
 let override: RateLimitBackend | null = null;
 
-function backendFor(_key: string): RateLimitBackend {
+function backendFor(key: string): RateLimitBackend {
   if (override) return override;
-  return memoryBackend;
+  if (process.env.RATELIMIT_BACKEND === 'memory') return memoryBackend;
+  if (!redisConfigured()) return memoryBackend;
+  if (memoryOnly(key)) return memoryBackend;
+  return redisBackend();
 }
 
 /**
@@ -305,6 +319,16 @@ export function _reset() {
 }
 export function _setBackend(b: RateLimitBackend | null) {
   override = b;
+}
+/**
+ * Test seam: which backend a key WOULD use, without making a call.
+ *
+ * `_setBackend` cannot test selection, because it overrides it. This is the only
+ * way to assert that `read:events:` goes to memory while `read:<uid>` goes to
+ * Redis -- which is a decision with an argument behind it, not an accident.
+ */
+export function _backendNameFor(key: string): 'memory' | 'redis' {
+  return backendFor(key).name;
 }
 export function _sizes() {
   return _memorySizes();
