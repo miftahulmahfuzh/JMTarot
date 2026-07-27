@@ -221,3 +221,84 @@ describe('the moderation redaction, from the cron side', () => {
     });
   });
 });
+
+/**
+ * THE FOURTH DELETE, AND THE ORDER IT RUNS IN (V2 §8).
+ *
+ * Unlike the other three, this one is a real query function rather than inline SQL
+ * — `deleteOrphanTranslations` lives in `queries/`, carries no `server-only`, and
+ * has its own integration test. So there is nothing to duplicate here. What is
+ * tested is the thing only the composition can show: **that a translation orphaned
+ * by the user purge in THIS invocation is gone by the end of it.**
+ *
+ * That is the assertion that pins the ordering. The existing header says the order
+ * matters and is not alphabetical: erasure runs FIRST so a purged user's rows are
+ * gone before the other sweeps walk the same tables. The extension is exact — the
+ * purge CASCADEs `readings` away, and their translations (which have NO foreign key
+ * and so are not reached by the cascade) become orphans DURING the run. Reaping last
+ * catches them the same night; reaping first leaves them a day.
+ */
+describe('the orphaned-translation sweep, and its place in the order', () => {
+  it('reaps a translation orphaned by the user purge in the SAME invocation', async () => {
+    await withRollback(async (tx) => {
+      const { deleteOrphanTranslations, putTranslation } = await import(
+        '@/lib/db/queries/translations'
+      );
+      const { insertReading } = await import('@/lib/db/queries/history');
+
+      // A user erased longer ago than the grace period: the purge will take them.
+      const doomedUser = await makeUser(tx, 'dev:sweep-tx-doomed', ERASURE_GRACE_DAYS + 5);
+      const livingUser = await makeUser(tx, 'dev:sweep-tx-living');
+
+      const ids: string[] = [];
+      for (const userId of [doomedUser, livingUser]) {
+        const row = await insertReading(
+          tx,
+          {
+            userId,
+            readerId: 'thessaly',
+            serviceId: 'spread3',
+            locale: 'id',
+            localDate: '2026-07-27',
+            body: 'Bacaan.',
+            model: 'glm-4.6',
+            promptVersion: 'id-v1.deadbeef',
+            status: 'ok',
+          },
+          [{ cardId: 1, reversed: false, position: 0 }],
+        );
+        ids.push(row.id);
+        await putTranslation(tx, {
+          entity: 'reading',
+          entityId: row.id,
+          field: 'body',
+          sourceLocale: 'id',
+          locale: 'en',
+          body: 'The reading.',
+          model: 'glm-4.6',
+          promptVersion: 'translate-v1',
+        });
+      }
+
+      // THE ROUTE'S ORDER: purge first, reap last.
+      await tx.execute(PURGE_USERS(ERASURE_GRACE_DAYS));
+
+      /*
+       * The cascade took the reading. It did NOT take the translation -- there is no
+       * foreign key on `entity_id`, which is the deliberate cost of one generic
+       * table and the entire reason this delete exists.
+       */
+      const stranded = await tx.execute<{ n: number }>(
+        sql`select count(*)::int as n from translations where entity_id = ${ids[0]}`,
+      );
+      expect(stranded[0].n).toBe(1);
+
+      expect(await deleteOrphanTranslations(tx)).toBe(1);
+
+      const left = await tx.execute<{ entity_id: string }>(
+        sql`select entity_id from translations`,
+      );
+      expect(left.map((r) => r.entity_id)).toEqual([ids[1]]);
+    });
+  });
+});
