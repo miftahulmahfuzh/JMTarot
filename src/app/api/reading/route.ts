@@ -8,6 +8,7 @@ import { MAX_QUESTION_LENGTH, sanitizeQuestion } from '@/lib/prompt/sanitize';
 import { tFor } from '@/lib/i18n/catalog';
 import { getLocale } from '@/lib/i18n/t';
 import { hit, hitGlobal, hitRefusal, refusalsExhausted } from '@/lib/ratelimit';
+import { reserveModelCall } from '@/lib/llm/meter';
 import { gateReading } from '@/lib/moderation/gate';
 import { recordModerationFlag } from '@/lib/moderation/log';
 import { persistReading, touchLastSeen } from '@/lib/analytics/flush';
@@ -162,23 +163,36 @@ export async function POST(request: Request) {
     }
 
     /*
-     * THREE BUDGETS (W7 §6.7) -- four after V9's ceiling lands below -- and they
-     * answer with the same copy on purpose:
-     * telling the querent WHICH ceiling they hit tells a prober which one to
-     * work around.
+     * FOUR BUDGETS NOW (V9), and they still answer with the same copy on
+     * purpose: telling the querent WHICH ceiling they hit tells a prober which
+     * one to work around. The EVENT distinguishes them -- see `limit` below --
+     * because that is server-side and a prober cannot read it.
      *
-     *   hit()             one person holding the button down.
-     *   refusalsExhausted() somebody mapping the blocklist one probe at a time
-     *                     (W7-D13). A READ, not a record -- `hitRefusal()` is
-     *                     called later, only when a refusal actually happens.
-     *   hitGlobal()       fifty throwaway Google accounts each bringing their
-     *                     own budget, which the per-user limiter cannot see.
+     *   hit()               one person holding the button down.
+     *   refusalsExhausted() somebody mapping the blocklist (W7-D13). A READ, not
+     *                       a record -- `hitRefusal()` is called later, only when
+     *                       a refusal actually happens.
+     *   hitGlobal()         a crowd -- fifty throwaway Google accounts each
+     *                       bringing their own budget, which the per-user limiter
+     *                       cannot see. Now fleet-wide rather than per-instance.
+     *   reserveModelCall()  THE WINDOW'S QUOTA. **This is the one that replaces
+     *                       the z.ai spend cap, which does not exist on a
+     *                       subscription plan.** Last, and it RECORDS.
+     *
+     * **THE READING RESERVES HERE AND NOT IN THE `complete()` DECORATOR**, and
+     * `src/lib/llm/index.ts` has the argument: wrapping a stream means rebuilding
+     * `usage`'s "must always settle, must never reject" contract by hand, and this
+     * is the only place that can turn a refusal into a 429 with a `retry-after`.
      */
-    const tooManyRequests = (retryAfterSeconds: number) => {
+    const tooManyRequests = (
+      retryAfterSeconds: number,
+      limit: 'user' | 'refusal' | 'global' | 'daily',
+    ) => {
       track('reading.rate_limited', {
         reader_id: '?',
         service_id: '?',
         retry_after_s: retryAfterSeconds,
+        limit,
       });
       return NextResponse.json(
         { error: t('reading.error.rateLimit') },
@@ -198,17 +212,33 @@ export async function POST(request: Request) {
      * round trip instead of two is the whole reason to pay the `Promise.all`.
      */
     const [perUser, probing] = await Promise.all([hit(user.id), refusalsExhausted(user.id)]);
-    if (!perUser.ok) return tooManyRequests(perUser.retryAfterSeconds);
-    if (probing) return tooManyRequests(probing.retryAfterSeconds);
+    if (!perUser.ok) return tooManyRequests(perUser.retryAfterSeconds, 'user');
+    if (probing) return tooManyRequests(probing.retryAfterSeconds, 'refusal');
 
     /*
-     * LAST, because it RECORDS. Checking the instance ceiling before the two
-     * per-user gates would let one user's rejected requests eat the whole
-     * instance's budget -- a self-inflicted denial of service for everybody else
-     * on the box.
+     * THE CROWD, before the day's quota. Both record, so the order between them
+     * is a judgement: this one is cheap to be wrong about -- a burst guard at
+     * 1200/h -- and the quota is the scarce thing, so the scarce one is spent
+     * last and only for a request that has passed everything else.
      */
-    const perInstance = await hitGlobal();
-    if (!perInstance.ok) return tooManyRequests(perInstance.retryAfterSeconds);
+    const perFleet = await hitGlobal();
+    if (!perFleet.ok) return tooManyRequests(perFleet.retryAfterSeconds, 'global');
+
+    /*
+     * **THE DAY'S QUOTA, AND IT IS THE REPLACEMENT FOR A SPEND CAP THAT DOES NOT
+     * EXIST.** `retry-after` here is measured in HOURS, which is correct and is
+     * the honest answer: the provider's window is five hours long and no amount
+     * of retrying inside it will help.
+     *
+     * `interactive`, because somebody is watching a spinner. That is what puts it
+     * on the far side of the soft tier: deferred work -- gists, day summaries,
+     * frequency verdicts -- is already being shed by the time a reading is
+     * refused, so a querent seeing this 429 means the shedding was not enough.
+     */
+    const quota = await reserveModelCall('interactive');
+    if (!quota.ok && quota.tier === 'hard') {
+      return tooManyRequests(quota.retryAfterSeconds, 'daily');
+    }
 
     /*
      * Every early return below buffers ONE event and nothing else. The response

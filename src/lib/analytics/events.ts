@@ -181,7 +181,25 @@ export type EventMap = {
   'reading.aborted':           { reading_id: string; chars_before_abort: number;
                                  reason: 'user' | 'navigation' | 'timeout'; source: EventSource };
   'reading.retried':           { reader_id: string; service_id: string; attempt: number };
-  'reading.rate_limited':      { reader_id: string; service_id: string; retry_after_s: number };
+  /*
+   * `limit` IS V9's ADDITION, AND IT IS NOT A WIDENING OF WHAT IS COLLECTED ABOUT
+   * A PERSON. The route deliberately answers all four ceilings with identical
+   * copy, because telling the querent which one they hit tells a prober which one
+   * to work around. The event is server-side and a prober cannot read it, so
+   * there is no reason for the DATA to be as coy as the RESPONSE -- and without
+   * it, `reading.rate_limited` in query 9 cannot distinguish "one user is
+   * hammering" from "the window's quota is gone", which are the two most
+   * different things it can mean.
+   *
+   * **`'unknown'` IS THE CLIENT'S VALUE AND IT IS NOT A GAP.** `Draw.tsx` fires
+   * this name too, from a 429 whose body and headers deliberately do not say which
+   * ceiling was hit -- that coyness is the anti-prober decision above, and the
+   * browser is exactly the place it applies. So the client reports honestly that
+   * it was not told. Filter on `limit <> 'unknown'` when attributing a cause, and
+   * on `limit = 'unknown'` to count what a querent actually experienced.
+   */
+  'reading.rate_limited':      { reader_id: string; service_id: string; retry_after_s: number;
+                                 limit: 'user' | 'refusal' | 'global' | 'daily' | 'unknown' };
 
   /*
    * W5's memory features.
