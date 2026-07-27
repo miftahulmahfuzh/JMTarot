@@ -5,6 +5,9 @@
  *   npm run smoke -- --all             EIGHTEEN readings: both locales x 3 x 3
  *   npm run smoke -- --all --locale en NINE, one locale, for iterating
  *   npm run smoke -- --all --fixed     same hands, so two runs can be diffed
+ *   npm run smoke -- --frequency       TWELVE verdicts: 6 card pairs x 2 locales
+ *   npm run smoke -- --summary         SIX summaries: 3 readers x 2 locales
+ *   npm run smoke -- --frequency --locale id   half of either, for iterating
  *
  * The cheapest possible confirmation that LLM_API_KEY, LLM_BASE_URL and
  * LLM_MODEL are all correct, isolated from every UI question. Run it before
@@ -179,6 +182,18 @@ async function main() {
 
   const all = process.argv.includes('--all');
   const locales: Locale[] = localeArg ? [localeArg] : all ? [...LOCALES] : ['id'];
+
+  /*
+   * THE SIDE RUNNERS DEFAULT TO BOTH LOCALES, WHERE A BARE READING RUN DEFAULTS
+   * TO `id` (V3 Task 13).
+   *
+   * `--summary` already looped both and `--frequency` HARDCODED `'id'`, which was
+   * a gap against VD2's "in both locales": the anti-tally work is checked in the
+   * language nobody was checking. Neither of these is nine model calls, so
+   * running both halves by default costs little and hiding half the risk costs a
+   * lot. `--locale en` narrows either, the same flag `--all` already takes.
+   */
+  const sideLocales: Locale[] = localeArg ? [localeArg] : [...LOCALES];
   const lotus = process.argv.includes('--lotus');
   const memory = process.argv.includes('--memory');
   const summary = process.argv.includes('--summary');
@@ -212,7 +227,7 @@ async function main() {
      day and has nothing to do with the nine readings. It composes with `--all`
      -- run both and you get the nine, then the six. */
   if (summary) {
-    await runSummary();
+    await runSummary(sideLocales);
     if (!all) return;
   }
 
@@ -220,7 +235,7 @@ async function main() {
      pairs, which is the only way to find out whether the angle rotation
      actually bites or whether the line reads the same every time. */
   if (frequency) {
-    await runFrequency();
+    await runFrequency(sideLocales);
     if (!all) return;
   }
 
@@ -1203,11 +1218,15 @@ function memoryFixture(picks: Array<{ id: number; reversed: boolean }>): MemoryC
  * Printed adjacently, and in both locales, so covering the names is one glance
  * rather than six scrolls.
  */
-async function runSummary() {
-  const { buildDaySummaryPrompt } = await import('@/lib/prompt/summary');
+async function runSummary(locales: Locale[]) {
+  const { buildDaySummaryPrompt, summaryMaxWords, echoToday } =
+    await import('@/lib/prompt/summary');
+  const { dayShadowFor } = await import('@/lib/memory/shadow');
+  const { tallyProblems } = await import('@/lib/memory/tally');
+  const { MALAY } = await import('@/lib/copy/vocab');
   const { READERS } = await import('@/data/readers');
 
-  /* One day with a repeated card, so the BERULANG line is exercised -- the
+  /* One day with a repeated card, so the BERGEMA line is exercised -- the
      prompt calls that "the thing most worth naming", so a fixture without one
      would skip the branch the output most depends on. */
   const day = [
@@ -1241,15 +1260,15 @@ async function runSummary() {
     },
   ];
 
-  const malay = [
-    'kerjaya', 'hala tuju', 'sembang', 'awak',
-    'tempoh', 'kerana', 'iaitu', 'ianya', 'manakala', 'seronok', 'kelmarin',
-  ];
   const problems: string[] = [];
+  const echoes = echoToday(day);
+  const dayShadow = dayShadowFor(day.flatMap((r) => r.cards.map((c) => c.cardId)));
 
-  for (const locale of ['id', 'en'] as const) {
+  for (const locale of locales) {
     process.stdout.write(
-      `\n${'#'.repeat(70)}\nDAY SUMMARY -- ${locale.toUpperCase()}\n${'#'.repeat(70)}\n`,
+      `\n${'#'.repeat(70)}\nDAY SUMMARY -- ${locale.toUpperCase()}\n${'#'.repeat(70)}\n` +
+        `echo: ${echoes.map((id) => CARDS[id].name).join(', ') || '(none)'}` +
+        `   shadow: ${dayShadow?.name ?? '(collides, omitted)'}\n`,
     );
     for (const r of READERS) {
       const prompt = buildDaySummaryPrompt({
@@ -1264,14 +1283,30 @@ async function runSummary() {
 
       process.stdout.write(`\n--- ${r.name} (${words} words) ---\n${clean}\n`);
 
-      if (words > 45) problems.push(`${locale}/${r.id}: ${words} words, ceiling is 45`);
+      /* THE CEILING IS IMPORTED, NOT TYPED AGAIN. It used to be a literal `45`
+         here, which is the fourth-copy-of-a-tuned-number problem `budget.ts`
+         exists to prevent, sitting in the file that is supposed to be the check.
+         `summaryMaxWords` also applies VD19's Margaret multiplier, so the number
+         in the prose and the number asserted here cannot disagree. */
+      const ceiling = summaryMaxWords(r.id);
+      if (words > ceiling) problems.push(`${locale}/${r.id}: ${words} words, ceiling is ${ceiling}`);
       if (/\*\*|^#{1,6}\s/m.test(clean)) problems.push(`${locale}/${r.id}: markdown`);
       if (/\p{Extended_Pictographic}/u.test(clean)) problems.push(`${locale}/${r.id}: emoji`);
-      /* The Malay grep runs on the INDONESIAN half only (roadmap §1), and it
-         now covers summaries too: they are generated text and can go Malay
-         just as easily as a reading can. */
+
+      /* VD2, checked. The day summary passes no window phrase -- it names a day,
+         not a window -- so every digit in it was invented. */
+      for (const hit of tallyProblems(clean, { locale })) {
+        if (hit.tier === 'fail') problems.push(`${locale}/${r.id}: TALLY -- ${hit.pattern}`);
+        else process.stdout.write(`      warn  ${locale}/${r.id}: ${hit.pattern}\n`);
+      }
+
+      /* The Malay grep runs on the INDONESIAN half only (roadmap §1, W6 rule 4),
+         and it now covers summaries too: they are generated text and can go
+         Malay just as easily as a reading can. The list comes from
+         `@/lib/copy/vocab` rather than a local literal -- V1 created that module
+         and V3 owns pointing this script at it. */
       if (locale === 'id') {
-        for (const w of malay) {
+        for (const w of MALAY) {
           if (new RegExp(`\\b${w}\\b`, 'i').test(clean)) {
             problems.push(`${locale}/${r.id}: Malay word "${w}"`);
           }
@@ -1287,7 +1322,10 @@ async function runSummary() {
   process.stdout.write(
     '\nCOVER THE NAMES AND READ THE THREE. Can you tell who wrote which?\n' +
       'If not, the per-reader deltas in W5 §5.3 are too thin -- fix those\n' +
-      'paragraphs, not the code. Same rule as readers.ts.\n',
+      'paragraphs, not the code. Same rule as readers.ts.\n' +
+      'AND READ FOR A TALLY BY EYE. The grep is a floor, not a ceiling: it\n' +
+      'cannot catch "the cards kept coming back to the same one, and then\n' +
+      'again after that".\n',
   );
 }
 
@@ -1487,26 +1525,38 @@ async function runTranslate() {
 }
 
 /**
- * `--frequency`: five verdicts over five different card pairs.
+ * `--frequency`: SIX verdicts over six card pairs, in BOTH locales. Twelve calls.
  *
  * THE ONLY WAY TO FIND OUT WHETHER THE ANGLE ROTATION BITES. The unit tests
  * prove the INDEX varies with the fingerprint; they cannot prove the resulting
  * sentences read differently, and "reads identically the fourth time you see
- * it" is the exact failure M5 exists to prevent. Five pairs, five fingerprints,
- * five angles printed beside their lines.
+ * it" is the exact failure M5 exists to prevent.
  *
- * The angle is printed with each line so a repetitive set can be diagnosed --
- * five identical-sounding lines under five DIFFERENT angles is a prompt problem,
- * and under the same angle is a fingerprint problem.
+ * The angle, the Shadow Arcana, the dominance bucket and the pulse number print
+ * beside every line, so a flat set can be diagnosed rather than merely noticed:
+ * twelve similar lines under twelve DIFFERENT angles is a prompt problem, and
+ * under one angle it is a fingerprint problem. If they differ only in the nouns,
+ * the shadow is carrying the variety and the angles are not.
+ *
+ * SIX PAIRS AND NOT FIVE. The sixth has The Fool as its runner-up, so the
+ * collision branch -- one pair in twenty-two in the wild -- gets a real model
+ * call that a person can read. The third pair has The Fool on TOP, so both
+ * directions of the branch are exercised.
+ *
+ * IT LOOPED `id` ONLY BEFORE V3, which was a gap against VD2's "in both
+ * locales": the language nobody was checking is the language a tally would have
+ * survived in.
  */
-async function runFrequency() {
-  const { buildFrequencyPrompt, angleIndexFor, FREQUENCY_ANGLES } =
+async function runFrequency(locales: Locale[]) {
+  const { buildFrequencyPrompt, frequencyFacts, FREQUENCY_ANGLES, FREQUENCY_MAX_WORDS } =
     await import('@/lib/prompt/summary');
   const { fingerprintOf, rankCounts } = await import('@/lib/memory/frequency');
+  const { tallyProblems } = await import('@/lib/memory/tally');
+  const { windowPhrase } = await import('@/lib/memory/windows');
   const { CARDS } = await import('@/data/deck');
 
-  /* Five plausible pairs with plausible counts, chosen to span the deck rather
-     than to flatter the prompt. */
+  /* Six plausible pairs with plausible counts, chosen to span the deck rather
+     than to flatter the prompt. The last one is the collision fixture. */
   const pairs: Array<[number, number, number, number, number]> = [
     // topId, topCount, secondId, secondCount, readings
     [8, 5, 12, 3, 7],
@@ -1514,56 +1564,98 @@ async function runFrequency() {
     [0, 6, 21, 4, 9],
     [13, 3, 3, 2, 5],
     [17, 7, 9, 5, 12],
+    [9, 4, 0, 3, 8],
   ];
 
-  const lines: string[] = [];
   const problems: string[] = [];
 
-  for (const [topId, topN, secondId, secondN, readings] of pairs) {
-    const ranked = rankCounts([
-      { cardId: topId, count: topN, reversedCount: Math.floor(topN / 2), lastSeen: '2026-07-25' },
-      { cardId: secondId, count: secondN, reversedCount: 0, lastSeen: '2026-07-24' },
-    ]);
-    const result = {
-      window: 'week' as const,
-      from: '2026-07-20',
-      to: '2026-07-26',
-      readings,
-      ranked,
-      fingerprint: fingerprintOf('week', readings, ranked),
-    };
-
-    const prompt = buildFrequencyPrompt({ result, locale: 'id' });
-    const { text } = await getProvider().complete(prompt);
-    const clean = text.replace(/\s+/g, ' ').trim();
-    const angle = angleIndexFor(result.fingerprint, 'id');
-    const words = clean.split(/\s+/).filter(Boolean).length;
-
-    lines.push(clean);
+  for (const locale of locales) {
+    const lines: string[] = [];
+    const anglesSeen = new Set<number>();
     process.stdout.write(
-      `\n[angle ${angle}] ${CARDS[topId].name} (${topN}) over ${CARDS[secondId].name} (${secondN}), ` +
-        `${words} words\n  ${clean}\n`,
+      `\n${'#'.repeat(70)}\nFREQUENCY VERDICT -- ${locale.toUpperCase()}\n${'#'.repeat(70)}\n`,
     );
 
-    if (words > 25) problems.push(`${CARDS[topId].name}: ${words} words, ceiling is 25`);
-    if (!clean.includes(CARDS[topId].name)) problems.push(`${CARDS[topId].name}: top card not named`);
-    if (!clean.includes(CARDS[secondId].name)) {
-      problems.push(`${CARDS[topId].name}: second card not named`);
+    for (const [topId, topN, secondId, secondN, readings] of pairs) {
+      const ranked = rankCounts([
+        { cardId: topId, count: topN, reversedCount: Math.floor(topN / 2), lastSeen: '2026-07-25' },
+        { cardId: secondId, count: secondN, reversedCount: 0, lastSeen: '2026-07-24' },
+      ]);
+      const result = {
+        window: 'week' as const,
+        from: '2026-07-20',
+        to: '2026-07-26',
+        readings,
+        ranked,
+        fingerprint: fingerprintOf('week', readings, ranked),
+      };
+
+      const prompt = buildFrequencyPrompt({ result, locale });
+      const facts = frequencyFacts(result, locale);
+      if (!prompt || !facts.mechanic) {
+        problems.push(`${locale}/${CARDS[topId].name}: no prompt -- the mechanic declined`);
+        continue;
+      }
+      const m = facts.mechanic;
+
+      const { text } = await getProvider().complete(prompt);
+      const clean = text.replace(/\s+/g, ' ').trim();
+      const words = clean.split(/\s+/).filter(Boolean).length;
+      lines.push(clean);
+      anglesSeen.add(facts.angle);
+
+      const tag = `${locale}/${m.topName}`;
+      process.stdout.write(
+        `\n[angle ${facts.angle}] ${m.topName} over ${m.secondName}` +
+          `  shadow=${m.shadowName}${m.shadowCollision ? ` (collides: ${m.shadowCollision})` : ''}` +
+          `  dominance=${m.dominance}  pulse=${m.pulseNumber}  ${words} words\n  ${clean}\n`,
+      );
+
+      /* THE CEILING IS IMPORTED. It was a literal `25` here, in the file that is
+         supposed to be the check -- the fourth-copy problem `budget.ts` exists
+         to prevent. */
+      if (words > FREQUENCY_MAX_WORDS) {
+        problems.push(`${tag}: ${words} words, ceiling is ${FREQUENCY_MAX_WORDS}`);
+      }
+      if (!clean.includes(m.topName)) problems.push(`${tag}: top card not named`);
+      if (!clean.includes(m.secondName)) problems.push(`${tag}: second card not named`);
+      /* On a collision the prompt asks for TWO names and the third-card line is
+         not in the user turn, so demanding the shadow here would fail a correct
+         line -- the same class of mistake the window-phrase strip avoids. */
+      if (m.shadowCollision === null && !clean.includes(m.shadowName)) {
+        problems.push(`${tag}: Shadow Arcana ${m.shadowName} not named`);
+      }
+      if (/\*\*|\p{Extended_Pictographic}/u.test(clean)) {
+        problems.push(`${tag}: markdown or emoji`);
+      }
+
+      /* VD2, and the check the release is named after. The window phrase is
+         passed because `d666` legitimately carries digits the prompt INSTRUCTS
+         the model to say; `week` does not, and passing it costs nothing. */
+      for (const hit of tallyProblems(clean, { locale, windowPhrase: windowPhrase('week', locale) })) {
+        if (hit.tier === 'fail') problems.push(`${tag}: TALLY -- ${hit.pattern}`);
+        else process.stdout.write(`      warn  ${tag}: ${hit.pattern}\n`);
+      }
     }
-    if (/\*\*|\p{Extended_Pictographic}/u.test(clean)) problems.push(`${CARDS[topId].name}: markdown or emoji`);
+
+    process.stdout.write(
+      `\n${locale}: ${pairs.length} pairs, ${anglesSeen.size} distinct angles, ` +
+        `${new Set(lines).size} distinct lines (of ${FREQUENCY_ANGLES[locale].length} available)\n`,
+    );
   }
 
   process.stdout.write(`\n${'#'.repeat(70)}\nFREQUENCY CHECKS\n${'#'.repeat(70)}\n`);
-  process.stdout.write(`angles used: ${new Set(pairs.map((_, i) => i)).size} pairs, ` +
-    `${new Set(lines).size} distinct lines\n`);
   if (problems.length === 0) process.stdout.write('all clean\n');
   else for (const pr of problems) process.stdout.write(`FAIL  ${pr}\n`);
 
   process.stdout.write(
-    '\nRead the five as a set. Do they read DIFFERENTLY, or is it one sentence\n' +
-      'with the nouns swapped? Five similar lines under five different angles is\n' +
-      'a prompt problem; under one angle it is a fingerprint problem. Available\n' +
-      `angles: ${FREQUENCY_ANGLES.id.length}.\n`,
+    '\nRead the set. Do they read DIFFERENTLY, or is it one sentence with the\n' +
+      'nouns swapped? Similar lines under different angles is a prompt problem;\n' +
+      'under one angle it is a fingerprint problem.\n' +
+      'AND READ FOR A TALLY BY EYE -- the grep is a floor, not a ceiling.\n' +
+      'AND CHECK THE PULSE IS SPOKEN, NOT PASTED: the gloss is a written line\n' +
+      'and the prompt says "in your own words" twice. If it comes back verbatim,\n' +
+      "the fix is V1 shipping a SHORT FORM of the gloss, not a third instruction.\n",
   );
 }
 

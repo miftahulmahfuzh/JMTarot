@@ -136,6 +136,7 @@ describe('the composed mechanic', () => {
         'pulseGloss',
         'pulseNumber',
         'secondName',
+        'shadowCardId',
         'shadowCollision',
         'shadowName',
         'topName',
@@ -148,6 +149,7 @@ describe('the composed mechanic', () => {
       topName: 'The Empress',
       secondName: 'The Chariot',
       shadowName: CARDS[10].name,
+      shadowCardId: 10,
       shadowCollision: null,
       dominance: 'overwhelming',
     });

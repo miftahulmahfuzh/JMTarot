@@ -56,6 +56,30 @@ describe('the event taxonomy', () => {
   });
 
   /*
+   * V3 CONTRIBUTES ZERO NAMES, which is a claim its plan makes and this is where
+   * it is checked. It widened two prop shapes instead -- `shadow_card_id` and
+   * friends on `memory.frequency_generated`, `echo_count` on
+   * `memory.summary_generated` -- because a derived value about an existing
+   * event is a property of that event and not a new thing that happened.
+   *
+   * There are exactly SEVEN `memory.*` names and there were seven at W5. If an
+   * eighth appears with a V3 commit, the register in reconciliation §4 is out by
+   * one and nobody will notice until the count is supposed to reach 61.
+   */
+  it('adds no memory.* name at V3', () => {
+    const memory = EVENT_NAMES.filter((n) => n.startsWith('memory.'));
+    expect(memory).toEqual([
+      'memory.chain_offered',
+      'memory.chain_used',
+      'memory.gist_failed',
+      'memory.summary_shown',
+      'memory.summary_generated',
+      'memory.frequency_shown',
+      'memory.frequency_generated',
+    ]);
+  });
+
+  /*
    * V2's one name, and the absence of the one it deliberately does not have.
    *
    * `translation.failed` would be the sixteenth fixed name and break the register.

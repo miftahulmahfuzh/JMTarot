@@ -4,6 +4,7 @@ import { baseContract, FORMAT_RULES } from './base';
 import { buildPrompt } from './build';
 import { readerPrompt } from './readers';
 import { budgetFor, LENGTH_BUDGET, midpoint, servicePrompt, VERDICT_WORD } from './services';
+import { MARGARET_MULTIPLIER } from './budget';
 
 const draw = [
   { id: 18, reversed: true },
@@ -419,6 +420,17 @@ describe('promptVersion', () => {
  * FIXED PICKS, NEVER `shuffleDeck()`. It is impure, and a snapshot built from a
  * random draw fails on the second run for a reason that has nothing to do with
  * prompts.
+ *
+ * ── MARGARET'S THREE WERE REGENERATED ONCE, AT V3, UNDER VD19 ───────────────
+ *
+ * The rule above still stands and this is what obeying it looks like: the three
+ * failures were diffed line by line before anything was written, and the ONLY
+ * changes were interpolated ceilings moving with `MARGARET_MULTIPLIER` --
+ * spread3 55 -> 52 and its midpoint 158 -> 154, daily 55 -> 72, yesno 70 -> 91.
+ * No prose moved, and Thessaly's and Adrian's six are untouched, which is the
+ * evidence that this was a budget change and not a persona regression. If a
+ * FOURTH snapshot had failed, text had moved and the multiplier would have been
+ * the wrong explanation.
  */
 const FIXED_PICKS: Record<string, { id: number; reversed: boolean }[]> = {
   daily: [{ id: 18, reversed: true }],
@@ -593,12 +605,13 @@ describe('the locale fork', () => {
    * reader -- which would silently give everyone the default and put the smoke
    * script's check back out of step with the prose.
    */
-  it('applies the per-reader budget override to Margaret and nobody else', () => {
+  it('applies MARGARET_MULTIPLIER to Margaret and nobody else', () => {
     const ceiling = (reader: 'thessaly' | 'margaret' | 'adrian', locale: 'id' | 'en') =>
       budgetFor(locale, 'spread3', reader).maxParagraphWords;
 
     for (const locale of ['id', 'en'] as const) {
-      expect(ceiling('margaret', locale)).toBe(55);
+      // 40 x 1.3 = 52. Was a hand-set 55; VD19 replaced the number with the rule.
+      expect(ceiling('margaret', locale)).toBe(52);
       expect(ceiling('thessaly', locale)).toBe(LENGTH_BUDGET[locale].spread3.maxParagraphWords);
       expect(ceiling('adrian', locale)).toBe(LENGTH_BUDGET[locale].spread3.maxParagraphWords);
     }
@@ -606,12 +619,34 @@ describe('the locale fork', () => {
     // And it is in the PROSE, not only in the constant.
     const of = (reader: 'thessaly' | 'margaret') =>
       buildPrompt({ reader, service: 'spread3', picks: draw, locale: 'en' }).system;
-    expect(of('margaret')).toContain('55-word limit');
+    expect(of('margaret')).toContain('52-word limit');
     expect(of('thessaly')).toContain('40-word limit');
+  });
 
-    // The override is spread3-only. Her daily and yesno take the default.
-    expect(budgetFor('id', 'daily', 'margaret')).toEqual(LENGTH_BUDGET.id.daily);
-    expect(budgetFor('id', 'yesno', 'margaret')).toEqual(LENGTH_BUDGET.id.yesno);
+  it('REACHES EVERY READER-VOICED CEILING, NOT ONLY spread3 (VD19)', () => {
+    /*
+     * The old override was `spread3`-only and this test asserted that her
+     * `daily` and `yesno` took the default. VD19 reverses it, and the reason is
+     * the reason rather than the arithmetic: her extra length is a fact about
+     * the READER -- her voice rules mandate long subordinated sentences -- and
+     * that is equally true in every service she speaks in. A `spread3`-only
+     * override was claiming, with no evidence either way, that she fits 55 and
+     * 70 in the other two.
+     */
+    for (const service of ['daily', 'spread3', 'yesno'] as const) {
+      const base = LENGTH_BUDGET.id[service];
+      const hers = budgetFor('id', service, 'margaret');
+      expect(hers.maxParagraphWords, service).toBe(
+        Math.round(base.maxParagraphWords * MARGARET_MULTIPLIER),
+      );
+      expect(hers.maxTotalWords, service).toBe(Math.round(base.maxTotalWords * MARGARET_MULTIPLIER));
+      // The FLOOR is untouched: a floor scaled by verbosity demands length
+      // rather than permitting it.
+      expect(hers.minTotalWords, service).toBe(base.minTotalWords);
+      // ...and the other two are exactly the table.
+      expect(budgetFor('id', service, 'thessaly'), service).toEqual({ ...base });
+      expect(budgetFor('id', service, 'adrian'), service).toEqual({ ...base });
+    }
   });
 
   /**

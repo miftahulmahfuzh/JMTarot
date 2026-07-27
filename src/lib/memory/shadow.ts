@@ -112,6 +112,14 @@ export type FrequencyMechanic = {
   topName: string;
   secondName: string;
   shadowName: string;
+  /**
+   * The shadow's deck id, for `memory.frequency_generated`. A card id, not a
+   * count -- and it is here rather than re-derived at the call site because the
+   * alternative was the route doing `CARDS.findIndex(c => c.name === …)`, which
+   * is a second place for the mechanic to be computed differently from the
+   * prompt's.
+   */
+  shadowCardId: number;
   shadowCollision: ShadowCollision;
   pulseNumber: GlossNumber;
   pulseGloss: string;
@@ -145,6 +153,7 @@ export function frequencyMechanic(
     topName: arcanaFor(top.cardId).name,
     secondName: arcanaFor(second.cardId).name,
     shadowName: shadow.card.name,
+    shadowCardId: shadow.card.id,
     shadowCollision: shadow.collision,
     pulseNumber: pulse.number,
     pulseGloss: pulse.gloss,

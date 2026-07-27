@@ -43,8 +43,8 @@ import {
 } from '@/lib/memory/frequency';
 import { VERDICT_LADDER, WINDOWS, type WindowKey } from '@/lib/memory/windows';
 import {
-  angleIndexFor,
   buildFrequencyPrompt,
+  frequencyFacts,
   MEMORY_PROMPT_VERSION,
 } from '@/lib/prompt/summary';
 
@@ -220,7 +220,21 @@ async function generate(
   result: FrequencyResult,
 ): Promise<string | null> {
   const startedAt = performance.now();
+
+  /*
+   * ONE ASSEMBLY, AND THE FACTS COME OFF THE SAME OBJECT THE PROMPT WAS BUILT
+   * FROM. `frequencyFacts` used to be exported and called by nothing while this
+   * function computed `angleIndexFor` itself; V3 needs four more derived values
+   * for the event and wiring them by hand here would be a second place for the
+   * mechanic to be computed differently from the prompt's.
+   *
+   * A null mechanic means an ungated result or a card id outside the deck. M14
+   * all the way down: render nothing rather than a confidently wrong card.
+   */
+  const facts = frequencyFacts(result, locale);
   const prompt = buildFrequencyPrompt({ result, locale });
+  if (prompt === null || facts.mechanic === null) return null;
+
   const { text: raw } = await getProvider().complete(prompt, {
     /*
      * DEFERRED, on BOTH of this function's call paths -- the `after()`
@@ -259,13 +273,21 @@ async function generate(
     promptVersion: MEMORY_PROMPT_VERSION,
   });
 
+  const mechanic = facts.mechanic;
   track('memory.frequency_generated', {
     window: result.window,
     top_card_id: top.cardId,
     second_card_id: second.cardId,
     sample: result.readings,
-    angle: angleIndexFor(result.fingerprint, locale),
+    angle: facts.angle,
     total_ms: Math.round(performance.now() - startedAt),
+    // `(top + second) % 22` is recoverable from the two columns above, but the
+    // prop is what makes the distribution query trivial and a column
+    // unnecessary. See `## Schema deltas` in V3's plan.
+    shadow_card_id: mechanic.shadowCardId,
+    shadow_collision: mechanic.shadowCollision ?? 'none',
+    dominance: mechanic.dominance,
+    pulse: mechanic.pulseNumber,
   });
 
   return body;
