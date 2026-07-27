@@ -82,7 +82,15 @@ const en: Catalog = {
 
   // --- Card detail ----------------------------------------------------------
   'card.reversed': 'Reversed',
-  'card.return': 'Put it back in the deck',
+  /*
+   * `Put it back`, not `Put it back in the deck`. The longer version was 23 characters
+   * against `Kembalikan ke dek`'s 17 and failed the length budget -- it is a BUTTON,
+   * sitting beside Close in the card detail overlay, and 23 characters of Cinzel with
+   * button tracking is a two-line button on a 375px screen. "in the deck" is also the
+   * only place it could go: you are looking at a card you drew, from a deck that is on
+   * the same screen.
+   */
+  'card.return': 'Put it back',
   'card.alt.upright': '{name}',
   'card.alt.reversed': '{name}, reversed',
 

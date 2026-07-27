@@ -27,6 +27,7 @@
  */
 import { NextResponse, after } from 'next/server';
 import { requireUser } from '@/lib/auth/server';
+import { getLocale } from '@/lib/i18n/t';
 import { parseLocalDate, SESSION_HEADER, validSessionId } from '@/lib/analytics/localdate';
 import { track, withAnalytics, type AnalyticsContext } from '@/lib/analytics/track';
 import { db } from '@/lib/db/client';
@@ -48,6 +49,21 @@ export async function GET(request: Request) {
   const auth = await requireUser();
   if (!auth.ok) return auth.response;
   const user = auth.user;
+
+  /*
+   * THE RESOLVED UI LOCALE, NOT `locale`. Same reasoning as `/api/reading`, and
+   * this route is where the bug was actually VISIBLE: a screenshot of the English
+   * reader picker showed an Indonesian frequency verdict sitting under an English hint.
+   *
+   * `locale` is the `loc` claim, which is D6's "profile" and first in the chain, so
+   * for a real user the two agree. The dev-only `?lang=` override skips the claim on
+   * purpose -- and these two endpoints are the ones a screenshot harness reaches, so
+   * reading the claim here made the whole English-screenshot loop lie.
+   *
+   * `frequency_verdicts` and `daily_summaries` are BOTH keyed on locale already (W5 got
+   * that right), so the cache was never the problem: the wrong key was being looked up.
+   */
+  const locale = await getLocale();
 
   const url = new URL(request.url);
 
@@ -71,7 +87,7 @@ export async function GET(request: Request) {
   const ctx: AnalyticsContext = {
     userId: user.id,
     sessionId: validSessionId(request.headers.get(SESSION_HEADER)),
-    locale: user.locale,
+    locale: locale,
     localDate,
   };
 
@@ -81,7 +97,7 @@ export async function GET(request: Request) {
     // The M14 path, and the common one. Cheapest branch in the file.
     if (readings.length === 0) return NO_CONTENT;
 
-    const cached = await getDailySummary(db, user.id, reader, localDate, user.locale);
+    const cached = await getDailySummary(db, user.id, reader, localDate, locale);
     const ids = readings.map((r) => r.id);
 
     if (cached && !isStale(cached, ids, new Date())) {
@@ -97,7 +113,7 @@ export async function GET(request: Request) {
     return generate({
       userId: user.id,
       reader,
-      locale: user.locale,
+      locale: locale,
       localDate,
       readings,
       ids,
