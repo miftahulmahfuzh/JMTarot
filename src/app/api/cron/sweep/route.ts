@@ -150,6 +150,55 @@ export async function GET(request: Request) {
     console.error('[cron] events TTL failed', err instanceof Error ? err.name : 'unknown');
   }
 
+  /*
+   * **V9 ADDS ONE SELECT AND NO FOURTH JOB.** This file's header is emphatic that
+   * there is ONE cron job with THREE deletes, because Vercel's free plan allows a
+   * small number of invocations -- so the ceiling's early warning rides along on
+   * the job that is already running rather than asking for one of its own.
+   *
+   * It is the ONLY thing in V9's design that fires on a day when nobody visits,
+   * and it is still only a log line. **Nothing here pages anybody**, and pretending
+   * otherwise would need a service this project does not have. Query 9 is the
+   * thing somebody has to actually run.
+   */
+  try {
+    const rows = await db.execute(sql`
+      select
+        count(*) filter (where name = 'llm.ceiling_reached'
+                           and props->>'tier' = 'soft')             as soft,
+        count(*) filter (where name = 'llm.ceiling_reached'
+                           and props->>'tier' = 'hard')             as hard,
+        count(*) filter (where name = 'ratelimit.backend_degraded') as degraded
+        from events
+       where created_at >= now() - interval '1 day'
+         and name in ('llm.ceiling_reached', 'ratelimit.backend_degraded')
+    `);
+    const row = (rows as unknown as Array<Record<string, unknown>>)[0];
+    const soft = Number(row?.soft ?? 0);
+    const hard = Number(row?.hard ?? 0);
+    const degraded = Number(row?.degraded ?? 0);
+
+    if (soft > 0 || hard > 0 || degraded > 0) {
+      /*
+       * Only when there is something to say. A line printed every single day is a
+       * line nobody reads, which is the failure mode this whole mechanism has.
+       *
+       * `degraded` counts MINUTES, not requests -- the event is throttled to one
+       * per instance per minute -- so a steady non-zero value means the fleet-wide
+       * limiter is not fleet-wide and every stated limit is silently multiplied by
+       * the number of warm instances.
+       */
+      console.warn(
+        `[llm] yesterday: ceiling soft=${soft} hard=${hard}, limiter degraded_minutes=${degraded}. See query 9.`,
+      );
+    }
+  } catch (err) {
+    // Never the error object: same rule as the two blocks above. And NOT a
+    // `failures` entry -- a diagnostic that could not run must not turn a
+    // successful sweep red.
+    console.error('[cron] ceiling report failed', err instanceof Error ? err.name : 'unknown');
+  }
+
   const body = { ...result, failures, ms: Date.now() - startedAt };
 
   /*
