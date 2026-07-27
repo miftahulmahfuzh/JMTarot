@@ -52,7 +52,7 @@ payload — and `scripts/audit-secrets.ts`'s header says how to read it.
 
 ## 2. Environment variables
 
-Twelve, all needed, for **Production** *and* **Preview**:
+Fourteen, all needed, for **Production** *and* **Preview**:
 
 ```
 LLM_PROVIDER               zai
@@ -67,9 +67,18 @@ DATABASE_URL               Neon's POOLED string -- see §6
 FIELD_ENCRYPTION_KEY       <32 random bytes, base64url>
 MODERATION_MODEL           glm-4.5-flash -- REQUIRED, and it is not a default
 CRON_SECRET                <32 random bytes, base64>
+UPSTASH_REDIS_REST_URL     https://<name>.upstash.io -- V9, see below
+UPSTASH_REDIS_REST_TOKEN   <the REST token from the same page>
 ```
 
-**This list said eight until 2026-07-27, and omitting `DATABASE_URL` and
+**THIS LIST HAS NOW BEEN WRONG THREE TIMES, ALWAYS THE SAME WAY: a variable
+whose absence breaks nothing loudly.** It said eight until 2026-07-27, then ten,
+then twelve; the last two are V9's and were missing on the day V9 merged. Every
+omission was a variable the app runs perfectly well without — which is exactly
+what makes it easy to omit and pointless to discover later. **When you add a
+variable whose absence is silent, it belongs in THIS list, not the optional one.**
+
+**Omitting `DATABASE_URL` and
 `FIELD_ENCRYPTION_KEY` was wrong from W2 onward, not from W3.**
 `src/lib/auth/auth.ts` imports `db` and the `jwt` callback calls
 `upsertUserOnSignIn`, so **Google sign-in itself reads the database** — a
@@ -85,6 +94,27 @@ rather than the optional one below:
   its own latency to every reading instead of hiding inside the reading's TTFT.
   Measured, not asserted — §2b and `.env.example` carry the numbers. The app
   works; it just gets slower in a way no error surfaces.
+- **`UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`** are V9's, and
+  **without them the app looks completely healthy while doing none of what V9
+  built.** Every budget silently falls back to per-instance memory — v0.2.0's
+  behaviour — so a stated limit of 30 readings an hour becomes "30 times however
+  many instances Vercel has warm", unknowable and largest under exactly the load
+  it exists to catch. **And it takes the model-call ceiling with it:**
+  `LLM_WINDOW_CALL_CEILING=280` is enforced through the same limiter, so unset,
+  the control that REPLACED the z.ai spend cap (§2b) is also per-instance. There
+  is no error, no log line, and nothing on screen. `ratelimit.backend_degraded`
+  and query 9 are the only way to see it, and they will show *nothing at all*
+  here — an unconfigured limiter is not a degraded one, it simply never tries.
+
+  Create a free database at console.upstash.com; both values are on its page.
+  **Pick `ap-northeast-1` (Tokyo): there is no Singapore region**, verified
+  2026-07-27, and Tokyo is ~80–120ms from a Vercel Singapore function against a
+  1000ms timeout. The free tier (500K commands/month) is far above this app's
+  volume — `/api/events`, the one high-volume caller, is deliberately kept off
+  Redis. **Do not escape `$` in the token here**, per the rule below: dashboard
+  values are literal, and a mangled token is an *error*, which falls back to
+  memory and therefore looks exactly like working.
+
 - **`CRON_SECRET`** is what Vercel Cron presents as `Authorization: Bearer …` on
   the daily call to `/api/cron/sweep` that `vercel.json` registers. Unset, the
   route **503s rather than running unauthenticated** — which is the right
@@ -114,7 +144,27 @@ MODERATION_CLASSIFIER_ENABLED   1           `0` = blocklist only. The 2am kill s
 MODERATION_QUESTION_RETENTION_DAYS  30      before the sweep nulls the stored text
 TERMS_VERSION                   2026-07-27  a BUMP FORCES RE-ACCEPTANCE for everyone
 EVENTS_RETENTION_DAYS           180         `readings` is deliberately NOT on this clock
+LLM_WINDOW_CALL_CEILING         280         model calls per ROLLING 5h. Replaced the spend cap
+LLM_WINDOW_CALL_SOFT            196         70% of it; above this, deferred work is shed
+RATELIMIT_GLOBAL_HOURLY         1200        the crowd burst guard, fleet-wide
+RATELIMIT_TIMEOUT_MS            1000        bounds a hung limiter call, not a target
+RATELIMIT_BACKEND               --          `memory` forces local. The 2am kill switch
+RATELIMIT_EVENTS_BACKEND        --          `redis` moves /api/events off memory
 ```
+
+**`LLM_WINDOW_CALL_CEILING`'s default of 280 is correct for the z.ai plan we are
+on and is worth setting EXPLICITLY anyway**, because it is the number that
+replaced the spend cap and a value visible in the dashboard is one somebody can
+reason about at 2am. It is read per call rather than at module scope, so unlike
+`SESSION_TTL_HOURS` it takes effect **without a redeploy** — which is the property
+you want from a lever you might pull during an incident. Its derivation is the
+Pro tier's ~400 prompts per 5 hours × 70%; re-derive it if the plan tier changes,
+and re-check `meter.ts`'s weekly arithmetic while you are there.
+
+**`TEST_UPSTASH_REDIS_REST_URL` / `TEST_UPSTASH_REDIS_REST_TOKEN` must NOT be set
+in Vercel.** They point at the local `serverless-redis-http` container from
+`docker-compose.yml` and exist only so `npm run test:integration` needs no
+account.
 
 `.env.example` is the complete list with the reasoning for each, including W5's
 three `MEMORY_*` knobs and W6's `LOCALE_SWITCHER`; the ones above are the ones
