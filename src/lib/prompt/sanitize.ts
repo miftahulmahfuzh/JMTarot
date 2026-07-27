@@ -5,11 +5,15 @@ export const MAX_QUESTION_LENGTH = 200;
  * EVERY DELIMITER THE PROMPT LAYER WRITES, in any casing, with whitespace
  * anywhere inside the tag and with attributes.
  *
- * Three tags, because three different blocks fence off user-derived text:
+ * Four tags, because four different blocks fence off user-derived text:
  *
  *   <pertanyaan>          the querent's question, in a reading's user turn
  *   <penanya>             the Lotus block, in a reading's user turn (W3 §9)
  *   <jawaban kunci="...">  one raw onboarding answer, in the distillation prompt
+ *   <riwayat>             W5's chained-reading block, in a reading's user turn,
+ *                         and `<riwayat-hari-ini>` for the day summary -- one
+ *                         alternative covers both, because `[^>]*` takes the
+ *                         `-hari-ini` suffix
  *
  * A literal one of these in user text could close its block early and put the
  * rest of that text where instructions live. `<jawaban>` is the newest and the
@@ -19,14 +23,22 @@ export const MAX_QUESTION_LENGTH = 200;
  * THIS DOES NOT CONTRADICT RECONCILIATION R17. That resolution says the ENGLISH
  * prompt keeps `<pertanyaan>` rather than gaining an English-language tag -- one
  * token per purpose, across both locales, so there is one thing to strip and one
- * thing to test. These three serve three purposes and fence three different
+ * thing to test. These four serve four purposes and fence four different
  * blocks. What R17 warns against is doubling the surface for the SAME purpose,
  * and adding a locale variant of any of these would still be wrong.
+ *
+ * `<riwayat>` IS THE TAG IN THE ENGLISH PROMPT TOO, AND W5'S PLAN SAYING
+ * `<history>` LOSES TO R17. The resolution's own reasoning decides it: an
+ * English querent will never type "riwayat" and will absolutely type "history",
+ * so the English-looking tag is the one with the injection surface. What IS
+ * localised is the `ULANG:` / `AGAIN:` marker INSIDE the block -- that is
+ * content the model reads, not a fence the sanitizer strips, and it carries no
+ * surface at all.
  *
  * `[^>]*` covers the attribute on `<jawaban kunci="...">`. It cannot run past a
  * `>` and so cannot swallow arbitrary text between two unrelated tags.
  */
-const DELIMITER = /<\s*\/?\s*(?:pertanyaan|penanya|jawaban)(?:[^>]*)>/gi;
+const DELIMITER = /<\s*\/?\s*(?:pertanyaan|penanya|jawaban|riwayat)(?:[^>]*)>/gi;
 
 /*
  * C0 and C1 control characters, minus the whitespace handled separately below.

@@ -40,7 +40,7 @@
     {
       "id": "5",
       "title": "Task 4: Surface the verdict on the reader picker",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         "4"
       ]
@@ -48,7 +48,7 @@
     {
       "id": "6",
       "title": "Task 5: The gist",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         "1"
       ]
@@ -56,7 +56,7 @@
     {
       "id": "7",
       "title": "Task 6: The chain block",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         "6"
       ]

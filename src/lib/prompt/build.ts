@@ -6,6 +6,7 @@ import type { Locale } from '@/data/types';
 import type { ReadingPrompt } from '@/lib/llm/types';
 import { BASE_CONTRACT } from './base';
 import { renderLotusBlock } from './lotus';
+import { memoryBlock, memoryInstruction, type MemoryContext } from './memory';
 import { READER_PROMPTS } from './readers';
 import { MAX_TOKENS, servicePrompt } from './services';
 import { sanitizeQuestion } from './sanitize';
@@ -38,9 +39,20 @@ export type PromptContext = {
   lotus?: { nickname: string; summary: string } | null;
   /**
    * W5. The "what came before" block -- the last reading or two, as cards and a
-   * one-clause gist. W5 owns the renderer; this field reserves the name.
+   * one-clause gist.
+   *
+   * W3 RESERVED THIS AS `string | null` AND W5 WIDENED IT TO THE CONTEXT OBJECT,
+   * which is the right way round: a pre-rendered string would have forced the
+   * ROUTE to call `memoryBlock()` and `memoryInstruction()` and to know that one
+   * goes in the user turn and the other in the system prompt. That knowledge is
+   * exactly what M10 is about, and it belongs in this file with the
+   * `<pertanyaan>` placement it mirrors, not spread across every caller.
+   *
+   * Null is normal and is not an error: the relevance gate omitted the block
+   * (§4.3), there is no history yet, or `MEMORY_CHAIN_COUNT=0` has switched
+   * chaining off entirely.
    */
-  memory?: string | null;
+  memory?: MemoryContext | null;
 };
 
 export type BuildArgs = {
@@ -120,7 +132,23 @@ export function buildPrompt({
   const verdict = s.id === 'yesno' ? effectiveYesNo(draws[0]) : undefined;
 
   const staticLayers = [BASE_CONTRACT, READER_PROMPTS[r.id], servicePrompt(s.id, verdict)];
-  const system = staticLayers.join('\n\n');
+
+  /*
+   * THE MEMORY INSTRUCTION GOES LAST, AFTER THE SERVICE TASK, and it is NOT one
+   * of the static layers -- `promptVersion` hashes those, and a version that
+   * changed depending on whether this particular querent happened to have a
+   * recallable reading would be a per-user nonce rather than a version.
+   *
+   * Last because of DILUTION (§6). The model is handed new material at exactly
+   * the moment it is under a 40-words-per-paragraph ceiling it must count
+   * against as it writes, and pushing that ceiling further back in the context
+   * makes it easier to lose. The instruction sits where the ceiling it restates
+   * is the most recent thing the model has read.
+   */
+  const memory = context?.memory ?? null;
+  const system = (memory ? [...staticLayers, memoryInstruction(locale)] : staticLayers).join(
+    '\n\n',
+  );
 
   const labels = slotLabels(s, r);
   const cardLines = draws.map((d, i) => {
@@ -167,6 +195,13 @@ export function buildPrompt({
     'Kartu:',
     ...cardLines,
     '',
+    /*
+     * IMMEDIATELY BEFORE `<pertanyaan>`, and after the cards. The cards are what
+     * is being read; the history is context for reading them, and it sits
+     * between the two so it cannot be mistaken for either. Same reasoning as the
+     * Lotus block's placement above, one position later.
+     */
+    ...(memory ? [memoryBlock(memory, locale), ''] : []),
     questionBlock,
   ].join('\n');
 

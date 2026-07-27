@@ -1,0 +1,34 @@
+/*
+ * The card-frequency verdict on the reader picker (W5 §3.7).
+ *
+ * NO NEW VALUES. Every colour, size and family below is an existing custom
+ * property from `src/theme/tokens.css`. The one literal number is the
+ * `margin`, which is spacing rather than a design token -- `page.module.css`
+ * spells its own margins the same way.
+ *
+ * THE REGISTER IS "JUST BELOW THE EYEBROW IN WEIGHT". The eyebrow is Cinzel,
+ * uppercase, gold, letter-spaced -- a label. This is a sentence about the
+ * querent, so it takes the body face and the italic the `.hint` line beside it
+ * already uses, in `--gold-pale` rather than `--muted`: warmer than the hint,
+ * because it is about them and the hint is an instruction, but well short of
+ * `--gold-text`, which is reserved for the title and the reader names.
+ *
+ * THERE IS NO EMPTY STATE AND NO RESERVED HEIGHT (M14). The component returns
+ * null when it has nothing, so this rule set never applies and the element is
+ * not in the tree at all -- which is what keeps the reader list from shifting
+ * when the line arrives. `position: static` (the default, stated here as a
+ * warning) matters for the same reason: an absolutely positioned line would sit
+ * on top of the first reader banner instead of pushing it down.
+ */
+.line {
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: var(--fs-hint);
+  line-height: 1.5;
+  color: var(--gold-pale);
+  text-align: center;
+  /* Static on purpose. It pushes the list down; it must never overlay it. */
+  position: static;
+  /* Sits under the hint, tighter to it than to the banners below. */
+  margin: -8px 0 0;
+}

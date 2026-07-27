@@ -1,5 +1,6 @@
 import Image from 'next/image';
 import { Eyebrow } from '@/components/Eyebrow';
+import { FrequencyLine } from '@/components/FrequencyLine';
 import { TrackLink } from '@/components/TrackLink';
 import { READERS, readerPortrait } from '@/data/readers';
 import styles from './page.module.css';
@@ -17,6 +18,13 @@ export default function Home() {
       <Eyebrow>Major Arcana</Eyebrow>
       <h1 className={styles.title}>JMTarot</h1>
       <p className={styles.hint}>Pilih pembaca yang cocok denganmu.</p>
+
+      {/* Renders nothing until it has a verdict, and nothing at all for a user
+          with no pattern yet -- which is most users, most days (M14). Kept a
+          client component so this page stays a server component that renders
+          the readers instantly: a DB read and a model call in front of the
+          picker for a decorative line is the shape roadmap §6 forbids. */}
+      <FrequencyLine />
 
       <div className={styles.list}>
         {READERS.map((reader, i) => (
