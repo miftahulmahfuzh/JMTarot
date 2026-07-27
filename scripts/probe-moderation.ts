@@ -40,6 +40,7 @@
  */
 import { config } from 'dotenv';
 import { getProvider } from '@/lib/llm';
+import { resolveBaseUrl } from '@/lib/llm/openai';
 import { buildPrompt } from '@/lib/prompt/build';
 import { buildClassifierPrompt, parseClassification } from '@/lib/moderation/classify';
 
@@ -228,7 +229,7 @@ async function main() {
   const runs = Number(arg('runs') ?? 20);
   const stabilityOnly = process.argv.includes('--stability');
 
-  console.log(`provider ${process.env.LLM_PROVIDER ?? 'zai'}  base ${process.env.LLM_BASE_URL ?? 'api.anthropic.com'}`);
+  console.log(`provider ${process.env.LLM_PROVIDER ?? 'zai'}  base ${resolveBaseUrl()}`);
   console.log(`reading model   ${process.env.LLM_MODEL}`);
   console.log(`classifier model ${model ?? `${process.env.LLM_MODEL} (unset MODERATION_MODEL)`}`);
 
