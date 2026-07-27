@@ -74,6 +74,25 @@ export function isPublic(pathname: string): boolean {
      * like a dead button rather than like an auth problem.
      */
     pathname === '/api/locale' ||
+    /*
+     * W7. **THE DAILY SWEEP HAS NO SESSION AND CANNOT HAVE ONE.** Vercel Cron
+     * issues a plain GET with `Authorization: Bearer $CRON_SECRET` and no
+     * cookie, so the session gate would answer 401 and the job would appear to
+     * run successfully forever while deleting nothing -- which is the exact
+     * failure this list exists to prevent, and the same trap `/api/events` is
+     * here for.
+     *
+     * **"PUBLIC" HERE MEANS "NO SESSION REQUIRED", NOT "UNAUTHENTICATED".** The
+     * route's own guard is strictly stronger than a session: a 32-byte shared
+     * secret compared with `timingSafeEqual`, and a 503 rather than a run if
+     * `CRON_SECRET` is unset. An open endpoint that deletes rows is worse than a
+     * sweep that never runs.
+     *
+     * Added by W7 to W2's list, the same way `/terms` and `/privacy` are here.
+     * Reconciliation §7.8 assigns the sweep to W7 and it is the mechanism behind
+     * the privacy policy's 30-day erasure promise.
+     */
+    pathname.startsWith('/api/cron/') ||
     pathname.startsWith('/api/auth/')
   );
 }

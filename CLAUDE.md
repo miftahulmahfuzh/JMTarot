@@ -640,8 +640,16 @@ Resolution, once, in middleware: **session `loc` claim → `jmt_locale` cookie �
   every count. `draw.hint.tap` is therefore `.single`/`.many` with a
   `cardCount === 1` check, which keeps the spelled-out `satu`. Do not "simplify"
   it into a family; a test asserts `draw.hint.tap.one` does not exist.
-- **`server-only` throws in Vitest**, so `resolve.ts` cannot carry it — it is
-  imported by `src/middleware.ts` and by its own test. Only `t.ts` has it.
+- **`server-only` USED to throw in Vitest, and W7 fixed that centrally.**
+  `vitest.config.ts` now aliases the package to its OWN `empty.js` — the file the
+  bundler picks under the `react-server` condition — because W7-D14 puts the
+  marker on `src/lib/prompt/**`, which would otherwise break `build.test.ts`,
+  `lotus.test.ts`, `memory.test.ts` and the base-contract snapshot on import.
+  Nothing is weakened: the throw's value is the BUILD error, and that is
+  untouched. `resolve.ts` still does not carry the marker, now for the honest
+  reason rather than the tooling one — it is edge middleware's dependency and
+  the fence there is `config.ts`. **Scripts still throw**, so `npm run smoke` and
+  `npm run probe:moderation` set `NODE_OPTIONS=--conditions=react-server`.
 - **The client must never import `@/lib/i18n/catalog`.** It holds both catalogs;
   `LocaleProvider` is handed the resolved one as props. `src/lib/clientBoundary.test.ts`
   fences it, along with `@/lib/prompt/**` (one exception: `sanitize`, paired with
@@ -769,9 +777,10 @@ reason they load at all.
 Built and working end to end: Google sign-in and the middleware gate, **the
 onboarding questionnaire and the Lotus distillation (W3)**, **analytics and
 reading persistence (W4)**, **the three memory features (W5)**, **English and
-Indonesian throughout, interface and readings (W6)**, reader picker,
-service picker, the draw (fan, pick, flip, reduced-motion grid), the card detail
-overlay, the streaming reading endpoint, the prompt layer, and the web app
+Indonesian throughout, interface and readings (W6)**, **the moderation gate,
+`/terms`, `/privacy`, the secrets tripwire and the daily sweep (W7)**, reader
+picker, service picker, the draw (fan, pick, flip, reduced-motion grid), the card
+detail overlay, the streaming reading endpoint, the prompt layer, and the web app
 manifest.
 
 **Tapping a picked card opens its detail, it does not return it to the deck.**
@@ -962,6 +971,169 @@ this predates the workstream. The per-paragraph word count in the smoke script
 is what surfaced it. Fixing it means `readers.ts` or `services.ts` and its own
 tuning loop; it is not W5's file and not W5's bug.
 
+## Trust, safety and secrets (W7)
+
+W7 is done. A moderation gate that refuses harm without refusing tarot, two
+legal documents, and a tripwire that fails the build if a prompt or a key ever
+reaches the browser.
+
+```
+src/lib/moderation/
+  types.ts       CLIENT-IMPORTABLE. CATEGORIES, CLAUSE_FOR, RefusalPayload.
+  resources.ts   CLIENT-IMPORTABLE. Crisis hotlines, each with verifiedOn.
+  blocklist.ts   server-only. Two tiers, exemptions-as-mask, two haystacks.
+  classify.ts    server-only. One English prompt, temperature 0, 48 tokens.
+  gate.ts        server-only. screenSync -> prime -> race -> decide.
+  log.ts         the moderation_flags writer + the lazy redaction sweep.
+src/components/RefusalNotice.tsx     the 403, rendered. Never a reader's voice.
+src/app/terms|privacy/               17 clauses, 12 sections, both locales.
+src/app/api/cron/sweep/route.ts      ONE job, THREE deletes.
+scripts/audit-secrets.ts             the tripwire. Runs inside `npm run build`.
+scripts/probe-moderation.ts          how the model and the timeout were chosen.
+```
+
+### The gate refuses HARM, not SENSITIVITY
+
+**This is the product judgement everything else falls out of, and it is the one
+a future session is most likely to undo by "tightening" the list.** Tarot's
+actual subject matter is grief, illness, money trouble, divorce, a dying parent,
+a partner who has become frightening. If the gate refuses those, there is no app
+left. Refusing `haruskah aku pergi dari suamiku yang kasar` is not neutral — it
+reads as "even the tarot app will not touch this", which is an active harm.
+
+Eight categories where **the answer itself would be the harm**, plus `other` and
+`unclear`. The ALLOW section of the classifier prompt is longer than the FLAG
+section on purpose and there is a test asserting it stays that way.
+
+**A false positive is an accusation delivered to somebody who did nothing
+wrong**, with no appeal path in a streaming UI. Hence: Tier A is small and
+proximity-anchored, every pattern has a near-miss test written first, and the
+whole near-miss corpus runs under both locales.
+
+### What the numbers came from
+
+Measured against live z.ai on 2026-07-27 with `npm run probe:moderation`:
+
+```
+model            p50      p95      corpus    JSON at temperature 0
+glm-4.6         1764ms   7546ms    20/20     10/10 byte-identical
+glm-4.5-air     1812ms   4600ms    20/20     10/10 byte-identical
+glm-4.5-flash    617ms    903ms    36/42     10/10 byte-identical   n=42
+
+reading TTFT, same session:  p50 4591ms
+```
+
+**`MODERATION_MODEL=glm-4.5-flash` IS A PRODUCTION REQUIREMENT, NOT A COST
+OPTIMISATION.** D8's premise is that the classifier returns before the reading's
+first token. On the reading model that premise is false — p95 7546ms against a
+p50 TTFT of 4591ms — and the gate becomes the latency. Unset falls back to
+`LLM_MODEL` and silently reintroduces it. `MODERATION_TIMEOUT_MS=1500` comes
+from the same measurement, not from the plan's guessed 2500.
+
+### The five things a future session will otherwise undo
+
+1. **`.next/server/chunks/**` IS EXCLUDED FROM THE AUDIT ON PURPOSE.** The base
+   contract legitimately lives there. A scanner that flags it is a scanner
+   somebody switches off within a week, and then nothing is checked at all. Same
+   reasoning excludes `moderation/types.ts` and `resources.ts` from needling —
+   they are supposed to reach the client.
+2. **`x-frame-options: SAMEORIGIN`, and `frame-ancestors 'self'`, never `DENY` /
+   `'none'`.** A security checklist will say otherwise. This project's only way
+   to drive its own UI is a same-origin iframe harness under `public/cards/` —
+   Chromium cannot launch in this WSL image — and `DENY` kills it while blocking
+   nothing that SAMEORIGIN does not. `src/lib/headers.test.ts` asserts both.
+3. **The gate PRIMES the reading before awaiting the verdict.** `iterator.next()`
+   in `gateReading` issues the HTTP request; deleting it looks like a tidy-up,
+   breaks nothing, logs nothing, and doubles every reading's latency forever.
+   The timing test in `gate.test.ts` was verified by negative control.
+4. **Nothing unverified enters `resources.ts`, and no number lives anywhere
+   else.** A hotline is the one string here where being out of date is a safety
+   failure. Warn at 180 days, FAIL at 365. Re-verifying already caught a dead
+   Kemenkes URL and a wrong claim about the hours.
+5. **T&C clause 6's sub-numbering is an interface.** The refusal renders
+   `/terms#6-2` and `CLAUSE_FOR` is the map. Renumbering breaks the link
+   silently, for somebody who has just been refused. `src/app/legal.test.ts`
+   fails on it.
+
+### Traps W7 paid for
+
+- **JSX STRIPS THE LEADING WHITESPACE OF A TEXT NODE THAT SPANS MORE THAN ONE
+  LINE.** A space after `</strong>` or after a `{expression}` survives when the
+  sentence fits on one source line and vanishes when it wraps — so the bug
+  appears and disappears with code formatting. It shipped three times
+  (`www.jmtarot.siteand`, `happen."We`, `model.The`) and was found by reading a
+  screenshot. **A RENDER TEST DOES NOT CATCH IT:** Vite's JSX transform keeps the
+  space and Next's SWC drops it, so `renderToStaticMarkup` reported clean against
+  a visibly broken page. The guard is a source-level check in `legal.test.ts`
+  requiring an explicit `{' '}` at every wrapping boundary.
+- **`pkill -f "next start"` DOES NOT KILL THE SERVER.** It renames itself to
+  `next-server (vX.Y.Z)`, so a stale instance keeps the port and every `curl`
+  silently tests an OLD BUILD. This looked exactly like "Next ignores the headers
+  config" and nearly bought a pointless rewrite. Kill `next-server`, or check
+  `ss -lptn | grep <port>`.
+- **A `'use server'` module is an RPC boundary, and `import type` is erased.**
+  The transitive boundary walk reported both as violations on its first run;
+  neither is one. Server actions are the sanctioned way for a client component
+  to reach server code.
+- **The blocklist runs BOTH locales' patterns under both locales.** W7-D3 said
+  otherwise. `locale` is the UI preference, not a declaration of what language
+  the querent types, and an Indonesian speaker with the interface in English is
+  the likely `en` user of an Indonesian-first app. Caught on the live route:
+  `gimana cara bunuh diri` under `en` fell through Tier A and cost a classifier
+  call (967ms) instead of a free deny (24ms).
+- **Never log a driver error from the moderation path.** A postgres error quotes
+  its bound parameters, and one of them is the querent's question. Same rule and
+  same reason as `flush.ts`; `log.test.ts` and `leak.test.ts` both assert it with
+  a canary.
+- **`server-only` is NOT on `src/lib/db/**`, deliberately.** W1's
+  `contract.test.ts` forbids it there with a stated reason — those modules run in
+  `scripts/db-seed.ts`, which has no React runtime — and W1 owns the directory.
+  `clientBoundary.test.ts` already covers the same ground.
+
+### Verifying it
+
+```sh
+npm run audit:secrets       # re-run the tripwire without rebuilding
+npm run probe:moderation    # re-measure the classifier before changing the model
+npm test -- moderation      # blocklist, classifier, gate, log, leak canaries
+npm run test:integration -- 'moderation|sweep'
+```
+
+`public/cards/_refusalshot.html` (gitignored) screenshots the refusal at a real
+390px in both locales and both shapes, driving the real page with real
+`PointerEvent`s and stubbing only `/api/reading`. **There is no reveal button** —
+the third pick submits — and an earlier version of that harness printed a scary
+failure under a refusal that had rendered perfectly.
+
+**The audit's negative control matters and is documented in its header.** An
+unused `export const LEAK = BASE_CONTRACT.slice(0, 220)` is tree-shaken and
+correctly does NOT fire; the leak has to actually render. That is the right
+scope — it scans what SHIPS — and it is why the source-side fences exist too.
+
+**`npm run smoke -- --all` must be unaffected by all of this.** The script sends
+no question, `moderate(null, …)` returns before touching the blocklist, and the
+eighteen readings are byte-for-byte the same job they were. Verified 2026-07-27:
+zero FAILs, zero moderation log lines, mean sentence words 11.0 / 25.5 / 14.9 and
+contractions 0.87 / 0.00 / 3.52.
+
+### Still open, and none of it is code W7 could write
+
+- **`/account` does not exist** — see `## Current state`. The privacy policy
+  describes a deletion the user cannot yet perform.
+- **Clauses 10, 11 and 12 need a lawyer.** Substance drafted, enforceability not
+  assessed. Recorded in the files themselves.
+- **The Jakarta district needs confirming** against PT Citra Suka Buana's deed.
+  `Pengadilan Negeri Jakarta Pusat` is the conventional default; if the deed says
+  another district, change the one string in `src/app/terms/operator.ts`.
+- **A hard spend cap at z.ai is a required deployment step** and nothing in this
+  repo can enforce it. `docs/DEPLOY-VERCEL.md` §2b.
+- **`findahelpline.com` and `112` are NOT in `resources.ts`** because neither
+  could be verified — findahelpline returned 403 twice. Both are worth adding
+  by hand.
+- **Vercel's log retention, and whether the platform logs POST bodies**, is
+  unverified. The privacy policy claims only our half: we never log question
+  text ourselves.
+
 ## The data layer
 
 W1 of the public release is done, and W3 is its first consumer. What exists:
@@ -1021,6 +1193,18 @@ this list with W3, and the memory features left it with W5** — the history now
 renders back to the user as a frequency verdict on the reader picker and a
 per-day summary on the service picker. What is still missing is a page that
 lists the readings themselves.
+
+**`/account` IS ON THAT LIST AND SHOULD NOT BE — it is the one real gap W7
+leaves.** W3's plan owns it and W3 did not build it, so there is no user-facing
+way to delete an account, while `/privacy` §8 describes that deletion in detail
+and reconciliation §7.8 promises it in thirty days. Everything underneath exists:
+`users.deleted_at`, the cascade, `upsertUserOnSignIn`'s lazy purge, W7's
+`redactForUser()`, and the daily sweep that makes the thirty days true for
+someone who never comes back. What is missing is the button. **Whoever builds it
+must call `redactForUser()` in the same transaction that sets `deleted_at`**, not
+afterwards — `moderation_flags.user_id` is `on delete set null`, so the row
+outlives the account and a self-harm disclosure would otherwise sit there for up
+to thirty more days.
 
 ## Onboarding and the Lotus (W3)
 
@@ -1137,9 +1321,13 @@ The OAuth consent screen is still in **Testing** mode, so only the
 manually-added test accounts can sign in at all. **The purchase is no longer
 what blocks publishing** — `*.vercel.app` still cannot be an Authorized Domain
 (public suffix, unverifiable in Search Console), but that is solved. What
-remains is Google's branding requirements: an **app homepage that is not a login
-page** — signed out, `/` redirects to `/login`, so there is nothing else to
-show — plus `/privacy` and `/terms`, which are W7's and still 404.
+remains is Google's branding requirement of an **app homepage that is not a
+login page** — signed out, `/` redirects to `/login`, so there is nothing else to
+show.
+
+**`/privacy` and `/terms` no longer 404.** This paragraph used to name them as
+the other blocker; W7 shipped both, public and reachable with no session cookie,
+and `src/lib/auth/gate.ts`'s `isPublic()` is what keeps them that way.
 
 `docs/TESTING-MACOS.md` was an assume-nothing guide to running Expo on a Mac.
 It is deleted on this branch, because it would send Jodith chasing a toolchain

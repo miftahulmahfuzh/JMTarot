@@ -1,3 +1,5 @@
+import 'server-only';
+
 /**
  * The Indonesian prompt contract. Moved here verbatim by W6 Task 9.
  *

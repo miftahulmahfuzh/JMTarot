@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "RES_OPTIONS=no-aaaa next dev",
-    "build": "RES_OPTIONS=no-aaaa next build",
+    "build": "RES_OPTIONS=no-aaaa next build && npm run audit:secrets",
+    "audit:secrets": "RES_OPTIONS=no-aaaa NODE_OPTIONS=--conditions=react-server tsx scripts/audit-secrets.ts",
     "start": "RES_OPTIONS=no-aaaa next start",
     "typecheck": "tsc --noEmit",
     "db:up": "docker compose up -d && until pg_isready -h 127.0.0.1 -p 5432 -q; do sleep 1; done && echo 'postgres ready'",
@@ -21,7 +22,8 @@
     "test:all": "vitest run",
     "cards": "python3 tools/generate_cards.py",
     "assets": "python3 tools/normalize_cards.py",
-    "smoke": "RES_OPTIONS=no-aaaa tsx scripts/smoke-llm.ts"
+    "smoke": "RES_OPTIONS=no-aaaa NODE_OPTIONS=--conditions=react-server tsx scripts/smoke-llm.ts",
+    "probe:moderation": "RES_OPTIONS=no-aaaa NODE_OPTIONS=--conditions=react-server tsx scripts/probe-moderation.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",

@@ -29,6 +29,114 @@ const nextConfig: NextConfig = {
         source: '/dukuns/:path*',
         headers: [{ key: 'cache-control', value: 'public, max-age=31536000, immutable' }],
       },
+      {
+        /*
+         * Security headers, every route (W7 §6.5).
+         *
+         * LAST in the array on purpose: Next applies every matching entry, and
+         * the two cache rules above are narrower. Putting this first would still
+         * work today and would read as if it overrode them.
+         */
+        source: '/(.*)',
+        headers: [
+          { key: 'x-content-type-options', value: 'nosniff' },
+          { key: 'referrer-policy', value: 'strict-origin-when-cross-origin' },
+          {
+            /*
+             * **`SAMEORIGIN`, NOT `DENY`, AND THIS IS THE ONE A SECURITY
+             * CHECKLIST WILL TELL THE NEXT PERSON TO "FIX".**
+             *
+             * CLAUDE.md documents this project's only way of driving its own UI
+             * without a WebDriver: a scratch page under `public/cards/` that
+             * loads the app in a SAME-ORIGIN IFRAME and patches its `fetch`.
+             * Chromium cannot launch in this WSL image, so that harness is not a
+             * convenience -- it is the technique that caught the two worst bugs
+             * in this project's history, and W7's own refusal screenshots were
+             * taken with it.
+             *
+             * `DENY` kills it. `SAMEORIGIN` blocks clickjacking from another
+             * origin, which is the actual threat, and keeps the harness working.
+             */
+            key: 'x-frame-options',
+            value: 'SAMEORIGIN',
+          },
+          {
+            key: 'permissions-policy',
+            value: 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
+          },
+          {
+            /*
+             * Two years, subdomains included, **without `preload`**. Vercel
+             * already sets HSTS on `*.vercel.app`; this is for the custom domain.
+             * Preload is a one-way door -- removal takes months and a browser
+             * release -- and `jmtarot.site` is days old.
+             */
+            key: 'strict-transport-security',
+            value: 'max-age=63072000; includeSubDomains',
+          },
+          {
+            /*
+             * Safe because Auth.js's Google provider does a FULL REDIRECT here
+             * (reconciliation R21), not a popup. **If sign-in ever becomes a
+             * popup this must become `same-origin-allow-popups`**, or the popup
+             * cannot talk to its opener and sign-in breaks with no error worth
+             * reading.
+             */
+            key: 'cross-origin-opener-policy',
+            value: 'same-origin',
+          },
+          {
+            /*
+             * **THE FOUR DIRECTIVES THAT COST NOTHING AND NEED NO NONCE**
+             * (W7-D17). Enforced today.
+             *
+             * `frame-ancestors 'self'` rather than `'none'`, for the same reason
+             * `x-frame-options` is SAMEORIGIN -- and note that `frame-ancestors`
+             * is the modern one that browsers honour when both are present, so
+             * setting it to `'none'` here would kill the harness even with
+             * SAMEORIGIN above.
+             */
+            key: 'content-security-policy',
+            value: "base-uri 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'self'",
+          },
+          {
+            /*
+             * **REPORT-ONLY, AND IT DELIBERATELY SHIPS WITHOUT `report-uri`.**
+             * Reconciliation §7.9a cut `CSP_REPORT_URI` as "a report endpoint
+             * that nothing reads", so violations surface in the browser console
+             * during development rather than being posted anywhere. That is the
+             * intended state: this policy exists to be READ by whoever next
+             * opens devtools, not collected.
+             *
+             * `script-src` cannot be enforced yet. Next inlines bootstrap
+             * scripts and RSC flight data, so a real one needs a per-request
+             * nonce generated in middleware -- and W2 owns middleware. The
+             * `'unsafe-inline'` on `style-src` is likewise Next's doing: CSS
+             * modules are fine, but the framework emits inline style attributes.
+             *
+             * Two assumptions checked rather than shipped: the built HTML
+             * contains no `fonts.gstatic.com` reference (`next/font/google`
+             * self-hosts, verified on 2026-07-27 by grepping `.next`), and
+             * `img-src` needs no `lh3.googleusercontent.com` because W2 does not
+             * render the Google avatar (reconciliation R21). If either changes,
+             * this directive list changes with it.
+             */
+            key: 'content-security-policy-report-only',
+            value: [
+              "default-src 'self'",
+              "script-src 'self' 'unsafe-inline'",
+              "style-src 'self' 'unsafe-inline'",
+              "img-src 'self' data:",
+              "font-src 'self'",
+              "connect-src 'self'",
+              "base-uri 'self'",
+              "form-action 'self'",
+              "object-src 'none'",
+              "frame-ancestors 'self'",
+            ].join('; '),
+          },
+        ],
+      },
     ];
   },
 };

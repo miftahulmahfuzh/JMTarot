@@ -107,6 +107,8 @@ export const EVENT_NAMES = [
   'terms.accepted',
   'privacy.viewed',
   'moderation.refused',
+  'moderation.timeout',
+  'moderation.allowed_flagged',
 
   // — the app shell —
   'app.launched',
@@ -203,8 +205,25 @@ export type EventMap = {
   'terms.viewed':              { version: string; from: string };
   'terms.accepted':            { version: string };
   'privacy.viewed':            { version: string; from: string };
-  'moderation.refused':        { source: 'blocklist' | 'classifier'; category: string;
+  'moderation.refused':        { source: 'blocklist' | 'classifier' | 'timeout'; category: string;
                                  confidence_bucket: 'low' | 'medium' | 'high' | null;
+                                 reader_id: string; service_id: string };
+  /*
+   * The classifier did not answer. `failed_open` is the whole point of the row:
+   * W7-D7 fails OPEN on a clean blocklist and CLOSED on a Tier-B suspicion, and
+   * reconciliation §7.7 keeps that policy tunable rather than guessed at -- if
+   * this prop spikes toward `true`, the classifier is what needs fixing, not the
+   * policy. `reason` separates a slow provider from a broken one.
+   */
+  'moderation.timeout':        { failed_open: boolean; reason: 'timeout' | 'error';
+                                 reader_id: string; service_id: string };
+  /*
+   * A near-miss we let through: the classifier named a category, and the
+   * threshold on `other` said it was not confident enough to refuse anybody.
+   * WITHOUT THIS EVENT every moderation row is a block and the false-negative
+   * side of tuning is invisible forever.
+   */
+  'moderation.allowed_flagged':{ category: string; confidence_bucket: 'low' | 'medium' | 'high' | null;
                                  reader_id: string; service_id: string };
 
   'app.launched':              { standalone: boolean; referrer_kind: 'direct' | 'internal' | 'external' };

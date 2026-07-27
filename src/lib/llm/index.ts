@@ -1,3 +1,5 @@
+import 'server-only';
+
 import { createAnthropicProvider } from './anthropic';
 import type { LLMProvider } from './types';
 

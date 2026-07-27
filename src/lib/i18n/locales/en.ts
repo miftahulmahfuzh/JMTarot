@@ -108,6 +108,27 @@ const en: Catalog = {
   // The leading `\n\n` and the brackets are load-bearing. See `id.ts`.
   'reading.error.midStream': '\n\n[The reading was interrupted. Try again in a moment.]',
 
+  /*
+   * --- The moderation refusal (W7) ----------------------------------------
+   * NATIVELY WRITTEN, NOT TRANSLATED. See `id.ts` for the two-documents rule and
+   * for why the app speaks here rather than a reader.
+   */
+  'moderation.blocked.generic.title': 'The cards stay closed for this one.',
+  'moderation.blocked.generic.lead': 'Questions like this sit outside what we will read, under our',
+  'moderation.blocked.generic.tail': 'You are welcome to ask something else.',
+
+  'moderation.blocked.selfHarm.lead':
+    'If you are thinking about hurting yourself, please talk to a person tonight, not to a deck of cards.',
+  'moderation.blocked.selfHarm.resourcesLabel': 'Someone to talk to',
+  'moderation.blocked.selfHarm.emergency':
+    'If someone is in immediate danger, contact your local emergency number.',
+  'moderation.blocked.selfHarm.closing':
+    'We will not turn cards on this question. Not because the question is wrong, but because the answer you need must not come from a guess. Our terms explain why:',
+
+  // --- The legal documents (W7). Chrome only; see `id.ts` and I15. ----------
+  'legal.back': 'Back',
+  'legal.effective': 'In effect from version {version}.',
+
   // --- Sign in --------------------------------------------------------------
   'login.tagline': 'Three readers, twenty-two Major Arcana, one reading for today.',
   'login.google': 'Sign in with Google',

@@ -195,11 +195,47 @@ rm /tmp/check.env
 
 `AUTH_USERS` appearing in that output is a finding, not a reassurance — delete it.
 
+## 2b. Set a hard spend cap at z.ai — REQUIRED, and it is not code
+
+**This is the single most important control on the bill, and nothing in this
+repository can enforce it.** Do it before the app is reachable by anyone but you.
+
+`src/lib/ratelimit.ts` is a per-instance sliding window. Serverless instances do
+not share memory, so it is best-effort by construction, and Google sign-in made
+its key space unbounded: fifty throwaway Google accounts get fifty independent
+budgets. `hitGlobal()` bounds one instance; it cannot bound a fleet. **A
+provider-side cap can, absolutely.**
+
+The cost roughly doubled with W7, too: each reading is now **two** model calls,
+because the moderation classifier runs alongside the reading.
+
+1. Open the z.ai billing dashboard.
+2. Set a hard monthly spend limit — one that you would be annoyed but not hurt
+   to pay in full.
+3. Set the alert threshold below it, so a runaway shows up before the cap does.
+4. **Record the value in the commit message or here**, so the next person knows
+   what was chosen rather than whether anything was.
+
+Related, and cheap: `MODERATION_MODEL=glm-4.5-flash` is a production requirement
+rather than an optimisation (see `.env.example`), and it is also six times
+cheaper per classification than the reading model.
+
+**The upgrade trigger for the rate limiter is an event, not a number:** the day a
+link to the app is posted anywhere public, swap `hit()`'s body for
+`@upstash/ratelimit` on Redis. Not at a user count, not at a bill threshold —
+the moment the URL is outside your control.
+
 ## 3. Verify the deployment
 
 - `/` redirects to `/login`
 - The login page shows one **Continue with Google** button, and links to
   `/terms` and `/privacy` that both load **while signed out**
+- `curl -sI https://www.jmtarot.site/terms` shows `x-frame-options: SAMEORIGIN`,
+  `strict-transport-security`, and both `content-security-policy` and
+  `content-security-policy-report-only` (W7 §6.5)
+- A question containing an obvious Tier-A phrase returns **403** with
+  `{"error":"moderation_blocked"}` and no reading text
+- `GET /api/cron/sweep` without the bearer token returns **401**
 - Google's consent screen says **JMTarot**, not a raw client id
 - Sign in returns you to the app, and a `users` row appears with the right
   `google_sub`. Sign in a second time and it is still **one** row, with

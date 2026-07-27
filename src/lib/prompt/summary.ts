@@ -1,3 +1,5 @@
+import 'server-only';
+
 /**
  * W5's two GENERATED lines that are not readings: the card-frequency verdict
  * (§3.6) and the per-day reader summary (§5.3).

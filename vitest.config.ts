@@ -22,13 +22,38 @@ import { defineConfig } from 'vitest/config';
  * browser against `npm run dev`, and touch behaviour on a real iPhone against
  * a Vercel preview URL.
  *
- * The alias mirrors tsconfig's `paths`. Vitest does not read tsconfig, so the
+ * The `@` alias mirrors tsconfig's `paths`. Vitest does not read tsconfig, so the
  * two have to be kept in step by hand.
  */
 export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
+      /*
+       * `server-only` RESOLVES TO ITS OWN NO-OP HERE, and this is not a hole in
+       * the fence (W7 Task 11).
+       *
+       * The package ships two files. `empty.js` is what the bundler picks under
+       * the `react-server` export condition; `index.js` throws, and it is what
+       * plain Node -- and therefore Vitest -- gets. The throw is how a Client
+       * Component importing a server module becomes a BUILD error, which is the
+       * entire value of the marker and is completely unaffected by this line.
+       *
+       * Without the alias, W7-D14 is unimplementable rather than merely awkward:
+       * adding the marker to `src/lib/prompt/**` and `src/lib/moderation/**` --
+       * which is the point of that decision -- would break `build.test.ts`,
+       * `lotus.test.ts`, `memory.test.ts`, `summary.test.ts`, the base-contract
+       * snapshot and the classifier's own tests on import, and the fix people
+       * would reach for is deleting the marker. Pointing at the package's OWN
+       * empty module rather than at a stub of ours means there is nothing to
+       * keep in step if the package ever changes.
+       *
+       * What still catches a real leak: `next build` (the condition-resolved
+       * throw), `clientBoundary.test.ts` (source-level import fence) and
+       * `scripts/audit-secrets.ts` (the built-output grep). Three layers, none
+       * of which is this one.
+       */
+      'server-only': fileURLToPath(new URL('./node_modules/server-only/empty.js', import.meta.url)),
     },
   },
   test: {

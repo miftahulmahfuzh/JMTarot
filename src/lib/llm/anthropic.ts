@@ -1,3 +1,5 @@
+import 'server-only';
+
 import Anthropic from '@anthropic-ai/sdk';
 import { requireEnv } from '@/lib/env';
 import type {
@@ -122,6 +124,11 @@ export function createAnthropicProvider(): LLMProvider {
         {
           model: opts?.model ?? model,
           max_tokens: maxTokens,
+          // Spread rather than `temperature: opts?.temperature`: an explicit
+          // `undefined` is serialized by the SDK as a present null-ish field on
+          // some paths, and 0 is falsy, so neither `??` nor a truthiness test
+          // would express "unset means the provider's default" correctly.
+          ...(opts?.temperature === undefined ? {} : { temperature: opts.temperature }),
           system: [{ type: 'text', text: system }],
           messages: [{ role: 'user', content: user }],
         },

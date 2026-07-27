@@ -2,6 +2,8 @@
 
 import { useT } from '@/lib/i18n/LocaleProvider';
 import { useEffect, useRef } from 'react';
+import { RefusalNotice } from './RefusalNotice';
+import type { RefusalPayload } from '@/lib/moderation/types';
 import styles from './ReadingPanel.module.css';
 
 export type ReadingState =
@@ -9,7 +11,18 @@ export type ReadingState =
   | { status: 'waiting' }
   | { status: 'streaming'; text: string }
   | { status: 'done'; text: string }
-  | { status: 'error'; message: string; text?: string };
+  | { status: 'error'; message: string; text?: string }
+  /**
+   * The moderation gate refused the question (W7).
+   *
+   * A STATE OF ITS OWN, not `error` with different copy. `error` renders a
+   * Retry button, and offering "try again" to somebody whose question was
+   * refused is both useless -- the same question refuses the same way -- and
+   * insulting. The right affordance is already on screen: the draw is NOT
+   * reset, so the picked cards stay and the querent can pull a card back,
+   * rewrite the question and ask something else.
+   */
+  | { status: 'blocked'; payload: RefusalPayload };
 
 type Props = {
   state: ReadingState;
@@ -39,6 +52,20 @@ export function ReadingPanel({ state, onRetry }: Props) {
   }, [state.status]);
 
   if (state.status === 'idle') return null;
+
+  /*
+   * The refusal replaces the panel rather than sitting inside it. It brings its
+   * own container, and -- deliberately -- NO entertainment disclaimer: "for
+   * entertainment only" under a message about suicide would be obscene, and
+   * under a generic refusal it is merely noise.
+   */
+  if (state.status === 'blocked') {
+    return (
+      <div ref={ref}>
+        <RefusalNotice payload={state.payload} />
+      </div>
+    );
+  }
 
   const text = 'text' in state ? state.text : undefined;
 

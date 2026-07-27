@@ -1,3 +1,5 @@
+import 'server-only';
+
 import { createHash } from 'node:crypto';
 import { CARDS, cardKeywords, effectiveYesNo } from '@/data/deck';
 import { readerById } from '@/data/readers';

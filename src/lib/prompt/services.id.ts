@@ -1,3 +1,5 @@
+import 'server-only';
+
 import type { ServiceId, YesNo } from '@/data/types';
 import { midpoint, type LengthBudget } from './budget';
 

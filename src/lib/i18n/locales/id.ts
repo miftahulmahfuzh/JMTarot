@@ -150,6 +150,61 @@ const id = {
    */
   'reading.error.midStream': '\n\n[Bacaan terputus. Coba lagi sebentar.]',
 
+  /*
+   * --- The moderation refusal (W7) ----------------------------------------
+   *
+   * **TWO DOCUMENTS, NOT TEN.** W7 §3.5 designs exactly one generic refusal and
+   * one self-harm refusal; the CATEGORY only decides which of the two renders
+   * and which T&C clause the link points at. `refusalPayload()` therefore emits
+   * `…generic` or `…selfHarm` as its `messageKey`, never a per-category key --
+   * twenty near-identical strings per locale would be twenty chances to write a
+   * bad one, and I3 means a key with no value renders as the key.
+   *
+   * **THE APP SPEAKS HERE, NEVER A READER** (W7-D9). No Thessaly, no Margaret,
+   * no Adrian, no second person plural, no oracular register. A refusal
+   * delivered in a reader's voice is grotesque, and for self-harm it is worse
+   * than grotesque.
+   *
+   * Split around the link the way `login.legal.*` is, and for the same reason:
+   * two of these words are an `<a>` and `t()` returns a string. The link label
+   * is `common.terms`, which already exists -- a second copy of "Syarat &
+   * Ketentuan" is a second thing to keep in step.
+   */
+  'moderation.blocked.generic.title': 'Kartu tidak dibuka untuk pertanyaan ini.',
+  'moderation.blocked.generic.lead':
+    'Permintaan seperti ini termasuk yang tidak bisa kami baca menurut',
+  'moderation.blocked.generic.tail': 'Kamu bisa menulis pertanyaan lain.',
+
+  /*
+   * **RESOURCES FIRST, REFUSAL SECOND, THE CLAUSE LINK LAST AND SMALL**
+   * (W7-D10). Every element Miftah asked for is here -- the app says it cannot
+   * read the cards, and it links the Terms -- reordered, because you do not open
+   * with a policy citation to a person describing suicidal ideation.
+   *
+   * `bicara dengan orang sungguhan` and not `cari bantuan profesional`: the
+   * no-therapy rule binds this copy too, and "a real person tonight" is both
+   * warmer and more actionable than a referral to a category of professional.
+   */
+  'moderation.blocked.selfHarm.lead':
+    'Kalau kamu sedang berpikir untuk menyakiti diri sendiri, tolong bicara dengan orang sungguhan malam ini, bukan dengan kartu.',
+  'moderation.blocked.selfHarm.resourcesLabel': 'Tempat bicara',
+  'moderation.blocked.selfHarm.emergency':
+    'Kalau ada bahaya langsung, hubungi layanan darurat setempat.',
+  'moderation.blocked.selfHarm.closing':
+    'Kami tidak membuka kartu untuk pertanyaan ini. Bukan karena pertanyaanmu salah, tapi karena jawaban yang kamu butuhkan tidak boleh datang dari tebakan. Alasannya ada di',
+
+  /*
+   * --- The legal documents (W7) --------------------------------------------
+   *
+   * ONLY THE CHROME IS KEYED (I15). The seventeen clauses themselves live in
+   * `src/app/terms/terms.{id,en}.tsx` and the twelve privacy sections in
+   * `src/app/privacy/privacy.{id,en}.tsx`, because a 2,000-word document as one
+   * catalog value is unreviewable in a diff -- and these are legal documents,
+   * where reviewing the diff is the entire point.
+   */
+  'legal.back': 'Kembali',
+  'legal.effective': 'Berlaku sejak versi {version}.',
+
   // --- Sign in --------------------------------------------------------------
   'login.tagline':
     'Tiga pembaca, dua puluh dua Major Arcana, satu bacaan untuk hari ini.',
