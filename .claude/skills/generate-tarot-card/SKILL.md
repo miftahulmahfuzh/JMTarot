@@ -65,6 +65,15 @@ one mountain-and-lake backdrop, and no number above detects that. Judge:
   drip, rill. A wound is both off-brief and the thing that gets refused.
 - **Is it grave, or is it lurid?** Unflinching about a cruel world is the deck.
   Enjoying it is not, and this app has a self-harm crisis path one screen away.
+- **COUNT THE LIMBS.** Arms, hands, fingers, legs, and the same for any animal.
+  Trace each arm from shoulder to hand and check it belongs to the side it came
+  from. The Empress shipped with two arms on her left and none on her right, and
+  it got through a review that checked everything else -- anatomy is the most
+  common failure of these models and the easiest to miss at thumbnail size. Zoom
+  in on the figure; do not judge it from the contact sheet. **Fix it with pose
+  language, never by counting** -- `one forearm on the armrest, the other hand on
+  her belly` generates; `one arm to each side, both shoulders visible` and a note
+  saying `no third arm` were both refused as body horror. style.md has the detail.
 - **Is it actually good?**
 
 **6. Revise, up to three attempts total.** Pass one instruction via `--note`,

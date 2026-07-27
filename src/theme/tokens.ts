@@ -26,7 +26,29 @@ export const color = {
   cardBack: ['#1d1636', '#291f4a', '#17112b'] as const,
   cardBackBorder: '#4a3d72',
   cardFace: ['#fbf4e2', '#f1e6cb'] as const,
-  cardFaceBorder: '#c9a227',
+
+  /**
+   * The edge of a face-up card. REPLACES `cardFaceBorder: '#c9a227'`, which was
+   * full-strength gold.
+   *
+   * That gold was the only thing separating a card from the near-black canvas
+   * back when the artwork was three inconsistent generations. The regenerated
+   * deck carries its own painted frame at 22-25% luminance against a canvas at
+   * ~4%, so the card defines its own edge and a gold ring on top of it was a
+   * SECOND border competing with the first -- on the darkest cards it became the
+   * brightest thing in the cell, which is the art losing to the chrome.
+   *
+   * Keyed to the artwork's pewter rather than to gold, and at an opacity that
+   * reads as the outermost millimetre of the painting instead of as app chrome.
+   * Its whole job is keeping the rounded corners crisp on The Moon and The Hanged
+   * Man, which go soft with no border at all.
+   *
+   * GOLD NOW MEANS EXACTLY ONE THING ON THE DRAW SCREEN: "a card goes here."
+   * `Slots.module.css` keeps `--gold-hairline` on the EMPTY box, so the empty and
+   * filled states stopped sharing a signal. That was a side effect of an
+   * aesthetic fix and it is the better half of it.
+   */
+  cardEdge: 'rgba(198,188,170,0.17)',
 
   /** Translucent golds, used for hairlines, chips and button fills. */
   goldHairline: 'rgba(201,162,39,0.22)',

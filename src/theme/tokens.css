@@ -39,7 +39,11 @@
   --card-back-border: #4a3d72;
   --card-face-1: #fbf4e2;
   --card-face-2: #f1e6cb;
-  --card-face-border: #c9a227;
+  /* Mirrors `cardEdge` in tokens.ts, which carries the reasoning. Replaces
+     `--card-face-border: #c9a227` -- full gold, which competed with the frame the
+     regenerated artwork paints for itself. Gold on the draw screen now means only
+     "a card goes here" (the empty slot), never "a card is here". */
+  --card-edge: rgba(198, 188, 170, 0.17);
 
   /* --- Translucent golds: hairlines, chips, button fills ----------------- */
   --gold-hairline: rgba(201, 162, 39, 0.22);

@@ -14,14 +14,35 @@
   position: absolute;
   inset: 0;
   border-radius: var(--radius-card);
-  border: 1px solid var(--card-face-border);
+  /*
+   * A near-invisible seam, NOT the gold ring this used to be. The artwork paints
+   * its own frame now (tarnished pewter, ~4% of the card's width, at 22-25%
+   * luminance against a canvas at ~4%), so the card defines its own edge and the
+   * old `--card-face-border: #c9a227` was a second border on top of the first --
+   * on the darkest cards it was the brightest thing on screen.
+   *
+   * Removing it outright was the other candidate and it very nearly won. This
+   * keeps 1px because The Moon and The Hanged Man lose their rounded corners into
+   * the page without it. Compared against no border, a heavier shadow, a warm
+   * halo and two gold opacities before choosing; see tokens.ts.
+   */
+  border: 1px solid var(--card-edge);
   /* Was here to hide the padding bars on cards whose trimmed art was narrower
      than 2:3 -- 44px per side on the old cards 0-10. The regenerated deck is
      full-bleed and has none, and check_card_art.py fails a card that does, but
      this stays as the backstop for the one-pixel rounding case. It costs
      nothing. */
   background: #0f0b1c;
-  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.6);
+  /*
+   * Tightened from `0 22px 48px rgba(0,0,0,.6)`. MEASURED, not tidied: a black
+   * shadow on a `--canvas` of #0a0812 is very nearly invisible, and doubling it
+   * was indistinguishable from having none at all in a side-by-side. So it cannot
+   * be what separates a card from the page -- the artwork's own frame is -- and a
+   * 48px spread was paying for reach it never delivered. What is left reads only
+   * on the brighter cards (The Sun, The Hermit), which is where there is any
+   * luminance for it to subtract from.
+   */
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.8);
   overflow: hidden;
   backface-visibility: hidden;
 

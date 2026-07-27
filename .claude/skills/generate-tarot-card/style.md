@@ -96,6 +96,27 @@ way at 90px, keep the vulnerability the cards are about, and generate. Do not
 "restore" the nudity: it does not fail loudly, it fails as a refused request and
 a card that never appears.
 
+**ACCOUNT FOR EVERY LIMB, BUT DESCRIBE A POSE -- NEVER COUNT BODY PARTS.** The
+Empress shipped with two arms on the same side: a hand on the armrest and a hand
+on the belly, both emerging from her left, her right arm absent entirely. The
+scene line said only `one hand on a swollen belly` and never accounted for the
+other, so the model put it wherever it liked. Anatomy is the most common way these
+images fail, and it is invisible at 90px -- it survived a review that checked text,
+composition and blood.
+
+THE FIRST FIX FOR IT WAS REFUSED TWICE, WHICH IS THE REAL LESSON. `her left
+forearm laid along the armrest and her right hand resting on a swollen belly --
+one arm to each side of her body, both shoulders visible` is anatomical
+enumeration, and next to a swollen belly and bleeding fruit the classifier reads
+it as body horror. A `--note` saying `no third arm, no duplicated hand` was
+refused for the same reason. Counting limbs, naming sides, and listing shoulders
+all trip it.
+
+What works is ordinary pose language: **`one forearm laid along the armrest, the
+other hand resting on a swollen belly`.** `one ... the other` fixes the placement
+and implies exactly two without ever enumerating anything. Same rule as the style
+block: say what the picture IS.
+
 **AND WATCH WHAT THE VERB ATTACHES TO.** The World read `a figure suspended
 inside a wreath ... the wreath bound at four points with red cord` and was
 refused: `suspended` plus `bound at four points` describes a person being
@@ -118,7 +139,7 @@ sixteen cards at v2, which is the mixed deck the version stamp exists to catch.
 - 00_fool: A barefoot youth mid-stride off a crumbling clifftop, arms loose, face turned up to the sky, not seeing the drop. Far below, a scree slope of bones with a thin red rill threading through it. A small pale dog howling at the lip behind him. Wide, vertiginous, looking down past him into the fall.
 - 01_magician: A gaunt figure at a stone slab in a windowless cellar, one arm raised, the other pointing at the floor. On the slab: a knife, a chipped cup brimming dark red, a bent coin, a snapped staff. Blood tracks along a channel cut into the stone and drips off the near edge. Close, cramped, single guttering light.
 - 02_high_priestess: A veiled seated figure between two black pillars at the mouth of a flooded crypt, water to her ankles, a crescent at her feet. Dark red spreads from beneath her hem across the still surface in slow threads. Frontal, symmetrical, drowned and silent.
-- 03_empress: A heavy enthroned woman in a rotting orchard, one hand on a swollen belly. Overripe fruit split open on the ground bleeding pulp, wheat blackened at the tips, crows crowding the branches. Tight, oppressive, low green-grey light with the canopy pressing down.
+- 03_empress: A heavy woman seated on a stone throne in a rotting orchard, one forearm laid along the armrest, the other hand resting on a swollen belly. Overripe fruit split open on the ground bleeding pulp, wheat blackened at the tips, crows crowding the branches. Tight, oppressive, low green-grey light with the canopy pressing down.
 - 04_emperor: A mailed ruler on a throne built from interlocked blades and rib bones, ram skulls at the arms. Seen steeply from below so he fills the frame. A dark stain worked deep into the stone step at his feet. Monumental, frontal, grey daylight from high behind.
 - 05_hierophant: A masked celebrant high on a pulpit in a vast stone nave, hands raised over a basin of dark red. Two tonsured acolytes kneel far below him in a shallow spreading pool. Extreme vertical, cavernous, ranks of candles receding into dark.
 - 06_lovers: Two figures in thin pale shifts standing back to back, wrists bound behind them with red cord drawn tight. A vast winged shape above, its face lost in shadow. A serpent at the woman's ankle. Nocturnal garden gone entirely to thorn. Mid-shot, cold moonlight.
