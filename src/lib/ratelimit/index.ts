@@ -347,6 +347,23 @@ export function _setBackend(b: RateLimitBackend | null) {
   override = b;
 }
 /**
+ * **WHICH BACKEND IS ACTUALLY IN USE, FOR DIAGNOSTICS.**
+ *
+ * Not a test seam -- `/api/cron/sweep` reports it once a day, and that is the
+ * only passive way anybody learns that production is running on per-instance
+ * memory. **An UNCONFIGURED limiter never fires `ratelimit.backend_degraded`**:
+ * it is not degraded, it simply never tries, so the one event built to make this
+ * visible is silent in exactly the case that matters most. A missing
+ * `UPSTASH_REDIS_REST_URL` in the dashboard looks identical to a healthy app.
+ *
+ * Keyed on a representative READING budget rather than a made-up string, because
+ * `events:` deliberately answers `memory` and would be misleading here.
+ */
+export function activeBackend(): 'memory' | 'redis' {
+  return backendFor('read:diagnostic').name;
+}
+
+/**
  * Test seam: which backend a key WOULD use, without making a call.
  *
  * `_setBackend` cannot test selection, because it overrides it. This is the only

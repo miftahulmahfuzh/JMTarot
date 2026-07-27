@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { createAnthropicProvider } from './anthropic';
+import { createOpenAIProvider } from './openai';
 import { ModelCeilingError, reserveModelCall } from './meter';
 import type { CompletionPrompt, LLMCallOpts, LLMProvider } from './types';
 
@@ -13,8 +14,13 @@ export type { LLMProvider, ReadingPrompt } from './types';
  * They are still listed separately so the env var says which service is
  * actually being billed, and so a future divergence has somewhere to go.
  *
- * Adding Gemini or OpenAI means one new file implementing LLMProvider and one
- * new case here. No caller changes -- that is the point of the interface.
+ * **`openai` IS THE SECOND FUNDED PROVIDER, AND IT IS INSURANCE RATHER THAN A
+ * PREFERENCE.** z.ai's FAQ says the Coding Plan is "strictly limited to use
+ * within officially supported tools and products" and JMTarot is not one of
+ * them, so the single-provider risk is a terms decision nothing in this repo can
+ * bound. Switching is `LLM_PROVIDER` plus `LLM_MODEL` and nothing else --
+ * which is exactly what the sentence below promised, now demonstrated rather
+ * than asserted.
  *
  * **AND SINCE V9 EVERY `complete()` CALL PASSES THE MODEL-CALL CEILING ON THE WAY
  * OUT.** That is what makes the ceiling a property of reaching a model rather
@@ -26,6 +32,22 @@ export function getProvider(): LLMProvider {
     case 'zai':
     case 'anthropic':
       return metered(createAnthropicProvider());
+    case 'openai':
+      return metered(createOpenAIProvider());
+    /*
+     * **GEMINI IS THE OPENAI ADAPTER WITH A DIFFERENT HOST**, because Google ships
+     * an OpenAI-compatible endpoint that accepts this app's exact request shape.
+     * Verified end to end rather than assumed: streaming with usage frames,
+     * `temperature: 0` for the classifier, and no thinking overhead at the app's
+     * token ceilings.
+     *
+     * It is a NAMED PROVIDER rather than `openai` plus an `OPENAI_BASE_URL` the
+     * operator has to remember, because this is the emergency-failover path and
+     * the day it is used is a bad day. Forgetting the base URL there would send a
+     * Google key to OpenAI and 401 in a way that reads like a bad key.
+     */
+    case 'gemini':
+      return metered(createOpenAIProvider());
     default:
       throw new Error(`Unknown LLM_PROVIDER: ${name}`);
   }

@@ -592,6 +592,72 @@ send the text" is legitimate in Adrian's voice; the rule is against *diagnosis*.
 An entertainment-only disclaimer appears under every reading and on both
 pickers.
 
+## Providers
+
+Two adapters, one interface, and the second one is **insurance rather than a
+preference**. `LLM_PROVIDER=zai|anthropic` uses `anthropic.ts` (one wire format,
+two services); `openai` uses `openai.ts`. Switching is that variable plus
+`LLM_MODEL`, and nothing else — the thing `llm/index.ts` promised since W4, now
+demonstrated rather than asserted.
+
+**THE EMERGENCY FALLBACK IS `gemini-3.5-flash-lite`, AND IT IS FOUR ENV VARS WITH
+NO BASE URL:** `LLM_PROVIDER=gemini`, `LLM_API_KEY=<Google key>`,
+`LLM_MODEL=gemini-3.5-flash-lite`, `MODERATION_MODEL=gemini-3.5-flash-lite`.
+
+`gemini` is the OpenAI adapter pointed at Google's OpenAI-compatible endpoint —
+no third adapter exists and none is needed. It is a NAMED provider rather than
+`openai` plus a base URL, because this is the failover path and forgetting the
+base URL would send a Google key to OpenAI and 401 in a way that reads like a bad
+key.
+
+**USE THE PAID TIER. That is a privacy requirement, not a quota one.** Google
+marks free-tier content as used to improve its products; paid tier is excluded.
+Every request carries the querent's typed question — including the ones routed to
+the self-harm classifier — so the free tier contradicts `/privacy` directly.
+
+**Two caveats are open and written up in `docs/provider-comparison.md` §§14–16:**
+it produced one Malay word the eleven-word grep structurally cannot catch
+(`memulakannya` — a *morphological* `me-…-kan` leak, not a lexical one), and it
+streams in ~6 chunks against z.ai's 173, which nobody has judged on a real phone.
+
+**THE RUNG BELOW IS `gpt-5.6-luna`, and that one takes a fifth variable:**
+`OPENAI_REASONING_EFFORT=none`. Without it, roughly **two readings in nine come
+back completely blank** — reasoning tokens come out of the same budget as the
+prose, `MAX_TOKENS` here is 350–650, and **nothing reports it**, because the
+stream closes normally: the route records a completed reading, analytics records
+a success, no `[Bacaan terputus...]` fires, and the querent gets an empty page. It
+also 400s the classifier, because `temperature: 0` is rejected while reasoning is
+on — a reasoning-MODE restriction, not a model one (effort absent → 400, `low` →
+400, `none` → 200).
+
+**`openai.ts` REFUSES TO START on a `gpt-5`/`gpt-6`/`o`-series model with that
+variable unset.** Any explicit value satisfies it, including `low`: the rule is
+"you must have decided". Deliberately NOT required for Gemini, measured with no
+thinking overhead at these ceilings.
+
+**`docs/provider-comparison.md` has the measurements and the recommendation.**
+**AND TWO OF ITS OWN MEASUREMENTS WERE WRONG, WHICH IS WORTH KNOWING BEFORE YOU
+QUOTE IT.** `jaccard()` in `smoke-llm.ts` is a bare set metric with no length
+normalisation, so it **rewards a model for writing less** — controlling for length
+moved every ranking. And z.ai's famous `0.050` is a single favourable
+measurement: re-run in the same session it scored **0.068**. Three rounds of
+evaluation treated 0.050 as a threshold; it was a datapoint. Compare at matched
+length or not at all.
+Read it before changing `LLM_PROVIDER`, because three numbers elsewhere in this
+file are z.ai facts rather than general ones and would need re-deriving:
+`MODERATION_TIMEOUT_MS` (from z.ai's classifier p95), `LLM_WINDOW_CALL_CEILING`
+(from a 5-hour prompt quota OpenAI does not have), and DEPLOY-VERCEL §2b's claim
+that no spend cap is possible — **an OpenAI project takes a hard budget cap, so
+that premise flips back the moment the provider does.**
+
+**`LLM_BASE_URL` IS ANTHROPIC-ONLY.** The OpenAI adapter reads `OPENAI_BASE_URL`.
+Pointing the first at OpenAI silently does nothing. `npm run smoke` and
+`npm run probe:moderation` USED to print `baseURL=api.anthropic.com` while talking
+to somewhere else entirely — they printed exactly that through a whole Gemini
+evaluation — and both now resolve the variable the adapter will actually read.
+The old text is kept below because it explains what
+line reports the Anthropic variable's default.
+
 ## The prompt
 
 Three layers in `src/lib/prompt/`, assembled by `build.ts`, **each forked per
@@ -1229,9 +1295,12 @@ contractions 0.87 / 0.00 / 3.52.
   Plan is *"strictly limited to use within officially supported tools and
   products"*, and JMTarot is not one. The consequence of that being enforced is
   not a warning or an overage — it is **key revocation, which takes the whole app
-  down at once**, with no second provider funded. `LLM_PROVIDER` already has an
-  `anthropic` branch and one adapter serves both, so the code cost of a second
-  key is an env var. Decide before V7 makes the app publicly linkable.
+  down at once**. **`src/lib/llm/openai.ts` is the answer to that and it is built,
+  tested and measured** — see `docs/provider-comparison.md`. It is NOT switched
+  on: OpenAI is 8× faster to first token, reports real `input_tokens`, and has a
+  better classifier, but **reader overlap on `spread3` goes 0.050 → ~0.086**,
+  which is the one metric this product is built on. So the fallback exists and the
+  default does not move until the persona paragraphs are tuned.
 - **`findahelpline.com` and `112` are NOT in `resources.ts`** because neither
   could be verified — findahelpline returned 403 twice. Both are worth adding
   by hand.

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { activeBackend } from '@/lib/ratelimit';
 import { sql } from 'drizzle-orm';
 import { ERASURE_GRACE_DAYS } from '@/lib/db/queries/profile';
 
@@ -199,7 +200,17 @@ export async function GET(request: Request) {
     console.error('[cron] ceiling report failed', err instanceof Error ? err.name : 'unknown');
   }
 
-  const body = { ...result, failures, ms: Date.now() - startedAt };
+  /*
+   * **WHICH LIMITER BACKEND PRODUCTION IS ACTUALLY ON**, reported once a day
+   * because nothing else reports it. `ratelimit.backend_degraded` fires when
+   * Redis FAILS; it does not fire when Redis was never configured, and an
+   * unconfigured limiter is the likelier of the two -- a variable missing from
+   * the Vercel dashboard, with the app looking perfectly healthy while every
+   * stated limit is silently multiplied by the number of warm instances.
+   *
+   * `limiter: "memory"` in a production log line is the alarm.
+   */
+  const body = { ...result, failures, limiter: activeBackend(), ms: Date.now() - startedAt };
 
   /*
    * Counts, never rows. The response goes into a Vercel cron log, which is a
