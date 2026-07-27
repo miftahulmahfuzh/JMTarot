@@ -4,10 +4,10 @@ import { readerById } from '@/data/readers';
 import { serviceById, slotLabels } from '@/data/services';
 import type { Locale } from '@/data/types';
 import type { ReadingPrompt } from '@/lib/llm/types';
-import { BASE_CONTRACT } from './base';
+import { baseContract } from './base';
 import { renderLotusBlock } from './lotus';
 import { memoryBlock, memoryInstruction, type MemoryContext } from './memory';
-import { READER_PROMPTS } from './readers';
+import { readerPrompt } from './readers';
 import { MAX_TOKENS, servicePrompt } from './services';
 import { sanitizeQuestion } from './sanitize';
 
@@ -66,6 +66,56 @@ export type BuildArgs = {
    * There is one prompt fork today, so the default is the only value.
    */
   locale?: Locale;
+};
+
+/**
+ * The user turn's labels, per locale (§9.1).
+ *
+ * MODEL-FACING VOCABULARY, NOT UI COPY, which is why it is here and not in
+ * `src/lib/i18n/locales/*`. No querent ever sees any of these strings. Keeping them
+ * beside the prompt layer means nobody edits `muatan:` because it reads awkwardly on
+ * a screen it never appears on.
+ *
+ * The trailing space is inside the label rather than in the template, so a locale can
+ * write `Pembaca:` or `Reader —` or nothing at all without the caller knowing.
+ */
+const TURN_LABELS: Record<Locale, {
+  reader: string;
+  service: string;
+  cards: string;
+  keywords: string;
+  stage: string;
+  charge: string;
+  /** Appended to the card name, INCLUDING its leading space. */
+  reversed: string;
+  noQuestion: string;
+}> = {
+  id: {
+    reader: 'Pembaca:',
+    service: 'Layanan:',
+    cards: 'Kartu:',
+    keywords: 'kata kunci:',
+    stage: 'tahap:',
+    charge: 'muatan:',
+    reversed: ' (terbalik)',
+    noQuestion: 'Penanya tidak menuliskan pertanyaan. Baca kartunya secara umum.',
+  },
+  en: {
+    reader: 'Reader:',
+    service: 'Service:',
+    cards: 'Cards:',
+    keywords: 'keywords:',
+    stage: 'stage:',
+    /*
+     * `charge:` and not `polarity:`. `muatan` is the ordinary word for a charge or a
+     * load, not the technical term -- the Indonesian prompt does not say `polaritas`
+     * either -- and the value it labels is `light`/`shadow`/`neutral`, which reads as
+     * a charge and not as a coordinate.
+     */
+    charge: 'charge:',
+    reversed: ' (reversed)',
+    noQuestion: 'The querent did not write a question. Read the cards generally.',
+  },
 };
 
 /**
@@ -131,7 +181,11 @@ export function buildPrompt({
    */
   const verdict = s.id === 'yesno' ? effectiveYesNo(draws[0]) : undefined;
 
-  const staticLayers = [BASE_CONTRACT, READER_PROMPTS[r.id], servicePrompt(s.id, verdict)];
+  const staticLayers = [
+    baseContract(locale),
+    readerPrompt(r.id, locale),
+    servicePrompt(s.id, locale, verdict),
+  ];
 
   /*
    * THE MEMORY INSTRUCTION GOES LAST, AFTER THE SERVICE TASK, and it is NOT one
@@ -150,14 +204,30 @@ export function buildPrompt({
     '\n\n',
   );
 
+  /*
+   * THE USER-TURN LABELS FORK TOO (§9.1), and they are NOT in the message catalog.
+   *
+   * `Pembaca:`, `Layanan:`, `Kartu:`, `kata kunci:`, `tahap:`, `muatan:`, the
+   * `(terbalik)` marker and the no-question line are MODEL-FACING, not user-facing.
+   * Nobody ever reads them. Putting them in the catalog would mix the two audiences
+   * in one file and invite somebody to "improve" a prompt token because it reads
+   * awkwardly on a screen it never appears on -- so they live with the prompt layer,
+   * which is where the rest of the model's vocabulary is.
+   *
+   * The VALUES they label -- `stage`, `polarity` -- stay English enum tokens in both
+   * locales (§7.13). They are machine tokens that happen to be English words, the
+   * model copes fine with `tahap: reckoning`, and translating `reckoning` would fork
+   * a value the database also stores.
+   */
   const labels = slotLabels(s, r, locale);
+  const L = TURN_LABELS[locale];
   const cardLines = draws.map((d, i) => {
     const position = labels[i] ?? labels[0];
-    const orientation = d.reversed ? ' (terbalik)' : '';
+    const orientation = d.reversed ? L.reversed : '';
     return (
       `${i + 1}. ${position} — ${d.card.name}${orientation}` +
-      ` — kata kunci: ${cardKeywords(d.card, locale).join(', ')}` +
-      ` — tahap: ${d.card.stage} — muatan: ${d.card.polarity}`
+      ` — ${L.keywords} ${cardKeywords(d.card, locale).join(', ')}` +
+      ` — ${L.stage} ${d.card.stage} — ${L.charge} ${d.card.polarity}`
     );
   });
 
@@ -170,7 +240,7 @@ export function buildPrompt({
   const clean = sanitizeQuestion(question);
   const questionBlock = clean
     ? `<pertanyaan>\n${clean}\n</pertanyaan>`
-    : 'Penanya tidak menuliskan pertanyaan. Baca kartunya secara umum.';
+    : L.noQuestion;
 
   /*
    * The Lotus block, AHEAD OF THE CARDS.
@@ -188,7 +258,7 @@ export function buildPrompt({
   const lotusBlock = lotus ? renderLotusBlock(lotus) : null;
 
   const user = [
-    `Pembaca: ${r.name}`,
+    `${L.reader} ${r.name}`,
     /*
      * `s.name[locale]`, NOT `s.name`. It became `Localized<string>` in W6 Task 6
      * and a template literal will happily stringify the object -- this line
@@ -198,10 +268,10 @@ export function buildPrompt({
      * previous commit, which is the check the plan's Task 9 snapshot institutes
      * permanently. Nothing else would have found it before a smoke run.
      */
-    `Layanan: ${s.name[locale]}`,
+    `${L.service} ${s.name[locale]}`,
     '',
     ...(lotusBlock ? [lotusBlock, ''] : []),
-    'Kartu:',
+    L.cards,
     ...cardLines,
     '',
     /*

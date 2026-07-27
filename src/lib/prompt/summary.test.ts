@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import type { Locale, ReaderId } from '@/data/types';
 import type { CardCount, FrequencyResult } from '@/lib/memory/frequency';
 import { windowPhrase } from '@/lib/memory/windows';
-import { READER_PROMPTS } from './readers';
+import { readerPrompt } from './readers';
 import {
   angleIndexFor,
   buildDaySummaryPrompt,
@@ -230,7 +230,7 @@ describe('the per-day reader summary prompt', () => {
     // one persona drift the moment either is edited, and the reading would
     // sound like Margaret while the greeting above it sounds like an
     // impression of her.
-    expect(build('margaret').system).toContain(READER_PROMPTS.margaret);
+    expect(build('margaret').system).toContain(readerPrompt('margaret', 'id'));
   });
 
   it('carries one worked example per reader', () => {
