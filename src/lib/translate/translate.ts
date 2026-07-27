@@ -299,9 +299,17 @@ async function openStream(
      * the value is the same constant either way and nothing is invented here. The
      * day summary does exactly this.
      */
-    const iterator = getProvider()
-      .streamReading({ ...prompt, promptVersion: TRANSLATION_PROMPT_VERSION })
-      [Symbol.asyncIterator]();
+    /*
+     * `getProvider().streamReading` ON ONE LINE, deliberately. `callClass.test.ts`
+     * greps the source for exactly that string to enumerate the call sites that must
+     * reserve for themselves — splitting it across lines hides this file from the one
+     * check that would notice a stream reaching a model outside the ceiling.
+     */
+    const stream = getProvider().streamReading({
+      ...prompt,
+      promptVersion: TRANSLATION_PROMPT_VERSION,
+    });
+    const iterator = stream[Symbol.asyncIterator]();
 
     const first = await iterator.next();
     if (first.done || !first.value) return null;

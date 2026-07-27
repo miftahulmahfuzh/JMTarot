@@ -52,6 +52,23 @@ const COMPLETE_CALLS: Array<{
     marker: "callClass: CallClass = 'interactive'",
     why: 'threads a callClass parameter defaulting to interactive; only scheduleLotusRefresh passes deferred',
   },
+  {
+    /*
+     * V2. THE ONE CALL SITE IN THE APP THAT IS BOTH, and the condition is what
+     * declares it rather than a literal — so the marker is the expression.
+     *
+     * A body translation is `interactive`: a viewer is watching it arrive, and
+     * shedding it means an English reader gets Indonesian prose with no explanation.
+     * The GIST is `deferred` — it is prompt input for a later reading's `<riwayat>`
+     * block, nobody ever sees it, and its absence is a slightly less specific chain
+     * block. So is the REPAIR pass, which runs in `after()` and whose absence is a
+     * cache that stays empty for one more view.
+     */
+    file: 'src/lib/translate/translate.ts',
+    expect: 'interactive',
+    marker: "repairing || !spec.stream ? 'deferred' : 'interactive'",
+    why: 'a body translation is watched; the gist and the deferred repair pass are not',
+  },
 ];
 
 /**
@@ -68,6 +85,17 @@ const STREAM_CALLS: Array<{ file: string; reserves: string; why: string }> = [
     file: 'src/app/api/memory/summary/route.ts',
     reserves: "reserveModelCall('deferred')",
     why: 'DaySummary has a 204 path and no error copy, so shedding it is indistinguishable from no summary yet',
+  },
+  {
+    /*
+     * V2, AND THE THIRD MEMBER OF THIS LIST. `translateStream` is the one place a
+     * translation reaches `streamReading`, and a refusal there falls back to the
+     * SOURCE prose rather than to nothing — which is honest and legible: the reading
+     * really is in the other language.
+     */
+    file: 'src/lib/translate/translate.ts',
+    reserves: "reserveModelCall('interactive')",
+    why: 'a viewer is waiting for it; a refusal falls back to the untranslated source',
   },
 ];
 
