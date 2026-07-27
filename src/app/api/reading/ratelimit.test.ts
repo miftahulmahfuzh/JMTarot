@@ -102,11 +102,14 @@ describe('the four budgets, each with its own `limit` prop', () => {
     expect(limitProp()).toBe('global');
   });
 
-  it('THE WINDOW`S QUOTA reports `daily`, with a retry-after in hours', async () => {
+  it('THE WINDOW`S QUOTA reports `daily`, and passes the limiter`s retry-after through', async () => {
     /*
-     * The one that replaces the z.ai spend cap. A `retry-after` of hours is
-     * correct and is the honest answer -- the provider's window is five hours long
-     * and no amount of retrying inside it will help.
+     * The one that replaces the z.ai spend cap. The route does not INVENT the
+     * retry-after -- it forwards whatever the limiter said, which under Upstash's
+     * sliding window is the start of the next sub-window and can be anything in
+     * (0, window]. Measured live at 291 seconds on a tripped ceiling, not the five
+     * hours the plan assumed. What matters is that it is never zero and never
+     * fabricated.
      */
     gate.quota = { ok: false, tier: 'hard', retryAfterSeconds: 14_400 };
     const res = await post();

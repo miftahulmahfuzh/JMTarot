@@ -302,7 +302,10 @@ six model calls.
    while a daily counter still reads 400/4000. Two tiers — below
    `LLM_WINDOW_CALL_SOFT` everything runs; above it, deferred work (gists,
    summaries, verdicts, the speculative Lotus repair) is shed and nobody notices;
-   above the hard ceiling, readings get a 429 with a `retry-after` in hours.
+   above the hard ceiling, readings get a 429. Its `retry-after` comes from the
+   limiter and is anywhere from seconds to the full five hours -- Upstash's
+   sliding window reports the start of the next sub-window rather than an exact
+   expiry -- so treat it as "not yet" rather than as a countdown.
    **The shipped 280 is derived, not guessed**: the Pro tier's ~400 prompts per
    5h × 70%, with the headroom deliberate because we could not observe what
    exhaustion looks like on the wire without causing it. **If the plan tier ever

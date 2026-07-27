@@ -66,6 +66,25 @@ function redis(): Redis {
   client ??= new Redis({
     url: process.env.UPSTASH_REDIS_REST_URL!,
     token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+    /*
+     * **`retry: false`, BECAUSE THE SDK RETRIES FIVE TIMES BY DEFAULT** --
+     * `RetryConfig`'s documented default is `retries: 5` with a
+     * `Math.exp(n) * 50` backoff, which is roughly 4.3 SECONDS of waiting
+     * spread over six attempts.
+     *
+     * `index.ts` says in as many words that this layer does not retry: *"A
+     * limiter that retries turns one slow round trip into two before answering,
+     * on the request path, during an incident."* That was true of our code and
+     * false of the stack, because the retrying happens one layer down.
+     *
+     * MEASURED, which is how this was found. With the SDK's default retry, an
+     * unreachable Upstash reported `reason: 'timeout'` and burned the full
+     * `RATELIMIT_TIMEOUT_MS` on EVERY request -- i.e. an outage added a second to
+     * every reading rather than a few milliseconds. With `retry: false` the
+     * connection error surfaces immediately as `reason: 'error'` and the fallback
+     * to memory is instant.
+     */
+    retry: false,
   });
   return client;
 }

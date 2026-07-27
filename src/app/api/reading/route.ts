@@ -225,10 +225,18 @@ export async function POST(request: Request) {
     if (!perFleet.ok) return tooManyRequests(perFleet.retryAfterSeconds, 'global');
 
     /*
-     * **THE DAY'S QUOTA, AND IT IS THE REPLACEMENT FOR A SPEND CAP THAT DOES NOT
-     * EXIST.** `retry-after` here is measured in HOURS, which is correct and is
-     * the honest answer: the provider's window is five hours long and no amount
-     * of retrying inside it will help.
+     * **THE WINDOW'S QUOTA, AND IT IS THE REPLACEMENT FOR A SPEND CAP THAT DOES
+     * NOT EXIST.**
+     *
+     * `retry-after` COMES FROM THE LIMITER AND IS NOT ALWAYS THE FULL WINDOW.
+     * Measured live: a tripped ceiling returned 291 seconds, not five hours.
+     * `@upstash/ratelimit`'s sliding window reports `reset` as the START OF THE
+     * NEXT SUB-WINDOW rather than an exact expiry, so the value is anywhere in
+     * (0, window]; the memory backend, which knows the oldest timestamp, gives the
+     * true figure instead. Both are honest and neither is zero, which is the
+     * property that matters -- a zero would send the client straight into another
+     * 429. Do not "fix" it to a hardcoded window length: that would be a guess
+     * printed where a measurement belongs.
      *
      * `interactive`, because somebody is watching a spinner. That is what puts it
      * on the far side of the soft tier: deferred work -- gists, day summaries,

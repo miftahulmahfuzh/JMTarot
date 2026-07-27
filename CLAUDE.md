@@ -260,12 +260,32 @@ that someone will helpfully "fix" back into existence.
   fleet-wide. **The same is true of simply never setting `UPSTASH_REDIS_REST_URL`
   in production**, which is the likelier way to end up there.
 
-- **`@upstash/ratelimit`'s `timeout` OPTION DEFAULTS TO ON, AT FIVE SECONDS, AND
-  FAILS OPEN TO UNLIMITED.** `this.timeout = config.timeout ?? 5e3`, and on expiry
-  it resolves `{ success: true, reason: 'timeout' }` -- a pass that never reached
-  Redis. Leaving it unset is not neutral; it is the bad setting. `redis.ts` sets
-  `timeout: 0` and `_toResult` independently throws on `reason: 'timeout'`, so
-  reinstating it degrades to memory rather than passing. Both are tested.
+- **BOTH UPSTASH SDK DEFAULTS ARE WRONG FOR THIS APP, AND BOTH ARE WRONG BY BEING
+  ABSENT.** `redis.ts` sets two options that look redundant and are not.
+
+  `@upstash/ratelimit`'s **`timeout` defaults to ON at five seconds and FAILS OPEN
+  TO UNLIMITED**: `this.timeout = config.timeout ?? 5e3`, and on expiry it
+  resolves `{ success: true, reason: 'timeout' }` -- a pass that never reached
+  Redis. Leaving it unset is not neutral; it is the bad setting. Hence
+  `timeout: 0`, plus `_toResult` independently throwing on `reason: 'timeout'` so
+  that reinstating it degrades to memory rather than passing.
+
+  `@upstash/redis`'s **`retry` defaults to five attempts with a `Math.exp(n) * 50`
+  backoff** -- about 4.3 seconds of waiting. `ratelimit/index.ts` says in as many
+  words that this layer does not retry, and that was true of our code and false of
+  the stack. MEASURED: with the default, an unreachable Upstash reported
+  `reason: 'timeout'` and burned the whole `RATELIMIT_TIMEOUT_MS` on EVERY
+  request, so an outage added a second to every reading; with `retry: false` the
+  same failure surfaces as `reason: 'error'` immediately. Found by pointing the
+  URL at a closed port and reading the log, not by reading the code.
+
+- **THE 429's `retry-after` FROM THE CEILING IS NOT THE WINDOW LENGTH.** Measured
+  live at **291 seconds** on a tripped ceiling, not five hours:
+  `@upstash/ratelimit`'s sliding window reports `reset` as the start of the next
+  sub-window rather than an exact expiry, so the value is anywhere in
+  (0, window]. The memory backend, which knows the oldest timestamp, gives the
+  true figure instead. Both are honest and neither is ever zero, which is the
+  property that matters. Do not "fix" it to a hardcoded window length.
 
 - **`llm:window` IS A ROLLING FIVE HOURS, AND IT IS THE ONE COUNTER IN THIS APP
   THAT IS NOT THE QUERENT'S CALENDAR DAY.** Everything else -- `local_date`,
