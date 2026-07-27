@@ -24,7 +24,7 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
   const t = useT();
   const router = useRouter();
   const cardCount = service.cardCount;
-  const labels = slotLabels(service, reader);
+  const labels = slotLabels(service, reader, t.locale);
 
   /*
    * The deck starts in a FIXED order and is shuffled in an effect, after
@@ -403,7 +403,7 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
         {t('nav.back.reader', { name: reader.name })}
       </Link>
 
-      <h1 className={styles.title}>{service.name}</h1>
+      <h1 className={styles.title}>{service.name[t.locale]}</h1>
       {/*
         THE COUNT CHECK IS CORRECT HERE AND IS NOT A MISSING `t.plural`.
         `Intl.PluralRules` answers whether the noun inflects, and for `id` the

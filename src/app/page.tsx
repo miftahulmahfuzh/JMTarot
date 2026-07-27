@@ -57,7 +57,7 @@ export default async function Home() {
                 <div className={styles.name}>{reader.name}</div>
                 <div className={styles.readerTitle}>{reader.title}</div>
                 <div className={styles.chips}>
-                  {reader.specialties.map((s) => (
+                  {reader.specialties[t.locale].map((s) => (
                     <span key={s} className={styles.chip}>
                       {s}
                     </span>

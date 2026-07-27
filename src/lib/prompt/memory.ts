@@ -438,14 +438,16 @@ function readerName(id: ReaderId): string {
 /**
  * The service, named the way the querent saw it.
  *
- * `SERVICES` carries only the Indonesian name today -- W6 owns that data and has
- * not landed -- so the English side is spelled here rather than reaching into
- * `@/data/services` and mutating a shape W6 owns. It moves out with the rest of
- * the catalog.
+ * W6 LANDED AND THE HARDCODED ENGLISH IS GONE. This used to spell `Daily Card` /
+ * `Three Cards` / `Yes or No` inline, because `SERVICES` carried only the
+ * Indonesian name and W6 owned that shape. `Service.name` is `Localized<string>`
+ * now and those three strings are the ones it holds, so this reads the data. The
+ * fallback to the id survives for the same reason it always did: a `ServiceId`
+ * that is not in `SERVICES` cannot happen, and a prompt saying `spread3` is a
+ * better failure than one saying `undefined`.
  */
 function serviceName(id: ServiceId, locale: Locale): string {
-  if (locale === 'id') return SERVICES.find((s) => s.id === id)?.name ?? id;
-  return { daily: 'Daily Card', spread3: 'Three Cards', yesno: 'Yes or No' }[id] ?? id;
+  return SERVICES.find((s) => s.id === id)?.name[locale] ?? id;
 }
 
 // ---------------------------------------------------------------------------

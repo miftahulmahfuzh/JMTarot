@@ -9,14 +9,27 @@
     "stage": "beginning",
     "polarity": "light",
     "yesno": "yes",
-    "keywords": [
-      "lompatan",
-      "kepolosan",
-      "percaya"
-    ],
+    "keywords": {
+      "id": [
+        "lompatan",
+        "kepolosan",
+        "percaya"
+      ],
+      "en": [
+        "leap",
+        "innocence",
+        "trust"
+      ]
+    },
     "meaning": {
-      "upright": "Langkah pertama yang diambil karena percaya, bukan karena yakin.",
-      "reversed": "Lompatan yang diambil tanpa sempat melihat ke bawah."
+      "id": {
+        "upright": "Langkah pertama yang diambil karena percaya, bukan karena yakin.",
+        "reversed": "Lompatan yang diambil tanpa sempat melihat ke bawah."
+      },
+      "en": {
+        "upright": "A first step taken on trust rather than on certainty.",
+        "reversed": "A leap made before you had time to look down."
+      }
     }
   },
   {
@@ -29,14 +42,27 @@
     "stage": "beginning",
     "polarity": "light",
     "yesno": "yes",
-    "keywords": [
-      "kehendak",
-      "fokus",
-      "keahlian"
-    ],
+    "keywords": {
+      "id": [
+        "kehendak",
+        "fokus",
+        "keahlian"
+      ],
+      "en": [
+        "will",
+        "focus",
+        "skill"
+      ]
+    },
     "meaning": {
-      "upright": "Kemampuan yang diarahkan dengan niat yang jelas.",
-      "reversed": "Bakat yang habis dipakai untuk terlihat hebat."
+      "id": {
+        "upright": "Kemampuan yang diarahkan dengan niat yang jelas.",
+        "reversed": "Bakat yang habis dipakai untuk terlihat hebat."
+      },
+      "en": {
+        "upright": "Ability pointed at something, with a clear intent behind it.",
+        "reversed": "Talent spent on looking impressive."
+      }
     }
   },
   {
@@ -49,14 +75,27 @@
     "stage": "beginning",
     "polarity": "neutral",
     "yesno": "maybe",
-    "keywords": [
-      "rahasia",
-      "intuisi",
-      "kedalaman"
-    ],
+    "keywords": {
+      "id": [
+        "rahasia",
+        "intuisi",
+        "kedalaman"
+      ],
+      "en": [
+        "secrets",
+        "intuition",
+        "depth"
+      ]
+    },
     "meaning": {
-      "upright": "Sesuatu yang sudah kamu tahu tapi belum kamu ucapkan.",
-      "reversed": "Suara dari dalam yang terus kamu lewatkan."
+      "id": {
+        "upright": "Sesuatu yang sudah kamu tahu tapi belum kamu ucapkan.",
+        "reversed": "Suara dari dalam yang terus kamu lewatkan."
+      },
+      "en": {
+        "upright": "Something you already know and have not said out loud.",
+        "reversed": "The voice inside that you keep stepping past."
+      }
     }
   },
   {
@@ -69,14 +108,27 @@
     "stage": "beginning",
     "polarity": "light",
     "yesno": "yes",
-    "keywords": [
-      "kelimpahan",
-      "merawat",
-      "tubuh"
-    ],
+    "keywords": {
+      "id": [
+        "kelimpahan",
+        "merawat",
+        "tubuh"
+      ],
+      "en": [
+        "abundance",
+        "nurture",
+        "body"
+      ]
+    },
     "meaning": {
-      "upright": "Sesuatu yang tumbuh karena benar-benar dirawat.",
-      "reversed": "Merawat sampai melewati batas dirimu sendiri."
+      "id": {
+        "upright": "Sesuatu yang tumbuh karena benar-benar dirawat.",
+        "reversed": "Merawat sampai melewati batas dirimu sendiri."
+      },
+      "en": {
+        "upright": "Something growing because it is genuinely being fed.",
+        "reversed": "Care given well past your own limit."
+      }
     }
   },
   {
@@ -89,14 +141,27 @@
     "stage": "beginning",
     "polarity": "neutral",
     "yesno": "yes",
-    "keywords": [
-      "ketertiban",
-      "otoritas",
-      "struktur"
-    ],
+    "keywords": {
+      "id": [
+        "ketertiban",
+        "otoritas",
+        "struktur"
+      ],
+      "en": [
+        "order",
+        "authority",
+        "structure"
+      ]
+    },
     "meaning": {
-      "upright": "Struktur yang membuat pijakanmu lebih tenang.",
-      "reversed": "Kendali yang dikira sebagai kekuatan."
+      "id": {
+        "upright": "Struktur yang membuat pijakanmu lebih tenang.",
+        "reversed": "Kendali yang dikira sebagai kekuatan."
+      },
+      "en": {
+        "upright": "Structure that makes your footing calmer.",
+        "reversed": "Control mistaken for strength."
+      }
     }
   },
   {
@@ -109,14 +174,27 @@
     "stage": "beginning",
     "polarity": "neutral",
     "yesno": "yes",
-    "keywords": [
-      "tradisi",
-      "ajaran",
-      "ikrar"
-    ],
+    "keywords": {
+      "id": [
+        "tradisi",
+        "ajaran",
+        "ikrar"
+      ],
+      "en": [
+        "tradition",
+        "teaching",
+        "vows"
+      ]
+    },
     "meaning": {
-      "upright": "Pelajaran yang diwariskan dan masih terpakai.",
-      "reversed": "Aturan yang hidup lebih lama daripada gunanya."
+      "id": {
+        "upright": "Pelajaran yang diwariskan dan masih terpakai.",
+        "reversed": "Aturan yang hidup lebih lama daripada gunanya."
+      },
+      "en": {
+        "upright": "A lesson handed down that still earns its place.",
+        "reversed": "A rule that has outlived its reason."
+      }
     }
   },
   {
@@ -129,14 +207,27 @@
     "stage": "beginning",
     "polarity": "light",
     "yesno": "yes",
-    "keywords": [
-      "penyatuan",
-      "pilihan",
-      "keselarasan"
-    ],
+    "keywords": {
+      "id": [
+        "penyatuan",
+        "pilihan",
+        "keselarasan"
+      ],
+      "en": [
+        "union",
+        "choice",
+        "alignment"
+      ]
+    },
     "meaning": {
-      "upright": "Pilihan yang diambil dengan seluruh dirimu.",
-      "reversed": "Diri yang terbelah di antara dua arah."
+      "id": {
+        "upright": "Pilihan yang diambil dengan seluruh dirimu.",
+        "reversed": "Diri yang terbelah di antara dua arah."
+      },
+      "en": {
+        "upright": "A choice made with the whole of you.",
+        "reversed": "A self split between two directions."
+      }
     }
   },
   {
@@ -149,14 +240,27 @@
     "stage": "beginning",
     "polarity": "light",
     "yesno": "yes",
-    "keywords": [
-      "dorongan",
-      "kemenangan",
-      "pelindung"
-    ],
+    "keywords": {
+      "id": [
+        "dorongan",
+        "kemenangan",
+        "pelindung"
+      ],
+      "en": [
+        "drive",
+        "victory",
+        "armour"
+      ]
+    },
     "meaning": {
-      "upright": "Dorongan yang masih bisa kamu kemudikan.",
-      "reversed": "Tenaga besar yang tidak punya arah."
+      "id": {
+        "upright": "Dorongan yang masih bisa kamu kemudikan.",
+        "reversed": "Tenaga besar yang tidak punya arah."
+      },
+      "en": {
+        "upright": "Momentum you can still steer.",
+        "reversed": "Great force with nowhere to point it."
+      }
     }
   },
   {
@@ -169,14 +273,27 @@
     "stage": "trial",
     "polarity": "light",
     "yesno": "yes",
-    "keywords": [
-      "keberanian",
-      "kesabaran",
-      "menjinakkan"
-    ],
+    "keywords": {
+      "id": [
+        "keberanian",
+        "kesabaran",
+        "menjinakkan"
+      ],
+      "en": [
+        "courage",
+        "patience",
+        "taming"
+      ]
+    },
     "meaning": {
-      "upright": "Kelembutan yang justru memegang kendali.",
-      "reversed": "Keberanian yang dipakai pada hal yang keliru."
+      "id": {
+        "upright": "Kelembutan yang justru memegang kendali.",
+        "reversed": "Keberanian yang dipakai pada hal yang keliru."
+      },
+      "en": {
+        "upright": "Gentleness that turns out to be holding the reins.",
+        "reversed": "Courage spent on the wrong thing."
+      }
     }
   },
   {
@@ -189,14 +306,27 @@
     "stage": "trial",
     "polarity": "neutral",
     "yesno": "no",
-    "keywords": [
-      "kesunyian",
-      "pelita",
-      "pencarian"
-    ],
+    "keywords": {
+      "id": [
+        "kesunyian",
+        "pelita",
+        "pencarian"
+      ],
+      "en": [
+        "solitude",
+        "lantern",
+        "seeking"
+      ]
+    },
     "meaning": {
-      "upright": "Menarik diri sebentar supaya semuanya jernih.",
-      "reversed": "Menyendiri yang disamarkan jadi kebijaksanaan."
+      "id": {
+        "upright": "Menarik diri sebentar supaya semuanya jernih.",
+        "reversed": "Menyendiri yang disamarkan jadi kebijaksanaan."
+      },
+      "en": {
+        "upright": "Stepping back a while so that it all comes clear.",
+        "reversed": "Solitude dressed up as wisdom."
+      }
     }
   },
   {
@@ -209,14 +339,27 @@
     "stage": "trial",
     "polarity": "neutral",
     "yesno": "maybe",
-    "keywords": [
-      "perputaran",
-      "takdir",
-      "siklus"
-    ],
+    "keywords": {
+      "id": [
+        "perputaran",
+        "takdir",
+        "siklus"
+      ],
+      "en": [
+        "turning",
+        "fate",
+        "cycles"
+      ]
+    },
     "meaning": {
-      "upright": "Putaran yang memang sedang tiba giliranmu.",
-      "reversed": "Menahan putaran yang sudah waktunya berjalan."
+      "id": {
+        "upright": "Putaran yang memang sedang tiba giliranmu.",
+        "reversed": "Menahan putaran yang sudah waktunya berjalan."
+      },
+      "en": {
+        "upright": "A turn that has come round to you.",
+        "reversed": "Holding back a turn whose time has come."
+      }
     }
   },
   {
@@ -229,14 +372,27 @@
     "stage": "trial",
     "polarity": "neutral",
     "yesno": "maybe",
-    "keywords": [
-      "keseimbangan",
-      "kebenaran",
-      "sebab"
-    ],
+    "keywords": {
+      "id": [
+        "keseimbangan",
+        "kebenaran",
+        "sebab"
+      ],
+      "en": [
+        "balance",
+        "truth",
+        "cause"
+      ]
+    },
     "meaning": {
-      "upright": "Perhitungan yang jujur, apa adanya.",
-      "reversed": "Timbangan yang dimiringkan oleh rasa takut."
+      "id": {
+        "upright": "Perhitungan yang jujur, apa adanya.",
+        "reversed": "Timbangan yang dimiringkan oleh rasa takut."
+      },
+      "en": {
+        "upright": "The reckoning, honest and as it is.",
+        "reversed": "A scale tilted by fear."
+      }
     }
   },
   {
@@ -249,14 +405,27 @@
     "stage": "trial",
     "polarity": "shadow",
     "yesno": "no",
-    "keywords": [
-      "penangguhan",
-      "pembalikan",
-      "sudut pandang"
-    ],
+    "keywords": {
+      "id": [
+        "penangguhan",
+        "pembalikan",
+        "sudut pandang"
+      ],
+      "en": [
+        "suspension",
+        "reversal",
+        "perspective"
+      ]
+    },
     "meaning": {
-      "upright": "Berhenti sejenak, dan sudut pandangnya berubah.",
-      "reversed": "Menunggu yang dipakai untuk menghindar."
+      "id": {
+        "upright": "Berhenti sejenak, dan sudut pandangnya berubah.",
+        "reversed": "Menunggu yang dipakai untuk menghindar."
+      },
+      "en": {
+        "upright": "Stop a moment, and the angle changes.",
+        "reversed": "Waiting used as a way out."
+      }
     }
   },
   {
@@ -269,14 +438,27 @@
     "stage": "trial",
     "polarity": "shadow",
     "yesno": "no",
-    "keywords": [
-      "akhir",
-      "ambang",
-      "pelepasan"
-    ],
+    "keywords": {
+      "id": [
+        "akhir",
+        "ambang",
+        "pelepasan"
+      ],
+      "en": [
+        "ending",
+        "threshold",
+        "release"
+      ]
+    },
     "meaning": {
-      "upright": "Akhir yang justru membebaskan.",
-      "reversed": "Menggenggam sesuatu yang sebenarnya sudah selesai."
+      "id": {
+        "upright": "Akhir yang justru membebaskan.",
+        "reversed": "Menggenggam sesuatu yang sebenarnya sudah selesai."
+      },
+      "en": {
+        "upright": "An ending that frees you.",
+        "reversed": "Holding on to something already finished."
+      }
     }
   },
   {
@@ -289,14 +471,27 @@
     "stage": "trial",
     "polarity": "light",
     "yesno": "maybe",
-    "keywords": [
-      "perpaduan",
-      "ukuran",
-      "penyelarasan"
-    ],
+    "keywords": {
+      "id": [
+        "perpaduan",
+        "ukuran",
+        "penyelarasan"
+      ],
+      "en": [
+        "blending",
+        "measure",
+        "attunement"
+      ]
+    },
     "meaning": {
-      "upright": "Jalan tengah yang butuh kesabaran.",
-      "reversed": "Dua hal berlawanan yang menolak menyatu."
+      "id": {
+        "upright": "Jalan tengah yang butuh kesabaran.",
+        "reversed": "Dua hal berlawanan yang menolak menyatu."
+      },
+      "en": {
+        "upright": "The middle way, and it asks for patience.",
+        "reversed": "Two opposites that refuse to combine."
+      }
     }
   },
   {
@@ -309,14 +504,27 @@
     "stage": "reckoning",
     "polarity": "shadow",
     "yesno": "no",
-    "keywords": [
-      "belenggu",
-      "hasrat",
-      "bayangan"
-    ],
+    "keywords": {
+      "id": [
+        "belenggu",
+        "hasrat",
+        "bayangan"
+      ],
+      "en": [
+        "bondage",
+        "craving",
+        "shadow"
+      ]
+    },
     "meaning": {
-      "upright": "Rantai yang sebenarnya kamu lihat sendiri.",
-      "reversed": "Keinginan yang belum berani kamu sebut namanya."
+      "id": {
+        "upright": "Rantai yang sebenarnya kamu lihat sendiri.",
+        "reversed": "Keinginan yang belum berani kamu sebut namanya."
+      },
+      "en": {
+        "upright": "A chain you can see perfectly well from where you stand.",
+        "reversed": "A hunger you have not dared to name."
+      }
     }
   },
   {
@@ -329,14 +537,27 @@
     "stage": "reckoning",
     "polarity": "shadow",
     "yesno": "no",
-    "keywords": [
-      "keruntuhan",
-      "kilat",
-      "kebenaran"
-    ],
+    "keywords": {
+      "id": [
+        "keruntuhan",
+        "kilat",
+        "kebenaran"
+      ],
+      "en": [
+        "collapse",
+        "lightning",
+        "truth"
+      ]
+    },
     "meaning": {
-      "upright": "Keruntuhan yang memang perlu terjadi.",
-      "reversed": "Peringatan yang terus dilewatkan begitu saja."
+      "id": {
+        "upright": "Keruntuhan yang memang perlu terjadi.",
+        "reversed": "Peringatan yang terus dilewatkan begitu saja."
+      },
+      "en": {
+        "upright": "A collapse that needed to happen.",
+        "reversed": "A warning let past again and again."
+      }
     }
   },
   {
@@ -349,14 +570,27 @@
     "stage": "reckoning",
     "polarity": "light",
     "yesno": "yes",
-    "keywords": [
-      "harapan",
-      "ketenangan",
-      "bimbingan"
-    ],
+    "keywords": {
+      "id": [
+        "harapan",
+        "ketenangan",
+        "bimbingan"
+      ],
+      "en": [
+        "hope",
+        "stillness",
+        "guidance"
+      ]
+    },
     "meaning": {
-      "upright": "Harapan yang tenang setelah semuanya berantakan.",
-      "reversed": "Harapan yang ditaruh pada cahaya yang keliru."
+      "id": {
+        "upright": "Harapan yang tenang setelah semuanya berantakan.",
+        "reversed": "Harapan yang ditaruh pada cahaya yang keliru."
+      },
+      "en": {
+        "upright": "Quiet hope, after everything came apart.",
+        "reversed": "Hope set on the wrong light."
+      }
     }
   },
   {
@@ -369,14 +603,27 @@
     "stage": "reckoning",
     "polarity": "shadow",
     "yesno": "no",
-    "keywords": [
-      "mimpi",
-      "ilusi",
-      "pasang"
-    ],
+    "keywords": {
+      "id": [
+        "mimpi",
+        "ilusi",
+        "pasang"
+      ],
+      "en": [
+        "dreams",
+        "illusion",
+        "tides"
+      ]
+    },
     "meaning": {
-      "upright": "Apa yang sedang dibisikkan oleh hal yang belum jelas.",
-      "reversed": "Rasa takut yang dikira pertanda."
+      "id": {
+        "upright": "Apa yang sedang dibisikkan oleh hal yang belum jelas.",
+        "reversed": "Rasa takut yang dikira pertanda."
+      },
+      "en": {
+        "upright": "What the thing you cannot see clearly is telling you.",
+        "reversed": "Fear taken for an omen."
+      }
     }
   },
   {
@@ -389,14 +636,27 @@
     "stage": "reckoning",
     "polarity": "light",
     "yesno": "yes",
-    "keywords": [
-      "kejelasan",
-      "sukacita",
-      "vitalitas"
-    ],
+    "keywords": {
+      "id": [
+        "kejelasan",
+        "sukacita",
+        "vitalitas"
+      ],
+      "en": [
+        "clarity",
+        "joy",
+        "vitality"
+      ]
+    },
     "meaning": {
-      "upright": "Kebenaran yang terang dan menghangatkan.",
-      "reversed": "Silau yang justru menutupi detailnya."
+      "id": {
+        "upright": "Kebenaran yang terang dan menghangatkan.",
+        "reversed": "Silau yang justru menutupi detailnya."
+      },
+      "en": {
+        "upright": "Truth that is plain, and warm with it.",
+        "reversed": "Glare that hides the detail."
+      }
     }
   },
   {
@@ -409,14 +669,27 @@
     "stage": "reckoning",
     "polarity": "neutral",
     "yesno": "yes",
-    "keywords": [
-      "kebangkitan",
-      "panggilan",
-      "perhitungan"
-    ],
+    "keywords": {
+      "id": [
+        "kebangkitan",
+        "panggilan",
+        "perhitungan"
+      ],
+      "en": [
+        "awakening",
+        "summons",
+        "reckoning"
+      ]
+    },
     "meaning": {
-      "upright": "Panggilan yang harus kamu jawab.",
-      "reversed": "Panggilan yang terus kamu tunda."
+      "id": {
+        "upright": "Panggilan yang harus kamu jawab.",
+        "reversed": "Panggilan yang terus kamu tunda."
+      },
+      "en": {
+        "upright": "A call you have to answer.",
+        "reversed": "A call you keep putting off."
+      }
     }
   },
   {
@@ -429,14 +702,27 @@
     "stage": "reckoning",
     "polarity": "light",
     "yesno": "yes",
-    "keywords": [
-      "penyelesaian",
-      "keutuhan",
-      "kembali"
-    ],
+    "keywords": {
+      "id": [
+        "penyelesaian",
+        "keutuhan",
+        "kembali"
+      ],
+      "en": [
+        "completion",
+        "wholeness",
+        "return"
+      ]
+    },
     "meaning": {
-      "upright": "Lingkaran yang akhirnya tertutup.",
-      "reversed": "Akhir yang diumumkan terlalu cepat."
+      "id": {
+        "upright": "Lingkaran yang akhirnya tertutup.",
+        "reversed": "Akhir yang diumumkan terlalu cepat."
+      },
+      "en": {
+        "upright": "The circle finally closed.",
+        "reversed": "An ending announced too early."
+      }
     }
   }
 ]

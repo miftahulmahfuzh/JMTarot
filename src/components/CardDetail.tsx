@@ -107,7 +107,7 @@ export function CardDetail({ draw, position, onClose, onReturn }: Props) {
           cardMeaning(). A reversed card showing its upright gloss would be
           contradicted by the artwork sitting directly above it.
         */}
-        <p className={styles.meaning}>{cardMeaning(draw)}</p>
+        <p className={styles.meaning}>{cardMeaning(draw, t.locale)}</p>
 
         <div className={styles.actions}>
           <button type="button" className={styles.close} onClick={onClose} ref={closeRef}>

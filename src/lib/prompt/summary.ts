@@ -371,11 +371,10 @@ function readerLabel(id: ReaderId): string {
 /**
  * The service, named the way the querent saw it.
  *
- * The English side is spelled here rather than added to `@/data/services`,
- * which W6 owns and which carries only the Indonesian name today. It moves out
- * with the rest of the catalog. Kept in step with the twin in `memory.ts`.
+ * W6 landed; the hardcoded English moved into `Service.name` as `Localized<string>`
+ * and this reads the data. Still kept in step with the twin in `memory.ts`, which
+ * is now the same one line.
  */
 function serviceLabel(id: ServiceId, locale: Locale): string {
-  if (locale === 'id') return SERVICES.find((s) => s.id === id)?.name ?? id;
-  return { daily: 'Daily Card', spread3: 'Three Cards', yesno: 'Yes or No' }[id] ?? id;
+  return SERVICES.find((s) => s.id === id)?.name[locale] ?? id;
 }

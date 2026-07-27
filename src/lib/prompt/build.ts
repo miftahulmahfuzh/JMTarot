@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { CARDS, effectiveYesNo } from '@/data/deck';
+import { CARDS, cardKeywords, effectiveYesNo } from '@/data/deck';
 import { readerById } from '@/data/readers';
 import { serviceById, slotLabels } from '@/data/services';
 import type { Locale } from '@/data/types';
@@ -150,13 +150,13 @@ export function buildPrompt({
     '\n\n',
   );
 
-  const labels = slotLabels(s, r);
+  const labels = slotLabels(s, r, locale);
   const cardLines = draws.map((d, i) => {
     const position = labels[i] ?? labels[0];
     const orientation = d.reversed ? ' (terbalik)' : '';
     return (
       `${i + 1}. ${position} — ${d.card.name}${orientation}` +
-      ` — kata kunci: ${d.card.keywords.join(', ')}` +
+      ` — kata kunci: ${cardKeywords(d.card, locale).join(', ')}` +
       ` — tahap: ${d.card.stage} — muatan: ${d.card.polarity}`
     );
   });
@@ -189,7 +189,16 @@ export function buildPrompt({
 
   const user = [
     `Pembaca: ${r.name}`,
-    `Layanan: ${s.name}`,
+    /*
+     * `s.name[locale]`, NOT `s.name`. It became `Localized<string>` in W6 Task 6
+     * and a template literal will happily stringify the object -- this line
+     * shipped `Layanan: [object Object]` into all nine system prompts, and
+     * `npm run typecheck` was green, because interpolating an object is legal
+     * TypeScript. Caught by diffing the nine generated prompts against the
+     * previous commit, which is the check the plan's Task 9 snapshot institutes
+     * permanently. Nothing else would have found it before a smoke run.
+     */
+    `Layanan: ${s.name[locale]}`,
     '',
     ...(lotusBlock ? [lotusBlock, ''] : []),
     'Kartu:',

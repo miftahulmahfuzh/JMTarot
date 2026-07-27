@@ -57,7 +57,7 @@ export default async function ServicePicker({
         </div>
       </div>
 
-      <p className={styles.bio}>{reader.bio}</p>
+      <p className={styles.bio}>{reader.bio[t.locale]}</p>
 
       {/* What this reader remembers about today. Renders nothing until the
           first byte, and nothing at all for a querent who has not read today
@@ -90,8 +90,8 @@ export default async function ServicePicker({
             props={{ reader_id: reader.id, service_id: service.id }}
           >
             <span>
-              <span className={styles.serviceName}>{service.name}</span>
-              <span className={styles.tagline}>{service.tagline}</span>
+              <span className={styles.serviceName}>{service.name[t.locale]}</span>
+              <span className={styles.tagline}>{service.tagline[t.locale]}</span>
             </span>
             <span className={styles.count}>
               {t.plural('picker.service.cardCount', service.cardCount)}
