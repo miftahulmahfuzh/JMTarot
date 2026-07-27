@@ -447,3 +447,98 @@ function serviceName(id: ServiceId, locale: Locale): string {
   if (locale === 'id') return SERVICES.find((s) => s.id === id)?.name ?? id;
   return { daily: 'Daily Card', spread3: 'Three Cards', yesno: 'Yes or No' }[id] ?? id;
 }
+
+// ---------------------------------------------------------------------------
+// The callback detector (§4.5)
+// ---------------------------------------------------------------------------
+
+/*
+ * Temporal-callback phrases, per locale.
+ *
+ * THE TRAP, AND IT IS THE WHOLE REASON THIS LIST LOOKS OVER-SPECIFIED: NEVER
+ * MATCH A BARE `lagi`. In Indonesian `lagi` is also the progressive aspect
+ * marker -- "dia lagi mikir" is "he is thinking", not "he is thinking again",
+ * and "aku lagi capek" is "I am tired". A bare `lagi` fires on ordinary present
+ * tense, which in a reading written in casual Indonesian is most sentences. The
+ * result would be a reported callback rate near 90% that is entirely noise, and
+ * the ratio in §4.5 -- the number that decides whether this feature is cut or
+ * tightened -- would be measuring nothing.
+ *
+ * So EVERY Indonesian pattern here is multi-word or hyphenated. This is the same
+ * class of mistake as the `tempoh` miss in the Malay grep: a word list that
+ * looks obviously right and is quietly wrong about one entry.
+ *
+ * `\b` on the English side for the same reason at smaller scale: `again` must
+ * fire and `against` must not.
+ */
+const CALLBACK_PHRASES: Record<Locale, readonly RegExp[]> = {
+  id: [
+    /\bkemarin\b/i,
+    /\bsebelumnya\b/i,
+    /\bbacaan (?:yang )?lalu\b/i,
+    /\bwaktu itu\b/i,
+    /\bterakhir kali\b/i,
+    /\blagi-lagi\b/i,
+    /\bmuncul lagi\b/i,
+    /\bsekali lagi\b/i,
+    /\bkembali muncul\b/i,
+  ],
+  en: [
+    /\blast time\b/i,
+    /\byesterday\b/i,
+    /\bearlier\b/i,
+    /\bagain\b/i,
+    /\bpreviously\b/i,
+    /\bonce more\b/i,
+  ],
+};
+
+/**
+ * Did the reading actually refer back (§4.5)?
+ *
+ * PURE CODE, NO SECOND MODEL CALL. This runs in `after()` on every reading that
+ * was offered a block, and paying for a classifier to answer "did it say
+ * yesterday" would cost more than the feature it is measuring.
+ *
+ * THE CARD SIGNAL IS THE STRONG ONE and it is checked first. If the body names a
+ * card that is in a recalled draw and NOT in the current one, there is
+ * essentially no innocent explanation: the base contract guarantees card names
+ * appear verbatim and in English, and a reading has no reason to name a card it
+ * did not draw except to refer back to when it was drawn.
+ *
+ * The phrase signal is the weaker one and is checked second, so that a reading
+ * doing both is reported as `'card'` -- the signal with the lower false-positive
+ * rate wins, which keeps the ratio honest rather than flattering.
+ *
+ * WHAT THIS IS FOR. `chain_used / chain_offered`, per reader, per week. Below
+ * roughly 15% the block is paying tokens for nothing and should be cut; above
+ * roughly 60% it has become the tic roadmap §10 warns about and the gate in
+ * §4.3 needs tightening to `'repeat'` only. Those numbers are only meaningful if
+ * this function is not lying, which is what the `lagi` trap above is about.
+ */
+export function detectCallback(args: {
+  body: string;
+  currentCardIds: number[];
+  recalledCardIds: number[];
+  locale: Locale;
+}): { fired: boolean; signal: 'card' | 'phrase' | null } {
+  const { body, currentCardIds, recalledCardIds, locale } = args;
+  if (!body) return { fired: false, signal: null };
+
+  const current = new Set(currentCardIds);
+  const onlyRecalled = recalledCardIds.filter((id) => !current.has(id));
+
+  for (const id of onlyRecalled) {
+    const name = CARDS[id]?.name;
+    if (!name) continue;
+    // Word-bounded, so "The Star" does not fire inside "The Star-crossed".
+    const re = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+    if (re.test(body)) return { fired: true, signal: 'card' };
+  }
+
+  for (const re of CALLBACK_PHRASES[locale]) {
+    if (re.test(body)) return { fired: true, signal: 'phrase' };
+  }
+
+  return { fired: false, signal: null };
+}

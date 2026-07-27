@@ -4,10 +4,16 @@
  *
  * See profile.ts for the contract every file here follows.
  */
-import { and, eq, sql } from 'drizzle-orm';
-import type { Locale, ReaderId } from '@/data/types';
+import { and, eq, inArray, sql } from 'drizzle-orm';
+import type { Locale, ReaderId, ServiceId } from '@/data/types';
 import type { DbOrTx } from '../types';
-import { dailySummaries, type DailySummary, type NewDailySummary } from '../schema';
+import {
+  dailySummaries,
+  readingCards,
+  readings,
+  type DailySummary,
+  type NewDailySummary,
+} from '../schema';
 
 /**
  * The cache hit. Served by the unique key
@@ -79,3 +85,93 @@ export async function putDailySummary(
     .returning();
   return row;
 }
+
+/**
+ * Every reading the querent had on one of THEIR calendar days, with its cards.
+ *
+ * ALL READERS, NOT JUST THE ONE ASKING (M12). Miftah's requirement was "every
+ * reading the user has had that day"; the `daily_summaries` row is keyed by
+ * reader because the VOICE differs, not because the source set does. That is
+ * what makes switching readers give three different tellings of one day, which
+ * is the best demonstration in the product that the readers are not
+ * interchangeable.
+ *
+ * `localDate` is compared as stored and never derived from `created_at`, which
+ * rolls over at 07:00 in Jakarta and would split a single evening across two
+ * days. Served by `readings_user_local_date_idx`.
+ *
+ * Ordered by `created_at` ascending -- the day in the order it happened, which
+ * is the order a summary of it should read. The `id` tiebreak is there for the
+ * same reason as in `recallableReadings`: `now()` is transaction-start time, so
+ * rows written in one transaction share a timestamp and the order would
+ * otherwise be arbitrary.
+ */
+export async function readingsOnDay(
+  db: DbOrTx,
+  userId: string,
+  localDate: string,
+): Promise<DayReadingRow[]> {
+  const rows = await db
+    .select({
+      id: readings.id,
+      readerId: readings.readerId,
+      serviceId: readings.serviceId,
+      gist: readings.gist,
+      verdict: readings.verdict,
+    })
+    .from(readings)
+    .where(and(eq(readings.userId, userId), eq(readings.localDate, localDate)))
+    .orderBy(readings.createdAt, readings.id);
+
+  if (rows.length === 0) return [];
+
+  const cards = await db
+    .select({
+      readingId: readingCards.readingId,
+      cardId: readingCards.cardId,
+      reversed: readingCards.reversed,
+    })
+    .from(readingCards)
+    .where(
+      inArray(
+        readingCards.readingId,
+        rows.map((r) => r.id),
+      ),
+    )
+    .orderBy(readingCards.position);
+
+  const byReading = new Map<string, { cardId: number; reversed: boolean }[]>();
+  for (const c of cards) {
+    const list = byReading.get(c.readingId);
+    if (list) list.push({ cardId: c.cardId, reversed: c.reversed });
+    else byReading.set(c.readingId, [{ cardId: c.cardId, reversed: c.reversed }]);
+  }
+
+  return rows.map((r) => ({
+    id: r.id,
+    readerId: r.readerId as ReaderId,
+    serviceId: r.serviceId as ServiceId,
+    cards: byReading.get(r.id) ?? [],
+    gist: r.gist,
+    verdict: r.verdict,
+  }));
+}
+
+/**
+ * NO FILTERS, unlike `recallableReadings`, and the difference is the point.
+ *
+ * Recall feeds a CALLBACK -- "as your last reading said" -- so a reading whose
+ * stream died has nothing to be quoted. A day summary is a COUNT and a shape of
+ * the day: "you drew three times today, twice it was The Moon" is true whether
+ * or not the third reading finished, and dropping it would make the summary
+ * disagree with what the querent remembers doing. A null gist simply renders no
+ * `inti:` clause for that line.
+ */
+export type DayReadingRow = {
+  id: string;
+  readerId: ReaderId;
+  serviceId: ServiceId;
+  cards: { cardId: number; reversed: boolean }[];
+  gist: string | null;
+  verdict: string | null;
+};

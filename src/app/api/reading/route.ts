@@ -9,6 +9,7 @@ import { hit } from '@/lib/ratelimit';
 import { persistReading, touchLastSeen } from '@/lib/analytics/flush';
 import { extractGist } from '@/lib/memory/gist.generate';
 import { recallChain } from '@/lib/memory/chain';
+import { detectCallback } from '@/lib/prompt/memory';
 import { LOCAL_DATE_HEADER, SESSION_HEADER, parseLocalDate, validSessionId } from '@/lib/analytics/localdate';
 import { teeReading, type ReadingOutcome } from '@/lib/analytics/tee';
 import { defer, track, withAnalytics, type AnalyticsContext } from '@/lib/analytics/track';
@@ -372,6 +373,29 @@ export async function POST(request: Request) {
        * cannot take `touchLastSeen` down with it.
        */
       await extractGist({ readingId, body: outcome.body || null, locale: user.locale });
+
+      /*
+       * DID THE CALLBACK ACTUALLY FIRE (§4.5)? Pure code over the finished
+       * body, no second model call -- paying a classifier to answer "did it say
+       * kemarin" would cost more than the feature it measures.
+       *
+       * `chain_used / chain_offered` is the number that decides whether this
+       * feature is cut, kept or tightened, so it is only fired when a block was
+       * actually offered: counting readings that never saw one would put the
+       * ratio's denominator in the wrong place and make it look far healthier
+       * than it is.
+       */
+      if (memory && outcome.body) {
+        const hit = detectCallback({
+          body: outcome.body,
+          currentCardIds: picks.map((p) => p.id),
+          recalledCardIds: memory.recalled.flatMap((r) => r.cards.map((c) => c.cardId)),
+          locale: user.locale,
+        });
+        if (hit.fired && hit.signal) {
+          track('memory.chain_used', { reading_id: readingId, signal: hit.signal });
+        }
+      }
 
       // Fire and log, never retried: the next request writes it again anyway.
       await touchLastSeen(user.id);
