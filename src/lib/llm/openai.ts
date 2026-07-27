@@ -75,9 +75,23 @@ export const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta
  * moves. It is deliberately checked FIRST so an explicit setting always wins.
  */
 export function resolveBaseUrl(provider = process.env.LLM_PROVIDER ?? 'zai'): string {
-  if (process.env.OPENAI_BASE_URL) return process.env.OPENAI_BASE_URL.replace(/\/+$/, '');
-  if (provider === 'gemini') return GEMINI_BASE_URL;
-  if (provider === 'openai') return 'https://api.openai.com/v1';
+  /*
+   * **THE PROVIDER IS CHECKED BEFORE THE OVERRIDE, AND THE FIRST DRAFT OF THIS
+   * FUNCTION HAD IT THE OTHER WAY ROUND.** `OPENAI_BASE_URL` belongs to the
+   * OpenAI-shaped providers only; consulting it first meant that `zai` with a
+   * leftover `OPENAI_BASE_URL` in `.env.local` -- which is exactly what this
+   * repository looks like after an afternoon of provider evaluation -- reported
+   * the OpenAI host while talking to z.ai.
+   *
+   * That is the same class of bug this function was written to FIX: a banner
+   * that lies about where the traffic is going. Display-only today, because
+   * `baseUrl()` is reached only from the OpenAI adapter, and not worth leaving
+   * for the day someone makes it load-bearing.
+   */
+  if (provider === 'openai' || provider === 'gemini') {
+    if (process.env.OPENAI_BASE_URL) return process.env.OPENAI_BASE_URL.replace(/\/+$/, '');
+    return provider === 'gemini' ? GEMINI_BASE_URL : 'https://api.openai.com/v1';
+  }
   return process.env.LLM_BASE_URL ?? 'api.anthropic.com';
 }
 

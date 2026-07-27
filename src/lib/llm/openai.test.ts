@@ -190,6 +190,20 @@ describe('resolveBaseUrl -- one function, three callers, no second copy', () => 
     expect(resolveBaseUrl('zai')).toBe('https://api.z.ai/api/anthropic');
   });
 
+  it('IGNORES a stray OPENAI_BASE_URL when the provider is not OpenAI-shaped', () => {
+    /*
+     * The regression this function existed to fix, reintroduced by its own first
+     * draft: checking the override before the provider meant `zai` with a
+     * leftover `OPENAI_BASE_URL` -- what `.env.local` looks like after an
+     * afternoon of provider evaluation -- reported the OpenAI host while talking
+     * to z.ai.
+     */
+    vi.stubEnv('OPENAI_BASE_URL', 'https://api.openai.com/v1');
+    vi.stubEnv('LLM_BASE_URL', 'https://api.z.ai/api/anthropic');
+    expect(resolveBaseUrl('zai')).toBe('https://api.z.ai/api/anthropic');
+    expect(resolveBaseUrl('anthropic')).toBe('https://api.z.ai/api/anthropic');
+  });
+
   it('an explicit OPENAI_BASE_URL wins over the provider default', () => {
     // For Azure, a gateway, or a Gemini host that moves.
     vi.stubEnv('OPENAI_BASE_URL', 'https://gateway.internal/v1');
