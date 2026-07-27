@@ -82,10 +82,38 @@ describe('plural', () => {
     expect(tFor('id').plural('draw.counter', 2, { picked: 2, total: 3 })).toBe('2 / 3 kartu');
   });
 
-  it('reproduces the tap hint the hand-written conditional used to produce', () => {
-    expect(tFor('en').plural('draw.hint.tap', 1)).toBe('Tap 1 card, or drag it upward.');
-    expect(tFor('en').plural('draw.hint.tap', 3)).toBe('Tap 3 cards, or drag them upward.');
-    expect(tFor('id').plural('draw.hint.tap', 3)).toBe('Ketuk 3 kartu, atau tarik ke atas.');
+});
+
+/**
+ * The one place a hand-written count check is CORRECT.
+ *
+ * `Intl.PluralRules` answers "does the noun inflect", and for `id` the answer is
+ * always no — so a `.one`/`.other` family would render `Ketuk 1 kartu` at every
+ * count. Indonesian spells that number out, so the distinction here is
+ * `.single`/`.many` chosen by `cardCount === 1`, and these assertions are what
+ * stops someone folding it back into `plural()` for tidiness.
+ */
+describe('draw.hint.tap is not a plural family', () => {
+  it('keeps the spelled-out Indonesian one', () => {
+    expect(tFor('id')('draw.hint.tap.single')).toBe('Ketuk satu kartu, atau tarik ke atas.');
+    expect(tFor('id')('draw.hint.tap.many', { count: 3 })).toBe(
+      'Ketuk 3 kartu, atau tarik ke atas.',
+    );
+  });
+
+  it('gets the English article out of the same split', () => {
+    expect(tFor('en')('draw.hint.tap.single')).toBe('Tap a card, or drag it upward.');
+    expect(tFor('en')('draw.hint.tap.many', { count: 3 })).toBe(
+      'Tap 3 cards, or drag them upward.',
+    );
+  });
+
+  it('declares no `.one`, so the plural tests do not claim it', () => {
+    for (const locale of ['id', 'en'] as const) {
+      // The key would exist if anyone "simplified" this back into a family.
+      // @ts-expect-error - asserting the key is absent from the union
+      expect(tFor(locale)('draw.hint.tap.one')).toBe('draw.hint.tap.one');
+    }
   });
 });
 

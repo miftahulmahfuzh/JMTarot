@@ -29,10 +29,19 @@
  * CATALOGS (I5). For Indonesian the two must be IDENTICAL and there is a test
  * asserting it: CLDR gives `id` only the `other` category, so `.one` is never
  * selected and an Indonesian `.one` that differs is a string somebody edited
- * believing it renders. The practical consequence is that Indonesian cannot
- * spell a count as a word inside a plural family — `Ketuk satu kartu` had to
- * become `Ketuk {count} kartu` — and that is the price of not pushing
- * `n === 1 ?` into six workstreams' components.
+ * believing it renders.
+ *
+ * WHICH IS WHY `draw.hint.tap` IS DELIBERATELY *NOT* A PLURAL FAMILY. It is
+ * `.single` / `.many`, chosen at the call site by `cardCount === 1`. A plural
+ * family would force Indonesian through `.other` at every count and turn
+ * `Ketuk satu kartu` into `Ketuk 1 kartu`, and Indonesian spells that number out.
+ * `Intl.PluralRules` answers a GRAMMATICAL question — does the noun inflect —
+ * and it is the right mechanism for `{count} card` / `{count} cards`, which is
+ * what `picker.service.cardCount`, `draw.counter` and `reading.error.cardCount`
+ * use it for. "Do I write the digit or the word" is a different question, in a
+ * different language, and CLDR has no opinion about it. Do not "simplify" these
+ * two keys into a plural family; the conditional in `Draw.tsx` is the correct
+ * amount of code for a distinction the plural rules cannot express.
  *
  * INDONESIAN, NOT MALAY (CLAUDE.md). `karier` not `kerjaya`, `kamu` not `awak`,
  * `ngobrol` not `sembang`, `arah hidup` not `hala tuju`, `waktu`/`masa` not
@@ -89,8 +98,13 @@ const id = {
   // --- Draw screen ----------------------------------------------------------
   'draw.hint.complete':
     'Kartumu sudah terbuka. Ketuk salah satu untuk melihatnya lebih besar.',
-  'draw.hint.tap.one': 'Ketuk {count} kartu, atau tarik ke atas.',
-  'draw.hint.tap.other': 'Ketuk {count} kartu, atau tarik ke atas.',
+  /*
+   * NOT a plural family, on purpose. See the header: Indonesian spells the one
+   * out, and a `.one`/`.other` pair would render `Ketuk 1 kartu` because CLDR
+   * never selects `one` for `id`.
+   */
+  'draw.hint.tap.single': 'Ketuk satu kartu, atau tarik ke atas.',
+  'draw.hint.tap.many': 'Ketuk {count} kartu, atau tarik ke atas.',
   'draw.question.label': 'Pertanyaan (boleh dikosongkan)',
   'draw.question.placeholder': 'Ada yang mau kamu tanyakan?',
   'draw.counter.one': '{picked} / {total} kartu',

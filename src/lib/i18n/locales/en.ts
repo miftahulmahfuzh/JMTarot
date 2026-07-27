@@ -65,8 +65,13 @@ const en: Catalog = {
 
   // --- Draw screen ----------------------------------------------------------
   'draw.hint.complete': 'Your cards are out. Tap one to see it properly.',
-  'draw.hint.tap.one': 'Tap {count} card, or drag it upward.',
-  'draw.hint.tap.other': 'Tap {count} cards, or drag them upward.',
+  /*
+   * `.single` / `.many` rather than `.one` / `.other`, because Indonesian spells
+   * the one out and CLDR cannot express that. English gets the article for free
+   * out of the same split: "Tap a card", not "Tap 1 card".
+   */
+  'draw.hint.tap.single': 'Tap a card, or drag it upward.',
+  'draw.hint.tap.many': 'Tap {count} cards, or drag them upward.',
   'draw.question.label': 'Question (optional)',
   'draw.question.placeholder': 'Anything you want to ask?',
   'draw.counter.one': '{picked} / {total} card',
