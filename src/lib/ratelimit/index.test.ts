@@ -3,6 +3,7 @@ import {
   _backendNameFor,
   _reset,
   _setBackend,
+  consume,
   hit,
   hitGlobal,
   hitRefusal,
@@ -430,5 +431,39 @@ describe('ratelimit.backend_degraded', () => {
     _setBackend(broken());
     await refusalsExhausted('u1');
     expect(seen()[0].props.surface).toBe('refuse');
+  });
+});
+
+describe('consume + peek are the SAME budget, and hit() is not', () => {
+  beforeEach(() => {
+    _setBackend(null);
+    _reset();
+  });
+
+  it('a consume moves what the matching peek reports', async () => {
+    /*
+     * **THE TRAP THIS PAIR EXISTS FOR.** The plan's §5 meter peeks `llm:window`
+     * and consumes through `hit()`, which prefixes to `read:llm:window`. Both
+     * functions work perfectly, on two different counters -- so the peek reports
+     * zero used forever, the soft tier never fires, and the two-tier ceiling is
+     * dead with every test of either function alone still green.
+     */
+    await consume('llm:window', 10, 60_000);
+    await consume('llm:window', 10, 60_000);
+    expect(await peek('llm:window', 10, 60_000)).toEqual({ ok: true, remaining: 8 });
+  });
+
+  it('hit() does NOT join that counter, because it namespaces', async () => {
+    // Which is correct, and is exactly why a caller needing both halves must not
+    // reach for hit(). Asserted so the asymmetry is documented rather than found.
+    await hit('llm:window', Date.now(), 10, 60_000);
+    expect(await peek('llm:window', 10, 60_000)).toEqual({ ok: true, remaining: 10 });
+  });
+
+  it('refuses once the named budget is spent, with a retry-after', async () => {
+    for (let i = 0; i < 3; i++) expect((await consume('llm:window', 3, 60_000)).ok).toBe(true);
+    const r = await consume('llm:window', 3, 60_000);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.retryAfterSeconds).toBeGreaterThan(0);
   });
 });

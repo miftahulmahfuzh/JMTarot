@@ -303,6 +303,30 @@ export function peek(
   return guarded('peek', key, max, windowMs, now);
 }
 
+/**
+ * `peek()`'s SYMMETRIC PARTNER: record against a budget the caller names itself.
+ *
+ * **WITHOUT THIS, A CALLER THAT NEEDS BOTH HALVES OF ONE BUDGET SILENTLY
+ * ADDRESSES TWO DIFFERENT COUNTERS**, and the plan's §5 code does exactly that:
+ * it peeks `llm:window` and consumes through `hit()`, which prefixes to
+ * `read:llm:window`. The peek then reports zero used forever, so the soft tier
+ * NEVER FIRES and the whole two-tier design is dead in a way no test of either
+ * function alone would notice -- both work perfectly, on different keys.
+ *
+ * So: `hit`/`hitGlobal`/`hitRefusal` name a *subject* and get a namespace applied
+ * for them; `consume`/`peek` name a *budget* and are passed through untouched.
+ * Anything needing to both read and record must use the second pair. There is a
+ * test asserting the two halves share a counter and that `hit()` does not join it.
+ */
+export function consume(
+  key: string,
+  max: number,
+  windowMs = HOUR_MS,
+  now = Date.now(),
+): Promise<RateLimitResult> {
+  return guarded('consume', key, max, windowMs, now);
+}
+
 /** Has this user used up their refusal budget? A READ, recording nothing. */
 export async function refusalsExhausted(
   key: string,
