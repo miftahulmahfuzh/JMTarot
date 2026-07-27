@@ -467,3 +467,56 @@ describe('consume + peek are the SAME budget, and hit() is not', () => {
     if (!r.ok) expect(r.retryAfterSeconds).toBeGreaterThan(0);
   });
 });
+
+describe('the fleet-wide numbers', () => {
+  beforeEach(() => {
+    _setBackend(null);
+    _reset();
+  });
+
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('the crowd ceiling defaults to 1200/h, and the RAISE FROM 400 IS NOT A LOOSENING', async () => {
+    /*
+     * **400 WAS 400 PER INSTANCE**, so the real fleet ceiling was 400 x however
+     * many instances Vercel had warm -- unknowable, and largest under exactly the
+     * load it was meant to catch. Making it fleet-wide AT 400 would have been a
+     * large, silent, untested TIGHTENING on launch day. 1200 is roughly the old
+     * number against three warm instances, and `llm/meter.ts` is the real bound
+     * now, so this one is a burst guard.
+     *
+     * Asserted by consuming 1200 and requiring the 1201st to be refused, rather
+     * than by reading the constant: the number that matters is the one enforced.
+     */
+    for (let i = 0; i < 1200; i++) expect((await hitGlobal()).ok).toBe(true);
+    expect((await hitGlobal()).ok).toBe(false);
+  });
+
+  it('RATELIMIT_GLOBAL_HOURLY retunes it without a deploy', async () => {
+    vi.stubEnv('RATELIMIT_GLOBAL_HOURLY', '3');
+    for (let i = 0; i < 3; i++) expect((await hitGlobal()).ok).toBe(true);
+    expect((await hitGlobal()).ok).toBe(false);
+  });
+
+  it('a nonsense value falls back rather than becoming zero', async () => {
+    // Zero would refuse every reading in the app. Same defensiveness as ttl.ts.
+    vi.stubEnv('RATELIMIT_GLOBAL_HOURLY', 'twelve hundred');
+    expect((await hitGlobal()).ok).toBe(true);
+  });
+
+  it('exports V7`s share-view ceiling as 10000, so V7 does not reinvent 3000', async () => {
+    /*
+     * V7's own plan sized 3000 PER INSTANCE. Fleet-wide 3000 would 429 a genuinely
+     * popular link, which reads to a stranger as "your friend sent me a broken
+     * link" -- and it is a DATABASE-READ guard, not a quota guard, because
+     * `/s/[slug]` makes no model call at all. It lives here rather than in V7 so
+     * that V7 reads a number with an argument attached instead of inventing one.
+     *
+     * V7's per-IP 120 is deliberately NOT moved: V9 is what makes that number mean
+     * 120 rather than "120 times however many instances are warm", which is what
+     * its 55-year enumeration arithmetic already assumed.
+     */
+    const { SHARE_VIEW_GLOBAL_MAX } = await import('./index');
+    expect(SHARE_VIEW_GLOBAL_MAX).toBe(10_000);
+  });
+});
