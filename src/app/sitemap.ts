@@ -1,7 +1,7 @@
 import type { MetadataRoute } from 'next';
 import { LOCALES, type Locale } from '@/lib/i18n/locale';
-import { localePath } from '@/lib/i18n/prefix';
-import { absoluteUrl } from '@/lib/seo/origin';
+import { sitemapLanguages } from '@/lib/seo/alternates';
+import { absoluteUrl, siteOrigin } from '@/lib/seo/origin';
 
 /**
  * `sitemap.xml`, both locales.
@@ -102,41 +102,56 @@ const SITEMAP_PATHS: readonly SitemapPath[] = [
   { path: '/privacy', localized: false },
 ];
 
-/**
- * Every address a path is served at, in locale order.
- *
- * `localePath` is S2's, from the same pure leaf `gate.ts` imports. S1's plan
- * shipped a local `const EN_PREFIX = '/en'` for S2 to delete later; the leaf
- * landed first, so the seam closed instead of being created. The one subtlety it
- * already handles: `localePath('en', '/')` is `/en` and never `/en/`, because
- * those would be two URLs for one page — the exact duplicate a canonical exists
- * to resolve, arriving from the file whose job is to prevent it.
- */
-function addresses(entry: SitemapPath): Partial<Record<Locale, string>> {
-  if (!entry.localized) return { id: absoluteUrl(entry.path) };
-  return Object.fromEntries(
-    LOCALES.map((locale) => [locale, absoluteUrl(localePath(locale, entry.path))]),
-  );
-}
-
 function entriesFor(entry: SitemapPath): MetadataRoute.Sitemap {
-  const urls = addresses(entry);
-
   /*
    * **RECIPROCAL, AND `x-default` IS THE INDONESIAN URL.** `id` is the default
    * and the source language (`## Localization`), so a visitor whose language we
    * do not serve belongs there. A non-reciprocal set is discarded SILENTLY by
-   * Google -- the whole set stops working and nothing reports it -- which is why
-   * every row of a localized path is emitted from one object over one map.
+   * Google -- the whole set stops working and nothing reports it.
+   *
+   * ── IT COMES OUT OF S2's HELPER, AND THAT IS THE POINT (register §5) ───────
+   *
+   * S1 shipped this as a local `{ ...urls, 'x-default': urls.id }` because
+   * `alternates.ts` had not landed. It has now, so the `<xhtml:link>` set here
+   * and the `<link rel="alternate">` set every content page's
+   * `generateMetadata` emits come out of ONE function: Google reads both and
+   * treats a disagreement as a broken group, so two builders is a second
+   * definition of the same claim. The reconciliation's single-definition
+   * register names `sitemapLanguages` with this file as its consumer, and a
+   * helper with no callers is how V7's `liveShareLinkFor` shipped a bug in
+   * silence.
+   *
+   * `localePath('en', '/')` is `/en` and never `/en/` -- two URLs for one page
+   * is the exact duplicate a canonical exists to resolve -- and that subtlety
+   * now lives in the leaf rather than here.
    *
    * `undefined` rather than a one-entry set for an unlocalized path: a `hreflang`
    * naming only the page you are already on is noise a validator flags, and it
    * would also be the shape somebody later "completes" by adding an `en` URL that
    * does not exist.
+   *
+   * **`LOCALES` IS CORRECT HERE ONLY BECAUSE EVERY LOCALIZED PATH IN THE LIST
+   * TODAY HAS BOTH DOCUMENTS.** R2 is per PAGE, not per release: the first path
+   * that ships Indonesian-only turns `localized: boolean` into a locale list and
+   * passes it straight through as this third argument, which is what the
+   * parameter exists for. Passing `LOCALES` for a card with no English lore
+   * would name a 404 and discard the whole set.
    */
-  const alternates = entry.localized
-    ? { languages: { ...urls, 'x-default': urls.id } }
-    : undefined;
+  const languages = entry.localized
+    ? sitemapLanguages(siteOrigin(), entry.path, LOCALES)
+    : null;
+
+  /** Every address this path is served at, in locale order. */
+  const urls: Partial<Record<Locale, string>> = languages
+    ? Object.fromEntries(
+        LOCALES.filter((locale) => languages[locale] !== undefined).map((locale) => [
+          locale,
+          languages[locale]!,
+        ]),
+      )
+    : { id: absoluteUrl(entry.path) };
+
+  const alternates = languages ? { languages } : undefined;
 
   return LOCALES.filter((locale) => urls[locale] !== undefined).map((locale) => ({
     url: urls[locale]!,
