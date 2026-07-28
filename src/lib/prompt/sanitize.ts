@@ -5,7 +5,7 @@ export const MAX_QUESTION_LENGTH = 200;
  * EVERY DELIMITER THE PROMPT LAYER WRITES, in any casing, with whitespace
  * anywhere inside the tag and with attributes.
  *
- * Five tags, because five different blocks fence off user-derived text:
+ * Six tags, because six different blocks fence off user-derived text:
  *
  *   <pertanyaan>          the querent's question, in a reading's user turn
  *   <penanya>             the Lotus block, in a reading's user turn (W3 §9)
@@ -16,6 +16,9 @@ export const MAX_QUESTION_LENGTH = 200;
  *                         `-hari-ini` suffix
  *   <terjemahan>          V2's translation source: prose a model wrote, handed
  *                         back to a model as material to re-write
+ *   <sosok>               V8's persona block: the engine facts, the closed
+ *                         values and the Lotus summary, in `/account`'s
+ *                         persona prompt
  *
  * THE COUNT ABOVE AND THE ALTERNATION BELOW MUST AGREE, and `sanitize.test.ts`'s
  * `the delimiter set` block is what makes them. They had already drifted once --
@@ -30,7 +33,7 @@ export const MAX_QUESTION_LENGTH = 200;
  * THIS DOES NOT CONTRADICT RECONCILIATION R17. That resolution says the ENGLISH
  * prompt keeps `<pertanyaan>` rather than gaining an English-language tag -- one
  * token per purpose, across both locales, so there is one thing to strip and one
- * thing to test. These four serve four purposes and fence four different
+ * thing to test. These six serve six purposes and fence six different
  * blocks. What R17 warns against is doubling the surface for the SAME purpose,
  * and adding a locale variant of any of these would still be wrong.
  *
@@ -54,10 +57,26 @@ export const MAX_QUESTION_LENGTH = 200;
  * would absolutely type "translation", so the English-looking tag is the one
  * carrying the surface. Same reasoning that kept `<riwayat>` out of `<history>`.
  *
+ * `<sosok>` IS A SIXTH PURPOSE, AND ITS CONTENTS ARE NOT RAW USER TEXT -- WHICH IS
+ * WHY IT IS DEFENCE IN DEPTH HERE RATHER THAN THE PRIMARY CONTROL. V8's A5 makes
+ * the persona prompt structurally incapable of receiving an onboarding answer: it
+ * gets the engine facts (machine-built), the closed values (closed sets) and the
+ * Lotus summary (model output that `lotusSafetyCheck` already passed). So the
+ * fence guards one hop out, the way `<terjemahan>` does.
+ *
+ * SAY SO EXPLICITLY, because the alternative reading is dangerous in both
+ * directions: somebody who believes the fence is unnecessary deletes it along with
+ * the rule that made it unnecessary, and somebody who believes the block carries
+ * raw answers concludes the abstraction rule is already handled here.
+ *
+ * ONE TOKEN IN BOTH LOCALES, per R17, and the Indonesian-looking word again for
+ * the surface argument: an English querent will never type "sosok" and would
+ * absolutely type "self" or "person".
+ *
  * `[^>]*` covers the attribute on `<jawaban kunci="...">`. It cannot run past a
  * `>` and so cannot swallow arbitrary text between two unrelated tags.
  */
-const DELIMITER = /<\s*\/?\s*(?:pertanyaan|penanya|jawaban|riwayat|terjemahan)(?:[^>]*)>/gi;
+const DELIMITER = /<\s*\/?\s*(?:pertanyaan|penanya|jawaban|riwayat|terjemahan|sosok)(?:[^>]*)>/gi;
 
 /*
  * C0 and C1 control characters, minus the whitespace handled separately below.
