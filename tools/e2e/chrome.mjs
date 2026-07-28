@@ -474,19 +474,58 @@ async function tapIn(cdp, ...texts) {
   const box = await evaluate(
     cdp,
     `(() => {
-       const wanted = ${JSON.stringify(texts.map((t) => t.toLowerCase()))};
-       const nodes = [...document.querySelectorAll('button,a,[role=button],input[type=submit]')];
-       const hit = nodes.find((n) => {
-         const s = (n.innerText || n.value || n.getAttribute('aria-label') || '').toLowerCase();
-         return wanted.some((w) => s.includes(w));
-       });
+       const wanted = ${JSON.stringify(texts.map((t) => t.trim().toLowerCase()))};
+       const nodes = [...document.querySelectorAll('button,a,[role=button],input[type=submit]')]
+         .filter((n) => {
+           const r = n.getBoundingClientRect();
+           return r.width > 0 && r.height > 0;
+         })
+         .map((n) => ({
+           n,
+           s: (n.innerText || n.value || n.getAttribute('aria-label') || '')
+                .trim().toLowerCase(),
+         }));
+
+       /*
+        * ── MATCH IN THREE TIERS, EXACT FIRST. ───────────────────────────────
+        *
+        * **A BARE lowercased \`includes()\` PICKED THE WRONG CONTROL AND
+        * REPORTED SUCCESS**, which is worse than failing: the tap landed, the
+        * verb printed \`tapped "EN"\`, and the assertion that followed was about
+        * a button nobody pressed.
+        *
+        * Measured on the real account menu. \`tap 'EN'\` against
+        * ["Buka menu akun", "Tentang kamu", "EN", "Keluar", …] matched
+        * **"Buka menu akun"** first -- m-EN-u -- so it re-tapped the button that
+        * opens the sheet and never touched the language toggle. "Tentang kamu"
+        * (t-EN-tang) would have been next. A two-letter locale code is a
+        * substring of ordinary Indonesian words, so this is not an edge case
+        * here; it is the common case.
+        *
+        * Tier 1 exact, tier 2 word-boundary, tier 3 substring. Substring stays
+        * because a button whose label wraps or carries a nested element is real,
+        * but it can no longer outrank an exact hit that exists in the document.
+        */
+       const escape = (w) => w.replace(/[.*+?^\\\${}()|[\\]\\\\]/g, '\\\\$&');
+       const exact = nodes.find((c) => wanted.some((w) => c.s === w));
+       const word = nodes.find((c) =>
+         wanted.some((w) => new RegExp('(^|\\\\W)' + escape(w) + '($|\\\\W)').test(c.s)));
+       const loose = nodes.find((c) => wanted.some((w) => c.s.includes(w)));
+       const hit = exact || word || loose;
        if (!hit) return null;
-       const r = hit.getBoundingClientRect();
-       if (r.width === 0 || r.height === 0) return null;
-       return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+       const r = hit.n.getBoundingClientRect();
+       return {
+         x: r.left + r.width / 2,
+         y: r.top + r.height / 2,
+         matched: hit.s.slice(0, 60),
+         tier: hit === exact ? 'exact' : hit === word ? 'word' : 'substring',
+       };
      })()`,
   );
   if (!box) return false;
+  // Report WHICH element and by which tier. A substring match on a short string
+  // is the shape of the bug above, and silence is what let it through.
+  lastTap = box;
 
   for (const type of ['mousePressed', 'mouseReleased']) {
     await cdp.send('Input.dispatchMouseEvent', {
@@ -501,16 +540,25 @@ async function tapIn(cdp, ...texts) {
   return true;
 }
 
+/** Set by `tapIn`, so `tap` can report which element it actually hit. */
+let lastTap = null;
+
 async function tap(args) {
   const text = args[0];
   if (!text) throw new Error('usage: tap <visible text>');
+  lastTap = null;
   const ok = await withPage(async (cdp) => {
     await cdp.send('Page.enable');
     const hit = await tapIn(cdp, text);
     if (hit) await settle(cdp, 8000);
     return hit;
   });
-  console.log(ok ? `tapped "${text}"` : `NO element matching "${text}"`);
+  if (ok && lastTap) {
+    console.log(`tapped "${text}" -> [${lastTap.tier}] "${lastTap.matched}"`);
+    if (lastTap.tier === 'substring') {
+      console.log('  WARNING: substring match. Verify this is the control you meant.');
+    }
+  } else console.log(`NO element matching "${text}"`);
   if (!ok) process.exitCode = 1;
   else await status();
 }
