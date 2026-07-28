@@ -11,7 +11,15 @@
  * this WSL image and there is no Playwright, so a decision function that Vitest
  * can call directly with a table of paths is the difference between "covered in
  * milliseconds" and "not covered".
+ *
+ * **THE ONE IMPORT (v0.4.0 / S1) DOES NOT BREAK THAT PROMISE, AND IT WAS CHOSEN
+ * FOR IT.** `@/lib/i18n/prefix` is a pure leaf with no `next/*` -- not even a
+ * type -- no `server-only` and no `process.env`; reconciliation R11 put the
+ * prefix helpers there rather than in `resolve.ts` precisely because
+ * `resolve.ts` opens with `import type { NextRequest }` and this file's first
+ * paragraph promises there is none in its graph.
  */
+import { isPublicContentPath, stripLocalePrefix } from '@/lib/i18n/prefix';
 
 /** The legacy cookie from the password era. Evicted, never read. */
 export const LEGACY_SESSION_COOKIE = 'jmtarot_session';
@@ -115,7 +123,46 @@ export function isPublic(pathname: string): boolean {
      * `'/s/'` and not `'/s'` -- there is a test for exactly that.
      */
     pathname.startsWith('/s/') ||
-    pathname.startsWith('/api/auth/')
+    pathname.startsWith('/api/auth/') ||
+    /*
+     * ── v0.4.0 / S1. THE INDEXABLE CONTENT SURFACE (S-D3) ────────────────────
+     *
+     * Today a search engine can see three pages of this application and one of
+     * them is a login form. This clause is most of the fix.
+     *
+     * **THE ROUTE TABLE IS NOT WRITTEN OUT HERE, AND THAT IS DELIBERATE.**
+     * `isPublicContentPath` lives in `@/lib/i18n/prefix`, beside the prefix
+     * maths, because you cannot decide whether to honour `/en/x` without knowing
+     * whether `/x` is content -- and the alternative is two copies of a list of
+     * permanent public addresses, kept in step by hand across two owners. It is
+     * two exact-match tables plus a ONE-SEGMENT tree check, never a `startsWith`
+     * on a bare name, so `/blogroll` cannot become public by looking like
+     * `/blog`. That is the same property this function's header argues for, one
+     * module along; `prefix.test.ts` carries the negative controls.
+     *
+     * **`/arcana` IS PUBLIC THOUGH IT HAS NO PAGE, AND THAT IS RECONCILIATION
+     * R6.** It is the parent of 22 indexed URLs, so it must 404 from Next's own
+     * routing rather than 302 to `/login` -- Google reads a login redirect on a
+     * content path as a soft 404, on the one subtree this release is built
+     * around. The negative controls are `/arcanax` and `/arcana-foo`.
+     *
+     * **THIS CLAUSE STRIPS AN `/en/` PREFIX AND THE OTHERS ABOVE MUST NOT
+     * (contract G2).** Middleware strips before calling `decide()` (contract
+     * G1), so in production a prefixed path never reaches here at all; this is
+     * DEFENCE IN DEPTH, so that a future edit breaking the strip is still fenced
+     * rather than a 302 on an indexable page. Unconditional stripping would make
+     * `/en/api/events` public, which is why it is one clause and not a line at
+     * the top of the function. `/en/history` is `false` here, and there is a test
+     * named for the worst outcome available in this release.
+     *
+     * **`'/'` IS DELIBERATELY ABSENT (S-D5)**, and `isPublicContentPath` excludes
+     * it for this reason rather than by accident. This function short-circuits
+     * `decide()` BEFORE the onboarding check, so `/` in the public set would stop
+     * sending a signed-in, un-onboarded querent to `/onboarding` and would land
+     * them on a picker that assumes a completed profile. The `/` clause is in
+     * `decide()` instead, where the signed-in arms still run.
+     */
+    isPublicContentPath(stripLocalePrefix(pathname).path)
   );
 }
 
@@ -154,6 +201,37 @@ export function decide(input: GateInput): GateDecision {
   const { pathname, signedIn, onboarded } = input;
 
   if (isPublic(pathname)) return { kind: 'next' };
+
+  /*
+   * ── S-D5. `/` DUAL-RENDERS, AND THIS IS WHY IT IS NOT IN `isPublic()` ──────
+   *
+   * Signed out, `/` is a static, crawlable landing page. Signed in, it is the
+   * reader picker, byte for byte as before. `src/app/page.tsx` decides which by
+   * calling `currentUser()`, which is database-free.
+   *
+   * **`isPublic()` WOULD HAVE BEEN THE ONE-LINE VERSION AND IT IS WRONG.** That
+   * function short-circuits this one ABOVE the onboarding check, so `'/'` in the
+   * public set would stop redirecting a signed-in, un-onboarded querent to
+   * `/onboarding` and would land them on the picker -- a route that assumes a
+   * completed `profiles` row, in an app where onboarding is asked exactly once.
+   * There is a test named for exactly that case.
+   *
+   * `!signedIn &&` is therefore the whole guard: both signed-in arms below run
+   * unchanged, and the only cell of the decision table that moves is
+   * (signed out, `/`).
+   *
+   * **IT IS `=== '/'` AND NOT ALSO `'/en'`, BECAUSE THE STRIP RUNS FIRST**
+   * (contract G1). `/en` rewrites to `/` in middleware, so this single clause
+   * covers the English landing AND keeps the half-onboarded redirect for it.
+   * Under gate-first this would have had to read `'/' || '/en' || '/en/'`, and
+   * nobody would ever have tested `/en` while signed in and half-onboarded.
+   *
+   * It also closes a blocker CLAUDE.md has carried for two releases -- Google's
+   * branding requirement is an app homepage that is not a login page, and
+   * publishing the OAuth consent screen was blocked on `/` redirecting to
+   * `/login`. One change, two problems.
+   */
+  if (!signedIn && pathname === '/') return { kind: 'next' };
 
   if (!signedIn) {
     return isApi(pathname)
