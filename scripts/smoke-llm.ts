@@ -200,6 +200,7 @@ async function main() {
   const gist = process.argv.includes('--gist');
   const frequency = process.argv.includes('--frequency');
   const translate = process.argv.includes('--translate');
+  const persona = process.argv.includes('--persona');
   /* Any comparison run wants fixed hands, for the reason spelled out at the
      `picks` assignment below: two runs that drew different cards cannot be
      diffed. `--memory` joins that list because its whole point is a recalled
@@ -244,6 +245,22 @@ async function main() {
      native generation. It composes with `--all` like the two above. */
   if (translate) {
     await runTranslate();
+    if (!all) return;
+  }
+
+  /*
+   * `--persona` is its own run: ONE real persona per locale, printed whole, with
+   * the resolved engine facts, the chosen facets, the full contract, the full user
+   * turn, the raw output, the safety verdict and the counts against the ceilings.
+   *
+   * SAME INSTRUCTION AND SAME REASON AS `--lotus`: **read it.** Everything about
+   * the persona is unit-tested for shape and nothing can unit-test whether it is
+   * any good -- and unlike a reading, this text is written once, stored, and
+   * (V7) shareable to a public URL. A smoke run three days later cannot un-share
+   * a persona, which is why the vocabulary checks below FAIL rather than warn.
+   */
+  if (persona) {
+    await runPersona(sideLocales);
     if (!all) return;
   }
 
@@ -1656,6 +1673,168 @@ async function runFrequency(locales: Locale[]) {
       'AND CHECK THE PULSE IS SPOKEN, NOT PASTED: the gloss is a written line\n' +
       'and the prompt says "in your own words" twice. If it comes back verbatim,\n' +
       "the fix is V1 shipping a SHORT FORM of the gloss, not a third instruction.\n",
+  );
+}
+
+/**
+ * `--persona` (V8's Task 15). One real persona per locale, end to end.
+ *
+ * **THE SCRIPT BUILDS ITS OWN INPUTS AND NEEDS NO DATABASE.** It imports the pure
+ * module only, so it runs with `db:down` -- the same property `--lotus` has, and
+ * the reason both are usable as a first check after changing a contract.
+ *
+ * **EVERY CEILING IS IMPORTED, NEVER TYPED INTO THIS FILE.** That is
+ * `budget.ts`'s whole reason for existing and §0.3 of the reconciliation records
+ * this script hardcoding two of V3's numbers as the fourth-copy drift it was
+ * created to prevent. `PERSONA_MAX_WORDS` and `PERSONA_MAX_SENTENCES` come off
+ * `prompt.ts`.
+ */
+async function runPersona(locales: Locale[]) {
+  const {
+    PERSONA_CONTRACT,
+    PERSONA_MAX_CHARS,
+    PERSONA_MAX_SENTENCES,
+    PERSONA_MAX_WORDS,
+    buildPersonaPrompt,
+    facetsFor,
+    fallbackPersona,
+    personaFactsFor,
+    personaSafetyCheck,
+  } = await import('@/lib/persona/prompt');
+  const { correspondencesFor } = await import('@/lib/numerology');
+
+  /*
+   * The same fixture answers `--lotus` uses, distilled by hand into a plausible
+   * background. Deliberately NOT a real distillation: this run is about the
+   * persona contract, and chaining two model calls would make a persona failure
+   * indistinguishable from a Lotus failure.
+   *
+   * The profile carries a PROPER NAME in both fields, so a body that copies
+   * either is caught by `nickname_leak` rather than by luck -- and a birth year
+   * a leak check can find.
+   */
+  const PROFILE = { fullName: 'Rani Sari Wulandari', nickname: 'Rani', birthDate: '1994-08-03' };
+  const RAW_ANSWERS = LOTUS_FIXTURE.answers
+    .map((a) => a.text)
+    .filter((t): t is string => typeof t === 'string');
+
+  const LOTUS: Record<Locale, string> = {
+    id: 'Ia menyimpan satu kenangan berat tentang kehilangan yang datang terlalu awal, dan sejak itu cenderung menimbang lama sebelum bicara. Ada satu tahun perpindahan yang masih ia ingat sebagai awal dari banyak hal.',
+    en: 'They carry one heavy memory of a loss that arrived too early, and since then tend to weigh things a long time before speaking. There is a year of moving they still remember as the start of much else.',
+  };
+
+  const problems: string[] = [];
+
+  const facts = personaFactsFor(PROFILE, {
+    topCardId: 17,
+    topCardCount: 5,
+    topCardReversedDominant: false,
+    topReaderId: 'margaret',
+    readingCount: 12,
+  });
+
+  /* A hash-shaped seed rather than a real `personaInputHash`, so the facets are
+     fixed across runs and two runs can be diffed. The rotation itself has its own
+     unit test over 4096 seeds. */
+  const facets = facetsFor('7f3a1c0400000000');
+
+  process.stdout.write(
+    `\n${'#'.repeat(70)}\nENGINE FACTS (computed in code -- VD1)\n${'#'.repeat(70)}\n` +
+      `${JSON.stringify(facts, null, 2)}\n` +
+      `\nfacets chosen: ${facets.join(', ')}\n`,
+  );
+
+  for (const locale of locales) {
+    const input = {
+      locale,
+      facts,
+      correspondences: correspondencesFor(PROFILE, locale),
+      lotusSummary: LOTUS[locale],
+      colour: 'black' as const,
+      introversion: 30,
+      wishKind: 'aman' as const,
+      facets,
+    };
+
+    const prompt = buildPersonaPrompt(input);
+
+    process.stdout.write(
+      `\n${'#'.repeat(70)}\nSYSTEM CONTRACT [${locale}]\n${'#'.repeat(70)}\n${PERSONA_CONTRACT[locale]}\n`,
+    );
+    process.stdout.write(
+      `\n${'#'.repeat(70)}\nUSER TURN [${locale}]\n${'#'.repeat(70)}\n${prompt.user}\n`,
+    );
+
+    const raw = await run(`persona [${locale}]`, prompt.system, prompt.user, prompt.maxTokens);
+    const body = raw.replace(/\s+/g, ' ').trim();
+
+    const words = body.split(/\s+/).filter(Boolean).length;
+    const sentences = body.split(/[.!?]+(?:\s|$)/).filter((x) => x.trim().length > 0).length;
+
+    const verdict = personaSafetyCheck(body, locale, {
+      nickname: PROFILE.nickname,
+      fullName: PROFILE.fullName,
+      birthDate: PROFILE.birthDate,
+      rawAnswers: RAW_ANSWERS,
+    });
+
+    process.stdout.write(
+      `\n${'#'.repeat(70)}\nSTORED BODY [${locale}]\n${'#'.repeat(70)}\n` +
+        `${verdict.ok ? body : fallbackPersona(input)}\n`,
+    );
+
+    /* PRINTED, not failed: the counts are what a person reads to judge whether
+       the ceiling is right, and one run over is variance rather than a defect. */
+    process.stdout.write(
+      `\n[${locale}] ${words} words (cap ${PERSONA_MAX_WORDS}), ` +
+        `${sentences} sentences (cap ${PERSONA_MAX_SENTENCES}), ` +
+        `${body.length} chars (cap ${PERSONA_MAX_CHARS})\n` +
+        `[${locale}] facets: ${facets.join(', ')}\n` +
+        `[${locale}] safety: ${verdict.ok ? 'ACCEPTED' : `REJECTED -- ${verdict.reason} (the template is stored)`}\n`,
+    );
+
+    /*
+     * THE CHECKS THAT FAIL. `personaSafetyCheck` is the real gate and it already
+     * covers the vocabulary, the names, the brackets and the year -- so a rejection
+     * IS the failure, and repeating its list here would be a second copy that
+     * drifts. What this adds is the two things the gate deliberately does not
+     * refuse, because they are prose-quality rather than safety: markdown and
+     * emoji. A persona with a bullet point in it is a contract failure the gate
+     * would happily store.
+     */
+    if (!verdict.ok) problems.push(`[${locale}] safety check rejected: ${verdict.reason}`);
+    if (/[*_#`]|^\s*[-•]\s/m.test(body)) problems.push(`[${locale}] markdown or a list marker`);
+    if (/\p{Extended_Pictographic}/u.test(body)) problems.push(`[${locale}] emoji`);
+    if (words > PERSONA_MAX_WORDS * 1.5) {
+      problems.push(`[${locale}] ${words} words is over 1.5x the ${PERSONA_MAX_WORDS} ceiling`);
+    }
+
+    /*
+     * THE CARD NAME, MECHANICALLY. The contract says to copy it exactly and in
+     * English, and CLAUDE.md records the model inventing "Pulan" for The Moon when
+     * only the prompt rule stood behind it. The life-path arcana is the one card the
+     * body is REQUIRED to name.
+     */
+    const arcana = input.correspondences.lifePath?.arcana.name;
+    if (arcana && verdict.ok && !body.includes(arcana)) {
+      problems.push(`[${locale}] does not name ${arcana} as given`);
+    }
+  }
+
+  process.stdout.write(`\n${'#'.repeat(70)}\nPERSONA CHECKS\n${'#'.repeat(70)}\n`);
+  if (problems.length === 0) process.stdout.write('all clean\n');
+  else for (const pr of problems) process.stdout.write(`FAIL  ${pr}\n`);
+
+  process.stdout.write(
+    '\nFour questions, and only the last two need a person:\n' +
+      '  1. is it four sentences, one per facet after the card?\n' +
+      '  2. does it name the card exactly as given?\n' +
+      '  3. does it read as a RECORD kept about someone, or as a reader talking to them?\n' +
+      '     A greeting, an offer of help, or a reader\'s warmth means VD16 is slipping\n' +
+      '     and the fix is the contract, not the code.\n' +
+      '  4. would you be comfortable if a stranger opened this at a public URL?\n' +
+      '     That is what V7 makes possible, and it is the whole reason the checks\n' +
+      '     above FAIL rather than warn.\n',
   );
 }
 
