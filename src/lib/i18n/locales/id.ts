@@ -878,6 +878,69 @@ const id = {
   'public.crumb.home': 'JMTarot',
   'public.crumb.gallery': 'Galeri',
   'public.crumb.blog': 'Tulisan',
+
+  /**
+   * ── S4: `/arcana/<slug>`, the twenty-two lore pages ───────────────────────
+   *
+   * CHROME ONLY. Every word of the lore itself lives in `src/content/arcana/**`
+   * and never here (S-D6): twenty-two documents per locale is an order of
+   * magnitude more prose than this whole catalog, and `LocaleProvider` hands the
+   * client ONE resolved bundle -- so a lore paragraph in here would be serialised
+   * into the RSC payload of every visitor of every page, including the draw
+   * screen.
+   *
+   * **KEEP EVERY LABEL ONE OR TWO SHORT WORDS.** `.label` is
+   * `text-transform: uppercase` in the fact strip, which is what turned
+   * `What you are called` into `WHAT YOU ARE CALLED` over two rows on `/account`.
+   *
+   * **THE VERDICT WORDS ARE `reading.verdict.*` AND ARE NOT DUPLICATED HERE.**
+   * They must be the SAME WORDS the app prints after a real yes/no reading; a
+   * second key is how the lore page and the reading eventually disagree about
+   * what `maybe` is called.
+   */
+  'arcana.upright': 'Tegak',
+  'arcana.reversed': 'Terbalik',
+  'arcana.verdict': 'Ya atau tidak',
+  'arcana.lore': 'Asal-usul kartu',
+  'arcana.inSpread': 'Dalam bacaan',
+  'arcana.questions': 'Pertanyaan yang sering muncul',
+  'arcana.neighbours': 'Kartu sebelum dan sesudah',
+  'arcana.related': 'Kartu yang berdekatan',
+  'arcana.related.root': 'akar angkanya',
+  'arcana.related.element': 'satu unsur',
+  'arcana.related.stage': 'satu tahap',
+  'arcana.gallery': 'Lihat semua 22 kartu',
+
+  /** The fact strip. One or two words each -- see the block above. */
+  'arcana.facts.numeral': 'Angka',
+  'arcana.facts.element': 'Unsur',
+  'arcana.facts.stage': 'Tahap',
+  'arcana.facts.polarity': 'Muatan',
+  'arcana.facts.attribution': 'Lambang',
+  'arcana.facts.modality': 'Sifat',
+  'arcana.facts.keywords': 'Kata kunci',
+
+  /**
+   * The enum VALUES stay English in the data and the displayed WORD is a key --
+   * `reading.verdict.{yes,no,maybe}` is the existing precedent for exactly this.
+   */
+  'arcana.element.fire': 'Api',
+  'arcana.element.earth': 'Tanah',
+  'arcana.element.air': 'Udara',
+  'arcana.element.water': 'Air',
+  'arcana.stage.beginning': 'Permulaan',
+  'arcana.stage.trial': 'Ujian',
+  'arcana.stage.reckoning': 'Perhitungan',
+  'arcana.polarity.light': 'Terang',
+  'arcana.polarity.shadow': 'Bayangan',
+  'arcana.polarity.neutral': 'Netral',
+  'arcana.modality.cardinal': 'Kardinal',
+  'arcana.modality.fixed': 'Tetap',
+  // 'Mutable' is a loanword Indonesian astrology writing does use, and it is the
+  // one modality whose borrowed form is identical in both catalogs -- which
+  // catalog.test.ts reads, correctly, as a key pasted across to make the typecheck
+  // go green. 'Berubah' is the ordinary word and says the same thing.
+  'arcana.modality.mutable': 'Berubah',
 } as const satisfies Record<string, string>;
 
 export default id;

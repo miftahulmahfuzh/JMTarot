@@ -560,6 +560,42 @@ const en: Catalog = {
   'public.crumb.home': 'JMTarot',
   'public.crumb.gallery': 'Gallery',
   'public.crumb.blog': 'Writing',
+
+  // ── S4: /arcana/<slug> ─────────────────────────────────────────────────────
+  'arcana.upright': 'Upright',
+  'arcana.reversed': 'Reversed',
+  'arcana.verdict': 'Yes or no',
+  'arcana.lore': 'Where the card comes from',
+  'arcana.inSpread': 'In a reading',
+  'arcana.questions': 'Common questions',
+  'arcana.neighbours': 'Before and after',
+  'arcana.related': 'Cards nearby',
+  'arcana.related.root': 'its root number',
+  'arcana.related.element': 'same element',
+  'arcana.related.stage': 'same stage',
+  'arcana.gallery': 'See all 22 cards',
+
+  'arcana.facts.numeral': 'Numeral',
+  'arcana.facts.element': 'Element',
+  'arcana.facts.stage': 'Stage',
+  'arcana.facts.polarity': 'Charge',
+  'arcana.facts.attribution': 'Sign',
+  'arcana.facts.modality': 'Mode',
+  'arcana.facts.keywords': 'Keywords',
+
+  'arcana.element.fire': 'Fire',
+  'arcana.element.earth': 'Earth',
+  'arcana.element.air': 'Air',
+  'arcana.element.water': 'Water',
+  'arcana.stage.beginning': 'Beginning',
+  'arcana.stage.trial': 'Trial',
+  'arcana.stage.reckoning': 'Reckoning',
+  'arcana.polarity.light': 'Light',
+  'arcana.polarity.shadow': 'Shadow',
+  'arcana.polarity.neutral': 'Neutral',
+  'arcana.modality.cardinal': 'Cardinal',
+  'arcana.modality.fixed': 'Fixed',
+  'arcana.modality.mutable': 'Mutable',
 };
 
 export default en;

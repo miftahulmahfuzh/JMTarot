@@ -139,6 +139,107 @@ export function breadcrumbList(items: readonly Crumb[]): JsonLdNode {
   };
 }
 
+export type ImageObjectArgs = {
+  /** ABSOLUTE. A relative `url` here is the bug the missing `metadataBase` was. */
+  url: string;
+  width: number;
+  height: number;
+  caption: string;
+};
+
+/**
+ * One image, as a node rather than a bare URL string (S4, v0.4.0).
+ *
+ * **THE `url` MUST BE ABSOLUTE AND THIS THROWS OTHERWISE.** Schema.org's own
+ * spec permits a relative one and every consumer resolves it against a base it
+ * guesses; a guessed base is how a page ends up claiming an image at a host we do
+ * not control. S1's `siteOrigin()` is the caller's job -- this file takes no
+ * origin because it takes the finished URL.
+ *
+ * S4 authors it; **S3 mounts it too** for the gallery's `ImageGallery`, which is
+ * why it is here rather than in `src/app/arcana/[slug]/jsonld.ts`. R9 sequences
+ * the appends S1 -> S3 -> S4 -> S6 and S3 was to write this one, but S3 is
+ * blocked on S4a and therefore lands after -- so S4 writes it and S3 imports it.
+ * A second definition of the same node type is the reconciliation failure §5's
+ * register exists to prevent, whichever order they land in.
+ */
+export function imageObject(a: ImageObjectArgs): JsonLdNode {
+  if (!/^https?:\/\//.test(a.url)) {
+    throw new Error(`imageObject needs an absolute url, got: ${a.url}`);
+  }
+  return {
+    '@type': 'ImageObject',
+    url: a.url,
+    width: a.width,
+    height: a.height,
+    caption: a.caption,
+  };
+}
+
+export type ArticleArgs = {
+  origin: string;
+  /** The canonical, from `contentAlternates()`. `mainEntityOfPage` and nothing else. */
+  url: string;
+  headline: string;
+  description: string;
+  /** The BARE tag: `id` or `en`. **Never `intlTag()`** — see the header (R15). */
+  inLanguage: string;
+  image: JsonLdNode;
+  /** `YYYY-MM-DD`. A COMMITTED CONSTANT, never `new Date()` — see below. */
+  datePublished: string;
+  dateModified: string;
+  /** What the article is ABOUT, nested. For a lore page, the card itself. */
+  about: JsonLdNode;
+};
+
+/**
+ * An authored document (S4, v0.4.0). **`Article`, not `CreativeWork`** — roadmap
+ * §13 left the choice open and this is S4's call with its reason.
+ *
+ * `CreativeWork` is `Article`'s parent. Choosing a parent communicates strictly
+ * less and buys nothing: Google's documented eligibility is defined over `Article`
+ * and its subtypes, never over `CreativeWork`. Every property `Article` expects is
+ * honestly true of these documents -- they are authored, dated, reviewed and
+ * committed as source (S-D7) -- and the competitor set is article-shaped, so
+ * matching the type matches a category a crawler has already learned for this
+ * query class.
+ *
+ * **THE ARGUMENT FOR `CreativeWork` IS CORRECT AND POINTS AT `about`, NOT AT THE
+ * PAGE TYPE.** A tarot card IS an artefact and this page describes it -- so the
+ * card is the `about` and our painting is the `image`. Both, correctly nested,
+ * rather than one flattened compromise.
+ *
+ * NOT `WebPage`: every page is one, so it says nothing.
+ * **NOT `FAQPage`** (S-D16): Google restricted FAQ rich results to authoritative
+ * government and health sites in August 2023. The Q&A CONTENT ships; the schema
+ * does not, and no part of this node depends on it.
+ *
+ * **`author` AND `publisher` ARE `@id` REFERENCES, NEVER INLINE DUPLICATES.** Two
+ * definitions of who published this will disagree the first time the
+ * organisation's name changes, and a crawler joining the graph will pick one.
+ *
+ * **`dateModified` IS A COMMITTED CONSTANT AND MUST NEVER BE `new Date()`.** A
+ * page whose `dateModified` is the request time tells a crawler the content
+ * changes on every fetch, which is a lie that costs crawl budget --
+ * `sitemap.ts`'s `lastModified` carries the same rule and a byte-stability test.
+ */
+export function article(a: ArticleArgs): JsonLdNode {
+  return {
+    '@type': 'Article',
+    headline: a.headline,
+    description: a.description,
+    inLanguage: a.inLanguage,
+    image: a.image,
+    datePublished: a.datePublished,
+    dateModified: a.dateModified,
+    mainEntityOfPage: a.url,
+    about: a.about,
+    author: { '@id': orgId(a.origin) },
+    publisher: { '@id': orgId(a.origin) },
+    isPartOf: { '@id': `${a.origin}/#website` },
+  };
+}
+
 /** One `@context` over N nodes. Two contexts is valid and doubles the bytes. */
 export function graph(nodes: readonly JsonLdNode[]): JsonLdNode {
   return { '@context': 'https://schema.org', '@type': 'ItemList', '@graph': nodes } as JsonLdNode;
