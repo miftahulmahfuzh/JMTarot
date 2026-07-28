@@ -355,7 +355,16 @@ function derivedTraits(input: LotusInput): Omit<LotusTraits, 'themes' | 'anchor'
  * like therapy. Roadmap §8's last clause: "the no-therapy rule now binds the
  * distillation too."
  */
-const BANNED_ID = [
+/*
+ * EXPORTED FOR V8's `personaSafetyCheck`, which enforces the same vocabulary at
+ * the same moment -- after the model answers, before the string is stored -- on a
+ * body that is additionally going onto a public page.
+ *
+ * IMPORTED THERE RATHER THAN RETYPED, because two copies of a banned-word list is
+ * one copy that will be updated and one that will not. `BANNED_ROOTS_ID`,
+ * `properNames`, `sharesNgram` and `NGRAM` travel with them for the same reason.
+ */
+export const BANNED_ID = [
   'trauma',
   'terapi',
   'terapis',
@@ -371,7 +380,7 @@ const BANNED_ID = [
   'konseling',
 ];
 
-const BANNED_EN = [
+export const BANNED_EN = [
   'trauma',
   'therapy',
   'therapist',
@@ -399,7 +408,7 @@ const BANNED_EN = [
  * into the template -- which is the failure `lotus_generated.fallback` trending
  * to 1.0 would report.
  */
-const BANNED_ROOTS_ID = ['trauma', 'terapi', 'sembuh', 'depresi', 'diagnos', 'cemas', 'konseling', 'penyintas'];
+export const BANNED_ROOTS_ID = ['trauma', 'terapi', 'sembuh', 'depresi', 'diagnos', 'cemas', 'konseling', 'penyintas'];
 
 function escapeRe(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -459,9 +468,9 @@ function words(text: string): string[] {
  * calling a quotation. If it ever fires on an innocent block, raise it and
  * RECORD WHY here rather than deleting the check.
  */
-const NGRAM = 6;
+export const NGRAM = 6;
 
-function sharesNgram(a: string[], b: string[], n: number): boolean {
+export function sharesNgram(a: string[], b: string[], n: number): boolean {
   if (a.length < n || b.length < n) return false;
   const seen = new Set<string>();
   for (let i = 0; i + n <= a.length; i += 1) seen.add(a.slice(i, i + n).join(' '));
@@ -561,7 +570,7 @@ export function lotusSafetyCheck(
 }
 
 /** Capitalised tokens that are not sentence-initial and not known non-names. */
-function properNames(text: string): string[] {
+export function properNames(text: string): string[] {
   const found = new Set<string>();
   // Split into sentences first, so the word after a full stop is not a name
   // merely for being capitalised.
