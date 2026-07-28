@@ -859,6 +859,86 @@ export const shareLinks = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// personas (V8)
+// ---------------------------------------------------------------------------
+
+/**
+ * The Inner Heavenly Lotus persona (VD15). A NEW TABLE, NOT A WIDENING OF
+ * `lotus_avatars`, and the distinction is the point: that block is short,
+ * abstracted and INJECTED INTO EVERY READING PROMPT; this one is long, specific,
+ * user-facing and names a life-path number and a sun sign. Merging them puts
+ * astrology into nine reading prompts a day and flattens the three readers --
+ * the exact risk v0.2.0's §10 logged against the Lotus block.
+ *
+ * `locale` IS "GENERATED IN", NOT "DISPLAYED IN", AND THERE IS NO jsonb HERE ON
+ * PURPOSE (VD5/VD6). `lotus_avatars.summary` is jsonb keyed by locale because it
+ * is distilled per locale from the same answers and is never shown to anybody, so
+ * it can afford for the two halves to differ. The persona is generated ONCE and
+ * translated on demand into `translations` keyed
+ * `('persona', <user_id>, 'body', <locale>)`, for three reasons and the third
+ * decides it: a translation carries its own `model`, `prompt_version` and
+ * `created_at`, which a jsonb value cannot and which are the audit trail for
+ * something that goes on a public page; five artifacts needing translation would
+ * be five jsonb columns and five places to forget `updated_at`; and **two
+ * independent distillations of a persona would produce two different people** --
+ * V7's share page resolves its locale from the VIEWER, so a stranger in Jakarta
+ * and a stranger in London opening the same link would read two different
+ * characterisations of one person. See V8's plan §7 before "fixing" this.
+ *
+ * ONE ROW PER USER, so `user_id` IS the primary key and there is no `id` column.
+ * That is a deliberate exception to this file's "every table has `id`"
+ * convention, and it is the same exception `lotus_avatars` and `profiles` take:
+ * a surrogate key on a table whose natural key is already a uuid buys nothing and
+ * costs a second unique index. It also makes `user_id` the `entity_id` for
+ * `share_links` and `translations`, which is unusual and correct.
+ */
+export const personas = pgTable('personas', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  /** 3-4 sentences, house voice (VD16). Never a reader's. */
+  body: text('body').notNull(),
+  locale: text('locale').$type<Locale>().notNull(),
+  /**
+   * The ENGINE's output, structured (VD1). The model sets none of it, and it is
+   * the row's audit trail: if a persona ever says something impossible, the first
+   * question is whether the engine or the model produced it, and this column
+   * answers it without a rerun.
+   *
+   * V1's `PersonNumbers` plus V8's all-time facts. LOCALE-FREE by V1's own rule,
+   * which is what stops `input_hash` churning on a language switch.
+   */
+  facts: jsonb('facts').$type<Record<string, unknown>>().notNull(),
+  /**
+   * Profile facts + sanitized answers + closed values + the last ten reading ids
+   * + `PERSONA_SOURCE_VERSION`. THE READING IDS ARE THE INTERESTING PART: they are
+   * what makes the persona MOVE as the querent reads, which is why it regenerates
+   * naturally instead of needing a cron -- and why the staleness check needs a
+   * time floor on the read path (`PERSONA_MIN_AGE_SECONDS`).
+   */
+  inputHash: text('input_hash').notNull(),
+  sourceVersion: integer('source_version').notNull(),
+  /** `'fallback'` when the body is the template, so an operator asking "why does
+   *  this read like a template" looks at the right thing. */
+  model: text('model').notNull(),
+  promptVersion: text('prompt_version').notNull(),
+  createdAt: tsCol('created_at').notNull().defaultNow(),
+  /**
+   * SET BY HAND IN EVERY UPSERT. `$onUpdate()` does not fire inside
+   * `onConflictDoUpdate`, and for this table that column is load-bearing twice:
+   * it is what `isPersonaStale`'s throttle compares against, so a frozen column
+   * means the throttle never releases and the persona never regenerates, AND it is
+   * the comparand for V2's translation staleness rule (`translations.updated_at <
+   * source.updated_at`), so a frozen column also serves a stale translation
+   * forever.
+   */
+  updatedAt: tsCol('updated_at')
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
+
+// ---------------------------------------------------------------------------
 // Row types
 //
 // `X` is what a select returns; `NewX` is what an insert accepts (columns with
@@ -891,3 +971,5 @@ export type Translation = typeof translations.$inferSelect;
 export type NewTranslation = typeof translations.$inferInsert;
 export type ShareLink = typeof shareLinks.$inferSelect;
 export type NewShareLink = typeof shareLinks.$inferInsert;
+export type Persona = typeof personas.$inferSelect;
+export type NewPersona = typeof personas.$inferInsert;
