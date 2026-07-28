@@ -141,6 +141,8 @@ const DIVERGENCE: Record<string, string[]> = {
   'the-empress': ['feed', 'season', 'quietly', 'reliable'],
   'the-emperor': ['fence', 'Monday', 'written down', 'room'],
   'the-hierophant': ['shelf', 'generations', 'expired', 'unique'],
+  'the-lovers': ['spare', 'maintain', 'wholeness', 'cheaper'],
+  'the-chariot': ['steer', 'urgent', 'add', 'hours'],
   'the-moon': ['step', 'night', 'guess', 'message', 'seven', 'two in the morning'],
 };
 
