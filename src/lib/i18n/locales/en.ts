@@ -314,6 +314,46 @@ const en: Catalog = {
 
   'locale.code.id': 'ID',
   'locale.code.en': 'EN',
+
+  // ==========================================================================
+  // V6 — history. See id.ts for why the Indonesian word is `Jejak` and not
+  // `Riwayat`, and for why this block carries empty-state copy when W5's does
+  // not.
+  //
+  // `history.count.one` and `.other` DIFFER HERE and are identical in id.ts.
+  // That is the case `Intl.PluralRules` actually exists for, unlike
+  // `draw.hint.tap`: English inflects the noun and CLDR gives `id` only
+  // `other`, so the Indonesian pair must match and a test asserts it.
+  // ==========================================================================
+  'history.title': 'History',
+  'history.hint': 'Every reading you have taken.',
+
+  'history.filter.aria': 'Choose a day',
+  'history.filter.label': 'Date',
+  'history.filter.today': 'Today',
+
+  'history.count.one': '{count} reading',
+  'history.count.other': '{count} readings',
+
+  'history.empty.day': 'Nothing was read on {date}.',
+  'history.empty.nearest': 'Go to {date}',
+  'history.empty.never.title': 'Nothing here yet.',
+  'history.empty.never.body': 'Every reading you take is kept on this page, cards and all.',
+  'history.empty.never.action': 'Take the first one',
+
+  'history.error': 'Your history will not open just now. Try again in a moment.',
+
+  'history.item.unfinished': 'This reading did not finish.',
+  'history.item.shared': 'Shared',
+
+  'history.detail.back': '← History',
+  'history.detail.question': 'What you asked',
+  'history.detail.noBody': 'No text was kept for this reading.',
+  'history.translating': 'Translating…',
+
+  'reading.verdict.yes': 'Yes',
+  'reading.verdict.no': 'No',
+  'reading.verdict.maybe': 'Not yet clear',
 };
 
 export default en;

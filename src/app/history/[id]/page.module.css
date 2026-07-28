@@ -1,0 +1,34 @@
+.shell {
+  min-height: 100dvh;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 18px 16px calc(40px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* Standalone mode has no browser chrome and no back gesture, which is why every
+   screen in this app carries its own back affordance. Same rule, and the same
+   shape, as the draw screen's `.back`. */
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 12px 10px 12px 0;
+}
+
+.back:hover {
+  color: var(--gold-lift);
+}
+
+.back:focus-visible {
+  outline: 2px solid var(--gold-border);
+  outline-offset: 2px;
+}

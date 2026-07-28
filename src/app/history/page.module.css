@@ -1,0 +1,28 @@
+.shell {
+  min-height: 100dvh;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 18px 16px calc(32px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.title {
+  font-family: var(--font-display), serif;
+  font-weight: 500;
+  font-size: 26px;
+  letter-spacing: var(--ls-title);
+  color: var(--gold-text);
+  margin: 0;
+  text-align: center;
+}
+
+.hint {
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: var(--fs-hint);
+  color: var(--muted);
+  margin: 0;
+  text-align: center;
+}

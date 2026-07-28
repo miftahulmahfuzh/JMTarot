@@ -119,6 +119,11 @@ export const EVENT_NAMES = [
   'ratelimit.backend_degraded',
   'llm.ceiling_reached',
 
+  // — history (V6) —
+  'history.viewed',
+  'history.filtered',
+  'history.item_opened',
+
   // — translation (V2) —
   'translation.generated',
 
@@ -342,6 +347,53 @@ export type EventMap = {
    */
   'llm.ceiling_reached':       { tier: 'soft' | 'hard'; call_class: 'interactive' | 'deferred';
                                  used: number; ceiling: number };
+
+  /*
+   * V6 -- history. ALL THREE FIRE FROM THE CLIENT: `history.filtered` needs to
+   * know chip-vs-picker and the server cannot, and splitting the three across two
+   * request paths for no gain would make "did they browse, then open?" a join.
+   * The two read routes therefore run no `withAnalytics` at all.
+   *
+   * NO DATE IN ANY OF THESE, and that is rule 1 applied to a field that would
+   * pass `sanitizeProps()` cleanly. `offset_days` and `age_days` are the shapes
+   * the questions actually have -- "how far back do people look" and "how old is
+   * a reading when it gets reopened" -- and a `local_date` string would answer
+   * neither without arithmetic, while adding a second per-user calendar datum to
+   * a table that survives account erasure with `user_id` nulled.
+   * `events.local_date` already records the day of the visit.
+   *
+   * `source: 'menu' | 'direct'`, NEVER `document.referrer`. A referrer is a URL
+   * and therefore free text with unbounded cardinality -- rules 1 and 2 together.
+   * The same-origin comparison collapses it to the only distinction anyone will
+   * query: V4's menu link is same-origin, a bookmark or a shared URL is not.
+   *
+   * `status` IS BARE `string`, NOT THE `ReadingStatus` UNION. This file has no
+   * imports by design and it is the data dictionary people read;
+   * `moderation.refused.category` sets the precedent that the set goes in a
+   * comment rather than an import. It is
+   * `'ok' | 'partial' | 'failed' | 'aborted'` -- never `'blocked'`, because a
+   * blocked reading is not in the list and cannot be opened.
+   *
+   * `reading_id` IS A UUID AND THAT IS ALLOWED. Seven existing W4 events already
+   * carry one, and this file's own comment says the ids are recoverable by
+   * joining `readings` on `reading_id`. V7's "id never slug" rule is a different
+   * rule for a different reason: a slug is a capability and an id is not.
+   *
+   * `needs_translation` IS THE NUMBER THAT DECIDES WHETHER VD8's ON-DEMAND MODEL
+   * IS RIGHT. Near zero and translation is over-built; high while V2's
+   * `translation.generated` stays much lower means the server-side cache read in
+   * `/history/[id]` is doing its job.
+   *
+   * No `history.item_closed` and no dwell time: both need a `visibilitychange`
+   * listener per row and neither answers a question anybody has asked.
+   */
+  'history.viewed':            { day_count: number; has_any: boolean;
+                                 source: 'menu' | 'direct' };
+  'history.filtered':          { offset_days: number; had_readings: boolean;
+                                 via: 'chip' | 'picker' };
+  'history.item_opened':       { reading_id: string; reader_id: string; service_id: string;
+                                 status: string; age_days: number;
+                                 needs_translation: boolean };
 
   /**
    * ONE NAME, NOT TWO. There is deliberately no `translation.failed`.

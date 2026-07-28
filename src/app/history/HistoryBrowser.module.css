@@ -1,0 +1,81 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  /* Reserve nothing. The pre-hydration render is this element and no children;
+     a min-height here would leave a hole under the hint on first paint. */
+}
+
+.count {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--faint);
+  margin: 0;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.error {
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: 16px;
+  /* Matches ReadingPanel.module.css `.error`; not a new value. */
+  color: #e0a3a3;
+  margin: 0;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 40px 8px;
+  text-align: center;
+}
+
+.emptyTitle {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-hint);
+  color: var(--text);
+  margin: 0;
+}
+
+.emptyBody {
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: 16px;
+  color: var(--muted);
+  margin: 0;
+  max-width: 34ch;
+}
+
+.emptyAction {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--button-text);
+  border: 1px solid var(--gold-border);
+  background: var(--gold-wash);
+  border-radius: var(--radius-chip);
+  padding: 14px 18px;
+  cursor: pointer;
+}
+
+.emptyAction:hover {
+  background: var(--gold-wash-strong);
+}
+
+.emptyAction:focus-visible {
+  outline: 2px solid var(--gold-border);
+  outline-offset: 2px;
+}

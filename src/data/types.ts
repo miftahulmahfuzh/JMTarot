@@ -114,6 +114,26 @@ export type Localized<T> = Record<Locale, T>;
  */
 export type LocaleSource = 'default' | 'negotiated' | 'chosen';
 
+/**
+ * How a reading ended. Fixed by reconciliation §3.
+ *
+ * `partial` has real prose and a fake ending; `failed` has none. W5's chain
+ * query treats them differently, which is why one nullable `body` was not
+ * enough. `blocked` writes no `reading_cards` rows at all (R7), which is why
+ * V6's history hides it: there is no draw to reconstruct.
+ *
+ * DECLARED HERE AND NOT IN `schema.ts`, WHICH RE-EXPORTS IT (V6). `schema.ts` is
+ * where it was born and where it still belongs conceptually, but
+ * `src/lib/clientBoundary.test.ts` forbids ANY `@/lib/db/` specifier in a
+ * `'use client'` file and its regex does not know about the `type` keyword — so
+ * a client component cannot name the union at its old home even with an import
+ * that is erased at build time. `ReadingView` is that component. This is the same
+ * move `Locale`, `ReaderId`, `ServiceId` and `YesNo` already made, for the same
+ * reason: this file has no imports, which is what makes it a safe leaf for both
+ * the Drizzle schema and the browser.
+ */
+export type ReadingStatus = 'ok' | 'partial' | 'failed' | 'aborted' | 'blocked';
+
 export type ServiceId = 'daily' | 'spread3' | 'yesno';
 
 export type ReaderId = 'thessaly' | 'margaret' | 'adrian';
