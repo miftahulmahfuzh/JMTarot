@@ -55,6 +55,19 @@ export const THERAPY_EN = [
   'clinical', 'healing', 'heal', 'inner child', 'mental health',
   'anxiety disorder', 'depression', 'medication', 'shadow work',
   'nervous system', 'hold space', 'regulate', 'dysregulated',
+  /*
+   * THE LAST THREE ARE v0.4.0's, and they close a real gap rather than tighten
+   * the rule. **`src/lib/prompt/base.en.ts` already forbids all three in prose**
+   * and this module's header says it exists so a fourth copy never lands -- so a
+   * list that is a strict SUBSET of what the prompt forbids is the same
+   * divergence one level down. S4 raised it; reconciliation item 12 granted it.
+   *
+   * VERIFIED SAFE BEFORE ADDING: no value in `NUMBER_GLOSSES`, `SIGN_GLOSSES`,
+   * `ELEMENT_GLOSSES` or `MODALITY_GLOSSES` matches any of the three under
+   * `\b…\b` -- 33's "…starts being work" does not match `\bdo the work\b` --
+   * so `glosses.test.ts` stays green.
+   */
+  'attachment style', 'process your feelings', 'do the work',
 ] as const;
 
 /** The same rule in Indonesian. Shorter, because the tic vocabulary is. */

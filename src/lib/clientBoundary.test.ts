@@ -278,6 +278,53 @@ describe('the client boundary', () => {
     // The stripper must not have eaten the code it is checking.
     expect(code).toContain('SLUG_ALPHABET');
   });
+
+  /*
+   * S4, v0.4.0. **`src/content/**` IS TENS OF THOUSANDS OF WORDS OF PROSE PER
+   * LOCALE** and roadmap §5 rule 1 fences it from client components. A client
+   * component importing a lore document serialises the whole document into the RSC
+   * payload of whatever page mounts it -- which is the same failure S-D6 keeps out
+   * of the message catalog, arriving through a different door. `Prose` is a SERVER
+   * component and importing `@/lib/i18n/t` is what makes that permanent.
+   *
+   * **`@/content/types` IS THE ONE EXCEPTION**, and it is the same split
+   * `moderation/types.ts` has against `blocklist.ts` and `share/types.ts` against
+   * `share/links.ts`: the SHAPE crosses the boundary, the CONTENT does not. The
+   * next test is what keeps the exception earned.
+   */
+  it('lets no client component import a content module', () => {
+    for (const file of CLIENT) {
+      const offending = importsOf(file.source).filter(
+        (spec) => spec.startsWith('@/content/') && spec !== '@/content/types',
+      );
+      expect({ [file.path]: offending }).toEqual({ [file.path]: [] });
+    }
+  });
+
+  it('keeps `@/content/types` free of prose, so the exception stays earned', () => {
+    /*
+     * Asserted on the SOURCE with comments stripped -- `types.ts`'s own header
+     * explains at length why prose may not live there, and a fence that fires on
+     * prose describing the rule is a fence people delete
+     * (`queries/contract.test.ts` records the lesson).
+     *
+     * The threshold is a type name's worth of characters. Every legitimate literal
+     * in that file is an anchor name, a block kind or one import specifier.
+     *
+     * **NO NEWLINE INSIDE THE MATCH, AND THE FIRST DRAFT WITHOUT THAT FAILED.**
+     * The block kinds sit one per line, so `[^']{40,}` happily paired the CLOSING
+     * quote of `'heading'` with the OPENING quote of `'paragraph'` two lines down
+     * and reported the type declaration between them as a forty-character string.
+     * A single-line bound is what makes this fire on prose and nothing else.
+     */
+    const raw = readFileSync(join(ROOT, 'content/types.ts'), 'utf8');
+    const code = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    for (const m of code.matchAll(/'([^'\n]{40,})'/g)) {
+      expect({ literal: m[1] }).toMatchObject({ literal: '' });
+    }
+    // The stripper must not have eaten the code it is checking.
+    expect(code).toContain('LORE_ANCHORS');
+  });
 });
 
 /**
