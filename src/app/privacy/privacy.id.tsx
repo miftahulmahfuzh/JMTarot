@@ -223,6 +223,57 @@ export function PrivacyId({ effective }: { effective: string }) {
           <P>Vercel menjalankan aplikasi ini, sehingga setiap permintaan melewati mereka.</P>
         </SubClause>
 
+        {/*
+          4.4. **SHARING IS LITERALLY A FOURTH ANSWER TO "WHO ELSE SEES IT"**, so
+          it goes here rather than in a new section. One new anchor per locale,
+          nothing renumbered, and it is where a reader looking for it would look.
+
+          THE SECOND PARAGRAPH IS THE ONE THAT MATTERS AND IT IS NEW GROUND: a
+          share-page visitor is a THIRD PARTY who never agreed to anything, and
+          §2.4/§2.6 describe an account-holder's analytics. What we say has to be
+          exactly true of what the code does. `/s/` IS excluded from middleware's
+          `jmt_locale` write and `share.viewed` DOES carry no `session_id` -- but
+          the first draft of this clause said "no cookie at all", and MEASURING IT
+          against a real dev server showed two `authjs.*` cookies on every matched
+          path, `/terms` and `/login` included. They are @auth/core's, they are set
+          by the middleware wrapper before any of our code runs, and they carry no
+          identity -- so the honest sentence names them rather than omitting them.
+          Written down because the false version was more flattering and read
+          perfectly well.
+        */}
+        <SubClause id="4-4" n="4.4" title="Siapa pun yang kamu kirimi tautan">
+          <P>
+            Kalau kamu membuat tautan bagikan untuk sebuah bacaan, halaman itu bisa dibuka siapa
+            pun yang punya alamatnya, tanpa akun. Yang terlihat: kartu-kartunya, arah kartunya,
+            teks bacaannya, nama pembacanya, tanggalnya,{' '}
+            <strong>dan pertanyaan yang kamu tulis</strong> &mdash; pertanyaannya ikut supaya
+            bacaannya bisa diikuti. Sebelum tautannya dibuat, halaman itu kami tampilkan dulu
+            kepadamu apa adanya, jadi kamu tahu persis apa yang akan terbaca. Rinciannya ada di{' '}
+            <Link href="/terms#18">ketentuan klausul 18</Link>.
+          </P>
+          <P>
+            Orang yang membuka halaman itu <strong>ikut tercatat, tanpa identitas</strong>. Kami
+            menambah satu hitungan pada tautannya, dan mencatat satu peristiwa{' '}
+            <em>share.viewed</em> yang tidak terhubung ke akun mana pun &mdash; tanpa id akun,
+            tanpa id sesi.{' '}
+            <strong>
+              Kami tidak menaruh cookie bahasa di peramban mereka, tidak seperti halaman lain
+            </strong>{' '}
+            &mdash; sehingga tidak ada apa pun yang bisa dipakai untuk menghubungkan satu kunjungan
+            dengan kunjungan lain. Yang tetap ada hanyalah dua cookie teknis dari pustaka masuk
+            akun, yang berlaku di seluruh situs: satu token pengaman formulir dan satu alamat
+            kembali. Keduanya tidak berisi identitas dan tidak menyimpan sesi. Yang kami dapat
+            adalah sebuah angka, bukan sebuah jejak.
+          </P>
+          <P>
+            Gambar pratinjau yang dibuat aplikasi pesan berisi kartu dan nama pembacanya saja
+            &mdash; <strong>tidak berisi pertanyaanmu dan tidak berisi teks bacaannya</strong>,
+            meskipun keduanya ada di halamannya. Itu disengaja: gambar pratinjau disimpan setiap
+            aplikasi pesan yang melihat tautannya, sebelum ada yang membukanya. Kami tidak mengatur
+            berapa lama aplikasi itu menyimpan gambarnya.
+          </P>
+        </SubClause>
+
         <P>
           <strong>
             Tidak ada pengiklan, tidak ada pialang data, dan tidak ada penjualan data dalam bentuk
@@ -262,6 +313,11 @@ export function PrivacyId({ effective }: { effective: string }) {
               <strong>{RETENTION.moderationQuestionDays} hari</strong>, barisnya sendiri
               seterusnya tanpa teks.
             </>,
+            <>
+              Tautan bagikan: selama akunmu ada.{' '}
+              <strong>Tautan yang dimatikan tetap disimpan dalam keadaan mati</strong>, tidak
+              dihapus, supaya alamat itu tidak bisa diberikan lagi ke bacaan lain.
+            </>,
           ]}
         />
       </Clause>
@@ -272,6 +328,11 @@ export function PrivacyId({ effective }: { effective: string }) {
             'Melewati pertanyaan awal mana pun.',
             'Menghapus satu jawaban belakangan, tanpa menghapus akun.',
             'Mengganti bahasa aplikasi kapan saja.',
+            <>
+              Mematikan tautan bagikan, dari bacaan yang sama tempat kamu membuatnya.{' '}
+              <strong>Mematikannya tidak menarik kembali tangkapan layar</strong> yang sudah
+              diambil orang.
+            </>,
             'Menghapus akunmu.',
           ]}
         />

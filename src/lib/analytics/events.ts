@@ -127,6 +127,13 @@ export const EVENT_NAMES = [
   // — translation (V2) —
   'translation.generated',
 
+  // — sharing (V7) —
+  'share.created',
+  'share.revoked',
+  'share.copied',
+  'share.viewed',
+  'share.cta_clicked',
+
   // — the app shell —
   'app.launched',
 
@@ -429,6 +436,54 @@ export type EventMap = {
                                  outcome: 'cached' | 'ok' | 'repaired' | 'invalid' | 'failed';
                                  violation: string | null; chars: number;
                                  streamed: boolean; total_ms: number };
+
+  /*
+   * V7 -- sharing. FIVE NAMES, AND EVERY ONE CARRIES `share_links.id` AND NEVER
+   * THE SLUG (roadmap §6).
+   *
+   * The reason is worth restating where the props are written rather than left in
+   * the roadmap: **`events` rows SURVIVE ACCOUNT ERASURE with `user_id` nulled**,
+   * so a slug in `props` would leave a live, working, PUBLIC URL sitting in a table
+   * that outlives the account that revoked it. `share_links.id` grants nothing --
+   * it is not in any URL, and every mutation keyed on it also carries `user_id` in
+   * its `where`. A uuid in `props` is otherwise ordinary here: seven W4 events
+   * already carry `reading_id`, and this file's own note says the ids are
+   * recoverable by joining. The slug rule is a different rule for a different
+   * reason: a slug is a CAPABILITY and an id is not.
+   *
+   * `entity` is the two-value closed union `'reading' | 'persona'`, declared as
+   * `string` because this file has no imports by design --
+   * `moderation.refused.category` sets that precedent.
+   */
+  'share.created':             { share_id: string; entity: string; include_question: boolean;
+                                 include_nickname: boolean; rotated: boolean };
+  /** `age_hours` and `view_count` are read BEFORE the update -- they are facts
+   *  about the link's life, not about the revoke. */
+  'share.revoked':             { share_id: string; entity: string; age_hours: number;
+                                 view_count: number };
+  /** `method` records which affordance actually worked. `navigator.share` is what
+   *  "send it to WhatsApp" is on a phone; clipboard is the desktop path; `manual`
+   *  means both failed and the querent was left selecting the text. */
+  'share.copied':              { share_id: string; entity: string;
+                                 method: 'clipboard' | 'webshare' | 'manual' };
+  /*
+   * FIRES FROM THE PUBLIC PAGE WITH NO `user_id` AND NO `session_id`, exactly like
+   * `terms.viewed`. `/api/events` is already public for this reason and needs no
+   * change.
+   *
+   * **THE ABSENT `session_id` IS DELIBERATE AND NOT INCIDENTAL.** `/s/` is excluded
+   * from middleware's `jmt_locale` write, so a stranger reading a shared reading
+   * leaves with nothing in their cookie jar and there is nothing to correlate on
+   * anyway. Making it explicit is what keeps `/privacy` §4.4 honest if somebody
+   * later re-adds a cookie: the row is a COUNT, not a tracker.
+   *
+   * It is also not the same number as `share_links.view_count` -- that one counts
+   * renders including crawlers, this one is a browser that ran JavaScript. The pair
+   * disagreeing is the diagnosis; see query 10.
+   */
+  'share.viewed':              { share_id: string; entity: string; has_question: boolean;
+                                 referrer_kind: 'direct' | 'internal' | 'external' };
+  'share.cta_clicked':         { share_id: string; entity: string };
 
   'app.launched':              { standalone: boolean; referrer_kind: 'direct' | 'internal' | 'external' };
 

@@ -337,3 +337,87 @@ where created_at > now() - interval '2 days'
 group by 1
 order by 1 desc;
 ```
+
+## 10. Crawler storm, or a broken beacon: `view_count` against `share.viewed`
+
+**THE TWO NUMBERS COUNT DIFFERENT THINGS ON PURPOSE, AND THE PAIR IS THE
+DIAGNOSIS.** `share_links.view_count` is incremented in `after()` on every
+rendered GET, crawlers included -- it is a LOAD AND ABUSE signal.
+`share.viewed` fires from a browser that ran JavaScript -- it is the AUDIENCE
+metric. Same shape as `reading.completed` existing twice from two sides.
+
+`view_count` far ABOVE the event count is a crawler storm, or somebody walking a
+slug. Far BELOW it is a broken beacon. Neither is visible from either number
+alone.
+
+```sql
+select l.id,
+       l.entity,
+       l.view_count                                  as renders,
+       count(e.id)                                   as browser_views,
+       l.created_at::date                            as minted_on,
+       l.revoked_at is not null                      as revoked
+from share_links l
+left join events e
+       on e.name = 'share.viewed'
+      and e.props ->> 'share_id' = l.id::text
+group by l.id
+having l.view_count > 0
+order by l.view_count desc
+limit 50;
+```
+
+**BOTH QUERIES WERE EXECUTED, and query 10 returned the signal it exists to
+show.** Against the dev database after driving `/s/<slug>` with `curl`:
+
+```
+ id        | entity  | renders | browser_views | minted_on  | revoked
+ 78e6cd38… | reading |       3 |             0 | 2026-07-28 | f
+```
+
+Three renders, zero browser views — because `curl` runs no JavaScript. That is the
+crawler shape exactly, and it doubles as the proof that `bumpShareViewCount` really
+does run in `after()`. Query 11 returns no rows there, because those links were
+minted with SQL rather than through `POST /api/share`, so no `share.created` event
+exists to anchor the funnel.
+
+**`view_count` IS APPROXIMATE AND THE COLUMN SAYS SO.** It is the one
+unauthenticated write in the release, so it runs in `after()` behind the per-IP
+limiter and a failure is swallowed. Do not build anything on it that has to be
+exact.
+
+## 11. Did sharing do anything? Mint to view to click
+
+The whole funnel for the feature, in one query. `share.created` is fired by the
+SERVER inside the request that wrote the row, so it cannot disagree with the
+table; the other two come from browsers.
+
+```sql
+with minted as (
+  select props ->> 'share_id' as share_id,
+         props ->> 'entity'   as entity,
+         (props ->> 'rotated')::boolean as rotated,
+         min(created_at)      as minted_at
+  from events where name = 'share.created' group by 1, 2, 3
+)
+select m.entity,
+       count(*)                                              as links,
+       count(*) filter (where m.rotated)                     as re_shares,
+       count(distinct v.props ->> 'share_id')                as links_ever_viewed,
+       count(v.id)                                           as views,
+       count(c.id)                                           as cta_clicks,
+       round(100.0 * count(c.id) / greatest(count(v.id), 1), 1) as cta_pct
+from minted m
+left join events v on v.name = 'share.viewed'      and v.props ->> 'share_id' = m.share_id
+left join events c on c.name = 'share.cta_clicked' and c.props ->> 'share_id' = m.share_id
+group by m.entity;
+```
+
+**`links_ever_viewed` IS THE NUMBER THAT DECIDES WHETHER THIS FEATURE EARNED ITS
+KEEP.** Links minted and never opened means the querent shared into a void; views
+with no `cta_clicks` means the public page is pleasant and not persuasive, which
+is a copy problem in `share.public.ctaLead` rather than a mechanism problem.
+
+Note what is NOT joinable: `share.viewed` carries no `user_id` and no
+`session_id`, by construction (`/privacy` §4.4), so "who viewed this" has no
+answer and is not meant to.

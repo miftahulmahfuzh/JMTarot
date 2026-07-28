@@ -218,3 +218,42 @@ describe('resolveForSignIn', () => {
     expect(resolveForSignIn(null, 'en', null)).toEqual({ locale: 'en', source: 'negotiated' });
   });
 });
+
+describe('a signed-out share viewer (V7)', () => {
+  const SHARE = '/s/abcdefghjkmn';
+
+  it('negotiates from Accept-Language for a stranger with no session', () => {
+    /*
+     * §4.1 of the sharing plan asserted this rather than proving it, and the
+     * failure mode if it were wrong is an English page in an Indonesian browser,
+     * which nobody notices for a month. `/s/` is inside the middleware matcher --
+     * it matches none of `_next/|cards/|dukuns/|favicon|icon|apple-icon|manifest|
+     * sitemap|robots` -- so this is the function that decides the chrome's
+     * language on the one public page in the app.
+     */
+    expect(resolveForMiddleware(req(SHARE, { acceptLanguage: 'en-GB,en;q=0.9' }), null)).toBe(
+      'en',
+    );
+    expect(resolveForMiddleware(req(SHARE, { acceptLanguage: 'id-ID,id;q=0.9' }), null)).toBe(
+      'id',
+    );
+  });
+
+  it('falls back to Indonesian when a stranger sends nothing at all', () => {
+    // A messenger's preview fetcher typically sends no Accept-Language. `id` is
+    // the default and the source language, so this is the right answer.
+    expect(resolveForMiddleware(req(SHARE), null)).toBe('id');
+  });
+
+  it('the CHROME follows the viewer even when the prose will not', () => {
+    /*
+     * VD7/§4.2: chrome from the viewer, prose verbatim from the sharer. This
+     * function only knows about the chrome half -- the page renders
+     * `readings.body` inside `<div lang={reading.locale}>` and never translates
+     * it -- but this is where an "obvious simplification" would pin the sharer's
+     * locale for the whole page and quietly ignore Accept-Language on the one
+     * page whose entire job is conversion.
+     */
+    expect(resolveForMiddleware(req(SHARE, { acceptLanguage: 'en' }), null)).toBe('en');
+  });
+});

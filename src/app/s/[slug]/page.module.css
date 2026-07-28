@@ -1,0 +1,114 @@
+/*
+ * The public page's frame. Deliberately the SAME shell as `/history/[id]` -- same
+ * max-width, same padding, same safe-area handling -- because VD10's promise is
+ * that a shared reading looks exactly like the reading did, and a different gutter
+ * is the cheapest way to break that promise while every component inside it is
+ * correct.
+ *
+ * No new hex values, no new font sizes, no new easing curve.
+ */
+
+.shell {
+  min-height: 100dvh;
+  max-width: 520px;
+  margin: 0 auto;
+  /* Slightly more top padding than `/history/[id]`, which spends its own on a back
+     link. There is nothing to go back TO from a public page. */
+  padding: 28px 16px calc(40px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.forWhom {
+  margin: 0;
+  font-family: var(--font-body), serif;
+  font-size: var(--fs-hint);
+  font-style: italic;
+  color: var(--muted);
+  text-align: center;
+}
+
+/*
+ * The mismatch notice. Quiet on purpose: it is a fact about the page, not a
+ * warning, and a boxed alert here would read as though something had gone wrong
+ * when the reading is exactly as its author left it.
+ */
+.otherLanguage {
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 1px solid var(--gold-hairline);
+  font-family: var(--font-body), serif;
+  font-size: var(--fs-hint);
+  font-style: italic;
+  color: var(--label);
+}
+
+.body {
+  display: contents;
+}
+
+/* --- The gone page, and the 429, which share a shape ---------------------- */
+
+.gone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  /* Pushed off the top edge rather than centred in the viewport: a centred
+     "this does not exist" reads as an error page, and this is often just a
+     mistyped character. */
+  margin-top: 12vh;
+  text-align: center;
+}
+
+.goneTitle {
+  margin: 0;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-card-title);
+  letter-spacing: var(--ls-card-title);
+  color: var(--gold-text);
+}
+
+.goneBody {
+  margin: 0;
+  max-width: 34ch;
+  font-family: var(--font-body), serif;
+  font-size: var(--fs-hint);
+  font-style: italic;
+  color: var(--muted);
+}
+
+.goneAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  margin-top: 8px;
+  padding: 0 28px;
+  border: 1px solid var(--gold-border);
+  border-radius: var(--radius-chip);
+  background: var(--gold-wash);
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--gold-text);
+}
+
+.goneAction:hover {
+  background: var(--gold-wash-strong);
+  color: var(--gold-pale);
+}
+
+.goneAction:focus-visible {
+  outline: 2px solid var(--gold-border);
+  outline-offset: 3px;
+}

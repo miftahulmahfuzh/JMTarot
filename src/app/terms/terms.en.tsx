@@ -301,6 +301,44 @@ export function TermsEn({ effective }: { effective: string }) {
           <a href={`mailto:${OPERATOR.contactEmail}`}>{OPERATOR.contactEmail}</a>
         </P>
       </Clause>
+
+      {/* 18, appended. See the Indonesian file for why it is not inserted at 9. */}
+      <Clause id="18" n="18." title="Sharing a reading">
+        <P>
+          You can create one link for a reading. What a link exposes: the cards, their
+          orientation, the reading itself, the reader who gave it, the date,{' '}
+          <strong>and the question you typed</strong>. The question is included because without
+          it nobody else can follow the reading &mdash; three cards and four paragraphs with no
+          question tell a stranger nothing about what any of it was about.
+        </P>
+        <P>
+          Before the link exists we show you that page as it will be, question included, so you
+          know exactly what will be readable. If there is a question you would rather not share,{' '}
+          <strong>do not create a link for that reading</strong>.
+        </P>
+        <P>
+          Anyone holding the link can open that page without an account, and can pass it on to
+          somebody else. We do not know who opens it.
+        </P>
+        <P>
+          You can turn a link off at any time, from the same reading. Turning it off kills that
+          address permanently:{' '}
+          <strong>sharing again makes a new address rather than reviving the old one.</strong> That
+          is deliberate, so that a link you switched off cannot start working again.
+        </P>
+        <Callout>
+          <P>
+            <strong>Turning a link off does not take back what has already left.</strong> A
+            screenshot somebody took is still theirs, a message already forwarded is still
+            forwarded, and a preview image a messaging app has cached can survive for about a day.
+            Treat a link as something you sent rather than something you lent.
+          </P>
+        </Callout>
+        <P>
+          A shared page is covered by clause 6 like the rest of the Service, and you may not use a
+          share link to harass, pressure or humiliate anybody.
+        </P>
+      </Clause>
     </LegalDoc>
   );
 }

@@ -148,3 +148,71 @@ describe('the security headers', () => {
     });
   });
 });
+
+describe('the /s/ block (V7)', () => {
+  /** V7's public-page block, found by the header only it carries. */
+  async function shareBlock(): Promise<HeaderRule> {
+    const all = await rules();
+    const block = all.find((r) => r.headers.some((h) => h.key === 'x-robots-tag'));
+    if (!block) throw new Error('no /s/ header block');
+    return block;
+  }
+
+  it('matches the share prefix and nothing wider', async () => {
+    const block = await shareBlock();
+    expect(block.source).toBe('/s/:path*');
+    // A catch-all here would put `no-referrer` on the whole app, which breaks
+    // nothing visibly and silently loses same-origin referrer analytics.
+    expect(['/(.*)', '/:path*']).not.toContain(block.source);
+  });
+
+  it('tells every crawler not to index, follow or archive a shared reading', async () => {
+    /*
+     * A 60-BIT SLUG IS UNGUESSABLE; IT IS NOT UNINDEXABLE. One link posted
+     * anywhere a crawler reaches turns "I sent this to one friend" into a
+     * permanent search result whose cache survives revocation. `noarchive`
+     * because an index entry is recoverable and a cached copy is not.
+     */
+    const h = Object.fromEntries((await shareBlock()).headers.map((x) => [x.key, x.value]));
+    expect(h['x-robots-tag']).toContain('noindex');
+    expect(h['x-robots-tag']).toContain('nofollow');
+    expect(h['x-robots-tag']).toContain('noarchive');
+  });
+
+  it('sends NO referrer from the one page whose URL is the secret', async () => {
+    // The slug is in the URL, so any outbound navigation leaks the capability
+    // itself in a `Referer` header. `/terms` and `/privacy` are linked from the
+    // footer and any future outbound link inherits the leak.
+    const h = Object.fromEntries((await shareBlock()).headers.map((x) => [x.key, x.value]));
+    expect(h['referrer-policy']).toBe('no-referrer');
+  });
+
+  it('comes AFTER the catch-all, which is what makes the override work', async () => {
+    /*
+     * **THIS IS THE ASSERTION THAT WOULD OTHERWISE BE A SILENT NO-OP.** Next
+     * applies every matching entry and a LATER one with the same key wins, so
+     * `referrer-policy: no-referrer` only beats the global
+     * `strict-origin-when-cross-origin` because this block is further down the
+     * array. Reversing the two entries looks identical in review and quietly
+     * restores referrer leakage on the exact page that must not leak.
+     */
+    const all = await rules();
+    const security = all.findIndex((r) => r.headers.some((h) => h.key === 'x-frame-options'));
+    const share = all.findIndex((r) => r.headers.some((h) => h.key === 'x-robots-tag'));
+    expect(security).toBeGreaterThanOrEqual(0);
+    expect(share).toBeGreaterThan(security);
+  });
+
+  it('does NOT tighten x-frame-options or frame-ancestors for /s/', async () => {
+    /*
+     * A security review of a newly public page will say `DENY` and `'none'`. Both
+     * would kill the same-origin iframe harnesses under `public/cards/` while
+     * blocking nothing that SAMEORIGIN does not -- including
+     * `_shareshot.html`, which is the ONLY check that catches a client component
+     * reaching for a session that is not there.
+     */
+    const h = Object.fromEntries((await shareBlock()).headers.map((x) => [x.key, x.value]));
+    expect(h['x-frame-options']).toBeUndefined();
+    expect(h['content-security-policy']).toBeUndefined();
+  });
+});

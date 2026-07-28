@@ -150,3 +150,49 @@ describe('decide -- signed in and onboarded', () => {
     expect(at('/api/onboarding/answer', settled)).toEqual({ kind: 'next' });
   });
 });
+
+describe('decide -- V7 makes /s/ public', () => {
+  const SLUG = 'abcdefghjkmn';
+
+  it('lets a stranger open a share link and its OG image', () => {
+    expect(at(`/s/${SLUG}`, signedOut)).toEqual({ kind: 'next' });
+    /*
+     * The OG image is a segment INSIDE `/s/[slug]`, and Next appends a hash to
+     * its path in production. A messenger crawler fetching a preview carries no
+     * cookie, so it has to be public for the same reason the page does -- and a
+     * prefix is the only match that survives the hash.
+     */
+    expect(at(`/s/${SLUG}/opengraph-image`, signedOut)).toEqual({ kind: 'next' });
+    expect(at(`/s/${SLUG}/opengraph-image-abc123.png`, signedOut)).toEqual({ kind: 'next' });
+  });
+
+  it('leaves minting and revoking gated', () => {
+    // The slug authorizes a READ. Creating one needs a session, and
+    // `startsWith('/s/')` does not reach `/api/share`.
+    expect(at('/api/share', signedOut)).toEqual({
+      kind: 'json',
+      status: 401,
+      error: 'Unauthorized',
+    });
+  });
+
+  it('is not a prefix of anything else -- this is why the clause is "/s/"', () => {
+    expect(at('/settings', signedOut)).toEqual({ kind: 'redirect', to: '/login' });
+    expect(at('/s', signedOut)).toEqual({ kind: 'redirect', to: '/login' });
+    expect(at('/share', signedOut)).toEqual({ kind: 'redirect', to: '/login' });
+  });
+
+  it('does not make a signed-in but un-onboarded viewer finish onboarding first', () => {
+    // A share link is a capability and its holder may be halfway through the
+    // questionnaire, or be somebody else entirely on the same device.
+    expect(at(`/s/${SLUG}`, halfway)).toEqual({ kind: 'next' });
+    expect(at(`/s/${SLUG}`, settled)).toEqual({ kind: 'next' });
+  });
+
+  it('never lets /history become public alongside it', () => {
+    // V6's rule 5, asserted from V7's side: `/history` is somebody's entire
+    // reading history and `isPublic()` must never learn it.
+    expect(at('/history', signedOut)).toEqual({ kind: 'redirect', to: '/login' });
+    expect(at('/history/abc', signedOut)).toEqual({ kind: 'redirect', to: '/login' });
+  });
+});

@@ -549,6 +549,70 @@ const id = {
   // contradicting the card's own orientation. It matters most under translation:
   // a translated body's first word is whatever the translator produced, and this
   // is the fact that survives it untouched.
+
+  // ── Sharing (V7) ──────────────────────────────────────────────────────────
+  //
+  // The one screen in this app a stranger can read, and the sheet that decides
+  // what goes on it. Two things about this block are load-bearing:
+  //
+  //   - `share.sheet.lead` PROMISES the preview is exact, and it is: the sheet
+  //     mounts the same `ReadingView` the public page mounts, with the toggles
+  //     applied. If that ever stops being true, this string is a lie and it is
+  //     the string a reviewer would read to catch it.
+  //   - `share.sheet.warning` and `privacy.4.4` say the same sentence twice on
+  //     purpose. Revoking does not un-send a screenshot, and that is the thing
+  //     users would otherwise learn the hard way.
+  'share.action': 'Bagikan',
+  'share.sheet.title': 'Bagikan bacaan ini',
+  'share.sheet.titlePersona': 'Bagikan Teratai Batinmu',
+  'share.sheet.lead':
+    'Siapa pun yang punya tautannya bisa membuka halaman ini. Beginilah tampilannya nanti.',
+  // NOT a toggle any more (Miftah, 2026-07-28). The question is part of the
+  // reading, so the copy STATES the exposure instead of offering a choice -- and
+  // the preview underneath shows the exact text, which is what makes this
+  // informed rather than merely announced.
+  'share.sheet.questionIncluded':
+    'Pertanyaanmu ikut ditampilkan, supaya yang membaca tahu bacaan ini tentang apa.',
+  'share.sheet.includeNickname': 'Sertakan nama panggilanku',
+  'share.sheet.includeNickname.hint': 'Ditampilkan sebagai "Bacaan untuk {nickname}".',
+  'share.sheet.create': 'Buat tautan',
+  'share.sheet.creating': 'Membuat tautan…',
+  'share.sheet.cancel': 'Batal',
+  'share.sheet.close': 'Tutup',
+  'share.sheet.copy': 'Salin tautan',
+  'share.sheet.copied': 'Tersalin',
+  'share.sheet.revoke': 'Matikan tautan',
+  'share.sheet.revoking': 'Mematikan…',
+  'share.sheet.revoked': 'Tautan itu sudah mati. Membagikan lagi akan membuat alamat baru.',
+  'share.sheet.live': 'Tautan ini aktif.',
+  'share.sheet.warning':
+    'Mematikan tautan tidak menarik kembali tangkapan layar yang sudah diambil orang.',
+  'share.error.notShareable': 'Bacaan ini tidak bisa dibagikan.',
+  'share.error.generic': 'Tautan gagal dibuat. Coba lagi.',
+  'share.error.rateLimit': 'Terlalu banyak tautan dalam satu jam. Coba lagi nanti.',
+  'share.public.eyebrow': 'Bacaan yang dibagikan',
+  'share.public.personaEyebrow': 'Teratai Batin yang dibagikan',
+  'share.public.forNickname': 'Bacaan untuk {nickname}',
+  'share.public.readBy': 'Dibacakan oleh {name}',
+  'share.public.questionLabel': 'Pertanyaannya',
+  // Shown ONLY when the viewer's language and the prose's disagree. The prose is
+  // never translated here (VD7/VD8), so this line is what makes that honest
+  // instead of surprising.
+  'share.public.otherLanguage':
+    'Bacaan ini ditulis dalam bahasa lain dan ditampilkan apa adanya.',
+  'share.public.cta': 'Coba sendiri',
+  'share.public.ctaLead': 'Tiga pembaca, dua puluh dua kartu Major Arcana.',
+  // ONE page for five different failures -- typo, revoked, deleted, never
+  // existed, not shareable. It must say nothing about which, or a stranger with
+  // one slug learns whether the account behind it still exists.
+  'share.gone.title': 'Tautan ini tidak ada',
+  'share.gone.body': 'Mungkin sudah dimatikan pemiliknya, atau alamatnya salah ketik.',
+  'share.gone.action': 'Buka JMTarot',
+  // The 429. A 404 here would tell somebody their friend's link is broken, which
+  // is a lie they cannot act on; this is a fact they can.
+  'share.busy.title': 'Terlalu banyak permintaan',
+  'share.busy.body': 'Tunggu sebentar, lalu muat ulang halaman ini.',
+
   'reading.verdict.yes': 'Ya',
   'reading.verdict.no': 'Tidak',
   'reading.verdict.maybe': 'Belum jelas',

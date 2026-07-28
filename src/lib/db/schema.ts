@@ -750,6 +750,115 @@ export const translations = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// share_links  (V7, roadmap v0.3.0 §4 / VD9)
+//
+// The only table in this schema whose primary key is not the thing that
+// authorizes a read. `slug` IS the authorization: `/s/<slug>` is public, so
+// `requireUser()` never runs above a row from here and the onboarding gate never
+// runs. Read `src/lib/share/slug.ts`'s header before touching the column.
+// ---------------------------------------------------------------------------
+
+export const shareLinks = pgTable(
+  'share_links',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /**
+     * VD9's opaque token. 12 Crockford base32 characters, 60 bits.
+     *
+     * UNIQUE, NOT PARTIAL-UNIQUE. A revoked slug must never be re-issued, and a
+     * unique index excluding revoked rows would free it -- which would let a URL
+     * somebody deliberately killed come back to life pointing at somebody else's
+     * reading. Re-sharing ROTATES the slug on the same row instead; see
+     * `insertOrRotateShareLink`.
+     */
+    slug: text('slug').notNull().unique(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /**
+     * `'reading' | 'persona'`. BARE `text`, not narrowed with `.$type<>()`.
+     *
+     * This file's header sets the rule: a column is narrowed only when W1 is the
+     * only module that defines its value set. V7 owns `ShareEntity`
+     * (`src/lib/share/slug.ts`), so narrowing here would make `schema.ts` depend
+     * on a workstream that depends on `schema.ts` -- the same reason
+     * `moderation_flags.category` and `frequency_verdicts.window_key` are bare.
+     */
+    entity: text('entity').notNull(),
+    /**
+     * POLYMORPHIC, NO FOREIGN KEY (roadmap §4). Postgres cannot declare one, so
+     * orphans are possible and the resolver checks the artifact exists AFTER it
+     * resolves the slug. A missing artifact must 404 and never 500, and must be
+     * indistinguishable from a slug that never existed -- otherwise a stranger
+     * holding one slug learns that the account behind it still exists.
+     *
+     * `on delete cascade` FROM `users` DOES NOT SAVE THIS. That cascade fires at
+     * the HARD delete, thirty days after an erasure request, which is why V8's
+     * deletion transaction calls `revokeAllForUser` in the same transaction that
+     * sets `deleted_at`.
+     */
+    entityId: uuid('entity_id').notNull(),
+    /**
+     * **DEFAULTS TO TRUE, WHICH REVERSES VD9, AND THE REVERSAL IS MIFTAH'S
+     * RULING RATHER THAN A DRIFT.**
+     *
+     * VD9 made the question opt-in and defaulted this column to `false`, on the
+     * ground that `readings.question` is the querent's own typed text and a shared
+     * page is public forever. Miftah's decision on 2026-07-28: **the question is
+     * part of the reading**, because a stranger who sees three cards and four
+     * paragraphs with no question cannot tell what any of it is about, and a
+     * shared reading nobody can follow is not worth sharing.
+     *
+     * What that costs, recorded here because the column is where somebody will
+     * look: the roadmap's risk table calls a leaked question "the single
+     * highest-consequence bug in this release", and the four independent
+     * mechanisms V7 built against it are now one mechanism (informed consent at
+     * mint time) plus three that are merely still WIRED. Specifically:
+     *   - `publicReadingQuery` still builds the projection conditionally, so the
+     *     capability to exclude the column is intact and tested. Nothing calls it
+     *     with `false` any more except the tests.
+     *   - The share sheet no longer offers a switch. It shows the question inside
+     *     the preview instead, so the querent reads the exact text that is about
+     *     to be public before the link exists.
+     *   - **THE OG PREVIEW IMAGE STILL CARRIES NEITHER THE QUESTION NOR THE
+     *     PROSE** (VD18), and that is NOT part of this reversal: a link preview is
+     *     cached by every messenger that sees the URL, before anybody clicks.
+     *
+     * The column stays rather than being dropped, because it is the mechanism if
+     * this is ever revisited and because roadmap §4 fixes its name.
+     */
+    includeQuestion: boolean('include_question').notNull().default(true),
+    includeNickname: boolean('include_nickname').notNull().default(true),
+    /**
+     * Renders, crawlers included. A LOAD AND ABUSE SIGNAL, NOT AN AUDIENCE
+     * METRIC -- `share.viewed` is the audience metric, and the pair disagreeing
+     * is the diagnosis: far above means a crawler storm, far below means a broken
+     * beacon. Query 10 in `docs/analytics-queries.md`.
+     *
+     * **APPROXIMATE, DELIBERATELY.** It is the one unauthenticated write in this
+     * release, so it is incremented in `after()` behind the per-IP limiter and a
+     * failure is swallowed. Do not build anything on it that has to be exact.
+     */
+    viewCount: integer('view_count').notNull().default(0),
+    revokedAt: tsCol('revoked_at'),
+    createdAt: tsCol('created_at').notNull().defaultNow(),
+    updatedAt: tsCol('updated_at')
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    /** One live link per artifact (VD9). A revoked row KEEPS the slot, which is
+     *  what makes rotation rather than un-revocation the only way to re-share. */
+    unique('share_links_user_entity_uq').on(t.userId, t.entity, t.entityId),
+    /** The public read path, and the only index a stranger's request touches. */
+    index('share_links_live_slug_idx')
+      .on(t.slug)
+      .where(sql`revoked_at is null`),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Row types
 //
 // `X` is what a select returns; `NewX` is what an insert accepts (columns with
@@ -780,3 +889,5 @@ export type FrequencyVerdict = typeof frequencyVerdicts.$inferSelect;
 export type NewFrequencyVerdict = typeof frequencyVerdicts.$inferInsert;
 export type Translation = typeof translations.$inferSelect;
 export type NewTranslation = typeof translations.$inferInsert;
+export type ShareLink = typeof shareLinks.$inferSelect;
+export type NewShareLink = typeof shareLinks.$inferInsert;

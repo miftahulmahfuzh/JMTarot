@@ -354,6 +354,53 @@ export function TermsId({ effective }: { effective: string }) {
           <a href={`mailto:${OPERATOR.contactEmail}`}>{OPERATOR.contactEmail}</a>
         </P>
       </Clause>
+
+      {/*
+        18, APPENDED. **NOT INSERTED BETWEEN 9 AND 10, WHERE IT WOULD READ
+        BETTER.** `CLAUDE.md`'s "Still open" section says "Clauses 10, 11 and 12
+        need a lawyer", and reconciliation records the same -- renumbering would
+        make that sentence point at three different clauses, silently, in a file
+        nobody re-reads. Anchors are append-only in this project and this is what
+        append-only costs.
+      */}
+      <Clause id="18" n="18." title="Membagikan bacaan">
+        <P>
+          Kamu bisa membuat satu tautan untuk sebuah bacaan. Yang ikut terbuka lewat tautan itu:
+          kartu-kartunya, arah kartunya, teks bacaannya, nama pembacanya, tanggalnya,{' '}
+          <strong>dan pertanyaan yang kamu tulis</strong>. Pertanyaannya ikut karena tanpa itu
+          bacaannya tidak bisa diikuti orang lain &mdash; tiga kartu dan empat paragraf tanpa
+          pertanyaan tidak memberi tahu siapa pun bacaan ini tentang apa.
+        </P>
+        <P>
+          Sebelum tautannya dibuat, kami menampilkan halaman itu apa adanya kepadamu, lengkap
+          dengan pertanyaanmu, supaya kamu tahu persis apa yang akan terbaca. Kalau ada
+          pertanyaan yang tidak ingin kamu bagikan,{' '}
+          <strong>jangan buat tautan untuk bacaan itu</strong>.
+        </P>
+        <P>
+          Siapa pun yang punya tautannya bisa membuka halaman itu tanpa akun, dan bisa
+          meneruskannya ke orang lain. Kami tidak tahu siapa saja yang membukanya.
+        </P>
+        <P>
+          Kamu bisa mematikan tautan itu kapan saja dari bacaan yang sama. Mematikannya membuat
+          alamat itu mati untuk selamanya:{' '}
+          <strong>membagikan lagi akan membuat alamat baru, bukan menghidupkan yang lama.</strong>{' '}
+          Itu disengaja, supaya tautan yang kamu matikan tidak bisa berfungsi kembali.
+        </P>
+        <Callout>
+          <P>
+            <strong>Mematikan tautan tidak menarik kembali apa yang sudah keluar.</strong>{' '}
+            Tangkapan layar yang sudah diambil orang tetap ada, pesan yang sudah diteruskan tetap
+            terkirim, dan gambar pratinjau yang sudah disimpan aplikasi pesan bisa bertahan sampai
+            sehari. Anggap tautan sebagai sesuatu yang kamu kirim, bukan sesuatu yang kamu pinjamkan.
+          </P>
+        </Callout>
+        <P>
+          Halaman yang dibagikan tetap tunduk pada klausul 6 seperti bagian Layanan lainnya, dan
+          kamu tidak boleh memakai tautan bagikan untuk mengganggu, menekan, atau mempermalukan
+          siapa pun.
+        </P>
+      </Clause>
     </LegalDoc>
   );
 }

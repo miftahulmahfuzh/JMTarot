@@ -315,3 +315,53 @@ describe('the query shape and the render shape are one shape', () => {
     expect(data.id).toBe(detail.id);
   });
 });
+
+// ---------------------------------------------------------------------------
+// `as-written` -- V7's public mount
+// ---------------------------------------------------------------------------
+
+describe('the as-written state (V7)', () => {
+  it('is returned to the caller unchanged, like every other explicit prose', () => {
+    /*
+     * NO CHANGE TO `resolveProse` WAS NEEDED FOR THIS, which is the property worth
+     * asserting: branch 2 already returns any supplied non-`original` prose, so the
+     * new member arrives through the existing path and rule 4's truth table did not
+     * move. If somebody "tidies" branch 2 into an allowlist of kinds, this fails.
+     */
+    const asWritten: ReadingProse = { kind: 'as-written' };
+    expect(resolveProse({ body: 'x', locale: 'id' }, asWritten, 'en')).toBe(asWritten);
+    expect(resolveProse({ body: 'x', locale: 'id' }, asWritten, 'id')).toBe(asWritten);
+  });
+
+  it('still loses to an empty body, so branch 1 keeps its precedence', () => {
+    // A `failed` reading has nothing to show verbatim either. V7's public page
+    // never sees one -- `publicReadingQuery` requires a non-null body -- but the
+    // ordering is the component's invariant rather than the caller's luck.
+    for (const body of [null, '', '   ']) {
+      expect(resolveProse({ body, locale: 'id' }, { kind: 'as-written' }, 'en')).toEqual({
+        kind: 'unavailable',
+      });
+    }
+  });
+
+  it('renders the foreign body, tagged with its own lang', () => {
+    /*
+     * THE WHOLE POINT OF THE STATE. An English viewer opening a shared Indonesian
+     * reading sees the Indonesian prose -- which is what was shared -- with `lang`
+     * on it so a screen reader pronounces it correctly and the browser's own
+     * translate offer points at the right language.
+     */
+    const html = render({ locale: 'id' }, 'en', { kind: 'as-written' });
+    expect(html).toContain('Kartu pertama bicara');
+    expect(html).toContain('lang="id"');
+    // NOT the spinner: that is the state this exists to escape.
+    expect(html).not.toContain(catalogFor('en')['history.translating']);
+  });
+
+  it('does not tag the body when the languages already agree', () => {
+    // `lang` is only meaningful where it differs from the document, and V7's page
+    // uses the same state for both cases.
+    const html = render({ locale: 'en' }, 'en', { kind: 'as-written' });
+    expect(html).toContain('lang="en"');
+  });
+});

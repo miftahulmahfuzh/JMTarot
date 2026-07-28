@@ -351,6 +351,48 @@ const en: Catalog = {
   'history.detail.noBody': 'No text was kept for this reading.',
   'history.translating': 'Translating…',
 
+
+  // ── Sharing (V7) ──────────────────────────────────────────────────────────
+  'share.action': 'Share',
+  'share.sheet.title': 'Share this reading',
+  'share.sheet.titlePersona': 'Share your Inner Lotus',
+  'share.sheet.lead':
+    'Anyone with the link can open this page. This is exactly what they will see.',
+  'share.sheet.questionIncluded':
+    'Your question is shown too, so whoever reads this knows what it was about.',
+  'share.sheet.includeNickname': 'Include my nickname',
+  'share.sheet.includeNickname.hint': 'Shown as "A reading for {nickname}".',
+  'share.sheet.create': 'Create link',
+  'share.sheet.creating': 'Creating link…',
+  'share.sheet.cancel': 'Cancel',
+  'share.sheet.close': 'Close',
+  'share.sheet.copy': 'Copy link',
+  'share.sheet.copied': 'Copied',
+  'share.sheet.revoke': 'Turn the link off',
+  'share.sheet.revoking': 'Turning it off…',
+  'share.sheet.revoked': 'That link is dead. Sharing again mints a new address.',
+  'share.sheet.live': 'This link is live.',
+  'share.sheet.warning':
+    'Turning a link off does not un-send a screenshot somebody already took.',
+  'share.error.notShareable': 'This reading cannot be shared.',
+  'share.error.generic': 'The link could not be created. Try again.',
+  'share.error.rateLimit': 'Too many links in one hour. Try again later.',
+  'share.public.eyebrow': 'A shared reading',
+  'share.public.personaEyebrow': 'A shared Inner Lotus',
+  'share.public.forNickname': 'A reading for {nickname}',
+  'share.public.readBy': 'Read by {name}',
+  'share.public.questionLabel': 'The question',
+  'share.public.otherLanguage':
+    'This reading was written in another language and is shown as it was written.',
+  'share.public.cta': 'Try it yourself',
+  'share.public.ctaLead': 'Three readers, twenty-two Major Arcana cards.',
+  'share.gone.title': 'This link does not exist',
+  'share.gone.body':
+    'It may have been turned off by whoever made it, or the address may be mistyped.',
+  'share.gone.action': 'Open JMTarot',
+  'share.busy.title': 'Too many requests',
+  'share.busy.body': 'Wait a moment, then reload this page.',
+
   'reading.verdict.yes': 'Yes',
   'reading.verdict.no': 'No',
   'reading.verdict.maybe': 'Not yet clear',

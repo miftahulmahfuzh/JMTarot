@@ -137,6 +137,48 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        /*
+         * V7's public page, and the two headers Miftah's security amendment calls
+         * the most important lines in it.
+         *
+         * **AFTER the `/(.*)` block on purpose.** Next applies every matching
+         * entry and a later one with the same key WINS, so this is what makes
+         * `referrer-policy: no-referrer` beat the global
+         * `strict-origin-when-cross-origin` on `/s/` and only on `/s/`. Verified
+         * against a real response rather than assumed -- `headers.test.ts`
+         * asserts the ordering, because reversing these two entries would be a
+         * silent no-op that reads as correct.
+         *
+         * **`x-robots-tag`.** A 60-bit slug is unguessable; it is NOT
+         * unindexable. One link posted anywhere a crawler reaches -- a public
+         * WhatsApp group with a web bridge, a Telegram preview bot, a pasted
+         * forum link -- and "I sent this to one friend" becomes a permanent
+         * search result with a cache that survives revocation. `noarchive`
+         * because an index entry is recoverable and a cached copy is not. The
+         * header rather than only the `<meta>` twin, because a header is honoured
+         * on a response a crawler never parses, and `robots.ts` disallows the
+         * prefix as the third half.
+         *
+         * **`referrer-policy: no-referrer`.** THE SLUG IS IN THE URL, so any
+         * outbound navigation leaks the capability itself in a `Referer` header.
+         * `Try It Yourself` is same-origin, but `/terms` and `/privacy` are
+         * linked from the footer and any future outbound link inherits the leak.
+         * This is the one place in the app where the URL *is* the secret.
+         *
+         * `x-frame-options` and `frame-ancestors` are NOT tightened here. A
+         * security review of a newly public page will say `DENY` and `'none'`;
+         * both would kill the same-origin iframe harnesses under `public/cards/`
+         * while blocking nothing that SAMEORIGIN does not, and
+         * `src/lib/headers.test.ts` asserts both in two separate tests so that
+         * tightening one is a failure rather than a half-fix.
+         */
+        source: '/s/:path*',
+        headers: [
+          { key: 'x-robots-tag', value: 'noindex, nofollow, noarchive' },
+          { key: 'referrer-policy', value: 'no-referrer' },
+        ],
+      },
     ];
   },
 };
