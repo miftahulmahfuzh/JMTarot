@@ -62,7 +62,35 @@ export default async function HistoryDetailPage({
    */
   const [locale, t] = await Promise.all([getLocale(), getT()]);
 
-  const reading = await readingWithCards(db, user.id, id);
+  /*
+   * WRAPPED SO THAT NEXT NEVER LOGS THE DRIVER ERROR ITSELF.
+   *
+   * MEASURED against a production build with the database unreachable: the two
+   * `/api/history*` routes printed `[history] list failed { name: 'Error' }`,
+   * exactly as intended -- and this page printed postgres.js's whole error,
+   * because an uncaught throw in a server component is Next's to log and
+   * `logHistoryFailure` never saw it. That log carried the full statement and
+   * its bound parameters.
+   *
+   * NOTHING SENSITIVE WAS IN IT -- the parameters are two uuids, `'blocked'` and
+   * `1`, while `question` and `body` are COLUMNS in the select list rather than
+   * parameters -- so this is a tightening rather than a fix for a leak. It is
+   * done anyway, because the rule's value is that it has no exceptions to
+   * remember, and the next person to add a `where question = ...` here would not
+   * think to check what Next does with an uncaught throw.
+   *
+   * IT STILL THROWS, AND THAT IS DELIBERATE. `notFound()` here would tell the
+   * querent their reading does not exist because the database blinked, which is
+   * a lie about their own past; the error boundary says "something went wrong",
+   * which is true. The 500 is the honest answer for a page that IS its row.
+   */
+  let reading;
+  try {
+    reading = await readingWithCards(db, user.id, id);
+  } catch (err) {
+    logHistoryFailure('detail', err);
+    throw new Error('history detail unavailable');
+  }
   if (!reading) notFound();
 
   /*
