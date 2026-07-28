@@ -162,6 +162,15 @@ LOCALE_SWITCHER=1           # W6. Render the language toggle. V4 MOVED IT (v0.3.
                             # client component. RENDERING ONLY -- English stays
                             # reachable by Accept-Language and cookie with it off.
                             # ONLY '0' disables, same rule as below.
+                            # v0.4.0: THE SCOPE GREW AND THE VARIABLE DID NOT. It still
+                            # decides only whether the CONTROL renders -- a third place
+                            # now, `ContentLocaleLink` in the public footer. On a public
+                            # content route English lives at `/en/...` regardless, and
+                            # the `hreflang` set NAMES that URL to a crawler whatever
+                            # the UI offers, so `LOCALE_SWITCHER=0` no longer hides
+                            # English from anybody except a person looking for a button.
+                            # That is the intended reading of "RENDERING ONLY", now
+                            # load-bearing.
 
 ANALYTICS_ENABLED=1         # ONLY '0' disables writes, so a typo collects data rather
                             # than silently collecting none.
@@ -823,8 +832,17 @@ reader-voiced ceiling rather than a hand-set number on one service — spread3 5
 ## Localization (W6)
 
 Two locales, `id` and `en`, **interface and readings**. `id` is the default and the
-source language. Locale is **never a URL segment** (D6): nine routes stay nine, no link
-is locale-aware, and anything reaching for `router.push('/en/...')` is wrong.
+source language.
+
+**Locale is never a URL segment FOR THE NINE APP ROUTES (D6) — and IS one for public
+content (v0.4.0 S-D1).** This sentence used to end at "never a URL segment", full stop,
+and the exception is an **amendment rather than an oversight**: two languages cannot
+occupy one address in a search index. `/gallery` is Indonesian, `/en/gallery` is
+English, and inside the app `router.push('/en/...')` is still wrong and no `<Link>` is
+locale-aware. `/en/history` is not a route — it reaches `decide()` spelled exactly as
+the request spelled it and matches nothing. **A stripping bug that made the gated app
+reachable under `/en/` is the worst outcome available in this release and would look
+like a working feature.**
 
 **v0.4.0 BREACHES D6 FOR FIVE PUBLIC CONTENT ROUTES AND NOTHING ELSE (S-D1).** The nine
 app routes are untouched and `router.push('/en/...')` is still wrong in every one of
@@ -832,6 +850,15 @@ them. The prefix is a middleware **rewrite**, not a route segment, so there is s
 route tree. `src/lib/i18n/prefix.ts` is the pure leaf that owns the prefix maths *and*
 the content route table — it lives there rather than in `resolve.ts` because `gate.ts`
 imports it and `resolve.ts` carries a `next/server` type (R11).
+
+**On a content route the URL is the only input, and the switcher is a LINK.**
+`contentRewrite()` runs in middleware before the D6 chain and before the gate (contract
+G1), pins the locale into `x-jmt-locale`, and writes **no cookie** (S-D10). So a cookie,
+an `Accept-Language` and `?lang=` are all inert there — measured, in every `NODE_ENV` —
+and `ContentLocaleLink` is a server-rendered `<a href>` to the sibling URL rather than a
+`POST /api/locale`. `LocaleSwitch` is for the app and must not grow a `links` variant
+(R12). The evidence, the traps and the wire measurements are in
+`docs/workstream-notes.md`'s `## Locale-addressable public content (S2), v0.4.0`.
 
 ```
 src/lib/i18n/
@@ -846,6 +873,10 @@ src/lib/i18n/
   catalog.ts       the ONLY module that loads both catalogs. catalogFor, tFor.
   resolve.ts       EDGE-SAFE. resolveForMiddleware, cookie/header names,
                    localeSwitcherEnabled. NO `server-only`.
+  prefix.ts        LEAF, EDGE-SAFE, v0.4.0 S2. stripLocalePrefix, localePath,
+                   isContentPath, isPublicContentPath, contentRewrite, and the
+                   content route table. NO `server-only`, NO `next/*` (gate.ts
+                   imports it), NO `process.env`.
   t.ts             SERVER-ONLY. getLocale (React cache()d), getT, getLocaleBundle.
   LocaleProvider.tsx  'use client'. useT, useLocale.
 ```
@@ -1557,6 +1588,20 @@ tools/seo/fit.sh          loop 4, committed.
    serving both languages and emit **none**. A `hreflang` pair naming a URL that 404s is
    non-reciprocal and **Google discards the whole set silently.** S3/S4/S6 add a path
    only in the commit that adds its page, and only with the English document written.
+7. **THE ONLY WAY TO EMIT A CANONICAL OR AN `hreflang` IS `contentAlternates()`
+   (S-D15), AND IT TAKES THE LOCALES THAT ACTUALLY EXIST (R2).** Not `LOCALES`, which
+   is the answer that is wrong exactly when it matters — a card whose English lore is
+   unwritten emits `id` + `x-default` and no `en` key. It throws on a prefixed path, on
+   a non-content path, and on a canonical for a locale with no document, because a wrong
+   canonical de-indexes the correct page and nothing reports it. `sitemapLanguages()` is
+   the same function, so the `<xhtml:link>` set and the head's `<link rel="alternate">`
+   set cannot disagree. **`/en` shipped for one commit with `/`'s canonical** — found by
+   `curl`, not by a test, and now fenced in `page.contract.test.ts`.
+8. **`wallpapers/` IS EXCLUDED IN THE MATCHER AND MUST NEVER BE "FIXED" IN
+   `isPublic()` (R7).** Both give a 200; only the matcher stops middleware running, and
+   middleware running means a `Set-Cookie` on a ~550KB static response, which makes it
+   edge-uncacheable. `cards/` and `dukuns/` are there for the same reason. §6.2 said the
+   matcher would not need to change; S5 raised the flag it invited and was right.
 
 **`/terms` and `/privacy` ARE INDEXED NOW (R4).** Their `noindex` said "an indexed legal
 page for an app behind auth is noise"; the app stopped being behind auth in this release.
@@ -1578,12 +1623,21 @@ prop.
 container. `npm run dev` passes the port and `npm start` does not, so a local production
 check is `npx next start -p 3001`.
 
-**Still open:** S2's rewrite, cookie guard and `ContentLocaleLink` are not landed, so
-`/en` 302s to `/login`, `/` still writes `jmt_locale`, and `PublicShell` renders no
-language link (the mount point is a marked hole, deliberately -- a placeholder anchor is
-the second definition R17 exists to prevent). **Two `authjs.*` cookies are set on every
-public page** and S2's guard covers only `jmt_locale`; that is the same pre-existing gap
-`/s/` carries. The `s-maxage` is measured locally but **not** against a Vercel CDN (R21).
+**S2 IS LANDED NOW, AND THIS PARAGRAPH USED TO LIST IT AS THE GAP.** `/en` is 200 and
+renders the English landing, no content response writes `jmt_locale`, and `PublicShell`
+mounts `ContentLocaleLink` in what was a marked hole. Measured on the wire, 2026-07-29 —
+see `## Locale-addressable public content (S2), v0.4.0` in `docs/workstream-notes.md`.
+
+**Still open, and the first item is worse than it reads.** **Two `authjs.*` cookies are
+set on every public page** — `authjs.csrf-token` and `authjs.callback-url`, minted by the
+`auth()` wrapper itself rather than by any line in `middleware.ts`, so S2's guard cannot
+reach them. That is the same pre-existing gap `/s/` carries, and it is not only the
+privacy half of S-D10: **a `Set-Cookie` makes a response uncacheable at the edge whatever
+`Cache-Control` says, so the content routes are not edge-cacheable today even with a
+correct `s-maxage`.** The candidate fix — strip `set-cookie` from a `bare`/`rewrite`
+response, where by construction nothing of ours wrote one — is one line in
+`middleware.ts` and it is auth-adjacent, so it is Miftah's call rather than S2's. The
+`s-maxage` itself is measured locally but **not** against a Vercel CDN (R21).
 
 
 ## /account and the persona (V8)

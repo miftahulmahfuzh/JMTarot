@@ -2579,3 +2579,227 @@ may never live in the catalog.
   It belongs to whoever owns `src/app/arcana/**`, which is S4.
 - **`/terms` and `/privacy` became indexable** (R4), which S1's flag 7 raised and
   explicitly declined to do alone.
+
+## Locale-addressable public content (S2), v0.4.0
+
+`/gallery` is Indonesian and `/en/gallery` is English, by a middleware rewrite, for five
+routes and no others. The rules and the invariants are in CLAUDE.md's `## Localization`;
+this is the evidence.
+
+### The contract
+
+`src/lib/i18n/prefix.ts` is a pure edge-safe leaf holding both the prefix maths and the
+content route table, because you cannot decide whether to honour `/en/x` without knowing
+whether `/x` is content. `src/middleware.ts` calls `contentRewrite(pathname, signedIn)`
+once and gets one of four answers: `passthrough` (D6 unchanged), `bare` (pin `id`),
+`rewrite` (pin `en`, rewrite to the bare route), `redirect` (301 to the canonical
+address).
+
+### Contract G1: the gate sees the STRIPPED path
+
+Resolved rather than left open (roadmap §6.1 asked for a decision). `decide()` never
+receives `/en/gallery`; `isPublic()` and S-D5's `/` clause are written against bare paths.
+The argument that settled it: `/en` rewrites to `/`, so S-D5's `pathname === '/'` clause
+fires for the English landing **and** the signed-in-but-not-onboarded arm still redirects
+to `/onboarding`. Under the other ordering that clause has to read
+`'/' || '/en' || '/en/'` and the onboarding arm is missed by everybody, because nobody
+tests `/en` while signed in and half-onboarded.
+
+`isPublic()`'s content clause still strips first (contract G2), so `/en/history` is proved
+non-public even though nothing can reach `decide()` with that spelling any more.
+
+### `isContentPath` and `isPublicContentPath` differ by exactly one path
+
+`/`. `isPublic()` short-circuits `decide()` **before** the onboarding check, so `'/'` in
+that allowlist would land a signed-in half-onboarded querent on a reader picker that
+assumes a completed profile — the change S-D5 forbids in capitals, arriving through a
+predicate instead of through a diff. A test asserts the symmetric difference is `['/']`.
+
+### `/` is the one path where the session is read, and it cannot be CDN-cached
+
+S-D5 makes `/` dual-render. Pinning `id` there unconditionally hands a signed-in English
+querent an Indonesian reader picker — D6 broken on the busiest screen in the app, by the
+workstream that promised not to touch it. So on `/` with a session, `contentRewrite`
+answers `passthrough` and the D6 chain and the cookie write behave exactly as before.
+
+The consequence is that `/` varies by session and **S-D10's cache header must not be
+applied to it**. That is true for S-D5's reasons before it is true for S2's. Every other
+content route is session-invariant, and a negative-control test asserts `contentRewrite`
+gives the identical answer for both values of `signedIn` on every path but `/`.
+
+### `?lang=` is inert on a content route, by construction
+
+`contentRewrite` takes a pathname and a boolean. There is no `NextRequest`, no
+`searchParams` and no header, so the dev override cannot reach it — in development or in
+production. §4.3 asked for "the prefix wins"; a function that cannot see the query cannot
+be overridden by it. The override is untouched for the nine app routes. Verified on the
+wire: `/?lang=en` is `id` and `/en?lang=id` is `en`.
+
+### The 301 arm is narrower on the wire than the plan expected, and Next's 308 is why
+
+**MEASURED, 2026-07-29, and it corrects the plan's flag 6.** That flag said both locales
+would be normalised "by the same 301 rather than one of them relying on Next's own
+`trailingSlash: false` 308". False: Next normalises a trailing slash **before middleware
+runs**, so `contentRewrite`'s trailing-slash branch is unreachable in production and both
+locales rely on the 308 after all.
+
+```
+/gallery/      308 -> /gallery          Next, before middleware
+/en/gallery/   308 -> /en/gallery       Next, before middleware
+/en/           308 -> /en               Next, before middleware
+/id/gallery    301 -> /gallery          ours
+/id            301 -> /                 ours
+/id/gallery/   308 -> /id/gallery -> 301 -> /gallery   two hops, settles
+```
+
+The `canonicalise()` calls stay: they are what makes `contentRewrite` a total function on
+a path it may be handed by a test, a future `basePath`, or any router that does not
+normalise first — and the fixed-point test proves no input loops. But do not read the
+trailing-slash 301 as a live path; the `/id/` family is the arm that actually fires.
+
+### The gate is opening on content paths, and a 404 is the proof
+
+With S3/S4/S6 unlanded, every content address is a **real 404** rather than a login
+redirect, which is the property the release is built on:
+
+```
+/gallery /en/gallery /arcana /arcana/the-moon /blog /en/blog      404
+/en/history /en/account /en/onboarding /en/api/events /en/thessaly
+        307 -> /login?callbackUrl=%2Fen%2Fhistory  (etc.)
+```
+
+**The `callbackUrl` is the assertion, not the 307.** It spells the path verbatim, which
+proves nothing stripped the prefix on the way to `decide()`. A `callbackUrl=%2Fhistory`
+would mean the gated app had become reachable under `/en/`.
+
+### The cookie guard, measured
+
+```
+GET /            set-cookie: authjs.csrf-token, authjs.callback-url        (no jmt_locale)
+GET /en          set-cookie: authjs.csrf-token, authjs.callback-url        (no jmt_locale)
+POST /api/events set-cookie: authjs.csrf-token, authjs.callback-url        (no jmt_locale)
+GET /login       set-cookie: jmt_locale=id, authjs.csrf-token, authjs.callback-url
+```
+
+`/login` is the negative control: an app route with a disagreeing cookie still writes it,
+so the guard narrowed the write rather than deleting it. `/api/events` is R22 — it was
+collecting on the beacon the cookie `/s/` had just refused to set.
+
+**AND THE TWO `authjs.*` COOKIES ARE THE HOLE S-D10 STILL HAS.** They are minted by the
+`auth()` wrapper, not by any line in `middleware.ts`, so nothing in this workstream can
+reach them. It is not only the privacy half of the rule: **a `Set-Cookie` makes a
+response uncacheable at the edge whatever `Cache-Control` says**, so the content routes
+are not edge-cacheable today even once R21's `s-maxage` is confirmed on the wire. The
+candidate fix is one line — strip `set-cookie` from a `bare`/`rewrite` response, where by
+construction nothing of ours wrote one — and it is auth-adjacent enough to be Miftah's
+call rather than S2's. Recorded here rather than fixed.
+
+### `/id/…` 301s rather than 404s, and both locales normalise the same way
+
+Indonesian has one address and it is the bare one. `stripLocalePrefix` still recognises
+the `/id/` segment, and that is the whole reason: a path people will guess **because**
+`/en/` exists gets a 301 to the address that exists, keeping whatever inbound link it
+arrived with, instead of a 404. A test iterates every redirect to a fixed point and
+asserts it settles in at most two steps; the wire agrees (see the table above).
+
+### The canonical `/en` shipped for one commit was `/`, and only `curl` saw it
+
+**THE HIGHEST-VALUE FINDING IN THIS WORKSTREAM, AND NO TEST FOUND IT.** S1 left
+`alternates: { canonical: '/' }` in `src/app/page.tsx` with a comment saying S2 would
+replace it. Measured before replacing it:
+
+```
+GET /      <link rel="canonical" href="http://localhost:3001"/>
+GET /en    <link rel="canonical" href="http://localhost:3001"/>     <-- the defect
+```
+
+A canonical naming another URL is an instruction to drop this one, so **the English
+landing page would have been de-indexed in favour of the Indonesian one, silently, in the
+release whose entire purpose is being indexed** — while `sitemap.xml` simultaneously
+claimed the two were a reciprocal pair. After `contentAlternates()`:
+
+```
+GET /      canonical -> /        alternate id -> /, en -> /en, x-default -> /
+GET /en    canonical -> /en      alternate id -> /, en -> /en, x-default -> /
+```
+
+The alternate set is **byte-identical on both twins and only the canonical moves**, which
+is what reciprocity means and the only form Google does not discard.
+
+### Two framework details, measured rather than recalled
+
+- **React serialises `hrefLang` as `hrefLang`, not `hreflang`**, in both
+  `<a hrefLang>` and Next's `<link rel="alternate" hrefLang>`. It is correct anyway —
+  HTML attribute names are ASCII case-insensitive, so the parsed DOM attribute is
+  `hreflang` — and `sitemap.xml`, which is XML and *is* case-sensitive, is serialised by
+  Next's own sitemap writer and comes out lowercase. Do not "fix" the JSX to a lowercase
+  prop: React would treat it as an unknown attribute and the warning is the only thing
+  you would gain.
+- **Next strips the trailing slash from an absolute canonical.** `contentAlternates`
+  returns `http://host/` for the root and the emitted tag is `href="http://host"`. Both
+  denote the same resource per the URL spec, and `sitemap.xml` keeps the slash, so the
+  two files disagree textually and not semantically. Recorded so it is not read as a bug
+  in the helper.
+
+### The D6 regression check, which is the only thing S2 could break that already worked
+
+A real dev-minted session, `POST /api/locale {"locale":"en"}`, then:
+
+```
+GET /     signed in, en    <html lang="en">   page-module   (the picker)
+GET /en   signed in, en    <html lang="en">   page-module   (the picker, one request)
+GET /     signed out       <html lang="id">   Landing-module
+```
+
+**The plan's Task 9 check 4 has a wrong field name**: `/api/auth/dev-session` takes
+`{"username": "..."}`, not `{"user": ...}`, and the wrong one is a 400 with an empty
+cookie jar — which then looks like "the session did not work" rather than "the request
+was rejected". The landing page also names all three readers, so grepping for `Thessaly`
+is not a test of which arm rendered; `Landing-module` versus `page-module` in the class
+names is.
+
+### The traps
+
+- **`NextResponse.rewrite(url)` without `{ request: { headers } }` is silent.** The right
+  route renders with no `x-jmt-locale`, so `getLocale()` falls through to the
+  `jmt_locale` cookie: `/en/gallery` is English for whoever has an `en` cookie and
+  Indonesian for the next stranger, under a canonical that claims English. **No unit test
+  in this project can see it.** The check is `curl` with a planted cookie, and it passes:
+  `/` with `jmt_locale=en` is `id`, `/en` with `jmt_locale=id` is `en`.
+  `middleware.ts` had carried this warning for `NextResponse.next()` since W6; it is the
+  same trap one function later.
+- **`next/link` must never cross the `/en/` boundary.** A client-side navigation from
+  `/gallery` to `/en/gallery` resolves — after the rewrite — to the same route under the
+  same root layout, so Next does not re-render the layout: `<html lang>` and
+  `LocaleProvider`'s catalog keep their old values and the page comes out
+  half-translated. `ContentLocaleLink` is a plain `<a>` for that reason and not for
+  crawlability (`next/link` renders a real anchor).
+- **`usePathname()` returns the PRE-rewrite path.** On `/en/gallery` it is `/en/gallery`
+  while the rendered route is `/gallery`, so a client-side sibling computation builds
+  `/en/en/gallery` and disagrees with the server about it. `ContentLocaleLink` takes the
+  bare path as a prop, and `localePath` throws on an already-prefixed argument. A contract
+  test forbids any `'use client'` file from importing `@/lib/i18n/prefix`.
+- **Do NOT copy `/s/[slug]`'s nested `LocaleProvider`.** There, the page's language differs
+  from the *request's* resolved locale, so a second catalog is the only way. Here the
+  request's resolved locale IS the page's language — middleware pinned it — so the root
+  layout's single provider is already correct and a nested one would ship two catalogs and
+  break I9's whole argument for +3.3KB gzipped on the pages a stranger opens on mobile
+  data.
+- **A relative `hreflang` is discarded by Google, and so is a non-reciprocal group** —
+  the whole group, not the broken edge, with nothing reporting it. `contentAlternates`
+  therefore builds absolute URLs from an `origin` parameter rather than leaning on
+  `metadataBase`, and its test walks the graph: every URL a page names must name that page
+  back.
+- **`contentAlternates` takes the locales that EXIST, and defaulting that to `LOCALES` is
+  the R2 trap wearing a convenience.** The parameter is required for that reason. `/` may
+  pass `LOCALES` honestly because middleware rewrites `/en` to the same route, so neither
+  address can 404; the 22 cards may not.
+- **A stranger's URL choice does not cross the sign-in boundary.** No content response
+  writes `jmt_locale` (S-D10), so a visitor who read `/en/blog` and then clicked into
+  `/login` gets whatever `Accept-Language` negotiates. Same asymmetry §4.2 states for the
+  signed-in direction, and accepted for the same reason.
+- **`PublicShell`'s hole test had to be INVERTED, not deleted.** S1 asserted the mount
+  point was a comment, so that no local `<a>` could become the second definition R17
+  exists to prevent. The half that still binds after S2 lands is that the shell mounts and
+  does not implement: exactly one `<ContentLocaleLink>`, and still no bare `<a>` of its
+  own.
