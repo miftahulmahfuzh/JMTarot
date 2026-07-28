@@ -1447,3 +1447,41 @@ written beside it, not a widened band; two runs is not enough to write the numbe
 - **Whether `reading.gist` is worth translating at all** (open question 4). The path is
   built, opportunistic and free; `translation.generated` with `field: 'gist'` is what
   answers it.
+
+### Addendum, 2026-07-28: the first tic observed, and the first rows recorded
+
+Two of the claims above have a later datapoint against them. Neither is a regression —
+`ceilingFor`'s `service` branch is byte-identical to the commit these runs were taken
+at, verified by diff — but both are worth writing next to the originals rather than
+leaving the originals reading as settled.
+
+**A `tic` violation happened.** *"Zero Malay hits on the `en → id` output, and zero
+generic-mystic tics on `id → en`"* was true of these twelve. A `--translate` run on
+2026-07-28 produced `id->en/margaret: tic (manifest)` — `manifest` is on the `EN_TICS`
+list and the model reached for it. **One sample of a non-deterministic model, not a
+rate**, and exactly the outcome §4.4's ~2% rule exists to be measured against. The
+structural checks all still passed in that run: zero card-name, zero paragraph, zero
+Malay.
+
+The same run's length failures were the known-unconverged band doing what this section
+already says it does — Margaret's paragraph overruns present, Adrian's present too,
+Thessaly short at 98 against a floor of 105. `npm run smoke -- --translate` **exits 0**;
+these lines are diagnostics for a human, which is why the script ends by telling you to
+cover the names and read the three.
+
+**"The `invalid` rate in production" is no longer unmeasurable, and it was not merely
+unmeasured.** `translation.generated` was never reaching the `events` table for any
+STREAMED field, because `settle()` runs inside the `ReadableStream`'s `pull()` — outside
+the request scope — so `track()` threw every time. So the first bullet under *Still to
+measure* was describing a rate that no amount of waiting would have produced. Fixed
+2026-07-28 (`bindAnalyticsScope`); the first real rows exist now:
+
+```
+{ entity: 'reading', field: 'body', source_locale: 'id', locale: 'en',
+  outcome: 'ok', violation: null, streamed: true, total_ms: 2179, chars: 348 }
+{ entity: 'persona', field: 'body', source_locale: 'id', locale: 'en',
+  outcome: 'ok', violation: null, streamed: true, total_ms: 2212, chars: 404 }
+```
+
+**A week of these is now actually possible**, which is what the threshold was always
+waiting on. Full account in `docs/workstream-notes.md`.

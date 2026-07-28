@@ -676,9 +676,20 @@ than to native output**: mean sentence length (Margaret ≥ 1.5× Thessaly) and 
 Margaret has not become Thessaly with longer words.
 
 **Measurements in `docs/plans/2026-07-27-translation.md` under `## Measured`.** Zero card-name,
-paragraph, Malay or tic failures across twelve translations. **The word BAND is not converged and
-was deliberately not widened** — Margaret's paragraph overruns appeared in one run and vanished in
-the next while Adrian's did the reverse, which is variance. One signal is consistent and
+paragraph, Malay or tic failures across twelve translations, **and the tic half of that has since
+been contradicted by one sample** — a `--translate` run on 2026-07-28 produced
+`id->en/margaret: tic (manifest)`. See that file's `### Addendum, 2026-07-28`. It is one draw from
+a non-deterministic model rather than a rate, the structural checks all still passed, and
+`ceilingFor`'s `service` branch was verified byte-identical by diff — but the original sentence
+read as settled and is not. **The word BAND is not converged and was deliberately not widened** —
+Margaret's paragraph overruns appeared in one run and vanished in the next while Adrian's did the
+reverse, which is variance.
+
+**AND `npm run smoke -- --translate` EXITS 0 WHILE PRINTING `FAIL` LINES.** They are diagnostics
+for a human — the script ends by telling you to cover the names and read the three translations —
+so **a red-looking `--translate` is not a gate and is not by itself evidence of a regression.**
+Establish that from `ceilingFor` and a diff, the way the 2026-07-28 check did, rather than from
+this output: two consecutive runs disagree with each other against unchanged prompts. One signal is consistent and
 contradicts the plan's open question 3: Thessaly `en → id` comes in SHORT (95, 86 against a floor
 of 105), not long.
 
@@ -1985,3 +1996,40 @@ do, and the deferred half is exactly what the mock now models.
 
 `npm test` 1611 (+2), `npm run test:integration` 230, `npm run typecheck` and `npm run build`
 clean including `audit:secrets`.
+
+### The reading path, checked after the fix
+
+The persona was what exposed the scope bug, but `reading.body` had been losing its
+events for just as long — so the reading path was verified separately rather than
+assumed to follow. Live on `/history/[id]`, an Indonesian `spread3` viewed in English:
+
+```
+cold view  -> streamed in; 4 paragraphs preserved 4->4; The Tower, The Hermit and
+              The Lovers all carried verbatim; translations row written
+              event: { entity: 'reading', field: 'body', source_locale: 'id',
+                       locale: 'en', outcome: 'ok', violation: null,
+                       streamed: true, total_ms: 2179, chars: 348 }
+warm view  -> instant English, no spinner, event count UNCHANGED (no model call)
+log        -> 0 "outside a request scope", 0 "unbatched track()"
+```
+
+**THE SEEDED READINGS ARE USELESS FOR THIS AND IT IS WORTH KNOWING BEFORE YOU TRY.**
+`db:seed` writes ~100-character single-paragraph bodies with no card names in them, so a
+translation of one exercises none of what makes the reading path differ from the
+persona's: `voiced: true` and therefore a reader's block in the prompt, the 4→4 paragraph
+check, and the mechanical card-name check. Plant a realistic four-paragraph body naming
+three cards first — the check above did, onto the seeded `margaret`/`spread3` row.
+
+**ONE MODEL CALL PER COLD PAGE LOAD, CONFIRMED SEPARATELY.** A first attempt showed
+*three* `/api/translate` calls where one was expected, which looked like the StrictMode
+double-mount guard failing. It was the harness: `E2E_PROFILE` is a persistent Chrome
+profile, so `launch` **restored the previous session's `/account` tab** and its client
+fetch raced the new navigation — two genuine page loads, both with a cold cache, both
+translating. A controlled single-navigation run then recorded exactly one
+`translation.generated` row. **Park the browser on an inert page before counting
+anything**, or the profile's restored tab is in your measurement.
+
+Two concurrent cold loads really do cost two model calls: both check the cache before
+either persists. That is inherent to a cache-miss race, applies equally to
+`HistoryDetail`, and is not worth a lock table for one developer — but it is why a raw
+call count is only meaningful when the navigation count is pinned.
