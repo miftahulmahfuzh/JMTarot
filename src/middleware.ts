@@ -47,7 +47,32 @@ const { auth } = NextAuth(authConfig);
  */
 const EVENTS_BEACON = '/api/events';
 
-export default auth((request) => {
+/**
+ * The marker the inner handler leaves on a public content response, and the outer
+ * wrapper below deletes along with every `Set-Cookie` on it.
+ *
+ * ── WHY A MARKER AND NOT AN `if` IN ONE FUNCTION ─────────────────────────────
+ *
+ * **`auth()` APPENDS ITS OWN COOKIES AFTER OUR HANDLER HAS RETURNED**, so nothing
+ * inside that handler can prevent them. Read it in
+ * `node_modules/next-auth/lib/index.js`: the wrapper builds
+ * `new Response(response?.body, response)` from whatever we returned and then
+ * `finalResponse.headers.append('set-cookie', …)` for every cookie its internal
+ * session request produced. On a request carrying neither, that is
+ * `authjs.csrf-token` and `authjs.callback-url`, minted fresh — which is why
+ * `/privacy` §4.4's "a third party leaves with nothing in their jar" was false on
+ * `/s/` for a whole release and would have been false on forty-odd public pages.
+ *
+ * The outer wrapper is the only place downstream of that append. It cannot decide
+ * on its own whether the response was a content response, because the one path
+ * where `contentRewrite`'s answer depends on the session is `/` (S-D5) and
+ * deciding would mean a second JWE decrypt that can disagree with the first. So
+ * the handler that already knows says so, in a header nobody outside this file
+ * ever sees.
+ */
+const STRIP_COOKIES = 'x-jmt-strip-cookies';
+
+const gate = auth((request) => {
   const { pathname } = request.nextUrl;
 
   /*
@@ -94,7 +119,11 @@ export default auth((request) => {
   if (content.kind === 'redirect') {
     const url = request.nextUrl.clone();
     url.pathname = content.to;
-    return NextResponse.redirect(url, 301);
+    const redirect = NextResponse.redirect(url, 301);
+    // A 301 carrying a cookie is a 301 no CDN will cache, and this one is a
+    // permanent statement about a public address.
+    redirect.headers.set(STRIP_COOKIES, '1');
+    return redirect;
   }
 
   /*
@@ -206,8 +235,65 @@ export default auth((request) => {
     response.cookies.delete(LEGACY_SESSION_COOKIE);
   }
 
+  /*
+   * ── S-D10, THE OTHER HALF: NOT ONE COOKIE, NOT OURS AND NOT AUTH.JS's ──────
+   *
+   * The guard above only decides what WE write. `auth()` appends
+   * `authjs.csrf-token` and `authjs.callback-url` after we return, so a public
+   * content response left this file with an empty jar and reached the visitor
+   * with two cookies in it. Both halves of S-D10 were still broken:
+   *
+   *   1. **THE PRIVACY HALF.** A stranger who never agreed to anything left with
+   *      two cookies, and `/privacy` §4.4 is honest only because they do not.
+   *   2. **THE MECHANICAL HALF, WHICH IS THE ONE THAT LOOKED FINE.** A
+   *      `Set-Cookie` makes a response uncacheable at the edge **whatever
+   *      `Cache-Control` says**, so `next.config.ts`'s `s-maxage` on the content
+   *      routes was buying nothing at all. The header was measured, correct, and
+   *      inert.
+   *
+   * **NOTHING ON A CONTENT PATH NEEDS EITHER COOKIE.** The csrf token is read by
+   * `POST /api/auth/*`, which is a `passthrough` path and keeps it; the
+   * callback-url is written again by `/login`, which is also `passthrough`. A
+   * stranger clicking from `/blog` into `/login` mints both there, one request
+   * later, exactly as they do today for a visitor arriving cold.
+   *
+   * **THE ONE THING IT COSTS, AND IT IS DELIBERATE:** the sliding session cookie
+   * is not re-issued on a content response either, so reading `/blog` for a day
+   * does not extend a signed-in querent's 24-hour idle timeout. Browsing public
+   * content is not app activity, the 30-day absolute cap is untouched, and the
+   * alternative is a `Set-Cookie` on every cacheable page in the product to keep
+   * a timer alive for a person who is reading a blog post.
+   */
+  if (content.kind !== 'passthrough') response.headers.set(STRIP_COOKIES, '1');
+
   return response;
 });
+
+/**
+ * The outer wrapper, and the only reason it exists is the block above.
+ *
+ * `auth()` appends its cookies to a response built from ours, so this is the one
+ * position downstream of that. It deletes every `Set-Cookie` on a response the
+ * inner handler marked, and then deletes the marker — which must not be observable
+ * on the wire, or it is a header that tells a reader something about our internals
+ * on the pages most likely to be read by a stranger.
+ *
+ * `Headers.delete('set-cookie')` removes every value, which is what is wanted: on
+ * a marked response the correct number of cookies is zero. The middleware
+ * directives Next reads (`x-middleware-next`, `x-middleware-rewrite`) are
+ * untouched, and the rewrite is verified on the wire rather than trusted.
+ */
+export default async function middleware(
+  request: Parameters<typeof gate>[0],
+  event: Parameters<typeof gate>[1],
+) {
+  const response = await gate(request, event);
+  if (response instanceof Response && response.headers.get(STRIP_COOKIES) !== null) {
+    response.headers.delete('set-cookie');
+    response.headers.delete(STRIP_COOKIES);
+  }
+  return response;
+}
 
 /**
  * Translate a decision into a response. The only part of the gate that knows what

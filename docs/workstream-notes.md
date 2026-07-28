@@ -2674,6 +2674,8 @@ would mean the gated app had become reachable under `/en/`.
 
 ### The cookie guard, measured
 
+The first measurement, before the second half landed:
+
 ```
 GET /            set-cookie: authjs.csrf-token, authjs.callback-url        (no jmt_locale)
 GET /en          set-cookie: authjs.csrf-token, authjs.callback-url        (no jmt_locale)
@@ -2685,14 +2687,59 @@ GET /login       set-cookie: jmt_locale=id, authjs.csrf-token, authjs.callback-u
 so the guard narrowed the write rather than deleting it. `/api/events` is R22 — it was
 collecting on the beacon the cookie `/s/` had just refused to set.
 
-**AND THE TWO `authjs.*` COOKIES ARE THE HOLE S-D10 STILL HAS.** They are minted by the
-`auth()` wrapper, not by any line in `middleware.ts`, so nothing in this workstream can
-reach them. It is not only the privacy half of the rule: **a `Set-Cookie` makes a
-response uncacheable at the edge whatever `Cache-Control` says**, so the content routes
-are not edge-cacheable today even once R21's `s-maxage` is confirmed on the wire. The
-candidate fix is one line — strip `set-cookie` from a `bare`/`rewrite` response, where by
-construction nothing of ours wrote one — and it is auth-adjacent enough to be Miftah's
-call rather than S2's. Recorded here rather than fixed.
+### The two cookies S2 does not write and still had to remove
+
+**THE GUARD ABOVE ONLY DECIDES WHAT WE WRITE, AND S-D10 WAS STILL FALSE ON EVERY PUBLIC
+PAGE.** `authjs.csrf-token` and `authjs.callback-url` are appended by the `auth()`
+wrapper **after** the handler returns. Read it in `node_modules/next-auth/lib/index.js`:
+
+```js
+const finalResponse = new Response(response?.body, response);
+for (const cookie of sessionResponse.headers.getSetCookie())
+  finalResponse.headers.append('set-cookie', cookie);
+```
+
+So nothing inside the handler can prevent them, which is exactly why the rule read as
+satisfied for two releases — `/s/`'s guard has the same shape and the same hole, and V7's
+"a third party must leave with nothing in their jar" was false the whole time.
+
+**AND THE HALF THAT LOOKED FINE WAS THE CACHE.** A `Set-Cookie` makes a response
+uncacheable at the edge **whatever `Cache-Control` says**, so `next.config.ts`'s
+`s-maxage` on the content routes was measured, correct, and buying nothing. R21's open
+question — does the header survive a dynamic App Router response — could have been
+answered `yes` and still left the pages uncached.
+
+The fix is an **outer** wrapper, because that is the only position downstream of the
+append. The inner handler marks a content response with `x-jmt-strip-cookies`; the outer
+deletes every `Set-Cookie`, then the marker. Measured after:
+
+```
+GET /  /en  /gallery  /en/gallery  /blog     0 set-cookie headers
+GET /id/gallery  301                         0 set-cookie headers
+GET /en                                      no x-jmt-strip-cookies on the wire
+GET /login    set-cookie: jmt_locale, authjs.csrf-token, authjs.callback-url   (all three)
+```
+
+Three properties to keep:
+
+- **`content.kind !== 'passthrough'` is the whole fence, and widening it breaks two
+  things at once.** A signed-in visitor on `/` is `passthrough` (S-D5), so stripping
+  there would drop the `jmt_locale` sync D6 depends on *and* the sliding session cookie,
+  on the busiest screen in the app. `/login` and `/api/auth/*` are `passthrough` too,
+  which is what keeps the csrf token available to the sign-in POST: `Landing.tsx` links
+  to `/login` rather than posting anything, so a stranger clicking through mints both
+  cookies there, one request later, exactly as a cold visitor does today.
+- **The marker is deleted in the same block.** A header naming our internals on the pages
+  a stranger is most likely to read is not a cost worth paying for a debugging aid.
+- **It costs the sliding refresh on content pages, and that is the accepted trade.**
+  Reading `/blog` all day does not extend a signed-in querent's 24-hour idle timeout. The
+  30-day absolute cap is untouched, browsing public content is not app activity, and the
+  alternative is a `Set-Cookie` on every cacheable page in the product to keep one timer
+  alive for somebody reading an article.
+
+Verified beyond the header count: a dev-minted session survives a request to a stripped
+content path and `/history` still answers 200 afterwards, so the strip removes the
+*re-issued* cookie and never the one the browser already holds.
 
 ### `/id/…` 301s rather than 404s, and both locales normalise the same way
 

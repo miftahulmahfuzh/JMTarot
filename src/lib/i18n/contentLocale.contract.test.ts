@@ -136,6 +136,47 @@ describe('no content response sets a cookie (S-D10)', () => {
   });
 
   /**
+   * ── THE COOKIES S2 DOES NOT WRITE AND STILL HAS TO REMOVE ───────────────────
+   *
+   * **`auth()` APPENDS `authjs.csrf-token` AND `authjs.callback-url` AFTER OUR
+   * HANDLER RETURNS** (`next-auth/lib/index.js`: `new Response(response?.body,
+   * response)` then `headers.append('set-cookie', …)` per cookie its internal
+   * session request produced). So a content response left this file with an empty
+   * jar and reached the visitor with two cookies in it, and BOTH halves of S-D10
+   * were broken: the privacy claim `/privacy` §4.4 makes, and — the half that
+   * looked fine — the cache, because a `Set-Cookie` makes a response uncacheable
+   * at the edge whatever `Cache-Control` says. `next.config.ts`'s `s-maxage` was
+   * measured, correct and inert.
+   *
+   * The outer wrapper is the only position downstream of that append. Asserted at
+   * source level because there is no unit-testable seam: the wrapper's input is a
+   * real `auth()` handler, and the behaviour is verified with `curl` (zero
+   * `set-cookie` on `/`, `/en`, `/gallery`, `/blog` and the 301; all three still
+   * on `/login`).
+   */
+  it('strips every cookie auth() appends to a content response', () => {
+    expect(mw).toMatch(/export default async function middleware\(/);
+    expect(mw).toMatch(/response\.headers\.delete\('set-cookie'\)/);
+    // The marker must not be observable on the wire.
+    expect(mw).toMatch(/response\.headers\.delete\(STRIP_COOKIES\)/);
+    expect(mw).toMatch(/const STRIP_COOKIES = 'x-jmt-strip-cookies'/);
+  });
+
+  /**
+   * **`content.kind !== 'passthrough'` IS THE WHOLE FENCE, AND WIDENING IT BREAKS
+   * TWO THINGS AT ONCE.** A signed-in visitor on `/` takes the `passthrough` arm
+   * (S-D5: the root is the app for them), so stripping there would drop both the
+   * `jmt_locale` sync D6 depends on AND the sliding session cookie, on the busiest
+   * screen in the app. `/login` and `/api/auth/*` are `passthrough` too, which is
+   * what keeps the csrf token available to the sign-in POST.
+   */
+  it('marks only a content response, and never a passthrough one', () => {
+    const marks = mw.match(/headers\.set\(STRIP_COOKIES/g) ?? [];
+    expect(marks).toHaveLength(2); // the 301 arm, and the bare/rewrite arm
+    expect(mw).toMatch(/content\.kind !== 'passthrough'\) response\.headers\.set\(STRIP_COOKIES/);
+  });
+
+  /**
    * R7. `wallpapers/` must stay in the negative lookahead. Adding
    * `/wallpapers` to `isPublic()` instead returns 200 and leaves middleware
    * running, so the cookie write fires on a ~550KB static response and makes it

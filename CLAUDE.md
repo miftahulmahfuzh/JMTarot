@@ -1628,16 +1628,34 @@ renders the English landing, no content response writes `jmt_locale`, and `Publi
 mounts `ContentLocaleLink` in what was a marked hole. Measured on the wire, 2026-07-29 —
 see `## Locale-addressable public content (S2), v0.4.0` in `docs/workstream-notes.md`.
 
-**Still open, and the first item is worse than it reads.** **Two `authjs.*` cookies are
-set on every public page** — `authjs.csrf-token` and `authjs.callback-url`, minted by the
-`auth()` wrapper itself rather than by any line in `middleware.ts`, so S2's guard cannot
-reach them. That is the same pre-existing gap `/s/` carries, and it is not only the
-privacy half of S-D10: **a `Set-Cookie` makes a response uncacheable at the edge whatever
-`Cache-Control` says, so the content routes are not edge-cacheable today even with a
-correct `s-maxage`.** The candidate fix — strip `set-cookie` from a `bare`/`rewrite`
-response, where by construction nothing of ours wrote one — is one line in
-`middleware.ts` and it is auth-adjacent, so it is Miftah's call rather than S2's. The
-`s-maxage` itself is measured locally but **not** against a Vercel CDN (R21).
+**A PUBLIC CONTENT RESPONSE NOW CARRIES ZERO COOKIES, AND THE LAST TWO WERE NOT OURS.**
+`authjs.csrf-token` and `authjs.callback-url` are appended by the `auth()` wrapper
+**after** the middleware handler returns (`next-auth/lib/index.js` builds
+`new Response(response?.body, response)` and then appends), so no line inside that
+handler could prevent them — which is why S-D10 read as satisfied while being false on
+every public page, `/s/` included. **The half that looked fine was the cache:** a
+`Set-Cookie` makes a response uncacheable at the edge whatever `Cache-Control` says, so
+`next.config.ts`'s `s-maxage` was measured, correct and inert.
+
+The fix is an **outer** `export default async function middleware()` around the
+`auth()`-wrapped gate: the inner handler marks a content response with an internal
+header, the outer deletes every `Set-Cookie` and then the marker. Three rules on it:
+
+- **`content.kind !== 'passthrough'` is the whole fence.** A signed-in visitor on `/`
+  is `passthrough` (S-D5), so stripping there would drop the `jmt_locale` sync D6 needs
+  *and* the sliding session cookie on the busiest screen in the app. `/login` and
+  `/api/auth/*` are `passthrough` too, which is what keeps the csrf token available to
+  the sign-in POST — a stranger clicking from `/blog` mints both at `/login`, one
+  request later.
+- **The marker must never be observable on the wire.** It is deleted in the same block.
+- **It costs the sliding refresh on content pages, deliberately.** Reading `/blog` all
+  day does not extend a 24-hour idle timeout; the 30-day absolute cap is untouched.
+  Browsing public content is not app activity, and the alternative is a `Set-Cookie` on
+  every cacheable page in the product to keep one timer alive.
+
+**Still open:** the `s-maxage` is measured locally but **not** against a Vercel CDN
+(R21) — and it is only now that the measurement can mean anything, because until this
+landed no content response was cacheable at all.
 
 
 ## /account and the persona (V8)
