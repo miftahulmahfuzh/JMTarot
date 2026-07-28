@@ -224,13 +224,30 @@ reader's, so an English link reads "English" to an Indonesian querent.
 New keys, **Indonesian first** so a missing English string is a red typecheck (I2):
 
 - `share.sheet.links` — list heading
-- `share.sheet.createIn` — "Share in {language}"
-- `share.sheet.stopAll` — "Stop sharing this reading"
+- `share.sheet.createIn` — the mint offer, naming the language
+- `share.sheet.loading` — the `GET` is in flight
 
-`share.sheet.revoked`'s sentence — *"sharing again will make a new address"* — stays
-true **within a locale** and is kept. `share.sheet.revoke` becomes the all-locales
-action, so both strings are re-read against the new meaning; a per-link kill no
-longer exists.
+**TWO DEVIATIONS FROM THIS SECTION AS DESIGNED, both found while building:**
+
+1. **`share.sheet.stopAll` WAS NOT ADDED.** `share.sheet.revoke` was repurposed
+   instead — "Matikan semua tautan" / "Turn all links off" — because a new key would
+   have left the old one dead, and because the string has to stay **entity-neutral**:
+   this sheet also mounts with `entity="persona"`, so "stop sharing this *reading*"
+   would be wrong there.
+2. **`share.sheet.loading` was not in the design and is required.** The sheet opens
+   into the `GET`, and a mint is one of the few actions likely to wake a suspended Neon
+   compute — so without it the Share button is dead for however long that takes.
+
+`share.sheet.revoked`'s sentence — *"sharing again mints a new address"* — stays true
+**within a locale** and is kept.
+
+**AND `createIn`'s ENGLISH WORDING IS NOT WHAT THIS DESIGN SAID.** It shipped as
+`Create a link in {language}`, not `Create a {language} link`: the second rendered
+**"CREATE A ENGLISH LINK"**, found by driving the real page. The suite could not see it
+because the string and the parameter are each correct alone. Any phrasing with an
+indefinite article beside an interpolated language name is a coin flip on the next
+locale's first letter. The Indonesian needs no article and is deliberately phrased
+differently.
 
 ### 5.4 Unaffected, and must stay so
 
@@ -286,11 +303,17 @@ Loops, in cost order:
    view pays a fresh model call, forever, invisibly. V2's own rule says that if the
    `invalid` rate exceeds ~2%, **fix the prompt, not the architecture** — and the
    measurement only started working on 2026-07-28 when `bindAnalyticsScope` landed,
-   so **nobody has ever read this number.** `docs/analytics-queries.md` gains query
-   10 (the `translation.generated` outcome breakdown); run it against Neon and record
-   the result before building any mitigation. A circuit breaker was offered and
-   deferred: it would permanently disable a translation that a transient provider
-   blip failed.
+   so **nobody has ever read this number.** `docs/analytics-queries.md` gains
+   **query 12** — this design said "query 10" and there were already eleven — and it
+   is the `translation.generated` outcome breakdown, split by field and by `streamed`.
+   A circuit breaker was offered and deferred: it would permanently disable a
+   translation that a transient provider blip failed.
+
+   **First reading, local, n=2: no `invalid`, no `failed`.** Not a rate, and recorded
+   as such. What it did show is `resolvePin` hitting the cache at 3ms with no model
+   call after the page had streamed the translation — the "common case costs nothing"
+   claim, observed. **The production read is still owed**; it needs Neon's direct
+   string and the table only starts being meaningful from 2026-07-28.
 2. `/s/` never generates (VD7), so a pin with no row renders the source. §4.4's
    invariant closes this **for new mints only**; legacy `NULL` rows are as-written by
    definition and correct.

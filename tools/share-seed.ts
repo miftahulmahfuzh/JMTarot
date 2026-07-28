@@ -45,35 +45,47 @@ async function main() {
    * default -- which is what a real mint gets and is the thing worth exercising.
    * It was `false` under VD9 and is `true` since 2026-07-28.
    */
-  const mk = async (slug: string, revoked: boolean) => {
+  /*
+   * ── THREE LIVE ADDRESSES FOR ONE READING, WHICH IS THE WHOLE FIXTURE ────────
+   *
+   * **THIS SCRIPT USED TO SAY "A SECOND ROW IS IMPOSSIBLE ON THE SAME ARTIFACT"
+   * AND MINT ONE LINK, ROTATING ITS SLUG TO PLANT THE ENGLISH PIN.** That was
+   * true under `unique (user_id, entity, entity_id)` and it was the reported bug:
+   * `aaaaaaaaaaaa` stopped resolving the moment the English pin was planted, and
+   * this script's own comment called that "correct". Since
+   * `unique nulls not distinct (user_id, entity, entity_id, locale)` a language is
+   * a row, so the fixture is three rows and the headline check is that ALL THREE
+   * RESOLVE AT ONCE.
+   *
+   * `include_question` IS DELIBERATELY NOT NAMED, so each row takes the column
+   * default -- which is what a real mint gets and is the thing worth exercising.
+   * It was `false` under VD9 and is `true` since 2026-07-28.
+   *
+   * `null` for the third is not laziness: it is every link minted before design A,
+   * and its guarantee is that it still renders as-written. A "tidy" default on the
+   * column would break it silently, so the fixture keeps one.
+   */
+  const mk = async (slug: string, locale: 'id' | 'en' | null) => {
+    // BY SLUG FIRST, so re-running cannot trip the slug unique with a stale row.
     await sql`delete from share_links where slug = ${slug}`;
     await sql`
-      insert into share_links (slug, user_id, entity, entity_id, include_nickname, revoked_at)
-      values (${slug}, ${r.user_id}, 'reading', ${r.id}, true,
-              ${revoked ? sql`now()` : null})
-      on conflict (user_id, entity, entity_id) do update
+      insert into share_links (slug, user_id, entity, entity_id, include_nickname, locale)
+      values (${slug}, ${r.user_id}, 'reading', ${r.id}, true, ${locale})
+      on conflict (user_id, entity, entity_id, locale) do update
         set slug = ${slug}, include_question = default,
-            revoked_at = ${revoked ? sql`now()` : null}, updated_at = now()`;
+            revoked_at = null, updated_at = now()`;
   };
 
-  await mk('aaaaaaaaaaaa', false);
+  await mk('aaaaaaaaaaaa', 'id');
+  await mk('bbbbbbbbbbbb', 'en');
+  await mk('cccccccccccc', null);
 
   /*
-   * ── THE PINNED-LOCALE FIXTURE (design A) ────────────────────────────────────
-   *
-   * The seeded reading is `id`. This plants an English `translations` row and pins
-   * `share_links.locale = 'en'` on a SECOND link, so `/s/bbbbbbbbbbbb` is the
-   * case the whole design exists for: a stranger must see the ENGLISH prose, and
-   * an English viewer must NOT see `share.public.otherLanguage`.
+   * The English `translations` row the `en`-pinned link reads.
    *
    * The sentinel is deliberately unmistakable and deliberately NOT a translation
    * of the Indonesian body -- if the page renders the Indonesian, the diff is
    * obvious rather than a judgement call about translation quality.
-   *
-   * A SECOND ROW IS IMPOSSIBLE on the same artifact -- `unique (user_id, entity,
-   * entity_id)` -- so this REPLACES the pin on the one row and reports both slugs.
-   * `aaaaaaaaaaaa` therefore stops resolving, which is correct: rotation is how
-   * this table works and the checker only ever needs the live slug.
    */
   const EN_SENTINEL =
     'SENTINEL-EN the first card speaks of a threshold you have already crossed.';
@@ -83,19 +95,18 @@ async function main() {
     values ('reading', ${r.id}, 'body', 'en', ${EN_SENTINEL}, 'id', 'seed', 'seed-v1')
     on conflict (entity, entity_id, field, locale) do update
       set body = ${EN_SENTINEL}, updated_at = now()`;
-  await sql`
-    update share_links set slug = 'bbbbbbbbbbbb', locale = 'en', revoked_at = null,
-                           updated_at = now()
-     where user_id = ${r.user_id} and entity = 'reading' and entity_id = ${r.id}`;
 
-  const rows = await sql`select slug, include_question, locale, revoked_at from share_links`;
-  console.log('reading', r.id);
+  const rows = await sql`
+    select slug, include_question, locale, revoked_at from share_links
+     where entity_id = ${r.id} order by locale nulls last`;
+  console.log('reading', r.id, '(locale id)');
   console.log(rows);
-  console.log('\nEN-pinned link:  /s/bbbbbbbbbbbb');
-  console.log('expect on that page:');
-  console.log('  - the body starting "SENTINEL-EN"');
-  console.log('  - NO "written in another language" notice for an EN viewer');
-  console.log('  - <div lang="en"> around the body');
+  console.log('\nthree LIVE addresses for one reading:');
+  console.log('  /s/aaaaaaaaaaaa   pinned id   -> the Indonesian body');
+  console.log('  /s/bbbbbbbbbbbb   pinned en   -> the body starting "SENTINEL-EN"');
+  console.log('  /s/cccccccccccc   pin NULL    -> as-written, i.e. Indonesian');
+  console.log('\nexpect: all three resolve, and NO "written in another language"');
+  console.log('notice on any of them -- that key was deleted 2026-07-28.');
   await sql.end();
 }
 main().catch((e) => { console.error(e); process.exit(1); });

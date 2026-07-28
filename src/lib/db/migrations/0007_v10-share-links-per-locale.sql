@@ -1,0 +1,2 @@
+ALTER TABLE "share_links" DROP CONSTRAINT "share_links_user_entity_uq";--> statement-breakpoint
+ALTER TABLE "share_links" ADD CONSTRAINT "share_links_user_entity_locale_uq" UNIQUE NULLS NOT DISTINCT("user_id","entity","entity_id","locale");

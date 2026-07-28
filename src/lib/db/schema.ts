@@ -858,6 +858,21 @@ export const shareLinks = pgTable(
      * longer does** — that notice is deleted (Miftah's ruling, 2026-07-28), so a miss
      * is now visible only as prose in the other language, correctly tagged. See
      * `src/app/s/[slug]/page.tsx`'s header.
+     *
+     * ── SINCE 2026-07-28 THIS IS PART OF THE ROW'S IDENTITY, NOT AN ATTRIBUTE ───
+     *
+     * It is in the unique key below, so **a language is a row and re-sharing in a
+     * second language mints a second address rather than replacing the first.**
+     * `insertOrRotateShareLink`'s `set` clause therefore no longer writes it: a
+     * conflict now means "same locale", where re-pinning would be a no-op. That
+     * clause used to carry a comment insisting the line was load-bearing; the
+     * argument inverted and the comment is inverted with it rather than deleted.
+     *
+     * One consequence worth stating, because it is what the mint now guarantees:
+     * **a non-NULL value here always has a `translations` row behind it.**
+     * `createShareLink` calls `translateOrCached` and pins NULL if it falls back,
+     * because a row claiming `en` with no English body is a link that lies about
+     * its own language — and the notice that used to explain a mismatch is gone.
      */
     locale: text('locale').$type<Locale>(),
     /**
@@ -879,9 +894,44 @@ export const shareLinks = pgTable(
       .$onUpdate(() => new Date()),
   },
   (t) => [
-    /** One live link per artifact (VD9). A revoked row KEEPS the slot, which is
-     *  what makes rotation rather than un-revocation the only way to re-share. */
-    unique('share_links_user_entity_uq').on(t.userId, t.entity, t.entityId),
+    /*
+     * One live link per artifact **PER LANGUAGE** (VD9, narrowed 2026-07-28). A
+     * revoked row KEEPS its slot, which is what makes rotation rather than
+     * un-revocation the only way to re-share an address.
+     *
+     * **`locale` IS IN THIS KEY AND `NULLS NOT DISTINCT` IS NOT OPTIONAL.** Both
+     * halves were paid for; see
+     * `docs/plans/2026-07-28-share-per-locale-links-design.md`.
+     *
+     * The key used to be `(user_id, entity, entity_id)`, so a reading had exactly
+     * one address and re-sharing it in a second language REPLACED that address.
+     * The querent's English link, already sent to somebody, stopped resolving —
+     * reported 2026-07-28. Nothing was overwritten: `readings.body` is immutable
+     * and the `translations` row survived. Only the address was lost.
+     *
+     * **AND THE NAIVE FOUR-COLUMN VERSION IS WORSE THAN THE THREE-COLUMN ONE.**
+     * Postgres `UNIQUE` treats NULLs as DISTINCT, and every link minted before this
+     * column existed has `locale = NULL`. So without `nullsNotDistinct()`:
+     *
+     *   - unlimited NULL rows per artifact would be permitted, and
+     *   - `onConflictDoUpdate`'s target would never MATCH a legacy NULL row, so
+     *     re-sharing a pre-2026-07-28 link would INSERT a second row instead of
+     *     rotating — leaving the old slug live and unreachable from the UI. That is
+     *     exactly the capability resurrection rotation exists to prevent, arriving
+     *     through the back door and with a green suite.
+     *
+     * With the clause, NULL is a single value for uniqueness: a reading holds at
+     * most one `en`, one `id` and one legacy NULL row, each a permanent address,
+     * and the conflict target reaches all three. Two integration tests are the
+     * negative control — one at the upsert level, one on a raw insert — and both
+     * fail by ACCEPTING a second row rather than by throwing.
+     *
+     * Widening a unique key needs no backfill: anything unique on three columns is
+     * unique on four.
+     */
+    unique('share_links_user_entity_locale_uq')
+      .on(t.userId, t.entity, t.entityId, t.locale)
+      .nullsNotDistinct(),
     /** The public read path, and the only index a stranger's request touches. */
     index('share_links_live_slug_idx')
       .on(t.slug)

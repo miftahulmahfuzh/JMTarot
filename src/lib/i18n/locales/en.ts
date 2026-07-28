@@ -375,10 +375,32 @@ const en: Catalog = {
   'share.sheet.close': 'Close',
   'share.sheet.copy': 'Copy link',
   'share.sheet.copied': 'Copied',
-  'share.sheet.revoke': 'Turn the link off',
+  // "ALL", since 2026-07-28 -- revoke turns off every language's address at once, and
+  // this button sits under a list. Entity-neutral, because the sheet also mounts with
+  // `entity="persona"`. See `id.ts` for the ruling.
+  'share.sheet.revoke': 'Turn all links off',
   'share.sheet.revoking': 'Turning it off…',
+  // "That link" stays singular and is still correct: this is the state after a revoke,
+  // and the sentence is about the address the querent was just looking at. What
+  // "sharing again" mints is a new address FOR THAT LANGUAGE.
   'share.sheet.revoked': 'That link is dead. Sharing again mints a new address.',
   'share.sheet.live': 'This link is live.',
+  'share.sheet.links': 'Live links',
+  /*
+   * **"IN {language}" AND NOT "A {language} LINK", BECAUSE THE ARTICLE CANNOT BE
+   * INTERPOLATED.** The first version read `Create a {language} link` and rendered
+   * "CREATE A ENGLISH LINK" — found by loop 5 at 390px, and invisible to every test
+   * in the suite, because the string and the parameter are both individually
+   * correct. Any phrasing where a language name follows an indefinite article is a
+   * coin flip on the name's first letter, so the fix is to have no article near it
+   * rather than to special-case the vowel.
+   *
+   * The Indonesian counterpart never had the problem: `Buat tautan {language}` needs
+   * no article at all, which is why it is not phrased the same way. Do not "align"
+   * them.
+   */
+  'share.sheet.createIn': 'Create a link in {language}',
+  'share.sheet.loading': 'Checking for links…',
   'share.sheet.warning':
     'Turning a link off does not un-send a screenshot somebody already took.',
   'share.error.notShareable': 'This reading cannot be shared.',

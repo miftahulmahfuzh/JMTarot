@@ -49,23 +49,35 @@ import { withAnalytics, track, type AnalyticsContext } from '@/lib/analytics/tra
 import { requireUser } from '@/lib/auth/server';
 import { getLocale } from '@/lib/i18n/t';
 import { hit } from '@/lib/ratelimit';
-import { createShareLink, revokeShare, sharingEnabled } from '@/lib/share/links';
+import { createShareLink, liveSharesFor, revokeShare, sharingEnabled } from '@/lib/share/links';
 import { isShareEntity } from '@/lib/share/slug';
 
 export const runtime = 'nodejs';
 
 /**
  * One insert plus, on the draw screen, up to two 250ms waits for a row that is
- * still being written in the reading response's own `after()`.
+ * still being written in the reading response's own `after()` -- **and since
+ * 2026-07-28 a possible model call**, because the mint now resolves the pinned
+ * locale rather than trusting it (`resolvePin`).
  *
  * **MEASURED WARM THIS IS A FEW MILLISECONDS AND THAT IS NOT WHAT THIS NUMBER IS
  * FOR.** A mint is a user action that WRITES, which CLAUDE.md records as one of
  * the few things likely to be the request that wakes a suspended Neon compute --
  * and Vercel's Hobby default is ten seconds, which is what killed
- * `POST /api/locale`. 20 leaves room for a cold lambda, a compute wake and the
- * artifact retry without the retry being the thing that gets truncated.
+ * `POST /api/locale`. 20 left room for a cold lambda, a compute wake and the
+ * artifact retry; 30 leaves room for a translation on top.
+ *
+ * **THE COMMON CASE DOES NOT PAY IT.** The sharer is reading in the locale they
+ * are sharing, so the translation is cached and `resolvePin` is one indexed read.
+ *
+ * **AND A BIGGER BUDGET HERE IS ONLY SAFE BECAUSE THE CLIENT BOUNDS ITSELF.**
+ * That is `POST /api/locale`'s lesson in full: raising `maxDuration` without a
+ * client-side timeout does not fix a hang, it lengthens one. `ShareFooter.create()`
+ * carries an `AbortController`; the lambda runs to its own budget either way, so a
+ * mint that outlives the client's patience still lands its row and the next open of
+ * the sheet reads it back through `GET`.
  */
-export const maxDuration = 20;
+export const maxDuration = 30;
 
 /** Mints per user per hour. Keyed on the session, so this is the normal case. */
 const CREATE_MAX = 20;
@@ -79,6 +91,16 @@ const CreateBody = z.object({
 });
 
 const RevokeBody = z.object({ id: z.string().uuid() });
+
+/**
+ * `GET`'s query. Read off `searchParams`, so both values arrive as `string | null`
+ * and zod is what turns a missing parameter into a 400 rather than a lookup for
+ * `entity_id = "null"`.
+ */
+const ListQuery = z.object({
+  entity: z.string().refine(isShareEntity, 'unknown entity'),
+  entity_id: z.string().uuid(),
+});
 
 export async function POST(request: Request) {
   const auth = await requireUser();
@@ -145,6 +167,12 @@ export async function POST(request: Request) {
       include_question: result.includeQuestion,
       include_nickname: result.includeNickname,
       rotated: result.rotated,
+      /*
+       * THE PIN THAT WAS WRITTEN, which is not always the one asked for -- see
+       * `resolvePin`. Reading it off `result` rather than re-resolving `getLocale()`
+       * is the whole point: the fallback to as-written is otherwise invisible.
+       */
+      pinned_locale: result.locale,
     });
 
     /*
@@ -161,6 +189,12 @@ export async function POST(request: Request) {
         include_question: result.includeQuestion,
         include_nickname: result.includeNickname,
         rotated: result.rotated,
+        /*
+         * THE STORED PIN, so the sheet labels the link with the language it will
+         * actually render. `null` is as-written and the sheet must say so rather
+         * than assuming the locale it was displaying when the querent tapped.
+         */
+        locale: result.locale,
       },
       { headers: { 'cache-control': 'no-store' } },
     );
@@ -168,7 +202,64 @@ export async function POST(request: Request) {
 }
 
 /**
- * Turn a link off.
+ * List the live addresses for one artifact.
+ *
+ *   GET /api/share?entity=reading&entity_id=<uuid>
+ *     -> 200 { links: [{ id, url, locale }] }   -- `locale: null` is as-written
+ *     -> 400 unknown entity, or an entity_id that is not a uuid
+ *     -> 401 no session
+ *
+ * **THE SHEET HAD NO READ PATH AND THAT IS WHY THE 2026-07-28 BUG ARRIVED SILENTLY.**
+ * `ShareFooter` only knew about a link it had minted in that mount, so a reading
+ * shared yesterday looked unshared, and minting replaced the old address with
+ * nothing on screen having warned. See `liveSharesFor`.
+ *
+ * **NOT RATE LIMITED, DELIBERATELY.** It is a session-scoped read of one row set on
+ * an indexed predicate, fired when the querent OPENS the sheet — the same shape as
+ * the reads `/history` does per navigation, none of which carry a budget. The mint
+ * keeps its `share:create:` limit because it writes and can now reach a model.
+ *
+ * **NO `withAnalytics` AND NO EVENT.** Opening the sheet is already `share.*`'s
+ * funnel entry on the client, and an event here would double-count it. `context()`
+ * exists for the two writers.
+ *
+ * `sharingEnabled()` is NOT consulted, for `DELETE`'s reason.
+ */
+export async function GET(request: Request) {
+  const auth = await requireUser();
+  if (!auth.ok) return auth.response;
+
+  const params = new URL(request.url).searchParams;
+  const parsed = ListQuery.safeParse({
+    entity: params.get('entity'),
+    entity_id: params.get('entity_id'),
+  });
+  if (!parsed.success) return NextResponse.json({ error: 'bad query' }, { status: 400 });
+  if (!isShareEntity(parsed.data.entity)) {
+    return NextResponse.json({ error: 'bad query' }, { status: 400 });
+  }
+
+  const links = await liveSharesFor(auth.user.id, parsed.data.entity, parsed.data.entity_id);
+  /*
+   * `no-store`, like the mint's response. A capability URL must never sit in a
+   * shared cache, and this one is scoped to a session that a CDN cannot see.
+   */
+  return NextResponse.json({ links }, { headers: { 'cache-control': 'no-store' } });
+}
+
+/**
+ * Stop sharing an artifact — **every language of it**.
+ *
+ * **THE BODY NAMES ONE `id` AND THE EFFECT IS ARTIFACT-WIDE** (Miftah's ruling,
+ * 2026-07-28). Once a reading can hold two addresses, a revoke that killed one of
+ * them would let the querent believe the reading is private while a URL is still
+ * live. `revokeShare` resolves the artifact from the row and turns off all of it;
+ * there is deliberately no per-locale revoke anywhere in the app.
+ *
+ * **ONE `share.revoked` PER ADDRESS, NOT ONE PER REQUEST.** `age_hours` and
+ * `view_count` are facts about an address's life, so collapsing two addresses into
+ * one event would silently average them — and the funnel would stop being able to
+ * say how much reach a revoke actually took away.
  *
  * **NEVER DISTINGUISHES "NOT YOURS" FROM "DOES NOT EXIST" FROM "ALREADY OFF".**
  * All three are a 404, for the same reason the public resolver collapses five
@@ -192,15 +283,22 @@ export async function DELETE(request: Request) {
     const result = await revokeShare(parsed.data.id, user.id);
     if (!result.ok) return notFound();
 
-    track('share.revoked', {
-      share_id: parsed.data.id,
-      entity: result.entity,
-      // Both read BEFORE the update: they are facts about the link's life.
-      age_hours: result.ageHours,
-      view_count: result.viewCount,
-    });
+    for (const address of result.revoked) {
+      track('share.revoked', {
+        // THE ROW'S OWN ID, not the one in the request: with two addresses the
+        // request names an anchor and the event has to describe each address.
+        share_id: address.id,
+        entity: address.entity,
+        // Both read BEFORE the update: they are facts about the link's life.
+        age_hours: address.ageHours,
+        view_count: address.viewCount,
+      });
+    }
 
-    return NextResponse.json({ revoked: true }, { headers: { 'cache-control': 'no-store' } });
+    return NextResponse.json(
+      { revoked: true, count: result.revoked.length },
+      { headers: { 'cache-control': 'no-store' } },
+    );
   });
 }
 
