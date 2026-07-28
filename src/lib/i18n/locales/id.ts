@@ -613,6 +613,47 @@ const id = {
   'share.busy.title': 'Terlalu banyak permintaan',
   'share.busy.body': 'Tunggu sebentar, lalu muat ulang halaman ini.',
 
+  // ==========================================================================
+  // V8 — account deletion (VD13). The copy for a control `/privacy` §8 has
+  // described for an entire release and nobody could perform.
+  //
+  // THE SHEET NAMES THE ONE THING THAT IS *NOT* RECOVERABLE, and that is the
+  // whole reason there are three body strings instead of one. A page that
+  // promises full restoration and then does not restore something is worse than
+  // a page that says which part is gone -- and the part that is gone is the
+  // moderation text, deleted now rather than in thirty days, because
+  // `moderation_flags.user_id` is `on delete set null` and the row outlives the
+  // account.
+  //
+  // `{days}` IS INTERPOLATED, NEVER TYPED AS 30. `profile.ts` exports
+  // `ERASURE_GRACE_DAYS` precisely so the sweep and the copy cannot disagree,
+  // and a hardcoded thirty here is how they would.
+  //
+  // IT SAYS "SIGN IN AGAIN WITH THE SAME GOOGLE ACCOUNT", NOT "CONTACT US",
+  // because that is literally the mechanism `upsertUserOnSignIn` implements.
+  // ==========================================================================
+  'account.delete.trigger': 'Hapus akun',
+  'account.delete.heading': 'Menghapus akunmu',
+  'account.delete.body1':
+    'Akunmu langsung berhenti bekerja. Bacaanmu, jawabanmu, dan Teratai Batinmu tidak lagi bisa dibuka.',
+  'account.delete.body2':
+    'Selama {days} hari kamu masih bisa memulihkannya: masuk lagi dengan akun Google yang sama. Setelah itu semuanya hilang dan tidak bisa dikembalikan.',
+  'account.delete.body3':
+    'Catatan moderasi yang pernah menyimpan tulisanmu dihapus sekarang juga, bukan setelah {days} hari.',
+  // "Batal" and not "Jangan": the safe button cancels an action the querent
+  // started, and Indonesian has a plain word for that. The ENGLISH one is
+  // deliberately not `Cancel` -- see en.ts.
+  'account.delete.cancel': 'Batal',
+  'account.delete.confirm': 'Ya, hapus akunku',
+  'account.delete.working': 'Menghapus…',
+  'account.delete.failed': 'Belum berhasil. Coba lagi sebentar lagi.',
+
+  // The goodbye line on `/login?deleted=1`. NOT threaded through
+  // `errorMessage()`: a deletion is not an error and sharing that slot would
+  // style it as one.
+  'login.deleted.notice':
+    'Akunmu sudah dihapus. Masuk lagi dalam {days} hari kalau kamu berubah pikiran.',
+
   'reading.verdict.yes': 'Ya',
   'reading.verdict.no': 'Tidak',
   'reading.verdict.maybe': 'Belum jelas',

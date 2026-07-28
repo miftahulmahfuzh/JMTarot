@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { signIn } from '@/lib/auth/auth';
+import { ERASURE_GRACE_DAYS } from '@/lib/account/grace';
 import { LocaleSwitch } from '@/components/LocaleSwitch';
 import { currentUser } from '@/lib/auth/server';
 import type { TFunction } from '@/lib/i18n/format';
@@ -55,7 +56,7 @@ function safeCallback(raw: string | undefined): string {
 export default async function Login({
   searchParams,
 }: {
-  searchParams: Promise<{ callbackUrl?: string; error?: string }>;
+  searchParams: Promise<{ callbackUrl?: string; error?: string; deleted?: string }>;
 }) {
   /*
    * A signed-in user must not be shown a dead button.
@@ -71,9 +72,28 @@ export default async function Login({
   if (await currentUser()) redirect('/');
 
   const t = await getT();
-  const { callbackUrl, error } = await searchParams;
+  const { callbackUrl, error, deleted } = await searchParams;
   const redirectTo = safeCallback(callbackUrl);
   const message = errorMessage(t, error);
+  /*
+   * V8's goodbye line. `DeleteAccount` sends the querent here with `?deleted=1`
+   * after a 200 from `DELETE /api/account`.
+   *
+   * DELIBERATELY NOT THREADED THROUGH `errorMessage()`. A deletion is not an
+   * error, and sharing the slot would style it as one -- which is a bad way to
+   * tell somebody the thing they asked for worked. It renders ABOVE the error
+   * slot and the two can coexist without contradicting each other: an erasure
+   * followed by a failed sign-in is a real sequence.
+   *
+   * `=== '1'` rather than truthiness, so `?deleted=0` does not print a goodbye.
+   * The value is in a URL a stranger can type; nothing depends on it beyond one
+   * sentence, but a control that fires on any value is a control that fires by
+   * accident.
+   */
+  const goodbye =
+    deleted === '1'
+      ? t('login.deleted.notice', { days: String(ERASURE_GRACE_DAYS) })
+      : null;
 
   return (
     <main className={styles.shell}>
@@ -82,6 +102,12 @@ export default async function Login({
         <h1 className={styles.title}>{t('app.title')}</h1>
 
         <p className={styles.tagline}>{t('login.tagline')}</p>
+
+        {goodbye ? (
+          <p className={styles.notice} aria-live="polite">
+            {goodbye}
+          </p>
+        ) : null}
 
         {message ? (
           <p className={styles.error} role="alert" aria-live="polite">

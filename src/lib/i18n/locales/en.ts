@@ -393,6 +393,28 @@ const en: Catalog = {
   'share.busy.title': 'Too many requests',
   'share.busy.body': 'Wait a moment, then reload this page.',
 
+  // V8 — account deletion (VD13). See id.ts for why there are three body
+  // strings and why `{days}` is interpolated.
+  'account.delete.trigger': 'Delete account',
+  'account.delete.heading': 'Deleting your account',
+  'account.delete.body1':
+    'Your account stops working straight away. Your readings, your answers and your Inner Lotus can no longer be opened.',
+  'account.delete.body2':
+    'For {days} days you can still get it back: sign in again with the same Google account. After that it is gone and cannot be recovered.',
+  'account.delete.body3':
+    'Any moderation record that held something you wrote is removed right now, not in {days} days.',
+  // `Keep it`, NOT `Cancel`. On a destructive sheet the safe button should say
+  // what it DOES, not what it does not do -- "Cancel" next to "Yes, delete my
+  // account" is two negatives and a decision to re-read. Indonesian keeps
+  // `Batal`, which does not carry the same ambiguity.
+  'account.delete.cancel': 'Keep it',
+  'account.delete.confirm': 'Yes, delete my account',
+  'account.delete.working': 'Deleting…',
+  'account.delete.failed': 'That did not go through. Try again in a moment.',
+
+  'login.deleted.notice':
+    'Your account is deleted. Sign in again within {days} days if you change your mind.',
+
   'reading.verdict.yes': 'Yes',
   'reading.verdict.no': 'No',
   'reading.verdict.maybe': 'Not yet clear',
