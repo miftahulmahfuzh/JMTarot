@@ -145,6 +145,8 @@ const DIVERGENCE: Record<string, string[]> = {
   'the-chariot': ['steer', 'urgent', 'add', 'hours'],
   strength: ['accompany', 'suppress', 'praise', 'ember'],
   justice: ['sum', 'ledger', 'modest', 'disinterested'],
+  'the-hermit': ['crowd', 'end date', 'come down', 'sift'],
+  'wheel-of-fortune': ['recognise', 'cartwheel', 'spend', 'month earlier'],
   'the-moon': ['step', 'night', 'guess', 'message', 'seven', 'two in the morning'],
 };
 

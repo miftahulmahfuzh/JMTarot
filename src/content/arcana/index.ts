@@ -38,6 +38,10 @@ import { theChariotId } from './the-chariot.id';
 import { theChariotEn } from './the-chariot.en';
 import { strengthId } from './strength.id';
 import { strengthEn } from './strength.en';
+import { theHermitId } from './the-hermit.id';
+import { theHermitEn } from './the-hermit.en';
+import { wheelOfFortuneId } from './wheel-of-fortune.id';
+import { wheelOfFortuneEn } from './wheel-of-fortune.en';
 import { justiceId } from './justice.id';
 import { justiceEn } from './justice.en';
 import { theMoonId } from './the-moon.id';
@@ -59,6 +63,8 @@ export const ARCANA_LORE: Record<string, Localized<LoreDoc>> = {
   'the-lovers': { id: theLoversId, en: theLoversEn },
   'the-chariot': { id: theChariotId, en: theChariotEn },
   strength: { id: strengthId, en: strengthEn },
+  'the-hermit': { id: theHermitId, en: theHermitEn },
+  'wheel-of-fortune': { id: wheelOfFortuneId, en: wheelOfFortuneEn },
   justice: { id: justiceId, en: justiceEn },
   'the-moon': { id: theMoonId, en: theMoonEn },
 };
