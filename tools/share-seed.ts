@@ -30,7 +30,15 @@ async function main() {
       and (select count(*) from reading_cards c where c.reading_id = r.id) = 3
     order by r.created_at desc limit 1`;
   if (!r) throw new Error('no shareable reading; run npm run db:seed');
-  await sql`update readings set question = ${SENTINEL} where id = ${r.id}`;
+  /*
+   * `locale = 'id'` IS PART OF THE FIXTURE, not incidental. `db:seed` writes
+   * readings in both locales and this script takes the most recent one, so without
+   * pinning it the design-A fixture below can end up being a translation of `en`
+   * INTO `en` -- a row that cannot exist in production, exercising the mechanism
+   * against a case that proves nothing. Found by checking the seeded row's locale
+   * after the page rendered "correctly" for the wrong reason.
+   */
+  await sql`update readings set question = ${SENTINEL}, locale = 'id' where id = ${r.id}`;
 
   /*
    * `include_question` IS DELIBERATELY NOT NAMED, so the row takes the column
@@ -49,9 +57,45 @@ async function main() {
   };
 
   await mk('aaaaaaaaaaaa', false);
-  const rows = await sql`select slug, include_question, revoked_at from share_links`;
+
+  /*
+   * ── THE PINNED-LOCALE FIXTURE (design A) ────────────────────────────────────
+   *
+   * The seeded reading is `id`. This plants an English `translations` row and pins
+   * `share_links.locale = 'en'` on a SECOND link, so `/s/bbbbbbbbbbbb` is the
+   * case the whole design exists for: a stranger must see the ENGLISH prose, and
+   * an English viewer must NOT see `share.public.otherLanguage`.
+   *
+   * The sentinel is deliberately unmistakable and deliberately NOT a translation
+   * of the Indonesian body -- if the page renders the Indonesian, the diff is
+   * obvious rather than a judgement call about translation quality.
+   *
+   * A SECOND ROW IS IMPOSSIBLE on the same artifact -- `unique (user_id, entity,
+   * entity_id)` -- so this REPLACES the pin on the one row and reports both slugs.
+   * `aaaaaaaaaaaa` therefore stops resolving, which is correct: rotation is how
+   * this table works and the checker only ever needs the live slug.
+   */
+  const EN_SENTINEL =
+    'SENTINEL-EN the first card speaks of a threshold you have already crossed.';
+  await sql`
+    insert into translations (entity, entity_id, field, locale, body, source_locale,
+                              model, prompt_version)
+    values ('reading', ${r.id}, 'body', 'en', ${EN_SENTINEL}, 'id', 'seed', 'seed-v1')
+    on conflict (entity, entity_id, field, locale) do update
+      set body = ${EN_SENTINEL}, updated_at = now()`;
+  await sql`
+    update share_links set slug = 'bbbbbbbbbbbb', locale = 'en', revoked_at = null,
+                           updated_at = now()
+     where user_id = ${r.user_id} and entity = 'reading' and entity_id = ${r.id}`;
+
+  const rows = await sql`select slug, include_question, locale, revoked_at from share_links`;
   console.log('reading', r.id);
   console.log(rows);
+  console.log('\nEN-pinned link:  /s/bbbbbbbbbbbb');
+  console.log('expect on that page:');
+  console.log('  - the body starting "SENTINEL-EN"');
+  console.log('  - NO "written in another language" notice for an EN viewer');
+  console.log('  - <div lang="en"> around the body');
   await sql.end();
 }
 main().catch((e) => { console.error(e); process.exit(1); });
