@@ -33,6 +33,114 @@ written in parallel compose into one codebase instead of six.
 
 ---
 
+## 0. How to execute this roadmap
+
+**If you were told `execute PUBLIC_RELEASE_ROADMAP_v0.4.0.md S<n>`, this section
+is your entry point. Read it before anything else.**
+
+### 0.1 The plan index
+
+Each workstream has one plan file. **The plan is the task list; this file is the
+contract between plans; the reconciliation outranks both.**
+
+| ID | Workstream | Plan file (`docs/plans/`) | Tasks |
+|---|---|---|---|
+| **S1** | Public surface + technical SEO foundation | `2026-07-28-seo-foundation.md` | 22 |
+| **S2** | Locale-addressable public content (`/en/`, hreflang) | `2026-07-28-content-locale-urls.md` | 9 |
+| **S3** | The Gallery | `2026-07-28-gallery.md` | 19 |
+| **S4** | Card lore pages | `2026-07-28-arcana-lore.md` | 34 |
+| **S5** | HQ wallpaper downloads | `2026-07-28-wallpapers.md` | 7 |
+| **S6** | The blog | `2026-07-28-blog.md` | 15 |
+| — | **The reconciliation. Read first, always.** | `2026-07-28-RECONCILIATION-v0.4.0.md` | — |
+
+**106 tasks.** S4's 34 includes 21 one-card tasks (13–33) that share one template
+rather than 21 written-out headers — that granularity is argued in its own plan
+and is deliberate.
+
+**`2026-07-28-share-live-locale-design.md` and
+`2026-07-28-share-per-locale-links-design.md` ARE NOT PART OF v0.4.0.** They carry
+the same date because they shipped the same day this roadmap opened, and they will
+look like siblings in a directory listing. They are **v0.3.0** design records for
+V7's share links. Do not execute them and do not read them as v0.4.0 scope. They
+are still authoritative for `/s/`, which v0.4.0 does not touch.
+
+### 0.2 The read order, every time
+
+Do not skip a step and do not reorder them:
+
+1. **`docs/plans/2026-07-28-RECONCILIATION-v0.4.0.md`** — the whole file. It
+   overrides both this document and your plan, it records **six defects this
+   document carried**, and §5's single-definition register tells you which symbols
+   you may author and which you must import.
+2. **This file** — §2's sixteen decisions, §3's route table, and the §6 row that
+   names your files. **A file with another workstream's name on it is not yours to
+   edit; put the change in your plan's `## Deltas requested`.**
+3. **Your plan file**, from the top. Its `## Preconditions` or Task 1 states what
+   must already exist.
+4. **`CLAUDE.md`**, then the sections of `docs/workstream-notes.md` your plan
+   names. Non-negotiable: it is long and every paragraph was paid for in a real
+   bug.
+
+Then use the **`superpowers:executing-plans`** skill and work task by task.
+
+### 0.3 Two workstreams split in half, and `execute S1` is ambiguous without this
+
+Reconciliation §6 corrects §12's sequencing. **S1 and S4 each split, because part
+of each blocks other workstreams and part blocks nobody.**
+
+```
+S1a  origin leaf, metadataBase, jsonld module, PublicShell, events.ts, catalog
+ │
+ ├── S2   prefix.ts ─┐   S1's GATE task needs prefix.ts -- so S1 is NOT "first and alone"
+ │                   ├── S1b  gate.ts, decide(), robots, sitemap, headers
+ │                   │
+ └── S4a  cardUrlSlug / cardByUrlSlug / content/types.ts / Prose.tsx
+          │
+          ├── S3   gallery      (needs cardUrlSlug + S5's WallpaperDownload)
+          ├── S4b  22 id docs, then 22 en docs        (per-card English -- R2)
+          ├── S5   pipeline + WallpaperDownload       (needs cardUrlSlug)
+          └── S6   two articles (needs content/types.ts + Prose)
+```
+
+So:
+
+- **`execute … S1`** means S1a, then stop at the gate task and check whether S2's
+  `src/lib/i18n/prefix.ts` exists. If it does not, **do S2 Tasks 1–3 first** or
+  come back. Do not invent a second prefix helper.
+- **`execute … S4`** means S4a (Tasks 1–4) then S4b (the documents). S4a unblocks
+  three workstreams; do it even if the writing waits.
+- **`execute … S3`**, **`S5`**, **`S6`** each require S1a and S4a to have landed.
+  Their Task 1 asserts it. If the assertion fails, the answer is to land the
+  dependency, never to write a local copy — reconciliation §5 is the register and
+  a second definition of anything on it is a reconciliation failure.
+
+### 0.4 Four things that are true of every workstream
+
+- **Nothing in v0.4.0 calls a model** (S-D7), touches the database or adds a
+  migration (S-D14), adds a dependency, or sets a cookie on a public page
+  (S-D10).
+- **New i18n keys go in `src/lib/i18n/locales/id.ts` first**, so a missing English
+  string is a red typecheck. **Chrome keys only — no prose** (S-D6).
+- **`npm run build` is not optional.** A green `npm run typecheck` is not an
+  answer (the TypeScript trap), and `audit:secrets` runs inside the build. Node 24
+  must be on PATH: `export PATH=~/tools/node-v24.18.0-linux-x64/bin:$PATH`.
+- **Run `npm test` and `npm run test:integration` SEPARATELY.**
+  `npm run test:all` fails 12–22 of V9's limiter tests as a harness race and its
+  red means nothing. Baseline at the time of planning: **1632 unit tests, 88
+  files, green.**
+
+### 0.5 The one thing that is not a task in any plan
+
+**S1 must not be deployed alone, and no test can catch it.** Its landing page
+links to `/gallery`, `/arcana/the-moon` and `/blog`, none of which exist until S3,
+S4 and S6 land. A homepage linking to three 404s is worse than the redirect it
+replaced. **Merging S1 to `main` is fine; deploying a build where
+`tools/seo/crawl.sh` reports 404 on those three paths is not** — the pages are
+*meant* to be missing at that point in the sequence, which is exactly why no unit
+test can see it.
+
+---
+
 ## 1. What v0.4.0 is, and the one number that explains it
 
 **Today a search engine can see three pages of this application, and one of them
@@ -614,10 +722,15 @@ trap. S5 declares the wallpaper header in its plan; S1 writes it.
 
 ## 7. The six workstreams
 
-Written in parallel, reconciled after. Each gets a plan at
-`docs/plans/2026-07-28-<name>.md`.
+Written in parallel, reconciled after. **§0.1 is the plan index and §0.3 is the
+execution order; this section is the scope statement each plan was written
+against.** The scope below is what the plan must cover — where the plan and this
+section differ on a *detail*, the plan is wrong; where they differ because the
+reconciliation changed something, the reconciliation wins.
 
 ### S1 — Public surface and technical SEO foundation
+**Plan: `docs/plans/2026-07-28-seo-foundation.md` — 22 tasks. Splits into S1a/S1b
+(§0.3).**
 
 **The keystone. Every other workstream is blocked on its route table and its
 helpers.**
@@ -634,6 +747,8 @@ Console verification and the submission procedure, documented in
 **Explicitly not S1's:** the `/en/` prefix (S2), any content.
 
 ### S2 — Locale-addressable public content
+**Plan: `docs/plans/2026-07-28-content-locale-urls.md` — 9 tasks. Tasks 1–3
+(`prefix.ts`) BLOCK S1's gate task (§0.3).**
 
 §4, entire. The rewrite. `stripLocalePrefix` / `localePath` as pure, edge-safe,
 tested functions. The `hreflang` + canonical + `x-default` helper (S-D15). The
@@ -642,6 +757,8 @@ locale expansion, and this is the seam most likely to produce a conflict, so
 say precisely which lines each writes.
 
 ### S3 — The Gallery
+**Plan: `docs/plans/2026-07-28-gallery.md` — 19 tasks. Needs S1a, S4a and S5's
+`WallpaperDownload`.**
 
 `/gallery`. 2 columns × 11 rows (§8.1), complete at every width. Existing
 `public/cards/thumb/*.webp` at 240×360 — **no new image asset**. Tap to zoom:
@@ -655,6 +772,9 @@ local `src` with a query string unless `images.localPatterns` is configured.
 `CardFace` uses a plain `<img>` and is the answer, not the workaround.
 
 ### S4 — Card lore pages
+**Plan: `docs/plans/2026-07-28-arcana-lore.md` — 34 tasks (13–33 are one card
+each, one shared template). Splits into S4a/S4b; S4a BLOCKS S3, S5 and S6
+(§0.3). The largest workstream in the release.**
 
 `/arcana/[slug]`, 22 × 2. `cardUrlSlug` / `cardByUrlSlug` and the §3.2
 assertion. The content model (§5) and **44 authored documents**. Each page:
@@ -675,6 +795,8 @@ must not spill how the app works, and **it must not read as filler**. This is
 the largest writing task in the release and its quality is the release.
 
 ### S5 — High-quality wallpaper downloads
+**Plan: `docs/plans/2026-07-28-wallpapers.md` — 7 tasks. Needs S4a's
+`cardUrlSlug`. Owns the `WallpaperDownload` component that S3 mounts (R8).**
 
 S-D9, entire. A script under `tools/`, idempotent, in the shape of
 `normalize_cards.py`, reading `assets/major_arcanas/` and writing
@@ -689,6 +811,9 @@ Report the total before committing it, and if it is large, say what the
 alternative is.
 
 ### S6 — The blog
+**Plan: `docs/plans/2026-07-28-blog.md` — 15 tasks. Needs S4a's
+`src/content/types.ts` and `Prose.tsx`. TWO articles, not one (R5) — the plan was
+written for one and the second is purely additive.**
 
 `/blog` and `/blog/[slug]`, both locales. The content model shared with S4 (§5),
 so **coordinate with S4 on `src/content/types.ts` — one of you writes it and the

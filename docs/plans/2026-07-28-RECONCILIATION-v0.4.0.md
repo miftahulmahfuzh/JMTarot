@@ -11,8 +11,10 @@ against it in parallel.
 > failure mode of a corrected document is somebody re-deriving the original
 > mistake.
 
-Six plans, 16,012 lines before this pass, **123 tasks**. The swarm largely
-self-reconciled — S1 pre-answered most of S2/S3/S4/S6's deltas, S3 read four
+Six plans, 16,012 lines before this pass, **106 tasks** — S1 22, S2 9, S3 19,
+S4 34, S5 7, S6 15. (An earlier draft of this line said 123; counted, not
+estimated.) **The plan index, with filenames and the execution entry point, is
+roadmap §0.** The swarm largely self-reconciled — S1 pre-answered most of S2/S3/S4/S6's deltas, S3 read four
 sibling plans mid-draft, and S6 revised its own `types.ts` position after S4's
 landed. What remains is in this file.
 
