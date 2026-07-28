@@ -121,6 +121,31 @@ describe('the client boundary', () => {
     }
   });
 
+  /*
+   * v0.4.0 / S1's Task 12. **`@/lib/seo/origin` READS `AUTH_URL`, `VERCEL_URL` AND
+   * `VERCEL_PROJECT_PRODUCTION_URL`, NONE OF WHICH CARRIES A `NEXT_PUBLIC_`
+   * PREFIX** -- so a client component calling `siteOrigin()` would silently get
+   * `http://localhost:3001` in production and hand a visitor a canonical, a share
+   * URL or an `hreflang` pointing at their own machine.
+   *
+   * Unlike `@/lib/share/links` this module has NO `server-only` marker, on purpose
+   * -- it is imported by `robots.ts` and `sitemap.ts`, and `server-only` throws
+   * under Vitest for anything `vitest.config.ts` does not alias. **So the two
+   * fences are this test and `scripts/audit-secrets.ts`'s FORBIDDEN walk**, and
+   * the second one is transitive where this one is direct. Neither is redundant:
+   * this fails in a second, that one catches a helper in between.
+   *
+   * `@/lib/seo/jsonld` is deliberately NOT matched: it is pure, takes the origin as
+   * an argument, and reads no environment. Same split as `moderation/types.ts`
+   * against `blocklist.ts`.
+   */
+  it('lets no client component import the origin leaf', () => {
+    for (const file of CLIENT) {
+      const offending = importsOf(file.source).filter((spec) => spec === '@/lib/seo/origin');
+      expect({ [file.path]: offending }).toEqual({ [file.path]: [] });
+    }
+  });
+
   it('lets no client component import the server-only i18n module', () => {
     // `t.ts` starts with `import 'server-only'`, so this would be a build error
     // rather than a silent leak -- but a named failure beats a stack trace.
