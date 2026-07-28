@@ -874,16 +874,24 @@ export function fallbackPersona(input: PersonaInput): string {
   if (c.lifePath) {
     out.push(
       id
-        ? `Angka jalan hidupmu ${c.lifePath.value}, dan wujudnya ${c.lifePath.arcana.name}: ${lower(c.lifePath.gloss)}.`
-        : `Your life-path number is ${c.lifePath.value} and its form is ${c.lifePath.arcana.name}: ${lower(c.lifePath.gloss)}.`,
+        ? `Angka jalan hidupmu ${c.lifePath.value}, dan wujudnya ${c.lifePath.arcana.name}: ${stop(lower(c.lifePath.gloss))}`
+        : `Your life-path number is ${c.lifePath.value} and its form is ${c.lifePath.arcana.name}: ${stop(lower(c.lifePath.gloss))}`,
     );
   }
 
   if (c.sun) {
+    /*
+     * CAPITALISED, AND THE FIRST REAL FALLBACK PRINTED IS WHAT PROVED IT MATTERS:
+     * "Tandamu scorpio, unsurnya water" reads as two untranslated database values
+     * rather than as a sentence. The VALUES stay English in both locales -- that is
+     * `## Localization`'s rule 1 for the sign enum and for `element` -- but a proper
+     * noun in prose is capitalised in both languages, and lower case is exactly what
+     * makes an enum look like an enum.
+     */
     out.push(
       id
-        ? `Tandamu ${c.sun.sign}, unsurnya ${c.sun.element}, dan itu terbaca dalam cara kamu memilih.`
-        : `Your sign is ${c.sun.sign}, its element ${c.sun.element}, and it shows in the way you choose.`,
+        ? `Tandamu ${title(c.sun.sign)}, unsurnya ${title(c.sun.element)}, dan itu terbaca dalam cara kamu memilih.`
+        : `Your sign is ${title(c.sun.sign)}, its element ${title(c.sun.element)}, and it shows in the way you choose.`,
     );
   }
 
@@ -908,4 +916,23 @@ export function fallbackPersona(input: PersonaInput): string {
  */
 function lower(gloss: string): string {
   return gloss.charAt(0).toLowerCase() + gloss.slice(1);
+}
+
+/**
+ * One terminal full stop, never two.
+ *
+ * **THE FIRST REAL FALLBACK PRINTED `...untuk yang berikutnya..`**, because the
+ * template appended a stop to a gloss that already had one -- the same defect
+ * `lines.ts` had, in a second file, found by loading the page rather than by
+ * reading it. Every gloss in `glosses.ts` and every one in `cards.json` is written
+ * as a whole sentence; this is here so that a future gloss written WITHOUT one still
+ * lands correctly.
+ */
+function stop(sentence: string): string {
+  return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`;
+}
+
+/** `scorpio` -> `Scorpio`. A proper noun in prose, not a column value. */
+function title(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }

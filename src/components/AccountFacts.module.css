@@ -44,30 +44,44 @@
   overflow-wrap: anywhere;
 }
 
+/*
+ * **A BORDERED CHIP, NOT A BARE LABEL, AND THE FIRST 390px SCREENSHOT IS WHAT
+ * DECIDED IT.** Borderless, in `--muted` Cinzel micro-caps, it rendered as a
+ * fourth SECTION LABEL sitting under the three rows — identical treatment to
+ * `FAKTA` and `KARTUMU` directly above and below it — so the one control in the
+ * block read as a heading for nothing. `AccountAnswers`' `.clear` had the border
+ * from the start and read correctly in the same shot, which is what made the
+ * comparison obvious.
+ *
+ * `margin-top` because it is a control ABOUT the rows above rather than a row, and
+ * `align-self: flex-start` so it takes its own width instead of the column's.
+ */
 .edit {
   align-self: flex-start;
+  margin-top: 4px;
   display: flex;
   align-items: center;
   min-height: 44px;
-  padding: 0 2px;
+  padding: 0 12px;
   font-family: var(--font-display), serif;
   font-size: var(--fs-eyebrow);
   letter-spacing: var(--ls-button);
   text-transform: uppercase;
   color: var(--muted);
   background: transparent;
-  border: none;
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-chip);
   cursor: pointer;
 }
 
 .edit:hover,
 .edit:focus-visible {
-  color: var(--gold-lift);
+  color: var(--text-warm);
+  border-color: var(--gold-border);
   outline: none;
 }
 
 .edit:focus-visible {
-  border-radius: var(--radius-chip);
   box-shadow: 0 0 0 1px var(--gold-border);
 }
 

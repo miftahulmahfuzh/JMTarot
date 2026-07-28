@@ -153,13 +153,31 @@ export default async function AccountPage() {
               with a one-year `immutable` header on slug-based, non-content-hashed
               filenames, so a regenerated deck is only ever visible because of that
               query string.
+
+              **A PLAIN `<img>` AND NOT `next/image`, WHICH IS `CardFace`'s RULE AND
+              ALSO A HARD CONSTRAINT.** The rule: these are already optimized WebP
+              generated at exactly the two sizes we draw them at, so the optimizer
+              has nothing to improve and would add a serverless invocation and a
+              re-encode. The constraint: `next/image` REFUSES a local `src` carrying
+              a query string unless `images.localPatterns` allows it, and
+              `next.config.ts` configures no `images` block at all — so an `<Image>`
+              here threw `Image with src "/cards/thumb/08_strength.webp?v=3" is using
+              a query string which is not configured` and took the whole page to a
+              500. Found by loading the page, not by reading it; the first draft had
+              exactly that bug and the build was green.
+
+              `CardFace` is deliberately NOT reused: it draws the card's name over
+              the art at small sizes, and the sentence beside this image already
+              names it.
             */}
-            <Image
+            {/* eslint-disable-next-line @next/next/no-img-element -- see above */}
+            <img
               className={styles.thumb}
               src={cardThumb(card.slug)}
               alt={card.name}
               width={88}
               height={132}
+              decoding="async"
             />
             <p className={styles.line}>{cardLine}</p>
           </div>
