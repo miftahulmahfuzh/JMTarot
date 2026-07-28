@@ -614,6 +614,63 @@ const id = {
   'share.busy.body': 'Tunggu sebentar, lalu muat ulang halaman ini.',
 
   // ==========================================================================
+  // V8 — `/account`. "Dirimu", not "Detail Pengguna": this is the screen that
+  // tells someone which card the universe keeps handing them, and the register
+  // of a bank app would undo it. `account.menu.details` already says "Tentang
+  // kamu"; the page's own h1 is shorter because it has a heading's job.
+  //
+  // THE TWO GENERATED-LOOKING LINES ARE TEMPLATES (A8), and the reason is
+  // register rather than cost: `frequency_verdicts` is generated because it
+  // recurs on the picker daily and a template would read identically the fourth
+  // time. `/account` is visited occasionally and its subject is IDENTITY, which
+  // should be stable — a line that rephrased itself every visit would undercut
+  // the claim it is making.
+  //
+  // `{topic}` COMES FROM THE READER'S OWN `specialties[locale][0]`, which is
+  // already `Localized<>` in readers.json. Do not write a third copy of "what
+  // Margaret is for".
+  // ==========================================================================
+  'account.title': 'Dirimu',
+  'account.hint': 'Angka, tanda, dan kartu yang terus kembali kepadamu.',
+
+  'account.facts.heading': 'Fakta',
+  'account.facts.nickname': 'Nama panggilan',
+  'account.facts.fullName': 'Nama lengkap',
+  'account.facts.birthDate': 'Tanggal lahir',
+  'account.facts.edit': 'Ubah',
+  'account.facts.save': 'Simpan',
+  'account.facts.cancel': 'Batal',
+  'account.facts.saving': 'Menyimpan…',
+  'account.facts.failed': 'Belum tersimpan. Coba lagi sebentar lagi.',
+  'account.facts.invalid': 'Periksa lagi isinya.',
+
+  'account.card.heading': 'Kartumu',
+  'account.card.line':
+    'Teratai Batinmu berwujud {card}. Kartu itu memilihmu berulang kali, dan yang dibawanya adalah {gloss}',
+  'account.card.empty': 'Kartumu belum mengulang dirinya. Tariklah beberapa kali lagi.',
+
+  'account.reader.heading': 'Jalanmu',
+  'account.reader.line':
+    'Sebuah jalan terbuka ke {reader}, dan yang kamu bawa ke sana adalah {topic}. {reader} akan menemanimu sejauh yang ia bisa.',
+  // Requirement 3's last sentence, and it is the querent's own words. IT IS THE
+  // ONLY LINE ON THE PAGE THAT IS ABOUT OBLIGATION RATHER THAN ABOUT THE
+  // QUERENT, and that contrast is the point. Do not soften it and do not
+  // translate it word for word — the English keeps its sense, not its grammar.
+  'account.reader.closing':
+    'Langit hanya membuka jalan bagi mereka yang sungguh-sungguh berusaha membuka gerbangnya sendiri.',
+  'account.reader.empty': 'Jalanmu belum memilih pembacanya.',
+
+  'account.persona.heading': 'Teratai Batin',
+  'account.persona.a11yLabel': 'Gambaran tentang dirimu',
+  // Unlike `FrequencyLine`, this block has a heading above it that the querent
+  // came to read, so an empty space under it reads as broken (A9). M14's silence
+  // is for a line that appears unbidden.
+  'account.persona.loading': 'Membaca…',
+  'account.persona.otherLanguage': 'Bagian ini ditulis dalam bahasa lain dan ditampilkan apa adanya.',
+
+  'account.draw.cta': 'Tarik kartu',
+
+  // ==========================================================================
   // V8 — account deletion (VD13). The copy for a control `/privacy` §8 has
   // described for an entire release and nobody could perform.
   //
