@@ -79,11 +79,24 @@ export type ShareFooterProps = {
    * switch made and it is what would let it again.
    */
   preview: ReadingViewData;
+  /**
+   * **WHAT THE HOST IS CURRENTLY RENDERING, so the preview can be the page.**
+   *
+   * REQUIRED, not optional, and that is the point. Since design A the link pins
+   * the locale the sharer is reading and the public page renders that translation
+   * — so a sheet that only had `preview.body` would show the ORIGINAL while the
+   * page showed the translation, silently breaking the one promise the sheet
+   * makes. An optional prop would let a mount reintroduce that by omission.
+   *
+   * A host with nothing to translate passes `{ kind: 'original' }`; see
+   * `previewReadingView` for the mapping and why it is not a pass-through.
+   */
+  prose: ReadingProse;
   /** For the "A reading for {nickname}" line, mirroring the public page's chrome. */
   nickname?: string | null;
 };
 
-export function ShareFooter({ entity, entityId, preview, nickname }: ShareFooterProps) {
+export function ShareFooter({ entity, entityId, preview, prose, nickname }: ShareFooterProps) {
   const t = useT();
   const [phase, setPhase] = useState<Phase>('idle');
   const [link, setLink] = useState<LiveLink | null>(null);
@@ -135,7 +148,7 @@ export function ShareFooter({ entity, entityId, preview, nickname }: ShareFooter
             setCopied(false);
           }}
           title={t(entity === 'persona' ? 'share.sheet.titlePersona' : 'share.sheet.title')}
-          preview={<ReadingView {...previewReadingView(preview, INCLUDE_QUESTION)} />}
+          preview={<ReadingView {...previewReadingView(preview, INCLUDE_QUESTION, prose)} />}
           nicknameLine={
             includeNickname && nickname
               ? t('share.public.forNickname', { nickname })
@@ -248,7 +261,9 @@ export function ShareFooter({ entity, entityId, preview, nickname }: ShareFooter
           entity_id: entityId,
           // ALWAYS BOTH, EXPLICITLY. The route requires them; see its schema.
           include_question: INCLUDE_QUESTION,
-          include_nickname: includeNickname,
+          // NOT the raw state -- see `effectiveIncludeNickname`. A disabled toggle
+          // keeps its value, and that value was being posted as consent.
+          include_nickname: effectiveIncludeNickname(includeNickname, nickname),
         }),
       });
 
@@ -380,6 +395,7 @@ export function ShareFooter({ entity, entityId, preview, nickname }: ShareFooter
 export function previewReadingView(
   reading: ReadingViewData,
   includeQuestion: boolean,
+  hostProse: ReadingProse,
 ): { reading: ReadingViewData; prose: ReadingProse } {
   return {
     reading: {
@@ -387,8 +403,53 @@ export function previewReadingView(
       question: includeQuestion ? reading.question : null,
       sharedAt: null,
     },
-    prose: { kind: 'as-written' },
+    /*
+     * **THE HOST'S PROSE, MAPPED TO WHAT THE PUBLIC PAGE WILL ACTUALLY DO.**
+     *
+     * `'translated'` passes through: the link pins the locale the sharer is
+     * reading, the row exists (V2 wrote it before this state was reached), and the
+     * resolver will find it. That is the case design A exists for and the case
+     * this preview used to get wrong -- it hardcoded `as-written`, so a sharer
+     * reading English previewed the Indonesian source and then sent a link showing
+     * English.
+     *
+     * EVERY OTHER STATE MAPS TO `as-written`, because none of them will have a row
+     * for the resolver to find. `original` and `as-written` mean the source is
+     * already what is on screen. `translating` is mid-stream and V2 persists on
+     * completion. `unavailable` means the translation failed and V2 never persists
+     * an unverified generation. In all four the page falls back to the source, so
+     * the source is what an honest preview shows -- passing the host's state
+     * straight through would put a spinner or an error into a preview of a page
+     * that renders prose perfectly well.
+     */
+    prose: hostProse.kind === 'translated' ? hostProse : { kind: 'as-written' },
   };
+}
+
+/**
+ * What `include_nickname` should actually be on the wire.
+ *
+ * **WHAT THE SHARER COULD NOT SEE, THEY DID NOT CONSENT TO.** The toggle is
+ * disabled when there is no nickname, but a disabled checkbox keeps its state — so
+ * for two workstreams the draw screen, which was mounted with no `nickname` prop at
+ * all, posted `include_nickname: true` with the control dead. The resolver then
+ * projected the column and the public page rendered a nickname the sharer could not
+ * switch off and had never seen, because `nicknameLine` is `includeNickname &&
+ * nickname` and had silently left it out of the preview.
+ *
+ * The draw screen now fetches the nickname, which fixes the visible half. This is
+ * the other half, and both are needed: either alone leaves the wire able to state a
+ * consent that never happened.
+ *
+ * **THE `trim()` MATCHES `sharedNickname` DELIBERATELY.** That function treats blank
+ * and whitespace as absent, so if these two disagreed the sheet would offer a switch
+ * governing a line the page cannot render.
+ */
+export function effectiveIncludeNickname(
+  checked: boolean,
+  nickname: string | null | undefined,
+): boolean {
+  return checked && typeof nickname === 'string' && nickname.trim() !== '';
 }
 
 /** One switch plus its hint line. A real `<input type="checkbox">`, so the

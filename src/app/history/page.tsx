@@ -23,6 +23,8 @@
  * static segments first at every level, so this and `/history/<uuid>` resolve
  * here and never fall through to `readerById('history')`.
  */
+import Link from 'next/link';
+
 import { AccountButton } from '@/components/AccountButton';
 import { localeSwitcherEnabled } from '@/lib/i18n/resolve';
 import { getT } from '@/lib/i18n/t';
@@ -45,6 +47,20 @@ export default async function HistoryPage() {
         component.
       */}
       <AccountButton surface="history" showLanguage={localeSwitcherEnabled()} />
+
+      {/*
+        THE WAY OUT. Until now this page had none: the account circle above opens a
+        sheet, and the only `href="/"` was inside the EMPTY state, so a querent WITH
+        readings could leave only via the browser's back button. `/history/[id]`
+        already carried this affordance, so it is one pattern across both history
+        screens.
+
+        A `Link`, not an `<a>` -- this is inside the app, so a client-side
+        navigation is right, unlike the deliberate `<a>` in the public share tree.
+      */}
+      <Link href="/" className={styles.back}>
+        {t('history.home')}
+      </Link>
 
       <h1 className={styles.title}>{t('history.title')}</h1>
       <p className={styles.hint}>{t('history.hint')}</p>
