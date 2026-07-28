@@ -2,8 +2,9 @@
  * readings + reading_cards. Written by W4's after() path, read by W5's
  * chained readings. See profile.ts for the contract every file here follows.
  */
-import { and, desc, eq, gte, inArray, isNotNull, ne } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNotNull, ne, sql } from 'drizzle-orm';
 import type { Locale, ReaderId, ServiceId } from '@/data/types';
+import type { HistoryCard, HistoryItem, ReadingDetail } from '@/lib/history/types';
 import type { DbOrTx } from '../types';
 import {
   readingCards,
@@ -255,4 +256,271 @@ export async function recallableReadings(
      */
     hadQuestion: r.question !== null && r.question.trim() !== '',
   }));
+}
+
+// ---------------------------------------------------------------------------
+// V6 — the history screens.
+//
+// Three reads: one day's list, the days that have anything, and one reading in
+// full. `HistoryItem` and `ReadingDetail` are declared in `@/lib/history/types`
+// and imported here rather than declared here, because both are named by client
+// components and `clientBoundary.test.ts` forbids `@/lib/db/` in one -- its
+// regex matches `import type` too. This module is the only place either shape is
+// CONSTRUCTED, which is the part that matters.
+// ---------------------------------------------------------------------------
+
+export type { HistoryItem, ReadingDetail };
+
+/**
+ * Version 1-8, variant 8/9/a/b.
+ *
+ * Mirrors `validSessionId`'s pattern in `src/lib/analytics/localdate.ts`, for the
+ * same reason: keep junk out of an indexed comparison and, more importantly, out
+ * of the driver's error path. `where id = 'banana'` raises SQLSTATE `22P02` and
+ * an unhandled one 500s a page that should 404 -- and puts the failing statement
+ * in the platform log.
+ */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** Group card rows by their reading, preserving the query's `position` order. */
+function groupCards<T extends { readingId: string } & HistoryCard>(
+  rows: T[],
+): Map<string, HistoryCard[]> {
+  const byReading = new Map<string, HistoryCard[]>();
+  for (const c of rows) {
+    const entry: HistoryCard = { cardId: c.cardId, reversed: c.reversed, position: c.position };
+    const list = byReading.get(c.readingId);
+    if (list) list.push(entry);
+    else byReading.set(c.readingId, [entry]);
+  }
+  return byReading;
+}
+
+/**
+ * ONE DAY'S READINGS, FOR THE HISTORY LIST (V6).
+ *
+ * ONE FILTER, `status <> 'blocked'`, and it is deliberately neither
+ * `readingsOnLocalDate`'s none nor `recallableReadings`'s five. Each of the three
+ * asks a different question of the same table:
+ *
+ *   - a day SUMMARY is a count and a shape of the day, so it filters nothing:
+ *     "you drew three times today" is true whether or not the third finished.
+ *   - a CALLBACK needs something quotable, so it needs five.
+ *   - this needs something DRAWABLE, so it needs one.
+ *
+ * A blocked reading has NO CARD ROWS (reconciliation R7), so there is no draw to
+ * reconstruct and the feature's whole premise fails on that row. It is also the
+ * one row whose `question` column holds text W7's classifier flagged as harmful
+ * -- W7 redacts the same words from `moderation_flags` at 30 days, and a
+ * permanently browsable copy under another column name would quietly undo that.
+ * **THE FILTER IS SECURITY-ADJACENT, NOT COSMETIC.** Somebody proposing to show
+ * blocked readings "for completeness" is proposing to undo a retention promise.
+ *
+ * `failed` and `aborted` STAY. The querent drew those cards, R7 already counts
+ * them toward the frequency verdict, and a History that hides a draw the
+ * frequency feature counted makes two features disagree about the same past --
+ * which is precisely the class of failure the memory workstream exists to avoid.
+ * They render with a "this reading did not finish" line and no retry (VD14).
+ * `partial` is shown as normal: it has real prose, and the `[Bacaan terputus…]`
+ * notice deliberately never reached `readings.body`.
+ *
+ * NO `body` AND NO `gist` IN THE SELECT -- `hasBody` is computed in SQL. See
+ * `HistoryItem`'s header.
+ *
+ * Served by `readings_user_local_date_idx`. Ordered `created_at desc, id desc`:
+ * `created_at` defaults to `now()`, which is TRANSACTION-START time, so two rows
+ * written in one transaction share a timestamp exactly and `created_at desc`
+ * alone is not a total order. Production never hits it; `withRollback` hits it on
+ * every integration run. Same tiebreak, same reason, as `recallableReadings`.
+ */
+export async function readingsForDay(
+  db: DbOrTx,
+  userId: string,
+  localDate: string,
+): Promise<HistoryItem[]> {
+  const rows = await db
+    .select({
+      id: readings.id,
+      readerId: readings.readerId,
+      serviceId: readings.serviceId,
+      localDate: readings.localDate,
+      createdAt: readings.createdAt,
+      locale: readings.locale,
+      status: readings.status,
+      verdict: readings.verdict,
+      question: readings.question,
+      hasBody: sql<boolean>`${readings.body} is not null`,
+      sharedAt: readings.sharedAt,
+    })
+    .from(readings)
+    .where(
+      and(
+        eq(readings.userId, userId),
+        eq(readings.localDate, localDate),
+        ne(readings.status, 'blocked'),
+      ),
+    )
+    .orderBy(desc(readings.createdAt), desc(readings.id));
+
+  if (rows.length === 0) return [];
+
+  const cards = await db
+    .select({
+      readingId: readingCards.readingId,
+      cardId: readingCards.cardId,
+      reversed: readingCards.reversed,
+      position: readingCards.position,
+    })
+    .from(readingCards)
+    .where(
+      inArray(
+        readingCards.readingId,
+        rows.map((r) => r.id),
+      ),
+    )
+    .orderBy(readingCards.position);
+
+  const byReading = groupCards(cards);
+
+  return rows.map((r) => ({
+    id: r.id,
+    readerId: r.readerId,
+    serviceId: r.serviceId,
+    localDate: r.localDate,
+    createdAtIso: r.createdAt.toISOString(),
+    locale: r.locale,
+    status: r.status,
+    verdict: r.verdict,
+    question: r.question,
+    /*
+     * `Boolean(...)` and not a bare cast. postgres.js returns a real boolean for
+     * `is not null`, but the `sql<boolean>` above is an assertion the driver is
+     * not obliged to honour, and `hasBody` decides whether a row says "this
+     * reading did not finish". A truthy string would silently reverse it.
+     */
+    hasBody: Boolean(r.hasBody),
+    sharedAt: r.sharedAt ? r.sharedAt.toISOString() : null,
+    cards: byReading.get(r.id) ?? [],
+  }));
+}
+
+/**
+ * THE DAYS THAT HAVE READINGS, newest first. The filter strip is built from this.
+ *
+ * WHY THIS QUERY EXISTS RATHER THAN A MONTH GRID: a calendar offering 365 days of
+ * which four have anything is a control that mostly wastes taps. Every chip this
+ * returns is guaranteed non-empty, and the same array answers the empty-day
+ * screen's "your nearest reading was…" with no second request — which is where it
+ * earns its keep a second time.
+ *
+ * ── WHAT THIS ACTUALLY PLANS AS, BECAUSE THE PLAN SAID SOMETHING ELSE ────────
+ *
+ * V6's plan claimed this "walks `readings_user_local_date_idx` in reverse and
+ * stops at the limit, so a querent with five thousand readings pays for `limit`
+ * distinct values and not for five thousand rows." **THAT IS NOT WHAT POSTGRES
+ * DOES AND IT CANNOT BE: there is no loose (skip) index scan in Postgres 16.**
+ * `distinct` on an indexed column reads every index entry in range and uniques
+ * on top; the `limit` prunes the sort, never the scan.
+ *
+ * MEASURED on Postgres 16 against 200k readings across 200 users, 2000 of them
+ * this user's:
+ *
+ *     Limit -> Sort -> HashAggregate
+ *       -> Bitmap Heap Scan on readings   (rows=2000, heap blocks 2000)
+ *            -> Bitmap Index Scan on readings_user_created_idx
+ *     Execution Time: 2.243 ms
+ *
+ * So it picks the OTHER `user_id`-leading index, and it reads all of the
+ * querent's rows. That is fine and is why no index is added for it (§6.4): the
+ * work is bounded by one person's own reading count -- which the rate limiter and
+ * human patience bound in turn -- and 2.2ms at two thousand readings is far past
+ * anything real. An index-only scan would need `status` in the index, which is
+ * write amplification on the app's hottest insert path to save two milliseconds
+ * on a page nobody opens in a loop.
+ *
+ * `readingsForDay` above is the one that plans as advertised: Index Scan using
+ * `readings_user_local_date_idx`, 0.038 ms.
+ *
+ * SAME `status <> 'blocked'` FILTER AS THE LIST, or the strip would offer a day
+ * whose only reading the list then refuses to show — a chip that leads to the
+ * empty state is worse than no chip.
+ */
+export async function historyDays(
+  db: DbOrTx,
+  userId: string,
+  limit: number,
+): Promise<string[]> {
+  // Not defensive padding: `.limit(0)` is a valid statement that returns nothing,
+  // so this saves a round trip rather than preventing an error.
+  if (limit <= 0) return [];
+
+  const rows = await db
+    .selectDistinct({ localDate: readings.localDate })
+    .from(readings)
+    .where(and(eq(readings.userId, userId), ne(readings.status, 'blocked')))
+    .orderBy(desc(readings.localDate))
+    .limit(limit);
+
+  return rows.map((r) => r.localDate);
+}
+
+/**
+ * ONE READING, WITH ITS CARDS AND ITS PROSE. The detail screen's whole payload.
+ *
+ * `userId` IS A PREDICATE, NOT AN ASSERTION MADE AFTERWARDS. Fetching by id and
+ * then comparing owners in JavaScript is one forgotten `if` away from serving a
+ * stranger's reading, and the forgotten `if` is invisible in review. Making
+ * ownership part of the `where` means the only failure mode is a null.
+ *
+ * NULL COVERS THREE THINGS AT ONCE -- "does not exist", "belongs to someone
+ * else", "was blocked" -- and the caller 404s all three identically. That is
+ * deliberate, and it is the same rule V7 needs for share slugs: a distinguishable
+ * "exists but is not yours" turns a uuid guess into an existence oracle.
+ *
+ * A MALFORMED UUID IS A NULL, NOT A DRIVER ERROR. See `UUID_RE`.
+ */
+export async function readingWithCards(
+  db: DbOrTx,
+  userId: string,
+  readingId: string,
+): Promise<ReadingDetail | null> {
+  if (!UUID_RE.test(readingId)) return null;
+
+  const [row] = await db
+    .select()
+    .from(readings)
+    .where(
+      and(
+        eq(readings.id, readingId),
+        eq(readings.userId, userId),
+        ne(readings.status, 'blocked'),
+      ),
+    )
+    .limit(1);
+  if (!row) return null;
+
+  const cards = await db
+    .select({
+      cardId: readingCards.cardId,
+      reversed: readingCards.reversed,
+      position: readingCards.position,
+    })
+    .from(readingCards)
+    .where(eq(readingCards.readingId, row.id))
+    .orderBy(readingCards.position);
+
+  return {
+    id: row.id,
+    readerId: row.readerId,
+    serviceId: row.serviceId,
+    localDate: row.localDate,
+    createdAtIso: row.createdAt.toISOString(),
+    locale: row.locale,
+    status: row.status,
+    verdict: row.verdict,
+    question: row.question,
+    body: row.body,
+    sharedAt: row.sharedAt ? row.sharedAt.toISOString() : null,
+    cards,
+  };
 }
