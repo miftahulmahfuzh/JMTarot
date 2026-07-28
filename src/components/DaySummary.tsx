@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { SESSION_HEADER } from '@/lib/analytics/localdate';
 import { getSessionId } from '@/lib/analytics/track.client';
+import { useLocale } from '@/lib/i18n/LocaleProvider';
 import { todayKey } from '@/lib/storage';
 import styles from './DaySummary.module.css';
 
@@ -41,6 +42,9 @@ import styles from './DaySummary.module.css';
  * for it, not after `done` (D-V5-2).
  */
 export function useDaySummary(readerId: string): string {
+  /* See the effect's closing comment. The deps were `[readerId]`, so a language
+     switch could never reach this paragraph. */
+  const locale = useLocale();
   const [text, setText] = useState('');
 
   useEffect(() => {
@@ -90,7 +94,33 @@ export function useDaySummary(readerId: string): string {
     })();
 
     return () => controller.abort();
-  }, [readerId]);
+    /*
+     * ── `locale`, FOR THE REASON FrequencyLine RECORDS AT LENGTH ──────────────
+     *
+     * These deps were `[readerId]`. `daily_summaries` is keyed on locale and
+     * `router.refresh()` KEEPS CLIENT STATE by design (see `LocaleSwitch`), so
+     * after a switch to English this paragraph kept speaking Indonesian --
+     * measured on /thessaly with `public/cards/_localehang.html`, where the bio
+     * panel beside it had already turned English and this one still read *"Kamu
+     * sudah punya jawaban untuk yang dipertanyakan…"*. Nothing failed, nothing
+     * logged.
+     *
+     * THE STREAM IS WHAT KEEPS THE OLD TEXT UP, and it does it for free: `acc`
+     * starts empty but `setText` is only called once a chunk has ARRIVED, so the
+     * previous summary holds the panel until the first English bytes land. That
+     * is the requested behaviour -- no blank panel, no spinner -- and it is why
+     * there is no `setText('')` above. Adding one would blank it for the ~1.2s a
+     * cold summary takes to generate.
+     *
+     * ── AND IT IS WHY V5's DECK DOES NOT COLLAPSE MID-SWITCH ──────────────────
+     *
+     * `ReaderDeck` builds a ONE-panel deck while this string is empty. Blanking
+     * on switch would therefore not merely empty the panel -- it would REMOVE it,
+     * dropping the querent from a two-panel deck to a one-panel deck and back,
+     * mid-gesture. Keeping the old text is what makes the switch invisible to the
+     * deck. Same reason, higher stakes than before V5.
+     */
+  }, [readerId, locale]);
 
   return text;
 }

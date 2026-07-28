@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { getSessionId } from '@/lib/analytics/track.client';
 import { SESSION_HEADER } from '@/lib/analytics/localdate';
-import { useT } from '@/lib/i18n/LocaleProvider';
+import { useLocale, useT } from '@/lib/i18n/LocaleProvider';
 import { todayKey } from '@/lib/storage';
 import styles from './FrequencyLine.module.css';
 
@@ -36,6 +36,9 @@ import styles from './FrequencyLine.module.css';
  */
 export function FrequencyLine() {
   const t = useT();
+  /* The dependency that makes a language switch reach this line. See the
+     effect's closing comment -- it was `[]`, and that was the defect. */
+  const locale = useLocale();
   const [line, setLine] = useState<string | null>(null);
 
   useEffect(() => {
@@ -69,7 +72,31 @@ export function FrequencyLine() {
     })();
 
     return () => controller.abort();
-  }, []);
+    /*
+     * ── `locale`, AND IT WAS THE BUG ─────────────────────────────────────────
+     *
+     * This was `[]`. `frequency_verdicts` is keyed on locale and the endpoint
+     * resolves the locale server-side, so a switch to English needs a NEW
+     * request -- but `router.refresh()` KEEPS CLIENT STATE by design (see
+     * `LocaleSwitch`'s header), so with an empty array this effect could never
+     * run again and `line` kept whichever language it was first fetched in.
+     *
+     * MEASURED with `public/cards/_localehang.html`: after tapping EN the chrome
+     * was English and this line still read *"Dalam tiga belas hari terakhir,
+     * Strength dan The Star muncul…"*. Nothing failed and nothing logged.
+     *
+     * IT DOES NOT COST A MODEL CALL ON LOAD. `locale` is stable for the lifetime
+     * of a page, so this fires exactly once per mount as before; the second run
+     * happens only when somebody actually changes language.
+     *
+     * AND IT DOES NOT BLANK THE LINE. `setLine` is only ever called with a
+     * non-empty body, so the existing sentence stays up for the ~1.8s a cold
+     * English verdict takes and is then replaced in one go. Do not add a
+     * `setLine(null)` here "to avoid showing stale text" -- that trades a
+     * correct-but-briefly-old sentence for two seconds of nothing, and M14's
+     * whole argument is that the empty state is the worse of the two.
+     */
+  }, [locale]);
 
   if (!line) return null;
 

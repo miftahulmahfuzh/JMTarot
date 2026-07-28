@@ -158,3 +158,47 @@ describe('the client boundary', () => {
     }
   });
 });
+
+/**
+ * And the ORDER of the two decisions inside W7's own boundary walk.
+ *
+ * `scripts/audit-secrets.ts` is the stronger sibling this file's header points at,
+ * and V4 had to fix a real bug in it (`6c9ac21`): the `isServerAction` exemption
+ * sat BELOW the FORBIDDEN-prefix verdict, so it was unreachable for every server
+ * action in the app -- server actions live under a fenced prefix by definition.
+ * `lib/auth/actions.ts` was the first one to exist and it failed the build with
+ * two findings that were both the sanctioned pattern.
+ *
+ * THE FIX LANDED WITHOUT A TEST, which is the gap this closes. Asserted here
+ * rather than in the script because `checkClientBoundary` is not exported and
+ * running the real scanner needs a build. Same shape as `dominance.test.ts`: name
+ * the ordering, so a refactor back fails HERE and says why.
+ */
+describe("the scanner's own ordering", () => {
+  const scanner = readFileSync(join(process.cwd(), 'scripts/audit-secrets.ts'), 'utf8');
+  const walk = scanner.slice(scanner.indexOf('while (stack.length > 0)'));
+
+  it('exempts a server action BEFORE it applies the forbidden-prefix verdict', () => {
+    const exemption = walk.indexOf('isServerAction(source)');
+    const verdict = walk.indexOf("fail('boundary'");
+    expect(exemption, 'isServerAction call not found in the walk').toBeGreaterThan(-1);
+    expect(verdict, 'the boundary fail() not found in the walk').toBeGreaterThan(-1);
+    expect(exemption).toBeLessThan(verdict);
+  });
+
+  /**
+   * Not vacuous: there really is a `'use server'` module under a fenced prefix, so
+   * the exemption is load-bearing today rather than hypothetically. And it must
+   * stay exempt BY DIRECTIVE -- an allowlist entry would exempt the whole file for
+   * every reason, not just for being an RPC boundary.
+   */
+  it('still has a real server action under a fenced prefix to exempt', () => {
+    const action = readFileSync(join(process.cwd(), 'src/lib/auth/actions.ts'), 'utf8');
+    expect(action).toMatch(/^\s*(['"])use server\1/);
+    const rule = scanner.match(/\{ prefix: 'lib\/auth\/', allow: \[([^\]]*)\] \}/);
+    expect(rule, "the lib/auth/ rule's shape changed").not.toBeNull();
+    expect(rule![1], 'actions.ts must be exempt by DIRECTIVE, never by allowlist').not.toMatch(
+      /actions\.ts/,
+    );
+  });
+});

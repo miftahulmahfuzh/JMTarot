@@ -67,23 +67,64 @@ import styles from './LocaleSwitch.module.css';
  * payload and keeps client state, which on the reader picker means the frequency
  * line does not flash away and come back.
  */
+/**
+ * How long the querent may be left holding a disabled control.
+ *
+ * NOT a guess at how long the write takes -- `maxDuration` on the route owns
+ * that, and on a cold Neon compute it can legitimately need most of it. This
+ * answers a different question: how long is it honest to show somebody two
+ * greyed-out words with no spinner and no copy? Six seconds is already long.
+ *
+ * PASSING THIS DEADLINE IS NOT A CANCELLATION OF THE SWITCH. The request is
+ * abandoned client-side; the lambda keeps running to its own budget and the write
+ * still lands. That asymmetry is the point -- see the catch in `choose`.
+ */
+const SWITCH_DEADLINE_MS = 6_000;
+
 export function LocaleSwitch({ variant }: { variant: 'names' | 'codes' }) {
   const t = useT();
   const active = useLocale();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [posting, setPosting] = useState(false);
+  /*
+   * THE TAP HAS TO REGISTER IN THE FRAME IT HAPPENED IN.
+   *
+   * `active` comes from `LocaleProvider`, which is handed its value by the root
+   * layout -- so it cannot change until the RSC refresh lands. Before this, the
+   * only feedback for that entire round trip was `disabled` on two words: no
+   * spinner, and no copy, because M14 gives this component no error string. On
+   * the warm path that is 22ms and invisible. On a cold serverless path it is
+   * seconds of a control that looks broken, which is what was reported.
+   *
+   * So the marker moves optimistically and `active` catches up behind it. On
+   * failure it is put back, which is the same honesty rule the catch follows: the
+   * page says the language did not change by still being in it.
+   */
+  const [chosen, setChosen] = useState<Locale | null>(null);
 
   const busy = pending || posting;
+  /** What the row PAINTS as selected. `active` is what the server believes. */
+  const shown = chosen ?? active;
 
   async function choose(next: Locale) {
     if (next === active || busy) return;
     setPosting(true);
+    setChosen(next);
     try {
       const response = await fetch('/api/locale', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ locale: next }),
+        /*
+         * THE BOUND THAT MAKES THE HANG UNREACHABLE. Without a signal this
+         * `await` is as long as the network cares to make it, and `posting` only
+         * clears in the `finally` -- so an unresponsive cold start held both
+         * options disabled indefinitely. Verified by negative control: with the
+         * stub in `_localehang.html?hang=1`, removing this line leaves the row
+         * disabled at t=8000; with it, the row re-arms at t=6500.
+         */
+        signal: AbortSignal.timeout(SWITCH_DEADLINE_MS),
       });
       /*
        * NO ERROR COPY, and it is the same call M14 made for the memory features:
@@ -92,7 +133,11 @@ export function LocaleSwitch({ variant }: { variant: 'names' | 'codes' }) {
        * "could not change language" adds nothing the screen has not already said,
        * and it would need two more catalog keys to say it in.
        */
-      if (!response.ok) return;
+      if (!response.ok) {
+        // Put the marker back. The language really did not change.
+        setChosen(null);
+        return;
+      }
       /*
        * `locale.changed` HAS BEEN IN THE TAXONOMY SINCE W6 AND HAS NEVER BEEN
        * FIRED. It is fired here, after the write succeeded, so the row means
@@ -104,7 +149,22 @@ export function LocaleSwitch({ variant }: { variant: 'names' | 'codes' }) {
       track('locale.changed', { from: active, to: next, surface: 'settings' });
       startTransition(() => router.refresh());
     } catch {
-      // Offline. Same reasoning: the page is unchanged and says so by being unchanged.
+      /*
+       * Offline, OR the deadline above fired. For the offline case the reasoning
+       * is the `!ok` branch's: the page is unchanged and says so by being
+       * unchanged.
+       *
+       * THE TIMEOUT CASE IS DELIBERATELY TREATED THE SAME WAY, AND THE
+       * ALTERNATIVE IS WORSE. We do not know what happened -- the lambda may be
+       * mid-write and about to succeed against its own larger budget, or it may
+       * be gone. So the refresh is NOT fired: refreshing on a request whose
+       * cookie may never have been set would re-render the page in the OLD locale
+       * and stamp the failure as final. Reverting the marker and re-arming the
+       * control leaves the querent able to tap again -- and if the write did
+       * land, their next navigation is already in the new language, which is the
+       * documented degradation this route was always designed around.
+       */
+      setChosen(null);
     } finally {
       setPosting(false);
     }
@@ -126,11 +186,15 @@ export function LocaleSwitch({ variant }: { variant: 'names' | 'codes' }) {
               ·
             </span>
           ) : null}
-          {locale === active ? (
+          {locale === shown ? (
             /*
              * A `<span>`, not a disabled button. `aria-current` tells a screen
              * reader which is selected, and a control that does nothing when
              * pressed should be neither focusable nor pressable-looking.
+             *
+             * `shown`, not `active`: the marker moves on tap so the control is
+             * visibly responsive during the round trip, and reverts if the switch
+             * fails. See `chosen` above.
              */
             <span className={`${styles.option} ${styles.active}`} aria-current="true">
               {label(locale)}

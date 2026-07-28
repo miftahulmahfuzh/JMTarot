@@ -39,7 +39,55 @@ import { LOCALE_COOKIE, LOCALE_COOKIE_MAX_AGE } from '@/lib/i18n/resolve';
  * reading, a rendered page. This is neither. Nothing renders until the response
  * lands either way.
  * ==========================================================================
+ *
+ * ── THE COLD PATH, AND WHY THIS ROUTE NEEDED A BUDGET (v0.3.0) ───────────────
+ *
+ * THE PARAGRAPH ABOVE IS STILL TRUE AND IT DESCRIBES THE WARM PATH ONLY.
+ * "ONE indexed UPDATE by primary key" is what this costs when the compute is
+ * awake; measured against Docker Postgres it is 22ms end to end, with the RSC
+ * refresh behind it at 53ms. It was reported as HANGING in production, and the
+ * whole difference is cold start.
+ *
+ * `docs/DEPLOY-VERCEL.md` puts functions on Vercel's **Hobby** plan in `sin1`,
+ * Neon on the **free plan** in `ap-southeast-1`, and Upstash in **Tokyo** (there
+ * is no Singapore region). Hobby's default function budget is TEN SECONDS, and a
+ * free-plan Neon compute SUSPENDS WHEN IDLE. So the first switch after a quiet
+ * spell is:
+ *
+ *   1. a cold lambda, whose graph includes @auth/core, postgres.js and -- by way
+ *      of `auth.ts` -> `users.ts` -- bcrypt;
+ *   2. `setUserLocale`, which may be the request that WAKES the Neon compute, on
+ *      a `max: 1` connection (see `db/client.ts`);
+ *   3. `refreshSession()`, which is one Singapore->Tokyo Upstash hop (`hit()` in
+ *      the jwt update branch) and THEN a second query to that same compute.
+ *
+ * Three sequential round trips, one of them a database wake. Killed at ten
+ * seconds the write is lost, no response arrives, and the querent is looking at
+ * a disabled toggle -- which is exactly the reported symptom, and why it always
+ * "works if you try again".
+ *
+ * **A BIGGER BUDGET IS NOT A LATENCY REGRESSION.** It does not make the warm
+ * path slower; it stops the cold path being TRUNCATED. And it is deliberately
+ * paired with a bound on the CLIENT (`LocaleSwitch`'s `AbortSignal.timeout`), so
+ * the extra budget buys the WRITE time to land without ever buying the user more
+ * time in front of a dead control. Raise one without the other and you have
+ * simply made the hang longer.
+ *
+ * NOT AN LLM CALL, and it is worth writing down because the bug was reported as
+ * one. Nothing on this path reaches a model: the only callers of
+ * `translateOrCached`/`translateStream` are `/api/translate` and `chain.ts`, and
+ * the two generated lines on the screens that carry this control are fetched by
+ * their own client components afterwards. See `FrequencyLine` and `DaySummary`.
+ *
+ * `runtime = 'nodejs'` is declared for the same reason every other
+ * database-touching route declares it -- and being the only one that left both
+ * implicit is how this escaped review in the first place.
  */
+export const runtime = 'nodejs';
+
+/** See the header. 30, matching the other routes that can wake a cold compute. */
+export const maxDuration = 30;
+
 export async function POST(request: Request) {
   let locale: unknown;
   try {
