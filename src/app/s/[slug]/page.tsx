@@ -64,6 +64,7 @@
  * generating both locales at mint — remains the only way to make the mismatch
  * itself impossible, and it still costs one model call per share.
  */
+import { cache } from 'react';
 import { after } from 'next/server';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
@@ -119,13 +120,99 @@ const HOUR_MS = 3_600_000;
  *
  * `metadataBase` is set on the DEEPEST segment, so the root layout is untouched.
  */
+/**
+ * The gate and the resolve, ONCE PER REQUEST, shared by `generateMetadata` and the
+ * page component.
+ *
+ * ── WHY THIS IS ONE `cache()`d FUNCTION AND NOT TWO CALLS ────────────────────
+ *
+ * The `<title>` has to follow the reading's language (see `generateMetadata`), and
+ * the only thing that knows that language is the pinned `share_links` row. So
+ * metadata needs the resolve too — and Next runs `generateMetadata` and the page in
+ * the same request but as separate functions, so the naive version does the work
+ * twice.
+ *
+ * **THE LIMITER IS INSIDE, AND THAT IS THE WHOLE REASON THIS IS SHAPED LIKE THIS.**
+ * `page.contract.test.ts` asserts both budgets are checked BEFORE the database,
+ * because this is the app's only unauthenticated read path and the ordering IS the
+ * defence: a request over budget must cost one Redis lookup rather than a query. A
+ * resolve placed in `generateMetadata` alongside the existing one would have put a
+ * database read in FRONT of that guard — one query per request for an enumeration
+ * attempt, forever, defeating the thing the limiter exists to do. Wrapping the gate
+ * and the resolve together keeps the counts exactly what they were:
+ *
+ *   allowed request  ->  1 limiter spend, 1 resolve   (unchanged)
+ *   refused request  ->  1 limiter spend, 0 resolves  (unchanged)
+ *
+ * **`cache()` IS REQUEST-SCOPED AND KEYED ON THE ARGUMENTS**, so `ip` is passed in
+ * rather than read inside: two calls must agree on the key or the dedupe silently
+ * does not happen and both the budget and the query run twice. Verified by counting,
+ * not assumed — see `docs/workstream-notes.md`.
+ */
+const gateAndResolve = cache(async (slug: string, ip: string) => {
+  /*
+   * THE LIMITER RUNS BEFORE THE DATABASE, ALWAYS.
+   *
+   * **BOTH ARE AWAITED** — `hit()` and `consume()` are async since V9, and a
+   * forgotten `await` evaluates a Promise as truthy, i.e. never refuses.
+   *
+   * `consume()` and NOT `hitGlobal()`: `hitGlobal` spends the READING path's
+   * budget, and a share link going viral must not stop the actual product from
+   * working. `consume` names its own budget and is passed through unprefixed,
+   * which is the pair `peek`/`consume` exists for.
+   *
+   * `SHARE_VIEW_GLOBAL_MAX` IS READ FROM V9's MODULE rather than declared here.
+   * V7's plan sized 3000 per instance; fleet-wide that would 429 a genuinely
+   * popular link, which reads to a stranger as "your friend sent me a broken
+   * link". V9 raised it to 10,000 with the argument written down there.
+   */
+  const [perIp, perFleet] = await Promise.all([
+    hit(`share:view:${ip}`, Date.now(), VIEW_PER_IP, HOUR_MS),
+    consume('share:view:_global', SHARE_VIEW_GLOBAL_MAX, HOUR_MS),
+  ]);
+  if (!perIp.ok || !perFleet.ok) return { busy: true as const, resolved: null };
+
+  return { busy: false as const, resolved: await resolveShare(slug) };
+});
+
+/**
+ * **THE `<title>` FOLLOWS THE READING'S LANGUAGE, NOT THE VIEWER'S** (Miftah, on
+ * Vercel, 2026-07-28 — the third report in this thread).
+ *
+ * The page went monolingual and the browser tab did not: a Bahasa-pinned link
+ * opened with the app set to English kept every word of the page in Indonesian and
+ * put "A shared reading" in the tab. The document title is the one string on a
+ * monolingual page that was still coming from `accept-language`, and `og:title`
+ * shares the value, so chat previews had it too.
+ *
+ * **THIS FILE PREVIOUSLY ARGUED THE OPPOSITE, AND THE ARGUMENT WAS WRONG ABOUT ITS
+ * OWN COST.** It said making the card follow the pin "doubles the database reads on
+ * the one uncapped public route". It does not, because `gateAndResolve` is
+ * `cache()`d and the page was going to resolve anyway — the real objection was that
+ * a resolve here would sit in front of the rate limiter, and that is fixed by
+ * putting the limiter inside the cached function rather than by giving up.
+ *
+ * **THE OG IMAGE IS UNAFFECTED AND NEEDS NO CHANGE**: it draws only `MAJOR ARCANA`,
+ * which is English in both locales, and VD18 keeps the question and the prose out of
+ * it deliberately.
+ *
+ * A slug that does not resolve, is over budget, or is a persona keeps the viewer's
+ * locale — there is no reading whose language to follow, exactly as the 429 page has
+ * none.
+ */
 export async function generateMetadata({
   params,
 }: {
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const t = await getT();
+  const h = await headersOf();
+  const gate = await gateAndResolve(slug, clientIp(h));
+
+  const t =
+    gate.resolved?.entity === 'reading'
+      ? tFor(renderedLocale(gate.resolved.reading, gate.resolved.translation))
+      : await getT();
 
   return {
     metadataBase: new URL(shareOrigin()),
@@ -147,30 +234,15 @@ export default async function SharePage({ params }: { params: Promise<{ slug: st
   const h = await headersOf();
 
   /*
-   * THE LIMITER RUNS BEFORE THE DATABASE, ALWAYS. This is the only unauthenticated
-   * read path in the app, so the order is the defence: a request that is over
-   * budget must cost one in-memory or one Redis lookup rather than a query.
-   *
-   * **BOTH ARE AWAITED** — `hit()` and `consume()` are async since V9, and a
-   * forgotten `await` evaluates a Promise as truthy, i.e. never refuses.
-   *
-   * `consume()` and NOT `hitGlobal()`: `hitGlobal` spends the READING path's
-   * budget, and a share link going viral must not stop the actual product from
-   * working. `consume` names its own budget and is passed through unprefixed,
-   * which is the pair `peek`/`consume` exists for.
-   *
-   * `SHARE_VIEW_GLOBAL_MAX` IS READ FROM V9's MODULE rather than declared here.
-   * V7's plan sized 3000 per instance; fleet-wide that would 429 a genuinely
-   * popular link, which reads to a stranger as "your friend sent me a broken
-   * link". V9 raised it to 10,000 with the argument written down there.
+   * THE GATE AND THE RESOLVE, from the request-scoped `cache()` above.
+   * `generateMetadata` already called this with the same arguments, so the budgets
+   * were spent once and the query ran once — see that function's header for why the
+   * limiter lives inside it rather than here.
    */
-  const [perIp, perFleet] = await Promise.all([
-    hit(`share:view:${clientIp(h)}`, Date.now(), VIEW_PER_IP, HOUR_MS),
-    consume('share:view:_global', SHARE_VIEW_GLOBAL_MAX, HOUR_MS),
-  ]);
-  if (!perIp.ok || !perFleet.ok) return <ShareBusy />;
+  const gate = await gateAndResolve(slug, clientIp(h));
+  if (gate.busy) return <ShareBusy />;
 
-  const resolved = await resolveShare(slug);
+  const resolved = gate.resolved;
   /*
    * FIVE DIFFERENT FAILURES, ONE PAGE — invalid slug, no row, revoked, artifact
    * deleted, artifact not shareable. `not-found.tsx` says nothing about which,

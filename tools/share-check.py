@@ -80,6 +80,35 @@ check('...including the disclaimer, which is the accepted cost of the ruling',
       'entertainment only' in en_pinned_id_viewer)
 check('...and the CTA', 'Try it yourself' in en_pinned_id_viewer)
 
+# ---------------------------------------------------------------------------
+# THE DOCUMENT TITLE, i.e. the browser tab (2026-07-28, the third report)
+# ---------------------------------------------------------------------------
+#
+# The page went monolingual and the TAB did not: a Bahasa-pinned link opened with the
+# app set to English kept every word of the page in Indonesian and put "A shared
+# reading" in the tab. `<title>` was the one string still coming from
+# `accept-language`, and `og:title` shares the value, so chat previews had it too.
+#
+# Read off the RAW html, not the stripped body -- `<title>` lives in `<head>`, which
+# `get()` slices away. That is why this block does its own fetch.
+def title_of(slug, lang):
+    html = subprocess.run(['curl', '-s', '-H', f'accept-language: {lang}',
+                           f'{BASE}/s/{slug}'], capture_output=True, text=True).stdout
+    m = re.search(r'<title>([^<]*)</title>', html)
+    return m.group(1) if m else ''
+
+EN, ID = 'en-GB,en;q=0.9', 'id-ID,id;q=0.9'
+check('the tab follows an id pin, for an ID viewer',
+      title_of('aaaaaaaaaaaa', ID) == 'Bacaan yang dibagikan')
+check('the tab follows an id pin, for an EN viewer TOO',
+      title_of('aaaaaaaaaaaa', EN) == 'Bacaan yang dibagikan')
+check('the tab follows an en pin, for an EN viewer',
+      title_of('bbbbbbbbbbbb', EN) == 'A shared reading')
+check('the tab follows an en pin, for an ID viewer TOO -- THE REPORTED BUG',
+      title_of('bbbbbbbbbbbb', ID) == 'A shared reading')
+check('an unpinned link titles itself in the SOURCE language',
+      title_of('cccccccccccc', EN) == 'Bacaan yang dibagikan')
+
 # Kept so the names below still resolve.
 en = id_pinned_en_viewer
 id_ = id_pinned_id_viewer

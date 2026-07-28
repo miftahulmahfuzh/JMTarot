@@ -84,13 +84,22 @@ describe('the public share page', () => {
      * lookup rather than a query, on the only unauthenticated read path in the
      * app. And both are async since V9 -- a forgotten `await` evaluates a Promise
      * as truthy, i.e. never refuses.
+     *
+     * **THE KEY IS BUILT FROM AN `ip` PARAMETER SINCE 2026-07-28, NOT FROM
+     * `clientIp(h)` INLINE**, because the gate moved inside the `cache()`d
+     * `gateAndResolve` so that `generateMetadata` could share it — see the title
+     * test below. This assertion used to pin the inline form and failed on the move,
+     * which is the right direction: it noticed. `clientIp(h)` is still what is
+     * PASSED, and `cache()` keys on the argument, so the two call sites must agree
+     * or the dedupe silently stops happening.
      */
     const limitAt = CODE.indexOf('Promise.all');
     const resolveAt = CODE.indexOf('await resolveShare');
     expect(limitAt).toBeGreaterThan(0);
     expect(resolveAt).toBeGreaterThan(limitAt);
 
-    expect(CODE).toMatch(/hit\(`share:view:\$\{clientIp\(h\)\}`/);
+    expect(CODE).toMatch(/hit\(`share:view:\$\{ip\}`/);
+    expect(CODE).toMatch(/gateAndResolve\(slug, clientIp\(h\)\)/);
     expect(CODE).toMatch(/consume\('share:view:_global'/);
     expect(CODE).toContain('if (!perIp.ok || !perFleet.ok)');
   });
@@ -209,6 +218,54 @@ describe('the public share page', () => {
     expect(CODE).toMatch(/shownT\('share\.public\.eyebrow'\)/);
     expect(CODE).toMatch(/shownT\('share\.public\.forNickname'/);
     expect(CODE).not.toMatch(/catalogFor\(viewerLocale\)/);
+  });
+
+  it('TITLES THE DOCUMENT IN THE READING\'S LANGUAGE, and shares one resolve to do it', () => {
+    /*
+     * **THE THIRD REPORT IN THIS THREAD** (Miftah, on Vercel, 2026-07-28). The page
+     * went monolingual and the browser tab did not: a Bahasa-pinned link opened with
+     * the app set to English kept every word of the page in Indonesian and put "A
+     * shared reading" in the tab. `<title>` was the one string on a monolingual page
+     * still resolved from `accept-language`, and `og:title` shares the value, so chat
+     * previews carried it too.
+     *
+     * **THE SHAPE IS THE INTERESTING PART, AND THIS FILE'S OWN OTHER TEST IS WHY.**
+     * `checks BOTH limiters, AWAITED, before it reaches the database` exists because
+     * this is the app's only unauthenticated read path and the ordering IS the
+     * defence. `generateMetadata` runs OUTSIDE the page component, so a resolve added
+     * there would have sat in front of that guard — one query per request for an
+     * enumeration attempt, forever.
+     *
+     * So the gate and the resolve are ONE `cache()`d function that both call. Counts
+     * are unchanged: one limiter spend and one resolve for an allowed request, one
+     * spend and NO resolve for a refused one. **Verified by counting executions, not
+     * assumed from the docs** — see `docs/workstream-notes.md`.
+     *
+     * The assertion is on the shared call rather than on the title string, because
+     * the failure worth catching is somebody "simplifying" the metadata into its own
+     * `resolveShare` — which reads correctly, produces the right title, and quietly
+     * puts a database read in front of the rate limiter.
+     */
+    expect(CODE).toMatch(/const gateAndResolve = cache\(/);
+    expect(CODE).toMatch(/tFor\(renderedLocale\(/);
+    // BOTH call sites go through the cached function, with IDENTICAL arguments --
+    // `cache()` keys on them, so a mismatch silently runs everything twice.
+    expect([...CODE.matchAll(/await gateAndResolve\(slug, clientIp\(h\)\)/g)]).toHaveLength(2);
+
+    /*
+     * EXACTLY ONE `resolveShare`, AND IT IS INSIDE THE CACHED FUNCTION. The first
+     * version of this asserted zero occurrences and failed on the one legitimate
+     * call — the assertion that matters is not "nobody resolves" but "nobody
+     * resolves OUTSIDE the gate", which is what puts a query in front of the
+     * limiter.
+     */
+    const resolves = [...CODE.matchAll(/await resolveShare\(/g)];
+    expect(resolves).toHaveLength(1);
+    const cached = CODE.slice(CODE.indexOf('const gateAndResolve'));
+    const body = cached.slice(0, cached.indexOf('\n});'));
+    expect(body).toContain('await resolveShare(');
+    expect(body.indexOf('hit(')).toBeGreaterThan(-1);
+    expect(body.indexOf('hit(')).toBeLessThan(body.indexOf('resolveShare('));
   });
 
   it('reads the viewer locale ONLY to decide whether to send a second catalog', () => {

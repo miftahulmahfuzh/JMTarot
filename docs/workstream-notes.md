@@ -2297,3 +2297,72 @@ to be in the `const` or in the comparison.
   the source for chrome as well as prose. The prose still matches; only the chrome
   differs. Closing it means shipping the second catalog to `/history/[id]` and the draw
   screen permanently, for a state that only exists when a model call fails.
+
+### The browser tab, 2026-07-28 (the third report on this page)
+
+> when i refresh share link A . everything stays in bahasa EXCEPT the text in the
+> browser tab. what do we call it? tab name? it says "A shared reading"
+
+It is the **document title** — the `<title>` element, which browsers render as the tab
+label — set by `generateMetadata`. `og:title` shares the value, so chat previews carried
+it too. On a page that had just been made monolingual, it was the last string still
+resolved from `accept-language`.
+
+**THE PREVIOUS SECTION'S OWN NOTE ARGUED AGAINST FIXING THIS, AND THE ARGUMENT WAS
+WRONG ABOUT ITS COST.** It said making the OG card follow the pin "doubles the database
+reads on the one uncapped public route". That is false: the page resolves the share
+anyway, so a `cache()`d call shared between metadata and page costs nothing extra.
+
+**The real objection was different and stronger, and it is worth keeping.**
+`generateMetadata` runs *outside* the page component, so a `resolveShare` there sits in
+front of both rate limiters — and `page.contract.test.ts`'s
+`checks BOTH limiters, AWAITED, before it reaches the database` exists precisely because
+the ordering is the defence on the app's only unauthenticated read path. Adding a resolve
+to metadata would have meant one query per request for an enumeration attempt, forever.
+
+So the fix is not "resolve twice, it's cheap" but **move the gate inside the shared
+function**:
+
+```
+gateAndResolve = cache((slug, ip) => { limiters...; if over budget -> busy; resolve })
+```
+
+Both `generateMetadata` and the page call it with identical arguments. Counts:
+
+```
+allowed request  ->  1 limiter spend, 1 resolve   (unchanged)
+refused request  ->  1 limiter spend, 0 resolves  (unchanged)
+```
+
+**VERIFIED BY COUNTING, NOT BY READING THE DOCS.** A temporary
+`console.log` inside the cached function, one request, one line — React's `cache()` does
+dedupe across the `generateMetadata`/page boundary. Worth measuring because the whole
+design rests on it and the failure mode is silent: if it did not dedupe, both the budget
+and the query would run twice and nothing would look wrong.
+
+**`ip` IS A PARAMETER, NOT READ INSIDE.** `cache()` keys on arguments, so both call sites
+must pass `clientIp(h)` or the dedupe silently stops. A contract test asserts the two
+call sites are textually identical, which is the only cheap way to check an invariant
+about argument equality.
+
+Measured titles, all four combinations plus the residue:
+
+```
+id-pinned  EN viewer -> "Bacaan yang dibagikan"    id-pinned  ID viewer -> same
+en-pinned  EN viewer -> "A shared reading"          en-pinned  ID viewer -> same
+NULL pin   either    -> "Bacaan yang dibagikan"   (the source language)
+unresolved either    -> "JMTarot"                 (the layout default)
+```
+
+Two things that correctly did NOT change:
+
+- **The OG image.** It draws only `MAJOR ARCANA`, which is English in both locales, and
+  VD18 keeps the question and the prose out of it deliberately.
+- **The 429 page.** No reading, so no reading language.
+
+**Two assertions failed while landing this, and both failures were the right ones.**
+`checks BOTH limiters` pinned `hit(\`share:view:${clientIp(h)}\`)` inline and noticed the
+move into the cached function. And the new test's first version asserted **zero**
+`resolveShare` occurrences, which fails on the one legitimate call — the property is not
+"nobody resolves" but "nobody resolves *outside the gate*", which is what would put a
+query in front of the limiter.

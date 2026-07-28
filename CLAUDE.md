@@ -1375,13 +1375,26 @@ considerate.
   `lang` is what assistive tech and the browser's translate offer use, so `<main
   lang={shownLocale}>` is correct rather than merely adequate — but the residual is real
   and is one attribute on an element carrying no text of its own.
-- **THE 429 PAGE AND `generateMetadata` KEEP THE VIEWER'S LOCALE, CORRECTLY.** A
-  rate-limited visitor has no reading, so there is no reading language to follow. The
-  first version of the contract test forbade the viewer's `t` outright and failed on
-  exactly that line. `generateMetadata` is excluded for a second reason: making the OG
-  card follow the pin needs a `resolveShare` call it does not currently make, which
-  doubles the database reads on the one uncapped public route for two generic strings
-  that carry no reading content (VD18).
+- **THE 429 PAGE KEEPS THE VIEWER'S LOCALE, CORRECTLY.** A rate-limited visitor has no
+  reading, so there is no reading language to follow. The first version of the contract
+  test forbade the viewer's `t` outright and failed on exactly that line.
+- **AND SO DOES THE DOCUMENT TITLE — NO LONGER. `generateMetadata` FOLLOWS THE PIN
+  SINCE 2026-07-28, AND THE BULLET THAT USED TO SIT HERE WAS WRONG ABOUT ITS OWN
+  COST.** It said making the card follow the pin "doubles the database reads on the one
+  uncapped public route". It does not: the page was going to resolve anyway, so sharing
+  one `cache()`d call costs nothing. **The real objection was different and stronger** —
+  a resolve inside `generateMetadata` sits in FRONT of the rate limiter, because that
+  function runs outside the page component, and the limiter-before-database ordering is
+  the whole defence on this route.
+  **The fix is to move the gate INTO the cached function** (`gateAndResolve`), which
+  both call. Counts are unchanged and were **verified by counting executions rather
+  than trusted from the docs**: one limiter spend and one resolve for an allowed
+  request, one spend and no resolve for a refused one. The symptom this closed:
+  everything on a Bahasa-pinned link stayed Indonesian *except the browser tab*, which
+  said "A shared reading" — `<title>` was the last string resolved from
+  `accept-language`, and `og:title` shares it, so chat previews had it too. **The OG
+  IMAGE needed no change**: it draws only `MAJOR ARCANA`, English in both locales, and
+  VD18 keeps the question and prose out of it.
 - **THE SHEET'S "EXACTLY WHAT THEY WILL SEE" IS NOW APPROXIMATE IN ONE FAILURE PATH.**
   The preview renders chrome in the sharer's UI locale, which equals the pin in every
   ordinary case. They diverge only when the sharer reads a language the reading was not
