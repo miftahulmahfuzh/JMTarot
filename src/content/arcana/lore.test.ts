@@ -137,6 +137,8 @@ const bounded = (w: string) => new RegExp(`\\b${w.replace(/'/g, "['\u2019]")}\\b
 const DIVERGENCE: Record<string, string[]> = {
   'the-fool': ['bored', 'equipment', 'ceremony', 'cheaper'],
   'the-magician': ['table', 'meeting', 'sentence', 'aimed'],
+  'the-high-priestess': ['puzzle', 'schedule', 'patient', 'unpleasant'],
+  'the-empress': ['feed', 'season', 'quietly', 'reliable'],
   'the-moon': ['step', 'night', 'guess', 'message', 'seven', 'two in the morning'],
 };
 
@@ -363,14 +365,19 @@ describe('the lore documents', () => {
 
   it('shares no interpretation IMAGERY across the pair (the DIVERGENCE table)', () => {
     expect(Object.keys(DIVERGENCE).sort()).toEqual([...LORE_SLUGS].sort());
+    // Collected, for `noneOf`'s reason: a per-word `toMatchObject({ hit: false })`
+    // prints `hit: true` and omits the card, the field and the word.
+    const hits: string[] = [];
     for (const [slug, words] of Object.entries(DIVERGENCE)) {
       for (const { field, text } of INTERPRETATION(ARCANA_LORE[slug].en)) {
         for (const w of words) {
-          expect({ slug, field, word: w, hit: new RegExp(`\\b${w}s?\\b`, 'i').test(text) })
-            .toMatchObject({ hit: false });
+          if (new RegExp(`\\b${w}s?\\b`, 'i').test(text)) {
+            hits.push(`${slug}.en ${field}: "${w}"`);
+          }
         }
       }
     }
+    expect(hits).toEqual([]);
   });
 
   it('asks DIFFERENT questions in the two locales', () => {
