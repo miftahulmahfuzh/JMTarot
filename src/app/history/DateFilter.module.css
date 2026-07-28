@@ -1,0 +1,95 @@
+.filter {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/*
+ * Full-bleed, so the strip runs to both screen edges and reads as scrollable.
+ * -16px matches the shell's horizontal padding.
+ */
+.strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  margin: 0 -16px;
+  padding: 2px 16px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.strip::-webkit-scrollbar {
+  display: none;
+}
+
+.chip {
+  flex: none;
+  scroll-snap-align: start;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--gold-hairline);
+  background: transparent;
+  border-radius: var(--radius-chip);
+  /* 44px tall for a thumb, the same floor as the reset button. */
+  padding: 14px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.on {
+  color: var(--button-text);
+  border-color: var(--gold-border);
+  background: var(--gold-wash);
+}
+
+/* A day in the strip with nothing in it: today before the first reading, or a
+   day reached through the picker. Present and selectable, visibly not a hit. */
+.bare {
+  color: var(--faint);
+  border-style: dashed;
+}
+
+.chip:focus-visible {
+  outline: 2px solid var(--gold-border);
+  outline-offset: 2px;
+}
+
+.pickerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pickerLabel {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-slot-label);
+  text-transform: uppercase;
+  color: var(--label);
+}
+
+.picker {
+  font-family: var(--font-body), Georgia, serif;
+  /* 16px MINIMUM: below it iOS Safari zooms the page on focus and does not zoom
+     back, which on this screen would leave the strip half off the viewport. */
+  font-size: 17px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-chip);
+  padding: 11px 12px;
+  /* Safari renders the native calendar indicator in the UA colour; this is the
+     only way to get it visible on a dark surface without drawing our own. */
+  color-scheme: dark;
+}
+
+.picker:focus {
+  outline: none;
+  border-color: var(--gold-border);
+  background: var(--gold-wash);
+}
