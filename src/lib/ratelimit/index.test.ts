@@ -222,6 +222,55 @@ describe('backend selection', () => {
     expect(_backendNameFor('read:events:203.0.113.7')).toBe('redis');
   });
 
+  it('KEEPS THE SESSION-UPDATE BUDGET ON MEMORY, even fully configured', () => {
+    /*
+     * The whole point is latency: this budget sits on the request path of a
+     * language switch, and Upstash's nearest region to `sin1` is TOKYO. Sending
+     * it to Redis inserts a cross-region round trip between `setUserLocale`'s
+     * write and `readSessionFacts`'s read. See `memoryOnly`'s comment.
+     *
+     * Both key forms, because `hit()` prefixes `read:` before selection runs --
+     * the same trap the events test above exists to catch.
+     */
+    configured();
+    expect(_backendNameFor('read:session-update:714c4383-dd82-46b8-8fce-117cce7afcf2')).toBe(
+      'memory',
+    );
+    expect(_backendNameFor('session-update:714c4383-dd82-46b8-8fce-117cce7afcf2')).toBe('memory');
+  });
+
+  it('moves the session-update budget to redis on its OWN env var', () => {
+    configured();
+    vi.stubEnv('RATELIMIT_SESSION_BACKEND', 'redis');
+    expect(_backendNameFor('read:session-update:u1')).toBe('redis');
+  });
+
+  it('the two memory-only budgets have INDEPENDENT switches', () => {
+    /*
+     * THE REGRESSION THIS EXISTS FOR. `memoryOnly` used to test
+     * `RATELIMIT_EVENTS_BACKEND` first and return early, so that single variable
+     * governed every memory-only budget. Adding `session-update:` underneath it
+     * would have made `RATELIMIT_EVENTS_BACKEND=redis` silently move the session
+     * budget as well -- a variable named after `events` relocating something
+     * else, which is exactly the class of mistake this file's other tests are
+     * about. Dispatch on the key, then consult that key's own variable.
+     */
+    configured();
+    vi.stubEnv('RATELIMIT_EVENTS_BACKEND', 'redis');
+    expect(_backendNameFor('read:events:203.0.113.7')).toBe('redis');
+    expect(_backendNameFor('read:session-update:u1')).toBe('memory');
+  });
+
+  it('only the exact string `redis` moves a memory-only budget', () => {
+    // Same defaulting rule as RATELIMIT_BACKEND: a typo must not relocate a
+    // budget, in either direction.
+    configured();
+    vi.stubEnv('RATELIMIT_SESSION_BACKEND', 'Redis');
+    expect(_backendNameFor('read:session-update:u1')).toBe('memory');
+    vi.stubEnv('RATELIMIT_EVENTS_BACKEND', 'redis ');
+    expect(_backendNameFor('read:events:1.2.3.4')).toBe('memory');
+  });
+
   it('RATELIMIT_BACKEND=memory forces everything local -- the 2am kill switch', () => {
     configured();
     vi.stubEnv('RATELIMIT_BACKEND', 'memory');
