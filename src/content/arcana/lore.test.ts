@@ -143,6 +143,8 @@ const DIVERGENCE: Record<string, string[]> = {
   'the-hierophant': ['shelf', 'generations', 'expired', 'unique'],
   'the-lovers': ['spare', 'maintain', 'wholeness', 'cheaper'],
   'the-chariot': ['steer', 'urgent', 'add', 'hours'],
+  strength: ['accompany', 'suppress', 'praise', 'ember'],
+  justice: ['sum', 'ledger', 'modest', 'disinterested'],
   'the-moon': ['step', 'night', 'guess', 'message', 'seven', 'two in the morning'],
 };
 
@@ -336,24 +338,35 @@ describe('the lore documents', () => {
   });
 
   it('has the block counts each section is specified for', () => {
+    /*
+     * **EVERY BOUND IS ASSERTED THROUGH A LABELLED OBJECT, NOT A BARE NUMBER.**
+     * The first draft of this case was `expect(doc.lore.length)
+     * .toBeLessThanOrEqual(14)`, and when it fired it printed
+     * `expected 16 to be less than or equal to 14` -- across forty-four documents,
+     * with no way to tell which. Same defect `noneOf` was written to fix, in a
+     * different costume.
+     */
+    const BANDS: [keyof LoreDoc, number, number][] = [
+      ['upright', 2, 4],
+      ['reversed', 2, 4],
+      ['lore', 6, 14],
+      ['inSpread', 1, 3],
+      ['questions', 3, 5],
+    ];
+    const out: string[] = [];
     for (const { slug, locale, doc } of ALL) {
-      const at = `${slug}.${locale}`;
-      expect({ at, n: doc.upright.length }).toMatchObject({ n: expect.any(Number) });
-      expect(doc.upright.length).toBeGreaterThanOrEqual(2);
-      expect(doc.upright.length).toBeLessThanOrEqual(4);
-      expect(doc.reversed.length).toBeGreaterThanOrEqual(2);
-      expect(doc.reversed.length).toBeLessThanOrEqual(4);
-      expect(doc.lore.length).toBeGreaterThanOrEqual(6);
-      expect(doc.lore.length).toBeLessThanOrEqual(14);
-      expect(doc.inSpread.length).toBeGreaterThanOrEqual(1);
-      expect(doc.inSpread.length).toBeLessThanOrEqual(3);
-      expect(doc.questions.length).toBeGreaterThanOrEqual(3);
-      expect(doc.questions.length).toBeLessThanOrEqual(5);
+      for (const [field, min, max] of BANDS) {
+        const n = (doc[field] as unknown[]).length;
+        if (n < min || n > max) out.push(`${slug}.${locale} ${String(field)}: ${n} (want ${min}-${max})`);
+      }
       // Every quote carries a source with a name in it, or it reads as invented.
       for (const b of doc.lore) {
-        if (b.kind === 'quote') expect(b.source.length).toBeGreaterThan(10);
+        if (b.kind === 'quote' && b.source.length <= 10) {
+          out.push(`${slug}.${locale} quote source too short: "${b.source}"`);
+        }
       }
     }
+    expect(out).toEqual([]);
   });
 
   // ── §8.2: rewritten, not translated ──────────────────────────────────────
