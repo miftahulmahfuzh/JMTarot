@@ -4,9 +4,23 @@
 **Date opened:** 2026-07-28.
 **Branch:** `feat/v0.4.0-seo`, worktree `.worktrees/v0.4.0-seo`, off `origin/main` @ `02b4d23`.
 
-> **Precedence, highest first:** this file → `docs/plans/2026-07-28-RECONCILIATION-v0.4.0.md`
-> (written after the six plans land) → the individual workstream plan. Where a
-> workstream plan disagrees with this file, **the plan is wrong**.
+> **RECONCILED 2026-07-28. `docs/plans/2026-07-28-RECONCILIATION-v0.4.0.md` NOW
+> OUTRANKS THIS FILE** wherever they differ, and it found **six defects in this
+> document**. Read it first. The amendments are marked *(amended)* below and the
+> reasoning lives there, not here — a corrected document whose correction is
+> invisible invites somebody to re-derive the original mistake.
+>
+> Defects, in one line each: §3.1 contradicted §6.1 about `/arcana` (R6); §6.2 was
+> wrong that the middleware matcher need not change (R7); §7's S3/S5 download
+> split was ambiguous enough that both plans claimed it (R8); §12 named two seams
+> and there are four (R9); §9's origin chain was missing the `AUTH_URL` rung
+> (R10); §6.5 put the prefix helpers in a file `gate.ts` cannot import (R11); and
+> §11.4 was written against a premise that had already been fixed (R13). **§5 rule
+> 3 was challenged and SURVIVED — measured, not argued (R1).**
+>
+> **Precedence, highest first:** the reconciliation → this file → the individual
+> workstream plan. Where a workstream plan disagrees with this file, **the plan is
+> wrong**.
 >
 > `PUBLIC_RELEASE_ROADMAP.md` (v0.2.0) and
 > `docs/plans/2026-07-27-RECONCILIATION-v0.3.0.md` still bind everything they
@@ -388,6 +402,14 @@ build an architecture around the schema.
 two indexes of one collection compete with each other. If a future release wants
 `/arcana` it 301s to `/gallery`.
 
+*(amended — R6.)* **This sentence contradicted §6.1, which listed `/arcana` as a
+negative control, i.e. NOT public — and a non-public path inside the matcher is a
+302 to `/login`, not a 404.** S1 read §6.1 and accepted a soft 404; S4 read this
+line and asked for a real one. **S4 wins:** `/arcana` is the parent of 22 indexed
+URLs and a parent that redirects to a login form is the failure §1's table exists
+to describe. `isPublic()` gains `/arcana` as an exact match, `src/app/arcana/page.tsx`
+calls `notFound()`, and §6.1's negative controls become `/arcanax` and `/arcana-foo`.
+
 ### 3.2 The 22 URL slugs (S-D4)
 
 Derived by a pure function, asserted against this table. **This table is the
@@ -498,6 +520,15 @@ Rules, all of them S-D6 or S-D7 in mechanical form:
    No `dangerouslySetInnerHTML` anywhere in v0.4.0: the CSP is
    `script-src 'self' 'unsafe-inline'` in report-only and the goal is to tighten
    it, not to acquire a new reason it can never be enforced.
+
+   *(challenged and UPHELD — R1.)* S1 asked to carve out JSON-LD, claiming React
+   HTML-escapes a `<script>` text child into invalid JSON; S6 independently
+   claimed the opposite mechanism. **Both were wrong, and the four-line
+   measurement is in the reconciliation:** on react-dom 19.2.8 a plain text child
+   round-trips through `JSON.parse` intact. The rule stands with no exception.
+   `JsonLd.tsx` additionally pre-escapes `& < >` to `\uXXXX` — not for
+   correctness, but because the behaviour is an unspecified React implementation
+   detail and a release must not depend on one.
 4. **MDX is not added.** `src/app/terms/terms.id.tsx` and `privacy.id.tsx` are
    the existing precedent for long-form bilingual prose in this codebase, and
    they are TSX. A new toolchain, a new build step and a new CSP question buys
@@ -535,8 +566,20 @@ and it would look like a working feature.
 ### 6.2 `src/middleware.ts` — owner S2
 
 The rewrite (S-D2), and the cookie-write guard growing from `/s/` to `/s/` plus
-the content routes (S-D10). The matcher itself should not need to change; if a
-plan thinks it does, that is a flag.
+the content routes (S-D10). ~~The matcher itself should not need to change; if a
+plan thinks it does, that is a flag.~~
+
+*(amended — R7.)* **The matcher MUST change: `wallpapers/` is absent from the
+negative lookahead, so a signed-out stranger is 302'd to `/login` on every
+wallpaper request.** Verified against the regex. S5 raised the flag this sentence
+invited and was right. **Do not add `/wallpapers` to `isPublic()` instead** — that
+returns 200 but leaves middleware running, so the locale-cookie write fires and
+puts a `Set-Cookie` on a ~550KB static response, making it edge-uncacheable.
+
+*(also amended — R22.)* The guard grows to cover **`/api/events`** as well. It is
+in `isPublic()` and *inside* the matcher, so today the beacon collects the locale
+cookie that `/s/` refused to set — V7's "a third party must leave with nothing in
+their jar" is already narrower than it reads.
 
 ### 6.3 `src/app/layout.tsx` — owner S1
 
@@ -701,13 +744,24 @@ scope grows.
 ```
 NEXT_PUBLIC_SITE_ORIGIN=      # S-D11. The canonical origin, e.g.
                               # https://www.jmtarot.site . Falls back to
+                              # AUTH_URL's ORIGIN (added by R10 -- production
+                              # already sets it, and without this rung a deploy
+                              # that forgets the variable emits canonicals at a
+                              # vercel.app host, which DE-INDEXES the correct
+                              # page and reports nothing), then
                               # VERCEL_PROJECT_PRODUCTION_URL, then VERCEL_URL,
                               # then http://localhost:3001. Absent is fine
                               # locally and WRONG in production: a canonical tag
                               # pointing at a preview host de-indexes the real
                               # page, and nothing reports it.
-                              # NEXT_PUBLIC_ ON PURPOSE -- a client component
-                              # may need it for the share control (S-D8).
+                              # THE NEXT_PUBLIC_ PREFIX IN THIS NAME IS
+                              # MISLEADING AND IS KEPT ANYWAY (R10). AUTH_URL
+                              # carries no prefix, so siteOrigin() is
+                              # server-only in practice. The fence is what
+                              # matters: never import it from a client
+                              # component -- it collapses to
+                              # http://localhost:3001 in a browser bundle.
+                              # PublicShare takes a finished URL as a prop.
 
 LOCALE_SWITCHER=1             # UNCHANGED, scope grows. Still rendering-only,
                               # and English on a content page stays reachable
@@ -805,6 +859,16 @@ fails 12–22 of V9's limiter tests as a harness race and its red means nothing.
   and it is the copy a stranger reads first and the copy that is permanent. A
   unit test over the content modules, reusing the existing word lists rather
   than copying them.
+
+  *(amended — R13.)* **The extraction this asked for has already happened:
+  `src/lib/copy/vocab.ts` exports `MALAY`, `THERAPY_ID`, `THERAPY_EN` and
+  `EN_TICS`**, deliberately without `server-only` so scripts and tests can both
+  import it. Import it; copy nothing. **Two inline copies survive and BOTH stay** —
+  `scripts/smoke-llm.ts`'s, because pointing it at `vocab.ts` makes a live LLM
+  check stricter in a release that touches no prompt; and `catalog.test.ts`'s,
+  because three of its extra words (`kereta`, `bilik`, `cuba`) are ordinary
+  Indonesian and merging them would produce false positives against generated
+  prose. A false positive in a shared list is how a check gets switched off.
 - **A "no prose in the catalog" guard.** S-D6 is the kind of rule that decays;
   a test asserting no value in `locales/{id,en}.ts` exceeds a sane length makes
   it mechanical.
@@ -827,6 +891,16 @@ S1 first and alone. S2 immediately after, because every content page's metadata
 depends on its `hreflang` helper. S3–S6 in parallel, with two named seams: S3↔S5
 on the download control, S4↔S6 on `src/content/types.ts`.
 
+*(amended — R9. **This diagram is superseded by reconciliation §6.**)* There are
+**four** seams, not two, and both S1 and S4 split in half. The two this file
+missed: **`cardUrlSlug` has three consumers** (S3, S4, S5) and both S3 and S5
+wrote a fallback permitting themselves to author it — two definitions of a
+permanent public address, which is the "seven agents inventing `user_id`" failure
+this project already documents; and **`jsonld.ts` plus `SITEMAP_PATHS` take
+appends from four workstreams**, which conflict textually and must be sequenced so
+a sitemap path lands only after its page exists. S1's gate task also blocks on
+S2's `prefix.ts` (R11), so "S1 first and alone" is wrong as written.
+
 Plans are written in parallel now, before any code. **The reconciliation is not
 optional** — v0.2.0's seven-plan reconciliation is the reason that release
 composed, and §6's single-owner table is the thing it will be checking.
@@ -838,12 +912,32 @@ composed, and §6's single-owner table is the thing it will be checking.
 **Open, and someone must decide before the relevant workstream ships:**
 
 - **Search Console verification method** — DNS TXT vs the HTML file vs the
-  metadata tag. S1 picks and documents it.
-- **The committed weight of `public/wallpapers/`.** S5 measures it and reports
-  before committing (§7, S5).
-- **How many blog articles v0.4.0 ships.** One is planned. More is better for
-  SEO and worse for the release landing.
-- **`Article` vs `CreativeWork` for a lore page.** S4's call, with a reason.
+  metadata tag. S1 picks and documents it. **STILL OPEN.**
+- ~~**The committed weight of `public/wallpapers/`.**~~ **CLOSED (R3):** measured
+  at **23.77 MB**, 44 files, and Miftah ruled both variants ship. The reduction to
+  12.32 MB by dropping the redundant `card` variant was offered and refused.
+- ~~**How many blog articles v0.4.0 ships.**~~ **CLOSED (R5): two.** The second is
+  `apa-itu-tarot` / `what-tarot-is`, which is what Jodith actually asked for; §7's
+  "One launch article" is amended and S6's footer anchors move onto it.
+- ~~**`Article` vs `CreativeWork` for a lore page.**~~ **CLOSED:** `Article`.
+  `CreativeWork` is its parent, so choosing it communicates strictly less. The
+  argument for it was right about the wrong slot — the card is the `about` and our
+  painting is the `image`. Consequence: the `BreadcrumbList` middle rung is
+  `/gallery`, **never `/arcana`**, because naming a 404 is a machine-readable
+  claim that a page exists.
+- **NEW, and it is the biggest one (R2):** the lore ships **all 22 cards,
+  Indonesian first, English following PER CARD** — not per release. A `hreflang`
+  pair naming an English URL that 404s is non-reciprocal, Google discards the
+  whole set silently, and nothing reports it. `alternates()` therefore takes the
+  set of locales that actually **exist** for a path, not `LOCALES`.
+- **NEW (R21), and four plans flagged it independently:** whether a
+  `next.config.ts` `Cache-Control` survives a dynamically rendered App Router
+  response is **unverified**, and S-D10's whole TTFB argument depends on it. Until
+  `docs/workstream-notes.md` records a measured `s-maxage` on the wire, **assume
+  the content routes are not edge-cached.** `curl -sI` against a Vercel preview,
+  not `npm run dev` — the dev server has no CDN in front of it.
+- **NEW (R4):** `/terms` and `/privacy` stop being `noindex`, join the sitemap,
+  and get their hardcoded Indonesian `<title>` fixed. All three in one commit.
 
 **Out of scope, recorded so it is not smuggled in:**
 
