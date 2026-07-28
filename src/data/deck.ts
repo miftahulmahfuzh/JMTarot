@@ -71,6 +71,24 @@ export function shuffleDeck(reversals = true): Draw[] {
 }
 
 /**
+ * One card by its Major Arcana number, or `undefined`.
+ *
+ * A LOOKUP, NOT `CARDS[id]`, and the difference is not pedantry: indexing is
+ * correct only while the array happens to be in id order, and nothing enforces
+ * that -- `cards.json` is generated, and a generator that ever emits a different
+ * order would silently start rendering the wrong card under the right name. That
+ * is the same shape as the bug that once showed The Fool while requesting id 15.
+ *
+ * `undefined` rather than a throw, because every caller is a renderer: V6's
+ * history reconstructs a draw from `reading_cards` rows, and a row naming a card
+ * that no longer exists is a gap in a list, not a crash on a page that has
+ * already sent its headers.
+ */
+export function cardById(id: number): Card | undefined {
+  return CARDS.find((c) => c.id === id);
+}
+
+/**
  * The one line shown under a card in the detail overlay.
  *
  * Orientation decides which of the two lines is true, the same way it decides

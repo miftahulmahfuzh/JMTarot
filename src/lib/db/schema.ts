@@ -47,7 +47,14 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
-import type { Locale, LocaleSource, ReaderId, ServiceId, YesNo } from '@/data/types';
+import type {
+  Locale,
+  LocaleSource,
+  ReaderId,
+  ReadingStatus,
+  ServiceId,
+  YesNo,
+} from '@/data/types';
 
 /** Every timestamp in this schema. timestamptz, UTC, never a bare `timestamp`. */
 const tsCol = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
@@ -280,11 +287,13 @@ export const lotusAvatars = pgTable('lotus_avatars', {
  * boolean that used to sit beside it: that column said the same thing as
  * `status = 'blocked'`, and one fact needs one column.
  *
- * `partial` has real prose and a fake ending; `failed` has none. W5's chain
- * query treats them differently, which is why one nullable `body` was not
- * enough.
+ * MOVED TO `@/data/types` BY V6 AND RE-EXPORTED HERE, so every existing importer
+ * keeps working. Not cosmetic: `clientBoundary.test.ts` forbids any `@/lib/db/`
+ * specifier in a client component and its regex matches `import type` too, so
+ * `ReadingView` could not name the union at this address. `data/types.ts` has no
+ * imports, which is what makes it reachable from both sides.
  */
-export type ReadingStatus = 'ok' | 'partial' | 'failed' | 'aborted' | 'blocked';
+export type { ReadingStatus };
 
 export const readings = pgTable(
   'readings',
