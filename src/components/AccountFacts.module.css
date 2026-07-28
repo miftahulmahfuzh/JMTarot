@@ -1,0 +1,175 @@
+/*
+ * The facts block on `/account`, read and edit.
+ *
+ * NO NEW HEX, NO NEW FONT SIZE, NO NEW CURVE. `--danger` is V8's one new token and
+ * it belongs to the deletion sheet, not here: editing a nickname is not destructive.
+ */
+
+.rows,
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/*
+ * A two-column grid, label left and value right, with the label given a fixed
+ * share rather than `auto`. `auto` sizes to the LONGEST label, which differs
+ * between locales -- `What you are called` against `Nama panggilan` -- so the
+ * values would not line up at the same x in both languages and the block would
+ * look like two different designs.
+ */
+.row {
+  display: grid;
+  grid-template-columns: 42% 1fr;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.label {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-slot-label);
+  letter-spacing: var(--ls-slot-label);
+  text-transform: uppercase;
+  color: var(--label);
+}
+
+.value {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-hint);
+  color: var(--text);
+  /* A full name can be long and a nickname can be one character. Wrapping rather
+     than ellipsing, because a truncated name on the page that exists to show you
+     your own name is worse than two lines. */
+  overflow-wrap: anywhere;
+}
+
+.edit {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 2px;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.edit:hover,
+.edit:focus-visible {
+  color: var(--gold-lift);
+  outline: none;
+}
+
+.edit:focus-visible {
+  border-radius: var(--radius-chip);
+  box-shadow: 0 0 0 1px var(--gold-border);
+}
+
+/* --- the edit form ------------------------------------------------------- */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fieldLabel {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-slot-label);
+  letter-spacing: var(--ls-slot-label);
+  text-transform: uppercase;
+  color: var(--label);
+}
+
+/*
+ * `font-size: 16px` MINIMUM, AND IT IS NOT A TASTE DECISION. iOS Safari ZOOMS THE
+ * VIEWPORT when a focused input's text is smaller than 16px, and it does not zoom
+ * back out on blur -- so a 15px field on a phone leaves the querent on a page they
+ * have to pinch to escape. `--fs-hint` is 17px, which clears it.
+ */
+.input {
+  min-height: 44px;
+  padding: 10px 12px;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-hint);
+  color: var(--text);
+  background: var(--gold-wash);
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-chip);
+  /* Safari paints its own inner shadow and rounds its own corners on inputs. */
+  appearance: none;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--gold-border);
+}
+
+.failed {
+  margin: 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: var(--fs-hint);
+  color: var(--danger);
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.cancel,
+.save {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 14px 12px;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  border-radius: var(--radius-chip);
+  cursor: pointer;
+}
+
+/* SAVE is the primary here, unlike the deletion sheet -- this action is the one
+   the querent came to perform and nothing about it is destructive. */
+.save {
+  color: var(--button-text);
+  background: var(--gold-wash);
+  border: 1px solid var(--gold-border);
+}
+
+.save:hover:not(:disabled) {
+  background: var(--gold-wash-strong);
+}
+
+.cancel {
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--gold-hairline);
+}
+
+.cancel:hover:not(:disabled) {
+  color: var(--text-warm);
+}
+
+.cancel:focus-visible,
+.save:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--gold-border);
+}
+
+.cancel:disabled,
+.save:disabled {
+  cursor: default;
+}
