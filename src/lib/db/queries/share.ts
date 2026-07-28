@@ -25,6 +25,7 @@
  */
 import { and, eq, isNull, sql } from 'drizzle-orm';
 
+import type { Locale } from '@/data/types';
 import type { ShareEntity } from '@/lib/share/slug';
 import type { PublicPersona, PublicReading } from '@/lib/share/types';
 import type { DbOrTx } from '../types';
@@ -41,12 +42,27 @@ import {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Mint a link, or rotate the slug of the one that already exists.
+ * `locale = $1` for a language, `locale is null` for as-written.
+ *
+ * **`eq(col, null)` COMPILES AND IS ALWAYS FALSE**, because SQL `= NULL` is
+ * `unknown` — so a lookup written that way would report "no link for the
+ * as-written pin" for every legacy row, and the caller would mint a second one it
+ * could not see. Postgres's `nulls not distinct` makes NULL a single value for
+ * UNIQUENESS; it does not change what `=` means in a `where`. Those are separate
+ * mechanisms and this helper is the second one.
+ */
+function localeMatches(locale: Locale | null) {
+  return locale === null ? isNull(shareLinks.locale) : eq(shareLinks.locale, locale);
+}
+
+/**
+ * Mint a link, or rotate the slug of the one that already exists **for this
+ * language**.
  *
  * **THE `set` CLAUSE ASSIGNS A FRESH SLUG, AND `revoked_at = null` ALONE WOULD
- * BE A SECURITY BUG.** `unique (user_id, entity, entity_id)` means one row per
- * artifact forever, so "share this again after revoking" has exactly two
- * implementations:
+ * BE A SECURITY BUG.** `unique nulls not distinct (user_id, entity, entity_id,
+ * locale)` means one row per artifact PER LANGUAGE forever, so "share this again
+ * after revoking" has exactly two implementations:
  *
  *   ❌ `set revoked_at = null` on the existing row. One line, obvious, and it
  *      RESURRECTS A CAPABILITY THE USER DELIBERATELY KILLED. The old URL,
@@ -55,6 +71,33 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  *   ✅ a fresh slug as well, so revoke is permanent *for that address*.
  *
  * This is the single most likely one-line "simplification" in the workstream.
+ *
+ * ── `locale` IS IN THE TARGET AND NOT IN THE `set` (CHANGED 2026-07-28) ──────
+ *
+ * **This file used to re-pin `locale` here, and the comment on that line argued
+ * at length that omitting it was the bug. The argument inverted.** Under the old
+ * three-column key a language was an attribute of the one row a reading had, so
+ * re-sharing in a second language rotated the slug and re-pinned — which is
+ * precisely the reported bug: the querent's English link, already sent to
+ * somebody, stopped resolving the moment they shared in Bahasa.
+ *
+ * `locale` is now part of the row's identity, so:
+ *
+ *   - a conflict means **same artifact AND same language**, where writing
+ *     `locale` back would be a no-op; and
+ *   - a *different* language takes the insert branch and gets its own permanent
+ *     address, leaving the first one alive.
+ *
+ * The comment is inverted rather than deleted because the failure mode here is
+ * somebody restoring a `locale:` line to the `set` clause — which under the new
+ * key would move a pin onto a row whose identity says otherwise, i.e. write a
+ * value the unique constraint has already used to place the row.
+ *
+ * **THE TARGET REACHES LEGACY `NULL` ROWS ONLY BECAUSE OF `NULLS NOT DISTINCT`.**
+ * Without that clause on the constraint, `on conflict (…, locale)` would not
+ * match a row whose `locale` is NULL, and every re-share of a pre-2026-07-28
+ * link would INSERT instead of rotating — leaving the old slug live. Two
+ * integration tests fence it. See `schema.ts` on the constraint.
  *
  * `updatedAt` IS SET BY HAND. Drizzle's `$onUpdate()` applies to `db.update()`
  * and does NOT fire inside `onConflictDoUpdate`; drop the line and the column
@@ -69,26 +112,15 @@ export async function insertOrRotateShareLink(
     .insert(shareLinks)
     .values(values)
     .onConflictDoUpdate({
-      target: [shareLinks.userId, shareLinks.entity, shareLinks.entityId],
+      target: [shareLinks.userId, shareLinks.entity, shareLinks.entityId, shareLinks.locale],
       set: {
         // A FRESH ADDRESS. See the header above -- not `revokedAt: null` alone.
         slug: values.slug,
         // TRUE, matching the column default -- see `schema.ts` for the ruling.
         includeQuestion: values.includeQuestion ?? true,
         includeNickname: values.includeNickname ?? true,
-        /*
-         * **RE-PINNED, NOT PRESERVED.** Re-sharing is how a querent fixes a link
-         * they minted in the wrong language: switch language, share again, get a
-         * new address showing the new language. Omitting this line rotates the
-         * slug and keeps the stale pin, so the control appears to work and
-         * changes nothing -- the shape of the language-switch bug of 2026-07-28.
-         *
-         * `?? null` rather than a bare `values.locale`: `NewShareLink.locale` is
-         * optional, and `undefined` in a drizzle `set` clause is dropped from the
-         * statement, which would silently mean "keep the old pin" for exactly the
-         * caller that had decided not to pin one.
-         */
-        locale: values.locale ?? null,
+        // NO `locale` HERE, DELIBERATELY. It is in the target above; see the
+        // header. A conflict already means the locale matches.
         revokedAt: null,
         // BY HAND. $onUpdate() does not fire inside onConflictDoUpdate.
         updatedAt: new Date(),
@@ -139,18 +171,26 @@ export async function shareLinkById(
 }
 
 /**
- * Has this artifact EVER had a link, live or revoked?
+ * Has this artifact EVER had a link **in this language**, live or revoked?
  *
- * Separate from `liveShareLinkFor` because the two answer different questions and
- * `share.created`'s `rotated` prop needs this one: a re-share after a revoke is a
- * rotation, and `liveShareLinkFor` cannot see it, because the row it would have to
- * see is the revoked one.
+ * Separate from `liveShareLinksForArtifact` because the two answer different
+ * questions, and `share.created`'s `rotated` prop needs this one: a re-share after a
+ * revoke IS a rotation, and a live-only lookup cannot see it, because the row it
+ * would have to see is the revoked one. **This is the ONLY reader of a revoked row.**
+ *
+ * **`locale` IS REQUIRED AND THAT IS WHAT KEEPS `rotated` HONEST** (2026-07-28).
+ * Without it this reports "yes" for a reading shared in the *other* language, so
+ * the first-ever English mint of a reading already shared in Bahasa would be
+ * counted as a rotation — and `rotated` is the only prop distinguishing "a new
+ * address was minted" from "an address was replaced", which is the funnel the
+ * per-locale change exists to fix.
  */
 export async function anyShareLinkFor(
   db: DbOrTx,
   userId: string,
   entity: string,
   entityId: string,
+  locale: Locale | null,
 ): Promise<ShareLink | null> {
   if (!UUID_RE.test(entityId)) return null;
   const [row] = await db
@@ -161,24 +201,56 @@ export async function anyShareLinkFor(
         eq(shareLinks.userId, userId),
         eq(shareLinks.entity, entity),
         eq(shareLinks.entityId, entityId),
+        localeMatches(locale),
       ),
     )
     .limit(1);
   return row ?? null;
 }
 
-/**
- * Is there a live link for this artifact already? The share sheet asks, so it
- * can open on `live` rather than offering to mint a second one.
+/*
+ * ── `liveShareLinkFor` IS DELETED, AND ITS ABSENCE IS THE POINT ──────────────
+ *
+ * It existed from V7 to 2026-07-28 with **zero production callers** and a docstring
+ * that said *"the share sheet asks, so it can open on `live` rather than offering to
+ * mint a second one."* The sheet did not ask. It had no read path at all, which is
+ * why the reported bug — a second language replacing the first link's address —
+ * reached the querent with no warning on screen.
+ *
+ * **A QUERY WITH NO CALLERS IS NOT DEAD CODE, IT IS A MISSING FEATURE WEARING A
+ * DOCSTRING**, and this one cost a release: reading the file suggested the sheet
+ * already knew about existing links, so nobody checked whether it did.
+ * `liveShareLinksForArtifact` is what the sheet actually calls, and it answers the
+ * question the sheet actually has — *which* languages, not *whether* one exists.
+ *
+ * Do not reinstate a single-row variant without a caller in the same change.
  */
-export async function liveShareLinkFor(
+
+/**
+ * Every LIVE link this querent holds for one artifact, in every language.
+ *
+ * **THE SHARE SHEET HAD NO READ PATH AT ALL BEFORE THIS**, which is why the
+ * reported bug arrived with no warning: `ShareFooter`'s state started empty and
+ * only ever held a link minted in that mount, so opening the sheet on a reading
+ * shared yesterday showed the *create* phase and nothing said the existing
+ * address was about to be replaced. `liveShareLinkFor` looked like it served that
+ * purpose and had zero production callers.
+ *
+ * Ordered by `created_at` so the list is stable across renders — an unordered
+ * list of two links reshuffling between fetches reads as a bug in the sheet.
+ *
+ * `entity` is a plain string rather than `ShareEntity` for the reason the rest of
+ * this file uses one: the column is text and the union is validated at the route
+ * boundary, so narrowing here would only move the cast.
+ */
+export async function liveShareLinksForArtifact(
   db: DbOrTx,
   userId: string,
   entity: string,
   entityId: string,
-): Promise<ShareLink | null> {
-  if (!UUID_RE.test(entityId)) return null;
-  const [row] = await db
+): Promise<ShareLink[]> {
+  if (!UUID_RE.test(entityId)) return [];
+  return db
     .select()
     .from(shareLinks)
     .where(
@@ -189,8 +261,46 @@ export async function liveShareLinkFor(
         isNull(shareLinks.revokedAt),
       ),
     )
-    .limit(1);
-  return row ?? null;
+    .orderBy(shareLinks.createdAt);
+}
+
+/**
+ * Turn off EVERY live link for one artifact, in every language, in one statement.
+ *
+ * **REVOKE IS PER-ARTIFACT AND NOT PER-LINK** (Miftah's ruling, 2026-07-28). Once
+ * a reading can hold an English address and a Bahasa address, "stop sharing this"
+ * has to mean both or the control is a trap: a querent taps it, believes the
+ * reading is private, and one URL is still serving the public internet. A
+ * per-locale kill was offered and refused on exactly that ground.
+ *
+ * **THE FULL ROWS COME BACK, NOT A COUNT**, because `share.revoked` carries
+ * `age_hours` and `view_count` and those are facts about an ADDRESS rather than
+ * about the artifact — so the route fires one event per row. `createdAt` and
+ * `viewCount` are untouched by this update, so reading them off the returned rows
+ * is correct even though `revokedAt` is not.
+ *
+ * `revokeShareLink` is kept: it is still the right shape for revoking one known
+ * row, and `revokeAllForUser` (V8's deletion transaction) is untouched.
+ */
+export async function revokeArtifactLinks(
+  db: DbOrTx,
+  userId: string,
+  entity: string,
+  entityId: string,
+): Promise<ShareLink[]> {
+  if (!UUID_RE.test(entityId)) return [];
+  return db
+    .update(shareLinks)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(
+        eq(shareLinks.userId, userId),
+        eq(shareLinks.entity, entity),
+        eq(shareLinks.entityId, entityId),
+        isNull(shareLinks.revokedAt),
+      ),
+    )
+    .returning();
 }
 
 /**
@@ -198,7 +308,13 @@ export async function liveShareLinkFor(
  * yours", 0 for "does not exist" and 0 for "already revoked" — see rule 2.
  *
  * The row is KEPT. Deleting it would free the slug for re-issue and free the
- * `unique (user_id, entity, entity_id)` slot, and both of those are the point.
+ * `unique (user_id, entity, entity_id, locale)` slot, and both of those are the
+ * point.
+ *
+ * **THIS REVOKES ONE ADDRESS. `revokeArtifactLinks` IS WHAT THE APP CALLS**, because
+ * a reading holds one address per language and "stop sharing this" has to mean all of
+ * them. This function survives as the primitive that one is built on and as the shape
+ * for revoking a single known row; nothing in the UI reaches it directly.
  */
 export async function revokeShareLink(
   db: DbOrTx,
@@ -324,6 +440,64 @@ export async function ownsShareableReading(
     )
     .limit(1);
   return rows.length > 0;
+}
+
+/**
+ * What `translateOrCached` needs to translate one of the querent's own readings,
+ * for the mint-time pin (design §4.4).
+ *
+ * **THIS IS A SEPARATE QUERY RATHER THAN A WIDENED `ownsShareableReading`, AND
+ * THAT IS DELIBERATE.** That function's header records why its projection is
+ * `id` and nothing else: a yes/no question has no business selecting a column
+ * carrying the querent's own words, and the smallest projection is also the one
+ * that cannot put that text into a driver error's bound parameters. Widening it
+ * would put `body` behind every existence check in the feature, including the
+ * retry loop that runs three times on the draw screen.
+ *
+ * So the cost is paid once, on the one path that genuinely needs the prose, and
+ * `ownsShareableReading` stays cheap and stays safe.
+ *
+ * `userId` IS IN THE `where` even though this is a read. The row's `body` is the
+ * querent's, and mint time is the only moment a session exists to check against —
+ * see `ownsShareableReading`'s header on that being the only ownership check in
+ * the lifetime of a link.
+ *
+ * `createdAt` rather than an `updatedAt`: VD7 makes `readings.body` immutable, so
+ * its creation time is the correct and permanent staleness comparand. That is
+ * `TranslateArgs.sourceUpdatedAt`'s documented contract, not a shortcut.
+ */
+export async function shareableReadingSource(
+  db: DbOrTx,
+  readingId: string,
+  userId: string,
+): Promise<{
+  body: string;
+  locale: Locale;
+  readerId: string;
+  serviceId: string;
+  createdAt: Date;
+} | null> {
+  if (!UUID_RE.test(readingId)) return null;
+  const [row] = await db
+    .select({
+      body: readings.body,
+      locale: readings.locale,
+      readerId: readings.readerId,
+      serviceId: readings.serviceId,
+      createdAt: readings.createdAt,
+    })
+    .from(readings)
+    .where(
+      and(
+        eq(readings.id, readingId),
+        eq(readings.userId, userId),
+        eq(readings.status, 'ok'),
+        sql`${readings.body} is not null`,
+      ),
+    )
+    .limit(1);
+  if (!row || row.body === null) return null;
+  return { ...row, body: row.body };
 }
 
 /**

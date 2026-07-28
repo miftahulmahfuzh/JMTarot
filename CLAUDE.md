@@ -243,7 +243,8 @@ cost:
    anything whose only input is its container's inline size — the fan — this is exact.
 5. **A real Chrome in WSL, driven over CDP.** `tools/e2e/run.sh` — see
    `/test-prod-using-headless-chrome` and `.claude/skills/`. Launch, navigate, tap with
-   real Input-domain events, screenshot at a **true** 390px, read the DOM, list requests
+   real Input-domain events, screenshot at ~500px (**NOT the "true 390px" this line used to
+   claim — MEASURED 2026-07-28, see below**), read the DOM, list requests
    with their POST bodies. It holds a **persistent Google session**, so a signed-in
    production flow can be exercised repeatedly. Point it at production, a preview, or
    `E2E_BASE=http://localhost:3001`. **The human authenticates and the harness never holds a
@@ -251,6 +252,19 @@ cost:
    somebody types into, and `whoami` prints the session cookie's length, never its
    value. The most expensive automatable loop: use it when the question needs a real
    session, real touch, or the deployed lambda.
+
+   **IT DOES NOT GIVE YOU A PHONE WIDTH, AND THIS FILE AND `.claude/skills/` BOTH SAID
+   IT DID.** `--width 390` becomes `--window-size=390,844`, and **measured 2026-07-28
+   `innerWidth` and `outerWidth` are both 500** — so the shot is a ~500px layout cropped
+   to look narrow, which is the exact failure the skill's own table attributes to
+   *Windows* Chrome and claims not to apply here. The diagnosis in that table (no window
+   manager, so 390 is honoured) is wrong for this profile; a saved window bound in
+   `~/.cache/jmtarot-e2e-profile` is the likeliest cause and nobody has confirmed it.
+   **So loop 5 answers "does the UI agree with what it sends" and NOT "does it fit a
+   phone".** For width, use **loop 4** — it is exact for container-driven layout, and
+   constraining the element under test plus reading `scrollWidth > clientWidth` measures
+   overflow at 320/360/390 without needing a viewport at all. Found while checking the
+   share sheet's two-link list; the screenshot looked like a phone and was not one.
 6. **A real iPhone against a Vercel preview URL.** Still the only way to check
    `100dvh`, safe-area insets, real touch on glass, Add to Home Screen and standalone
    mode. **Loop 5 cannot substitute, and two live bugs prove it:** the iOS standalone
@@ -1239,11 +1253,15 @@ tell what any of it is about. `share_links.include_question` defaults to `true` 
   question rather than one of four.
 - **`include_nickname` keeps its switch.** A nickname is a name rather than context.
 
-- **RE-SHARE ROTATES THE SLUG. DO NOT "SIMPLIFY" IT TO `revoked_at = null`.**
-  `unique (user_id, entity, entity_id)` means one row per artifact forever, so un-revoking
-  is the obvious one-liner — and it **resurrects a capability the querent deliberately
-  killed**: the old URL, in the group chat they revoked it because of, starts working again
-  for whoever still has it. The regression test is the one asserting the OLD slug stays dead.
+- **RE-SHARE ROTATES THE SLUG *WITHIN ONE LANGUAGE*. DO NOT "SIMPLIFY" IT TO
+  `revoked_at = null`.** `unique nulls not distinct (user_id, entity, entity_id, locale)`
+  means one row per artifact **per language** forever, so un-revoking is the obvious
+  one-liner — and it **resurrects a capability the querent deliberately killed**: the old
+  URL, in the group chat they revoked it because of, starts working again for whoever still
+  has it. The regression test is the one asserting the OLD slug stays dead.
+  **The narrowing is 2026-07-28's and it is the whole of `## Share links, one per language`
+  below** — a *different* language is a *different row*, so it takes the insert branch and
+  the first address stays alive.
 - **`currentUser()` IS NEVER CALLED ON `/s/[slug]`, AND `curl` CANNOT SEE THE FAILURE.** A
   client component reaching for a session context renders correct HTML on the server and
   throws during hydration: `curl` reports 200 with the reading in the body and the page is
@@ -1306,12 +1324,65 @@ the full argument. What changed and what did not:
 **Still open:** `share.viewed` has not been observed firing; two `authjs.*` cookies reach a
 third party on `/s/` and `/privacy` §4.4 names them; no resolve cache is shipped
 (`SHARE_RESOLVE_CACHE_MS` is `0`, and turning it on buys a window in which a revoked link
-still resolves — and now also one in which a re-pinned locale is stale); **`'persona'` is
+still resolves — **the "re-pinned locale is stale" half of that risk is GONE since
+2026-07-28**, because a locale is now a row and nothing re-pins); **`'persona'` is
 STILL a live union value resolving to null** — V8 shipped the persona and exports
 `readPersonaView` plus the presentational `PersonaBlock` for it, but `/s/<slug>` does not
 mount either yet. **Design C is the only way to make the locale mismatch itself
 impossible** — the notice that used to explain it is deleted, see above — and it has still
 not been costed against the ceiling.
+
+### Share links, one per language (2026-07-28)
+
+**A reading holds one address PER LANGUAGE, and sharing it in a second language no longer
+kills the first URL.** That was the reported bug: *"I got a share link for card session A in
+English. When I changed the language and created a share link in Bahasa, the link in no 1
+cannot be opened again."* `docs/plans/2026-07-28-share-per-locale-links-design.md` is the
+argument. Nothing was overwritten — `readings.body` is immutable and the `translations` row
+survived — the **address** was replaced, because `locale` was an attribute of the one row a
+reading had rather than part of its identity.
+
+- **`unique nulls not distinct (user_id, entity, entity_id, locale)`, AND THE CLAUSE IS THE
+  WHOLE TRAP.** Postgres `UNIQUE` treats NULLs as DISTINCT and every pre-design-A link has
+  `locale = NULL`, so the naive four-column key would let `onConflictDoUpdate`'s target MISS
+  a legacy row and INSERT rather than rotate — leaving the old slug live and unreachable from
+  the UI, which is the capability resurrection rotation exists to prevent, arriving through
+  the back door with a green suite. Two integration tests are the negative control, one at
+  the upsert level and one on a raw insert, and **both fail by ACCEPTING a second row.**
+  A reading may hold three rows: one `en`, one `id`, one legacy `NULL`.
+- **`insertOrRotateShareLink` NO LONGER WRITES `locale` IN ITS `set` CLAUSE.** It is in the
+  conflict target instead, so a conflict means "same language" and re-pinning is a no-op. The
+  old comment argued at length that omitting the line was the bug; it is **inverted, not
+  deleted**, because the failure mode is somebody restoring it.
+- **THE MINT RESOLVES THE PIN, IT DOES NOT TRUST IT** (`resolvePin`). A non-NULL
+  `share_links.locale` **always has a `translations` row behind it**: the mint calls
+  `translateOrCached` and pins `NULL` when it falls back, because a row claiming `en` with no
+  English body is a link that lies about its own language and the notice that used to explain
+  a mismatch is deleted. **`fellBack` is the check and `outcome` is not a substitute** in
+  either direction — `invalid` is prose that WAS translated. **VD7 is intact**: it binds the
+  session-less public page, and a mint has `requireUser()`, `share:create:` and `llm:window`
+  behind it. The persona arm is unreachable today (`publicPersonaForShare` returns null) and
+  is owed the same treatment on the day V7 mounts it.
+- **REVOKE IS PER-ARTIFACT AND KILLS EVERY LANGUAGE** (Miftah's ruling). One control, one tap.
+  A per-locale kill was offered and refused on consent grounds: two kinds of "stop sharing" is
+  a UI in which the querent taps the wrong one, believes the reading is private, and is not.
+  `DELETE` still names one `id` — the anchor — and the server expands it, firing **one
+  `share.revoked` per address**, because `age_hours` and `view_count` are facts about an
+  address rather than about the artifact.
+- **`GET /api/share?entity=&entity_id=` EXISTS BECAUSE THE SHEET HAD NO READ PATH AT ALL**,
+  which is why the bug arrived silently: `liveShareLinkFor` had zero production callers, so a
+  reading shared yesterday looked unshared and minting replaced its address with nothing on
+  screen having warned. Fetched on sheet OPEN, never on mount — this component renders under
+  every completed reading. A failed read falls through to the create flow rather than erroring.
+- **`ShareFooter` BOUNDS ALL THREE REQUESTS AT 8s** and `maxDuration` went 20 → 30, together.
+  CLAUDE.md's `POST /api/locale` rule: a bigger server budget without a client bound only makes
+  a hang longer. Giving up costs nothing now — the lambda's row still lands and the next open
+  of the sheet reads it back.
+- **`share.sheet.createIn` IS "Create a link in {language}" AND NOT "a {language} link".** The
+  first version rendered **"CREATE A ENGLISH LINK"**, found by driving the real page and
+  invisible to the whole suite because the string and the parameter are each correct on their
+  own. Any phrasing with an indefinite article next to an interpolated language name is a coin
+  flip. The Indonesian never had the problem and is deliberately phrased differently.
 
 **AND ONE GAP THAT ONLY EXISTS BECAUSE V8 AND DESIGN A LANDED TOGETHER: the pinned locale
 covers the READING arm only.** `share_links.locale` is written for every mint and

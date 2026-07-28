@@ -56,10 +56,45 @@ check('chrome follows the viewer (en)', 'A shared reading' in en, 'eyebrow')
 id_ = get('/s/aaaaaaaaaaaa', 'id-ID,id;q=0.9')
 check('chrome follows the viewer (id)', 'Bacaan yang dibagikan' in id_)
 
-# The seeded reading is `en` prose. So: mismatch line for an `id` viewer, none for `en`.
-check('otherLanguage shown on a mismatch', 'otherLanguage' in id_)
-check('otherLanguage ABSENT when they agree', 'otherLanguage' not in en)
-check('prose tagged with its own lang', 'lang="en"' in id_)
+# ---------------------------------------------------------------------------
+# ONE READING, THREE LIVE ADDRESSES -- the reported bug, checked live.
+# ---------------------------------------------------------------------------
+#
+# Miftah, 2026-07-28: "I got a share link for card session A in English. It opened
+# nicely. When I changed the language and created a share link for card session A in
+# Bahasa, somehow the share link in no 1 cannot be opened again."
+#
+# Under `unique (user_id, entity, entity_id)` the second mint replaced the first
+# address. The fixture now plants one row per language, so the check is that none of
+# them has taken the others' place. THIS IS THE ASSERTION THE FILE EXISTS FOR NOW.
+en_pinned = get('/s/bbbbbbbbbbbb')
+as_written = get('/s/cccccccccccc')
+check('the id-pinned address resolves', 'ReadingView-module' in body)
+check('the en-pinned address resolves TOO, not instead', 'ReadingView-module' in en_pinned)
+check('and the legacy unpinned address resolves as well',
+      'ReadingView-module' in as_written)
+
+# Each renders its OWN language, which is what makes them worth being separate.
+check('the en-pinned address renders the ENGLISH body', 'SENTINEL-EN' in en_pinned)
+check('the id-pinned address does NOT render the English body',
+      'SENTINEL-EN' not in body)
+check('the unpinned address renders as-written, i.e. NOT the translation',
+      'SENTINEL-EN' not in as_written)
+
+# `lang` comes from `renderedLocale(reading, translation)`, never `reading.locale`:
+# against the source a screen reader pronounces English as Indonesian. It is now the
+# ONLY thing declaring the prose's language -- see the notice check below.
+check('the en-pinned prose is tagged lang="en"', 'lang="en"' in en_pinned)
+check('the id-pinned prose is tagged lang="id"', 'lang="id"' in body)
+check('the unpinned prose is tagged with the SOURCE lang', 'lang="id"' in as_written)
+
+# THE NOTICE IS DELETED (Miftah's ruling, 2026-07-28) and this checker asserted the
+# OPPOSITE until 2026-07-28 -- it still expected `otherLanguage` on a mismatch, so it
+# was failing against main for a release. Inverted rather than removed, because the
+# failure mode of deleting chrome is somebody adding it back in six months.
+for name, page in (('id viewer', id_), ('en viewer', en), ('en-pinned', en_pinned),
+                   ('unpinned', as_written)):
+    check(f'NO other-language notice ({name})', 'otherLanguage' not in page)
 
 check('no session context in the tree', 'ViewerProvider' not in body)
 check('no account button on a public page', 'AccountButton' not in body)

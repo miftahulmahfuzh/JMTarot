@@ -24,16 +24,17 @@ import 'server-only';
 import {
   anyShareLinkFor,
   insertOrRotateShareLink,
+  liveShareLinksForArtifact,
   markReadingShared,
   ownsShareableReading,
   publicPersonaForShare,
   publicReadingForShare,
-  revokeShareLink,
+  revokeArtifactLinks,
   shareLinkById,
   shareLinkBySlug,
 } from '@/lib/db/queries/share';
 import { getTranslation } from '@/lib/db/queries/translations';
-import type { Locale } from '@/data/types';
+import type { Locale, ReaderId, ServiceId } from '@/data/types';
 import type { DbOrTx } from '@/lib/db/types';
 import { isShareEntity, isValidSlug, newSlug, normalizeSlug, type ShareEntity } from './slug';
 import type { ResolvedShare, SharedTranslation, ShareLinkPublic } from './types';
@@ -145,6 +146,13 @@ export type CreateShareResult =
       rotated: boolean;
       includeQuestion: boolean;
       includeNickname: boolean;
+      /**
+       * The pin that was actually written, which is **not always what the route
+       * asked for** — see `resolvePin`. The sheet labels the link with it, so it
+       * has to be the stored value rather than the requested one, or a link that
+       * fell back to as-written would be presented as "English".
+       */
+      locale: Locale | null;
     }
   | { ok: false; reason: 'not_shareable' | 'slug_exhausted' };
 
@@ -183,12 +191,23 @@ export async function createShareLink(args: {
   if (!exists) return { ok: false, reason: 'not_shareable' };
 
   /*
-   * ANY prior row, live OR revoked. `liveShareLinkFor` cannot answer this: a
-   * re-share after a revoke IS a rotation and the row it would have to see is the
-   * revoked one, so using it would report `rotated: false` for exactly the case
-   * the prop exists to count.
+   * THE PIN IS RESOLVED, NOT TRUSTED. See `resolvePin`. It may come back NULL for
+   * a locale the route asked for, and that is the honest answer rather than a
+   * failure — everything downstream uses `pin`, never `args.locale`.
    */
-  const before = await anyShareLinkFor(db, args.userId, args.entity, args.entityId);
+  const pin = await resolvePin(db, args);
+
+  /*
+   * ANY prior row, live OR revoked, **for this language**. `liveShareLinkFor`
+   * cannot answer this: a re-share after a revoke IS a rotation and the row it
+   * would have to see is the revoked one, so using it would report
+   * `rotated: false` for exactly the case the prop exists to count.
+   *
+   * `pin` and not `args.locale`: the row this could conflict with is the one at
+   * the pin, so asking about a language we decided not to pin would report a
+   * rotation of a row we are not going to touch.
+   */
+  const before = await anyShareLinkFor(db, args.userId, args.entity, args.entityId, pin);
 
   for (let attempt = 0; attempt < SLUG_ATTEMPTS; attempt++) {
     const slug = newSlug();
@@ -200,8 +219,12 @@ export async function createShareLink(args: {
         entityId: args.entityId,
         includeQuestion: args.includeQuestion,
         includeNickname: args.includeNickname,
-        // RE-PINNED on a rotation too; see `insertOrRotateShareLink`'s set clause.
-        locale: args.locale,
+        /*
+         * THE RESOLVED PIN. `locale` is part of the unique key now, so this is
+         * what decides whether the statement inserts a new address or rotates an
+         * existing one — see `insertOrRotateShareLink`'s header.
+         */
+        locale: pin,
       });
 
       /*
@@ -230,6 +253,7 @@ export async function createShareLink(args: {
         rotated: before !== null,
         includeQuestion: row.includeQuestion,
         includeNickname: row.includeNickname,
+        locale: row.locale,
       };
     } catch (err) {
       /*
@@ -246,6 +270,101 @@ export async function createShareLink(args: {
     }
   }
   return { ok: false, reason: 'slug_exhausted' };
+}
+
+/**
+ * Decide what may HONESTLY be pinned, and make it true before returning.
+ *
+ * ── THE INVARIANT ───────────────────────────────────────────────────────────
+ *
+ * **A non-NULL `share_links.locale` always has a `translations` row behind it.**
+ * `/s/` cannot generate — VD7, it is the one route with no session and no
+ * per-user budget — so it reads the pinned translation and, on a miss, silently
+ * renders the source. Under the old one-link-per-reading model that was a
+ * cosmetic edge case. Now that a querent can hold an "English link" and a
+ * "Bahasa link" as separate addresses, a pin with no row behind it is **a link
+ * that lies about its own language**, and the notice that used to explain a
+ * mismatch was deleted on 2026-07-28. So the pin is made true here or not made.
+ *
+ * ── WHY THIS IS NOT A VD7 BREACH ────────────────────────────────────────────
+ *
+ * VD7 binds the session-less public page. A mint has `requireUser()`, the
+ * `share:create:` per-user budget and `llm:window` behind it, which is every gate
+ * the reading path has. The public page still only ever READS.
+ *
+ * ── THE THREE OUTCOMES ──────────────────────────────────────────────────────
+ *
+ *   source locale === target  ->  pin target, NO model call. The resolver finds
+ *                                 no row (nothing translates `id` into `id`) and
+ *                                 falls through to as-written, which renders the
+ *                                 same prose by a cheaper route. `resolveShare`'s
+ *                                 header already records this.
+ *   translated                ->  pin target.
+ *   fell back                 ->  pin NULL, meaning as-written. TRUE, where
+ *                                 pinning the target would be false.
+ *
+ * `translateOrCached` is the only entry point permitted (`putTranslation` has
+ * exactly one caller, because it is where verification happens) and it never
+ * throws, so there is no failure path here beyond `fellBack`.
+ *
+ * **THE COMMON CASE COSTS NOTHING.** The sharer is looking at the reading in
+ * `target` when they tap share, so the translation is already cached and this is
+ * one indexed read on a connection the artifact check just opened.
+ *
+ * ── THE PERSONA ARM IS UNREACHABLE TODAY AND IS OWED THE SAME TREATMENT ──────
+ *
+ * `publicPersonaForShare` still returns null on this branch, so `artifactExists`
+ * refuses a persona mint before it ever gets here. When V7 mounts `PersonaBlock`
+ * on `/s/`, `'persona'` must come through this function too — `persona.body` is
+ * already in V2's translation registry. Pinning it unresolved in the meantime
+ * would be pre-committing to the bug this function exists to prevent, which is
+ * why the non-reading branch returns the target unchanged rather than pretending
+ * to have checked.
+ */
+async function resolvePin(
+  db: DbOrTx,
+  args: { entity: ShareEntity; entityId: string; userId: string; locale: Locale },
+): Promise<Locale | null> {
+  if (args.entity !== 'reading') return args.locale;
+
+  const { shareableReadingSource } = await import('@/lib/db/queries/share');
+  const source = await shareableReadingSource(db, args.entityId, args.userId);
+  /*
+   * `artifactExists` already said yes, so this is a row that vanished between two
+   * statements. Pin NULL rather than the target: we cannot show that a
+   * translation exists, and the mint is about to fail on the artifact anyway.
+   */
+  if (!source) return null;
+
+  // Already in the sharer's language. Nothing to translate, nothing to check.
+  if (source.locale === args.locale) return args.locale;
+
+  const { translateOrCached } = await import('@/lib/translate/translate');
+  const result = await translateOrCached(
+    {
+      entity: 'reading',
+      entityId: args.entityId,
+      field: 'body',
+      source: source.body,
+      sourceLocale: source.locale,
+      // IMMUTABLE SOURCE, so `created_at` is the permanent comparand. See the query.
+      sourceUpdatedAt: source.createdAt,
+      target: args.locale,
+      readerId: source.readerId as ReaderId,
+      serviceId: source.serviceId as ServiceId,
+    },
+    db,
+  );
+
+  /*
+   * **`fellBack` IS THE WHOLE CHECK, AND `outcome` IS NOT A SUBSTITUTE.**
+   * `translateStream`/`translateOrCached` return the SOURCE VERBATIM on failure
+   * with `fellBack: true`, and `outcome: 'invalid'` is a body that WAS translated
+   * (the viewer sees it once, the repair pass fixes the cache) — so keying on
+   * `outcome === 'ok'` would refuse a pin for a translation that exists, and
+   * keying on `!== 'failed'` would grant one for prose that is the source.
+   */
+  return result.fellBack ? null : args.locale;
 }
 
 function isSlugCollision(err: unknown): boolean {
@@ -372,29 +491,100 @@ export async function resolveShare(rawSlug: unknown): Promise<ResolvedShare | nu
   return { entity: 'reading', link: publicLink, reading, translation: pinned };
 }
 
+/** One address that was turned off, as `share.revoked` needs to describe it. */
+export type RevokedAddress = {
+  id: string;
+  entity: string;
+  locale: Locale | null;
+  ageHours: number;
+  viewCount: number;
+};
+
 /**
- * Turn a link off, and report what it was worth for the analytics event.
+ * Turn off EVERY live address for the artifact the named link belongs to.
  *
- * The row is read BEFORE the update, because `share.revoked` carries `age_hours`
- * and `view_count` and both are facts about the link's life rather than about the
- * revoke. `ok: false` covers "not yours", "does not exist" and "already off" —
- * the route answers 404 to all three, for the resolver's reason.
+ * **REVOKE IS PER-ARTIFACT, NOT PER-LINK** (Miftah's ruling, 2026-07-28). A reading
+ * can now hold an English address and a Bahasa address, so "stop sharing this" has
+ * to mean both or the control is a trap: the querent taps it, believes the reading
+ * is private, and one URL is still serving the public internet. A per-locale kill
+ * was offered and refused on exactly that ground, so there is deliberately no way
+ * to reach one from the app.
+ *
+ * **THE REQUEST STILL NAMES ONE `id` AND THAT IS NOT A LEFTOVER.** The sheet holds
+ * ids, `share_links.id` is already the analytics prop, and the ownership check is
+ * `shareLinkById`'s `user_id` predicate — so naming a row is the cheapest honest way
+ * to say "the artifact behind this". Taking `(entity, entity_id)` from the body
+ * instead would accept an artifact the caller merely guessed at and answer
+ * differently for one they do not own, which is the existence oracle the whole
+ * feature avoids.
+ *
+ * Every row is read BEFORE the update, because `age_hours` and `view_count` are
+ * facts about an ADDRESS's life rather than about the revoke, and the route fires one
+ * event per address. `ok: false` covers "not yours", "does not exist" and "already
+ * off" — the route answers 404 to all three, for the resolver's reason.
  */
 export async function revokeShare(
   id: string,
   userId: string,
-): Promise<{ ok: true; entity: string; ageHours: number; viewCount: number } | { ok: false }> {
+): Promise<{ ok: true; revoked: RevokedAddress[] } | { ok: false }> {
   const db = await handle();
-  const before = await shareLinkById(db, id, userId);
-  if (!before || before.revokedAt !== null) return { ok: false };
+  const anchor = await shareLinkById(db, id, userId);
+  if (!anchor || anchor.revokedAt !== null) return { ok: false };
 
-  const changed = await revokeShareLink(db, id, userId);
-  if (changed === 0) return { ok: false };
+  /*
+   * Read the siblings before the update, for `age_hours`/`view_count`. The anchor is
+   * in this list by construction — it is live and belongs to the same artifact — so
+   * there is no separate case for it.
+   */
+  const before = await liveShareLinksForArtifact(db, userId, anchor.entity, anchor.entityId);
 
+  const changed = await revokeArtifactLinks(db, userId, anchor.entity, anchor.entityId);
+  if (changed.length === 0) return { ok: false };
+
+  const now = Date.now();
   return {
     ok: true,
-    entity: before.entity,
-    ageHours: Math.max(0, Math.round((Date.now() - before.createdAt.getTime()) / 3_600_000)),
-    viewCount: before.viewCount,
+    revoked: before.map((row) => ({
+      id: row.id,
+      entity: row.entity,
+      locale: row.locale,
+      ageHours: Math.max(0, Math.round((now - row.createdAt.getTime()) / 3_600_000)),
+      viewCount: row.viewCount,
+    })),
   };
+}
+
+/** One live address, as the sheet needs to list it. NEVER carries the slug's row id
+ *  alone — the URL is built here, because the client cannot build one (see header). */
+export type LiveShareLink = {
+  id: string;
+  url: string;
+  locale: Locale | null;
+};
+
+/**
+ * Every live address the querent holds for one artifact.
+ *
+ * **THE SHEET HAD NO READ PATH BEFORE THIS, WHICH IS WHY THE REPORTED BUG ARRIVED
+ * WITH NO WARNING.** `ShareFooter` only ever knew about a link it had just minted, so
+ * opening it on a reading shared yesterday showed the *create* phase and nothing said
+ * the existing address was about to be replaced. `liveShareLinkFor` looked like it
+ * served this purpose and had zero production callers.
+ *
+ * **THE URL IS BUILT HERE AND NOT IN THE CLIENT**, same as the mint response:
+ * `SHARE_BASE_URL` carries no `NEXT_PUBLIC_` prefix, so a client component assembling
+ * it would read `undefined` for the origin.
+ *
+ * `sharingEnabled()` is NOT consulted, for `revokeShare`'s reason: turning minting off
+ * must not hide the links already out there, or the kill switch makes the thing it is
+ * killing unkillable.
+ */
+export async function liveSharesFor(
+  userId: string,
+  entity: ShareEntity,
+  entityId: string,
+): Promise<LiveShareLink[]> {
+  const db = await handle();
+  const rows = await liveShareLinksForArtifact(db, userId, entity, entityId);
+  return rows.map((row) => ({ id: row.id, url: shareUrl(row.slug), locale: row.locale }));
 }

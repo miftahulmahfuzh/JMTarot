@@ -31,6 +31,7 @@ const CODE = ROUTE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 
 describe('the share route', () => {
   it('reads the route at all, so nothing below passes vacuously', () => {
+    expect(ROUTE).toContain('export async function GET');
     expect(ROUTE).toContain('export async function POST');
     expect(ROUTE).toContain('export async function DELETE');
     expect(ROUTE.length).toBeGreaterThan(2000);
@@ -38,19 +39,74 @@ describe('the share route', () => {
     expect(CODE.length).toBeGreaterThan(1000);
   });
 
-  it('requires a session on BOTH verbs, before anything else', () => {
+  it('requires a session on ALL THREE verbs, before anything else', () => {
     /*
      * `/s/` is a prefix in `isPublic()` and `/api/share` is deliberately outside
      * it. If `requireUser()` ever leaves this file, minting becomes something a
      * stranger can do -- and revoking becomes something a stranger can do to
      * somebody else's link.
+     *
+     * **`GET` JOINED THE LIST 2026-07-28 AND IT IS THE ONE MOST WORTH ASSERTING**,
+     * because it is the only verb here that neither writes nor charges a budget, so
+     * it is the one whose guard looks most droppable. Without it, `entity_id` is a
+     * uuid a stranger could brute-force into "does this reading have a live public
+     * URL, and what is it" -- an oracle handing out the capability itself.
+     *
+     * **SLICED BY THE NEXT `export async function`**, not to the end of the file:
+     * the old version sliced POST to EOF, so it passed on the strength of DELETE's
+     * guard and would have kept passing had POST's been deleted.
      */
-    const posts = CODE.slice(CODE.indexOf('export async function POST'));
-    const dels = CODE.slice(CODE.indexOf('export async function DELETE'));
-    for (const half of [posts, dels]) {
+    const bodyOf = (verb: string) => {
+      const start = CODE.indexOf(`export async function ${verb}`);
+      expect(start).toBeGreaterThan(-1);
+      const rest = CODE.slice(start + 1);
+      const next = rest.indexOf('export async function');
+      return next === -1 ? rest : rest.slice(0, next);
+    };
+    for (const verb of ['GET', 'POST', 'DELETE']) {
+      const half = bodyOf(verb);
       expect(half).toContain('await requireUser()');
       expect(half).toContain('if (!auth.ok) return auth.response');
     }
+  });
+
+  it('validates GET\'s query with zod and narrows the entity through the guard', () => {
+    /*
+     * `searchParams.get()` returns `string | null`, so a missing parameter without
+     * this becomes a lookup for the literal string "null" -- which is not a uuid, so
+     * the query module's `UUID_RE` would answer `[]` and the route would 200 with an
+     * empty list. A 400 is the honest answer and the only one a caller can act on.
+     */
+    const get = CODE.slice(CODE.indexOf('export async function GET'));
+    expect(get).toContain('ListQuery.safeParse');
+    expect(get).toContain('isShareEntity');
+    expect(CODE).toMatch(/entity_id: z\.string\(\)\.uuid\(\)/);
+  });
+
+  it('scopes GET to the session user and never to a body-supplied id', () => {
+    /*
+     * `liveSharesFor` puts `user_id` in the `where` (rule 1 of the query module), and
+     * the id it is given must be `auth.user.id`. A route that passed a caller-named
+     * user id would be a link-enumeration endpoint for the whole table.
+     */
+    const get = CODE.slice(CODE.indexOf('export async function GET'));
+    expect(get).toMatch(/liveSharesFor\(\s*auth\.user\.id/);
+  });
+
+  it('revokes ARTIFACT-WIDE and fires one event per address', () => {
+    /*
+     * Miftah's consent ruling, 2026-07-28. A reading can hold an English and a
+     * Bahasa address, so a revoke that killed one would let the querent believe the
+     * reading is private while a URL is still serving the public internet.
+     *
+     * Asserted on the LOOP rather than on the helper name, because the failure mode
+     * is somebody "simplifying" the loop back to a single `track()` after the
+     * artifact-wide revoke is already in place -- which reads as tidy and silently
+     * drops every address but one from the funnel.
+     */
+    const dels = CODE.slice(CODE.indexOf('export async function DELETE'));
+    expect(dels).toMatch(/for \(const address of result\.revoked\)/);
+    expect(dels).toContain("track('share.revoked'");
   });
 
   it('AWAITS the limiter, because hit() is async since V9', () => {
@@ -114,7 +170,16 @@ describe('the share route', () => {
     expect(CODE).toContain("track('share.created'");
     expect(CODE).toContain("track('share.revoked'");
     expect(CODE).toMatch(/share_id: result\.id/);
-    expect(CODE).toMatch(/share_id: parsed\.data\.id/);
+    /*
+     * **`address.id` AND NOT `parsed.data.id`, CHANGED 2026-07-28.** The revoke is
+     * artifact-wide now — one request names an anchor row and turns off every
+     * language of that reading — so the request's `id` describes at most one of the
+     * addresses being revoked. Reporting it for all of them would attribute one
+     * address's `age_hours` and `view_count` to another, and the funnel would stop
+     * being able to say how much reach a revoke took away.
+     */
+    expect(CODE).toMatch(/share_id: address\.id/);
+    expect(CODE).not.toMatch(/share_id: parsed\.data\.id/);
 
     /*
      * NARROWED TO THE `track()` CALLS, and the narrowing is the interesting part:

@@ -24,7 +24,7 @@ wrong**, and both files point at this skill.
 | The old claim | What is actually true |
 |---|---|
 | "Chromium cannot launch in this WSL image — needs `libasound2t64`, which needs sudo" | Exactly ONE library was missing. `apt-get download` + `dpkg-deb -x` into `~/tools/chrome-libs` needs **no sudo**. `tools/e2e/setup.sh` does it. |
-| "Windows clamps a Chrome window to ~500px, so a 375px shot is a crop, not a layout" | True of **Windows** Chrome. This is a Linux Chrome with no window manager in the way — 390 lays out at 390. Phone-width screenshots are real. |
+| "Windows clamps a Chrome window to ~500px, so a 375px shot is a crop, not a layout" | **THIS ROW WAS WRONG AND IS KEPT AS THE CORRECTION.** It claimed a Linux Chrome with no window manager honours 390 exactly. **Measured 2026-07-28: `--width 390` gives `innerWidth === outerWidth === 500`**, so the shot is a ~500px layout cropped to look narrow — the same failure attributed to Windows Chrome above. Cause unconfirmed; a saved window bound in the persistent profile is the likeliest. **Use loop 4 for width** (constrain the element, read `scrollWidth > clientWidth`); use this harness for behaviour. |
 | "CDP over `--remote-debugging-address=0.0.0.0` is blocked by the Windows firewall" | That was reaching *Windows* Chrome across the WSL NAT. This Chrome is a local process; CDP is on `127.0.0.1` and nothing filters it. |
 
 `tools/shot.sh` is still there on purpose — no dependencies beyond a Windows
@@ -39,7 +39,8 @@ dependency to `package.json`.
 - A bug that reproduces **only** in production (`/api/locale`'s cold-start hang was one)
 - Anything behind the gate: `/`, `/[reader]`, the draw, `/account`, `/onboarding`
 - The Google sign-in path itself, including its cold callback
-- A phone-width screenshot of a page `shot.sh` cannot reach because it cannot plant a cookie
+- A screenshot of a page `shot.sh` cannot reach because it cannot plant a cookie — **but
+  at ~500px, not a phone width; see the corrected row above**
 - "Does the UI agree with what it sends?" — `net` shows request bodies
 
 **Do not use for:** logic (that is `npm test`), database queries (integration

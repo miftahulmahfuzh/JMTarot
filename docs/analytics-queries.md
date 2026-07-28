@@ -421,3 +421,110 @@ is a copy problem in `share.public.ctaLead` rather than a mechanism problem.
 Note what is NOT joinable: `share.viewed` carries no `user_id` and no
 `session_id`, by construction (`/privacy` §4.4), so "who viewed this" has no
 answer and is not meant to.
+
+## 12. Is the translation cache actually caching? (V2, first read 2026-07-28)
+
+**NOBODY HAS EVER READ THIS NUMBER, AND THAT IS THE POINT OF THE QUERY.**
+`translation.generated` fires from `translateStream`'s `settle()`, which runs inside
+the `ReadableStream`'s `pull()` — outside any request scope — so **every streamed
+translation lost its event and its deferred repair pass, silently, for as long as V2
+had shipped.** `bindAnalyticsScope()` fixed it on 2026-07-28. So this table starts
+being meaningful from that date and is empty before it.
+
+That matters because V2 wrote its own rule and then could not follow it: *"if the
+measured `invalid` rate exceeds ~2%, fix the prompt, not the architecture."* The
+measurement was not being recorded.
+
+```sql
+select
+  outcome,
+  count(*)                                              as n,
+  round(100.0 * count(*) / sum(count(*)) over (), 1)     as pct,
+  round(avg((props->>'chars')::int))                    as avg_chars,
+  round(avg((props->>'total_ms')::int))                  as avg_ms
+from events
+where name = 'translation.generated'
+  and created_at >= now() - interval '30 days'
+group by outcome
+order by n desc;
+```
+
+**How to read it.**
+
+| outcome | what it means | what a high share tells you |
+|---|---|---|
+| `cached` | a row was there, no model call | **high is the goal.** This is the feature working. |
+| `ok` | generated, verified, persisted | steady-state cost of new prose |
+| `repaired` | first pass dirty, the deferred repair verified and persisted | the repair pass is earning its keep |
+| `invalid` | dirty twice, **nothing persisted** | see below |
+| `failed` | the call threw or the ceiling refused; the SOURCE was returned | provider health, not prompt quality |
+
+**`invalid` IS THE ONE TO WATCH, AND ITS COST IS UNBOUNDED.** Nothing is written when
+both the generation and the repair fail the contract, so **every view of that field
+pays a fresh model call, forever, invisibly** — the same shape as the persona budget
+bug (`TRANSLATABLE['persona.body'].budget` was `'summary'`, so a correct 88-word
+translation was rejected against a 50-word ceiling on every single page view, for two
+releases, with nothing red).
+
+Split it by field before concluding anything, because one misconfigured ceiling looks
+like a prompt problem in aggregate:
+
+```sql
+select props->>'entity' as entity, props->>'field' as field,
+       props->>'locale' as target, props->>'violation' as violation,
+       count(*) as n
+from events
+where name = 'translation.generated' and outcome = 'invalid'
+  and created_at >= now() - interval '30 days'
+group by 1, 2, 3, 4
+order by n desc;
+```
+
+**The decision this query exists to make**, in order:
+
+1. `invalid` concentrated on ONE `(entity, field)` → a ceiling or a spec bug in
+   `TRANSLATABLE`, not the prompt. Check the RESOLVED number, not the tag's spelling.
+2. `invalid` above ~2% across fields → **fix the prompt**, per V2's rule.
+3. `invalid` near zero → the unbounded-cost hole is theoretical. **Do not build a
+   circuit breaker for it**; one was designed and deferred on 2026-07-28 precisely
+   because it would permanently disable a translation that a transient provider blip
+   failed.
+
+`streamed` is on the event as well, and the split matters: the residual cost V2
+accepted — the first viewer of a failed translation seeing it once — is paid **only**
+on the streamed path, so an `invalid` rate that cannot be split by it does not tell you
+whether anybody actually saw a bad translation.
+
+```sql
+select (props->>'streamed')::boolean as streamed, outcome, count(*)
+from events
+where name = 'translation.generated' and created_at >= now() - interval '30 days'
+group by 1, 2 order by 1, 3 desc;
+```
+
+### The first reading of it — local only, 2026-07-28
+
+Two rows, which is not a rate and is recorded so nobody mistakes it for one:
+
+```
+ outcome | n | avg_chars | avg_ms | streamed
+---------+---+-----------+--------+----------
+ cached  | 1 |       105 |      3 | f
+ ok      | 1 |       105 |    937 | t
+```
+
+`invalid` and `failed` are both **absent**, so the unbounded-cost hole above is
+unobserved rather than measured — n=2 supports no conclusion about a ~2% threshold.
+
+What the two rows DO show, and it is the useful part: **the `ok` is `streamed` and the
+`cached` is not.** Loading `/history/<id>` in English streamed the translation through
+`/api/translate` (937ms, one model call), and the share mint's `resolvePin` then found
+that row and cost **3ms with no model call**. That is `createShareLink`'s "the common
+case costs nothing" claim, observed rather than asserted — the sharer is reading in the
+locale they are sharing, so the pin is a cache hit.
+
+**THE PRODUCTION READ IS STILL OWED AND IS NOT DONE HERE.** It needs Neon's direct
+connection string, and the table only starts being meaningful from 2026-07-28 when
+`bindAnalyticsScope()` landed — so expect very few rows and do not read a rate off them
+either. Run it after the app has served real translations for a while; that is the
+number the `invalid > 2%` decision needs.

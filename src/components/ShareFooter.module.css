@@ -267,6 +267,39 @@
   color: var(--label);
 }
 
+/*
+ * ── ONE ADDRESS, WITH ITS LANGUAGE (2026-07-28) ────────────────────────────────
+ *
+ * A reading can hold a link per language, so the URLs need separating from each
+ * other. A hairline on the left rather than a box: two boxed cards stacked inside a
+ * bottom sheet on a 360px screen is most of the viewport, and the sheet already has
+ * a border. Composed entirely from existing tokens.
+ *
+ * `.linkRow + .linkRow` and not a `gap`, because the parent is not a flex container
+ * and making it one would change how the preview and the toggles lay out.
+ */
+.linkRow + .linkRow {
+  margin-top: 4px;
+}
+
+/*
+ * The one place the LINK's language is named.
+ *
+ * **THE SAME FOUR DECLARATIONS AS `AccountFacts`'s `.label`, TOKEN FOR TOKEN**, not
+ * a fresh set that looks similar: it is the same visual role — a field name over a
+ * value — and `--fs-slot-label`/`--ls-slot-label`/`--label` already say what that
+ * looks like. Composing from tokens rather than hand-setting a letter-spacing is
+ * CLAUDE.md's styling rule, and the shared role is the reason worth writing down.
+ */
+.linkLabel {
+  margin: 0 0 6px;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-slot-label);
+  letter-spacing: var(--ls-slot-label);
+  text-transform: uppercase;
+  color: var(--label);
+}
+
 .url {
   width: 100%;
   margin: 0 0 12px;

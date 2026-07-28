@@ -503,8 +503,25 @@ export type EventMap = {
    * `string` because this file has no imports by design --
    * `moderation.refused.category` sets that precedent.
    */
+  /**
+   * `pinned_locale` IS THE LOCALE THAT WAS WRITTEN, NOT THE ONE THE SHARER ASKED
+   * FOR, and `null` means the link renders as-written.
+   *
+   * The mint resolves the pin rather than trusting it (`resolvePin`): it will fall
+   * back to `null` when a translation into the sharer's language could not be
+   * produced, because a row claiming `en` with no English body is a link that lies
+   * about its own language. **That fallback is invisible without this prop** —
+   * nothing else distinguishes a working pin from a silently degraded one, and the
+   * querent sees a live URL either way. Same argument `translation.generated`'s
+   * `outcome` prop won.
+   *
+   * `rotated` narrowed with it: it now means "*this language* had a prior address",
+   * because a reading's first English link is a new address even when it already had
+   * a Bahasa one.
+   */
   'share.created':             { share_id: string; entity: string; include_question: boolean;
-                                 include_nickname: boolean; rotated: boolean };
+                                 include_nickname: boolean; rotated: boolean;
+                                 pinned_locale: string | null };
   /** `age_hours` and `view_count` are read BEFORE the update -- they are facts
    *  about the link's life, not about the revoke. */
   'share.revoked':             { share_id: string; entity: string; age_hours: number;

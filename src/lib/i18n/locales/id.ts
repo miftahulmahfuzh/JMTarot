@@ -624,10 +624,22 @@ const id = {
   'share.sheet.close': 'Tutup',
   'share.sheet.copy': 'Salin tautan',
   'share.sheet.copied': 'Tersalin',
-  'share.sheet.revoke': 'Matikan tautan',
+  //   - `share.sheet.revoke` SAYS "SEMUA" ("all") SINCE 2026-07-28, and the word is
+  //     the ruling. A reading can now hold one address per language, and revoke turns
+  //     off every one of them -- a button reading "matikan tautan" beside a list of two
+  //     would look like it killed the one it sits under. The string stays
+  //     ENTITY-NEUTRAL ("tautan", not "bacaan ini") because this sheet also mounts with
+  //     `entity="persona"`.
+  'share.sheet.revoke': 'Matikan semua tautan',
   'share.sheet.revoking': 'Mematikan…',
   'share.sheet.revoked': 'Tautan itu sudah mati. Membagikan lagi akan membuat alamat baru.',
   'share.sheet.live': 'Tautan ini aktif.',
+  //   - The three keys below are the per-language list (2026-07-28). `createIn` takes
+  //     the LANGUAGE NAME from `locale.name.*`, which is written identically in both
+  //     catalogs on purpose -- the label names the LINK's language, not the reader's.
+  'share.sheet.links': 'Tautan yang aktif',
+  'share.sheet.createIn': 'Buat tautan {language}',
+  'share.sheet.loading': 'Memeriksa tautan…',
   'share.sheet.warning':
     'Mematikan tautan tidak menarik kembali tangkapan layar yang sudah diambil orang.',
   'share.error.notShareable': 'Bacaan ini tidak bisa dibagikan.',

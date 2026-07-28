@@ -1142,11 +1142,15 @@ sheet no longer offers a switch. **What did NOT change, and must not:**
 ### The four traps a future session will otherwise walk into
 
 - **RE-SHARE ROTATES THE SLUG. DO NOT "SIMPLIFY" IT TO `revoked_at = null`.**
-  `unique (user_id, entity, entity_id)` means one row per artifact forever, so un-revoking is the
+  `unique (user_id, entity, entity_id)` meant one row per artifact forever, so un-revoking is the
   obvious one-line version — and it **resurrects a capability the querent deliberately killed**:
   the old URL, sitting in the group chat they revoked it because of, starts working again,
   silently, for whoever still has it. `insertOrRotateShareLink` assigns a fresh slug; the
   integration test that catches a regression is the one asserting the OLD slug stays dead.
+  **NARROWED 2026-07-28: the key now carries `locale`, so rotation happens WITHIN one
+  language and a second language is a second row.** The trap above is unchanged for a
+  re-share in the same language, which is the only case it was ever protecting. See
+  `## Share links, one per language (2026-07-28)`.
 - **`currentUser()` IS NEVER CALLED ON `/s/[slug]`, AND `curl` CANNOT SEE THE FAILURE.** A client
   component reaching for a session context renders correct HTML on the server and throws during
   hydration: `curl` reports 200 with the reading in the body and the page is dead in a browser.
@@ -1306,8 +1310,8 @@ which only ever appear in markup the renderer emitted.
   `share_links`. The list is exhaustive on purpose: a forgotten table shows up as leaked state
   rather than as a query bug.
 - **A fifth sweep delete, for `share_links` whose `entity_id` no longer resolves.** Harmless today
-  (the resolver 404s) but they hold a `unique (user_id, entity, entity_id)` slot forever and make
-  `view_count` meaningless. W7 owns the route; V2 already added a fourth.
+  (the resolver 404s) but they hold a `unique (user_id, entity, entity_id, locale)` slot forever
+  and make `view_count` meaningless. W7 owns the route; V2 already added a fourth.
 - **`personas` does not exist**, so `'persona'` is a live value in the union that resolves to null
   — inert, exactly as V2 left `'persona'` in the translation registry. `publicPersonaForShare`
   names what V8 replaces it with, and it cannot be written speculatively: `to_regclass` cannot
@@ -2033,3 +2037,136 @@ Two concurrent cold loads really do cost two model calls: both check the cache b
 either persists. That is inherent to a cache-miss race, applies equally to
 `HistoryDetail`, and is not worth a lock table for one developer — but it is why a raw
 call count is only meaningful when the navigation count is pinned.
+
+## Share links, one per language, 2026-07-28
+
+The reported bug, the landmine in the obvious fix, and two things found by reading the
+path. Rules and invariants are in CLAUDE.md's `### Share links, one per language`; the
+argument is `docs/plans/2026-07-28-share-per-locale-links-design.md`.
+
+### The report, and which hypothesis was right
+
+> 1. Let's say I got a share link for card session A in English. It opened nicely.
+> 2. When I changed the language and created a share link for card session A in Bahasa,
+>    somehow the share link in no 1 cannot be opened again.
+
+Two hypotheses were offered: (1) the English content was overwritten with Bahasa, or
+(2) one artifact only ever gets one link. **The second, and the first is ruled out** —
+`readings.body` is immutable (VD7), `translations` is keyed
+`(entity, entity_id, field, locale)`, and the English row was still in the table
+afterwards. Only the address was lost.
+
+Worth recording because the two hypotheses point at completely different files, and the
+evidence that separates them is two lines: the constraint
+`unique (user_id, entity, entity_id)` and `insertOrRotateShareLink`'s
+`set: { slug: values.slug }`. **`git grep` for the constraint answered it faster than
+reading either feature.**
+
+The behaviour was also *documented as intended*, in `queries/share.ts`: *"Re-sharing is
+how a querent fixes a link they minted in the wrong language: switch language, share
+again, get a new address showing the new language."* That sentence was written four days
+earlier by the change that added the pin. **A comment asserting a behaviour is evidence
+about intent, not about whether the intent was right** — it is the thing the bug report
+overturns, so it has to be found and inverted rather than trusted as a reason not to
+look.
+
+### The landmine: `UNIQUE` treats NULLs as DISTINCT
+
+Adding `locale` to the key is a one-line change that is **worse than doing nothing** if
+written the obvious way. Every link minted before design A has `locale = NULL`, and:
+
+1. a plain four-column unique permits unlimited NULL rows for one artifact; and
+2. `onConflictDoUpdate`'s target never MATCHES a legacy NULL row, so re-sharing a
+   pre-2026-07-28 link **inserts a second row instead of rotating** — leaving the old
+   slug live and unreachable from the UI.
+
+That is the capability resurrection the rotation exists to prevent, arriving through the
+back door, and the whole suite stays green. `nulls not distinct` (Postgres 15+, and both
+the local container and Neon are 16) makes NULL a single value for uniqueness.
+
+**Both negative controls fail by ACCEPTING a second row, not by throwing**, which is the
+only shape that catches this:
+
+- `treats two unpinned mints as ONE row` — asserts slug A is **dead** after a second
+  unpinned mint. Without the clause, A stays alive.
+- `refuses a second link for the same artifact AND locale through a raw insert` — this
+  test **already existed and passed before the change, for a different reason** (the
+  three-column key). It has to keep passing for the new reason, and its comment now says
+  so, because "it was green before and after" is exactly how this would be missed.
+
+Postgres's `nulls not distinct` governs UNIQUENESS only. It does **not** change what `=`
+means in a `where`, so `localeMatches()` exists: `eq(col, null)` compiles and is always
+false, and a lookup written that way reports "no link for the as-written pin" for every
+legacy row — after which the caller mints a second one it cannot see. Two separate
+mechanisms that read like one.
+
+### The sheet had no read path, which is why there was no warning
+
+`liveShareLinkFor` existed, was documented as *"the share sheet asks, so it can open on
+`live` rather than offering to mint a second one"*, and had **zero production callers**.
+`ShareFooter`'s state started empty and only ever held a link minted in that mount.
+
+So opening the sheet on a reading shared yesterday showed the *create* phase, the
+querent minted, and the address they had already sent somebody was replaced with nothing
+on screen having said so. **The data-layer bug and the absence of a warning were
+independent**, and fixing only the first would have left a feature whose most
+destructive action is still silent. `GET /api/share` is the second fix.
+
+The generalisation: **a query with no callers is not dead code, it is a missing
+feature wearing a docstring.** `git grep` for the export name, not for the file.
+
+### What loop 5 found that nothing else could, and what loop 5 cannot do
+
+**`share.sheet.createIn` rendered "CREATE A ENGLISH LINK".** The catalog string was
+`Create a {language} link` and the parameter was `English`; both are individually
+correct, so no test in 1629 could see it, and the review reading did not either. Fixed
+by removing the article rather than special-casing the vowel — any phrasing with an
+indefinite article beside an interpolated language name is a coin flip on the next
+locale's first letter. The Indonesian counterpart needs no article and is deliberately
+phrased differently; do not "align" them.
+
+**And loop 5 does not give you a phone width, though CLAUDE.md and the skill both said
+it did.** `--width 390` becomes `--window-size=390,844`, and measured here
+`innerWidth === outerWidth === 500`. The screenshot looks like a phone and is a ~500px
+layout cropped — the exact failure the skill's table attributes to *Windows* Chrome
+while claiming immunity. Both files are corrected. **Width questions go to loop 4**:
+constrain the element under test and read `scrollWidth > clientWidth`, which measured no
+overflow at 320/360/390 and touch targets at 44–48px without needing a viewport at all.
+
+### The live sequence, run end to end
+
+Worth repeating verbatim when this area changes, because it is the report:
+
+1. `db:seed`, then mint in `id` from `/history/<id>` — one link, labelled `INDONESIA`.
+2. `POST /api/locale {locale:'en'}`, reload. The sheet now **lists** the Indonesian link
+   and offers `CREATE A LINK IN ENGLISH`. (Not `?lang=en`: it reaches only the request
+   that carries it, so the POST would still resolve `id`.)
+3. Mint. Two links listed. **Both slugs return 200**, each rendering its own language,
+   `lang="id"` and `lang="en"` on the prose.
+4. `share_links` holds two live rows, and `translations` holds a real model-generated
+   `en` row with `prompt_version = translate-v1` — the mint's `translateOrCached` ran,
+   so the pin is honest by construction rather than by assertion.
+5. `TURN ALL LINKS OFF` once → **both** slugs 404, both rows revoked, and **two**
+   `share.revoked` events with their own `view_count`.
+6. `share.created` shows `pinned_locale` `id` and `en` with `rotated: false` on both —
+   the narrowing working, since each was the first address for its language.
+
+`tools/share-seed.ts` plants the three-row fixture and `share-check.py` asserts all
+three resolve at once. **That checker was stale on `main` before this branch touched
+it**: it still expected `share.public.otherLanguage`, deleted four days earlier, so it
+had been failing since. Live-check scripts are not run by CI and rot silently — read
+them when the feature they check changes.
+
+### Database down
+
+`GET` and `POST /api/share` both **500 in ~105–120ms**. No hang, and nothing sensitive
+in the log — the bound parameters on this path are ids, booleans and a locale, never
+`readings.question` or a body. The 500 rather than a 204 is consistent with the three
+routes CLAUDE.md already lists as open (`/api/memory/{frequency,summary}`,
+`/api/persona`) and should be fixed with them.
+
+The client degrades correctly, which is the half that was designed: a failed `GET`
+returns `[]` and falls through to the create flow, and a failed `POST` shows
+`share.error.generic`. **`/history/[id]` itself renders the error boundary with the
+database down** — V6's awaited primary-key read, pre-existing and unrelated — so the
+sheet is unreachable that way and the endpoints have to be exercised directly.

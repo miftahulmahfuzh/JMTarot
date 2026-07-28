@@ -13,6 +13,17 @@
  * The rotation test is the second one: un-revoking instead of rotating is a
  * one-line "simplification" that resurrects a killed capability, and the
  * assertion that catches it is that the OLD slug stays dead.
+ *
+ * ── AND SINCE 2026-07-28, ONE READING HOLDS ONE ADDRESS PER LANGUAGE ────────
+ *
+ * `KEEPS the English link alive after a Bahasa link is minted` is the reported bug,
+ * executable. It failed before `locale` joined the unique key.
+ *
+ * **TWO TESTS HERE ARE NEGATIVE CONTROLS FOR `NULLS NOT DISTINCT` AND BOTH FAIL BY
+ * ACCEPTING A SECOND ROW RATHER THAN BY THROWING** — `treats two unpinned mints as
+ * ONE row` and `refuses a second link for the same artifact AND locale through a raw
+ * insert`. The second **passed before this change for a different reason**, which is
+ * exactly how the landmine would have been missed; its comment says so.
  */
 import { afterAll, describe, expect, it } from 'vitest';
 
@@ -22,14 +33,16 @@ import type { ReadingStatus } from '@/data/types';
 import type { Tx } from '@/lib/db/types';
 import { insertReading } from './history';
 import {
+  anyShareLinkFor,
   bumpShareViewCount,
   insertOrRotateShareLink,
-  liveShareLinkFor,
+  liveShareLinksForArtifact,
   markReadingShared,
   publicPersonaForShare,
   publicReadingForShare,
   publicReadingQuery,
   revokeAllForUser,
+  revokeArtifactLinks,
   revokeShareLink,
   shareLinkById,
   shareLinkBySlug,
@@ -221,25 +234,149 @@ describe('insertOrRotateShareLink', () => {
     });
   });
 
-  it('RE-PINS the locale on re-share, rather than keeping the first one', async () => {
+  it('gives a SECOND locale its OWN row, and does not re-pin the first', async () => {
     /*
-     * Re-sharing is how a querent fixes a link they minted in the wrong language:
-     * switch language, share again, get a new address showing the new language.
-     * Leaving `locale` out of the `set` clause would rotate the slug and keep the
-     * stale pin -- the control would look like it worked and change nothing, which
-     * is the shape of the language-switch bug of 2026-07-28.
+     * ── THIS TEST IS THE INVERSION OF THE ONE IT REPLACED, NOT A REFINEMENT ────
+     *
+     * It used to assert `second.id === first.id` and `second.locale === 'id'`,
+     * under the heading "RE-PINS the locale on re-share", with a comment arguing
+     * that *"re-sharing is how a querent fixes a link they minted in the wrong
+     * language"*. **That was the bug**, reported 2026-07-28: the querent shared a
+     * reading in English, switched language, shared again, and the English URL
+     * they had already sent somebody stopped resolving. Nothing was overwritten —
+     * `readings.body` is immutable and the `translations` row survived — the
+     * ADDRESS was replaced, because `locale` was an attribute of one row rather
+     * than part of its identity.
+     *
+     * `locale` is now in the unique key, so a second language is a second row and
+     * the first pin is untouched. The re-pinning `set` clause is therefore gone:
+     * a conflict now means "same locale", where re-pinning is a no-op.
+     *
+     * See `docs/plans/2026-07-28-share-per-locale-links-design.md` §1.
      */
     await withRollback(async (tx) => {
-      const user = await makeUser(tx, 'dev:v7-locale-repin');
+      const user = await makeUser(tx, 'dev:v10-locale-second');
       const r = await reading(tx, user);
       const base = { userId: user, entity: 'reading', entityId: r };
 
       const first = await insertOrRotateShareLink(tx, { ...base, slug: A, locale: 'en' });
-      expect(first.locale).toBe('en');
-
       const second = await insertOrRotateShareLink(tx, { ...base, slug: B, locale: 'id' });
-      expect(second.id).toBe(first.id);
+
+      // TWO rows, not one rotated in place.
+      expect(second.id).not.toBe(first.id);
+      expect(first.locale).toBe('en');
       expect(second.locale).toBe('id');
+    });
+  });
+
+  it('KEEPS the English link alive after a Bahasa link is minted', async () => {
+    /*
+     * **THE REPORTED BUG, EXECUTABLE.** Miftah, 2026-07-28:
+     *
+     *   1. "I got a share link for card session A in English. It opened nicely."
+     *   2. "When I changed the language and created a share link for card session A
+     *      in Bahasa, somehow the share link in no 1 cannot be opened again."
+     *
+     * Kept separate from the row-identity test above even though the same two
+     * mints set it up, because THIS is the assertion a future "simplification"
+     * has to get past, and it is worth failing under its own name. The one above
+     * can be satisfied by two rows that both got new slugs; only this one says the
+     * address the querent already sent somebody still works.
+     */
+    await withRollback(async (tx) => {
+      const user = await makeUser(tx, 'dev:v10-en-survives');
+      const r = await reading(tx, user);
+      const base = { userId: user, entity: 'reading', entityId: r };
+
+      await insertOrRotateShareLink(tx, { ...base, slug: A, locale: 'en' });
+      await insertOrRotateShareLink(tx, { ...base, slug: B, locale: 'id' });
+
+      const en = await shareLinkBySlug(tx, A);
+      const id = await shareLinkBySlug(tx, B);
+      expect(en?.locale).toBe('en');
+      expect(id?.locale).toBe('id');
+    });
+  });
+
+  it('still rotates the slug when the SAME locale is re-shared', async () => {
+    /*
+     * The narrowing, and the half of the old rule that survives. Rotation exists so
+     * that revoke is permanent FOR AN ADDRESS -- `set revoked_at = null` alone
+     * resurrects a capability the querent deliberately killed. Adding `locale` to
+     * the key must not weaken that: within one language the behaviour is exactly
+     * what it was.
+     */
+    await withRollback(async (tx) => {
+      const user = await makeUser(tx, 'dev:v10-same-locale-rotate');
+      const r = await reading(tx, user);
+      const base = { userId: user, entity: 'reading', entityId: r, locale: 'en' as const };
+
+      const first = await insertOrRotateShareLink(tx, { ...base, slug: A });
+      expect(await revokeShareLink(tx, first.id, user)).toBe(1);
+      const second = await insertOrRotateShareLink(tx, { ...base, slug: B });
+
+      expect(second.id).toBe(first.id); // one row per (artifact, locale)
+      expect(await shareLinkBySlug(tx, A)).toBeNull(); // the old URL stays dead
+      expect(await shareLinkBySlug(tx, B)).not.toBeNull();
+    });
+  });
+
+  it('treats two unpinned mints as ONE row -- the NULLS NOT DISTINCT control', async () => {
+    /*
+     * **THE LANDMINE IN THE OBVIOUS CONSTRAINT, FENCED.** Postgres `UNIQUE` treats
+     * NULLs as DISTINCT, and every link minted before `share_links.locale` existed
+     * has NULL here. So a plain four-column unique would let
+     * `onConflictDoUpdate`'s target MISS a legacy row and INSERT a second one --
+     * leaving the old slug live and unreachable from the UI, which is the exact
+     * capability resurrection the rotation exists to prevent, by the back door.
+     *
+     * Hence `unique nulls not distinct`. **Without that clause this test fails by
+     * producing two rows and leaving slug A alive**, which is the whole point of
+     * writing it as an assertion about A being dead rather than about a count.
+     *
+     * Note that the raw-insert test at the bottom of this file is the same control
+     * one layer down, and it passed BEFORE this change for a different reason (the
+     * three-column key). It must keep passing for the new reason.
+     */
+    await withRollback(async (tx) => {
+      const user = await makeUser(tx, 'dev:v10-null-not-distinct');
+      const r = await reading(tx, user);
+      const base = { userId: user, entity: 'reading', entityId: r };
+
+      const first = await insertOrRotateShareLink(tx, { ...base, slug: A });
+      const second = await insertOrRotateShareLink(tx, { ...base, slug: B });
+
+      expect(first.locale).toBeNull();
+      expect(second.locale).toBeNull();
+      expect(second.id).toBe(first.id);
+      expect(await shareLinkBySlug(tx, A)).toBeNull();
+    });
+  });
+
+  it('lets a legacy unpinned link coexist with a pinned one, both resolving', async () => {
+    /*
+     * **THE PRE-EXISTING-LINKS GUARANTEE, EXTENDED.** A NULL pin means "render
+     * as-written", i.e. exactly what that link showed yesterday, and adding
+     * `locale` to the key must not make a historic address collide with a new one.
+     * A reading may therefore hold three rows -- one `en`, one `id`, one legacy
+     * NULL -- each its own permanent address.
+     *
+     * This is the test that fails if somebody "tidies" the schema by giving
+     * `locale` a default: every historic row would be rewritten to a language the
+     * querent never chose, and every link already out there would change what it
+     * shows.
+     */
+    await withRollback(async (tx) => {
+      const user = await makeUser(tx, 'dev:v10-legacy-coexist');
+      const r = await reading(tx, user);
+      const base = { userId: user, entity: 'reading', entityId: r };
+
+      const legacy = await insertOrRotateShareLink(tx, { ...base, slug: A });
+      const pinned = await insertOrRotateShareLink(tx, { ...base, slug: B, locale: 'en' });
+
+      expect(legacy.id).not.toBe(pinned.id);
+      expect((await shareLinkBySlug(tx, A))?.locale).toBeNull();
+      expect((await shareLinkBySlug(tx, B))?.locale).toBe('en');
     });
   });
 
@@ -413,8 +550,142 @@ describe('shareLinkBySlug / revokeShareLink', () => {
   });
 });
 
-describe('liveShareLinkFor', () => {
-  it('finds the live link for an artifact and forgets a revoked one', async () => {
+describe('liveShareLinksForArtifact / revokeArtifactLinks', () => {
+  it('lists every live language, and skips a revoked one', async () => {
+    await withRollback(async (tx) => {
+      const user = await makeUser(tx, 'dev:v10-list');
+      const r = await reading(tx, user);
+      const base = { userId: user, entity: 'reading', entityId: r };
+
+      await insertOrRotateShareLink(tx, { ...base, slug: A, locale: 'en' });
+      const idLink = await insertOrRotateShareLink(tx, { ...base, slug: B, locale: 'id' });
+      const legacy = await insertOrRotateShareLink(tx, { ...base, slug: C });
+
+      expect(
+        (await liveShareLinksForArtifact(tx, user, 'reading', r)).map((l) => l.locale).sort(),
+      ).toEqual(['en', 'id', null]);
+
+      await revokeShareLink(tx, idLink.id, user);
+      expect(
+        (await liveShareLinksForArtifact(tx, user, 'reading', r)).map((l) => l.slug).sort(),
+      ).toEqual([A, C].sort());
+      expect(legacy.locale).toBeNull();
+    });
+  });
+
+  it("never lists another querent's link for the same artifact id", async () => {
+    await withRollback(async (tx) => {
+      const mine = await makeUser(tx, 'dev:v10-list-mine');
+      const theirs = await makeUser(tx, 'dev:v10-list-theirs');
+      const r = await reading(tx, mine);
+      await insertOrRotateShareLink(tx, {
+        userId: mine,
+        entity: 'reading',
+        entityId: r,
+        slug: A,
+        locale: 'en',
+      });
+      await insertOrRotateShareLink(tx, {
+        userId: theirs,
+        entity: 'reading',
+        entityId: r,
+        slug: B,
+        locale: 'en',
+      });
+      const rows = await liveShareLinksForArtifact(tx, mine, 'reading', r);
+      expect(rows.map((l) => l.slug)).toEqual([A]);
+    });
+  });
+
+  it('REVOKES EVERY LANGUAGE, which is what "stop sharing this" means', async () => {
+    /*
+     * Miftah's consent ruling, 2026-07-28. A per-locale kill would let a querent
+     * tap revoke, believe the reading is private, and leave one URL serving the
+     * public internet. The assertion is on `shareLinkBySlug` for all three rather
+     * than on a count, because a count passing while one slug still resolves is
+     * exactly the failure being prevented.
+     */
+    await withRollback(async (tx) => {
+      const user = await makeUser(tx, 'dev:v10-revoke-all');
+      const r = await reading(tx, user);
+      const base = { userId: user, entity: 'reading', entityId: r };
+      await insertOrRotateShareLink(tx, { ...base, slug: A, locale: 'en' });
+      await insertOrRotateShareLink(tx, { ...base, slug: B, locale: 'id' });
+      await insertOrRotateShareLink(tx, { ...base, slug: C });
+
+      const revoked = await revokeArtifactLinks(tx, user, 'reading', r);
+      expect(revoked).toHaveLength(3);
+      // The rows carry what `share.revoked` needs, per address.
+      expect(revoked.every((l) => l.createdAt instanceof Date)).toBe(true);
+      expect(revoked.every((l) => l.viewCount === 0)).toBe(true);
+
+      expect(await shareLinkBySlug(tx, A)).toBeNull();
+      expect(await shareLinkBySlug(tx, B)).toBeNull();
+      expect(await shareLinkBySlug(tx, C)).toBeNull();
+      expect(await liveShareLinksForArtifact(tx, user, 'reading', r)).toEqual([]);
+    });
+  });
+
+  it("will not revoke another querent's links", async () => {
+    await withRollback(async (tx) => {
+      const mine = await makeUser(tx, 'dev:v10-revoke-mine');
+      const theirs = await makeUser(tx, 'dev:v10-revoke-theirs');
+      const r = await reading(tx, mine);
+      await insertOrRotateShareLink(tx, {
+        userId: theirs,
+        entity: 'reading',
+        entityId: r,
+        slug: B,
+        locale: 'en',
+      });
+      expect(await revokeArtifactLinks(tx, mine, 'reading', r)).toEqual([]);
+      expect(await shareLinkBySlug(tx, B)).not.toBeNull();
+    });
+  });
+
+  it('is a [] for a malformed entity id, not a driver error', async () => {
+    await withRollback(async (tx) => {
+      const user = await makeUser(tx, 'dev:v10-malformed');
+      expect(await liveShareLinksForArtifact(tx, user, 'reading', 'not-a-uuid')).toEqual([]);
+      expect(await revokeArtifactLinks(tx, user, 'reading', 'not-a-uuid')).toEqual([]);
+    });
+  });
+});
+
+describe('anyShareLinkFor', () => {
+  it('distinguishes the two languages, and matches a NULL pin with `is null`', async () => {
+    /*
+     * **THE `localeMatches` HELPER, FENCED.** `eq(col, null)` compiles and is always
+     * false in SQL, so a NULL pin would answer "no link" for every legacy row — after
+     * which the caller mints a second one it cannot see. `nulls not distinct` governs
+     * UNIQUENESS; it does not change what `=` means in a `where`. Two mechanisms that
+     * read like one.
+     *
+     * On `anyShareLinkFor` rather than the deleted `liveShareLinkFor` — see that
+     * function's obituary in `queries/share.ts`. This is the caller `rotated` depends
+     * on, so the helper is fenced where it does real work.
+     */
+    await withRollback(async (tx) => {
+      const user = await makeUser(tx, 'dev:v10-locale-lookup');
+      const r = await reading(tx, user);
+      const base = { userId: user, entity: 'reading', entityId: r };
+      await insertOrRotateShareLink(tx, { ...base, slug: A, locale: 'en' });
+
+      expect((await anyShareLinkFor(tx, user, 'reading', r, 'en'))?.slug).toBe(A);
+      expect(await anyShareLinkFor(tx, user, 'reading', r, 'id')).toBeNull();
+      expect(await anyShareLinkFor(tx, user, 'reading', r, null)).toBeNull();
+
+      await insertOrRotateShareLink(tx, { ...base, slug: C });
+      expect((await anyShareLinkFor(tx, user, 'reading', r, null))?.slug).toBe(C);
+    });
+  });
+
+  it('SEES A REVOKED ROW, which is what makes `rotated` honest', async () => {
+    /*
+     * The one reader of a revoked row. A re-share after a revoke is a rotation, and a
+     * live-only lookup cannot see it — so `share.created` would report
+     * `rotated: false` for exactly the case the prop exists to count.
+     */
     await withRollback(async (tx) => {
       const user = await makeUser(tx, 'dev:v7-live-for');
       const r = await reading(tx, user);
@@ -426,11 +697,14 @@ describe('liveShareLinkFor', () => {
         includeQuestion: false,
         includeNickname: true,
       });
-      expect((await liveShareLinkFor(tx, user, 'reading', r))?.id).toBe(link.id);
+      // `null` is the pin this mint made -- see the locale test above.
+      expect((await anyShareLinkFor(tx, user, 'reading', r, null))?.id).toBe(link.id);
       await revokeShareLink(tx, link.id, user);
-      expect(await liveShareLinkFor(tx, user, 'reading', r)).toBeNull();
+      expect((await anyShareLinkFor(tx, user, 'reading', r, null))?.id).toBe(link.id);
+      // But it is gone from the LIVE list, which is the other half of the pair.
+      expect(await liveShareLinksForArtifact(tx, user, 'reading', r)).toEqual([]);
       // Not a uuid: null without a round trip, not a driver error.
-      expect(await liveShareLinkFor(tx, user, 'reading', 'not-a-uuid')).toBeNull();
+      expect(await anyShareLinkFor(tx, user, 'reading', 'not-a-uuid', null)).toBeNull();
     });
   });
 });
@@ -609,11 +883,22 @@ describe('markReadingShared', () => {
 });
 
 describe('the row itself', () => {
-  it('refuses a second live link for the same artifact through a raw insert', async () => {
+  it('refuses a second link for the same artifact AND locale through a raw insert', async () => {
     /*
      * The unique constraint, not the code path -- so that a future writer that
-     * skips `insertOrRotateShareLink` cannot end up with two live addresses for
-     * one reading, which would make revoke a lie.
+     * skips `insertOrRotateShareLink` cannot end up with two addresses for one
+     * (reading, language), which would make revoke a lie for one of them.
+     *
+     * **THIS TEST PASSED BEFORE `locale` JOINED THE KEY AND IT MUST KEEP PASSING
+     * FOR A DIFFERENT REASON, WHICH IS WHY IT IS WORTH READING TWICE.** Both rows
+     * here leave `locale` unset, i.e. NULL. Under the old three-column key it
+     * threw because the locale was not in the key at all. Under a plain
+     * four-column key it would NOT throw, because Postgres `UNIQUE` treats NULLs
+     * as DISTINCT -- and that silent pass is the landmine. It throws today only
+     * because the constraint carries `nulls not distinct`.
+     *
+     * So: this file has the control at two levels. Here, and
+     * "treats two unpinned mints as ONE row" above.
      */
     await withRollback(async (tx) => {
       const user = await makeUser(tx, 'dev:v7-uniq');
@@ -627,6 +912,23 @@ describe('the row itself', () => {
       };
       await tx.insert(shareLinks).values({ ...values, slug: A });
       await expect(tx.insert(shareLinks).values({ ...values, slug: B })).rejects.toThrow();
+    });
+  });
+
+  it('ACCEPTS two raw rows for one artifact when their locales differ', async () => {
+    /*
+     * The positive half of the constraint, at the same level. Without it the test
+     * above would be satisfied by a constraint that is simply too strict -- and
+     * "too strict" here means the reported bug, permanently, with a green suite.
+     */
+    await withRollback(async (tx) => {
+      const user = await makeUser(tx, 'dev:v10-uniq-positive');
+      const r = await reading(tx, user);
+      const values = { userId: user, entity: 'reading', entityId: r };
+      await tx.insert(shareLinks).values({ ...values, slug: A, locale: 'en' });
+      await tx.insert(shareLinks).values({ ...values, slug: B, locale: 'id' });
+      expect(await shareLinkBySlug(tx, A)).not.toBeNull();
+      expect(await shareLinkBySlug(tx, B)).not.toBeNull();
     });
   });
 });

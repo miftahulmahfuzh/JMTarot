@@ -52,10 +52,28 @@ import { createPortal } from 'react-dom';
 import { ReadingView, type ReadingProse, type ReadingViewData } from './ReadingView';
 import { LOCAL_DATE_HEADER, SESSION_HEADER } from '@/lib/analytics/localdate';
 import { getSessionId, track } from '@/lib/analytics/track.client';
-import { useT } from '@/lib/i18n/LocaleProvider';
+import { useLocale, useT } from '@/lib/i18n/LocaleProvider';
+import type { Locale } from '@/data/types';
 import type { ShareEntity } from '@/lib/share/slug';
 import { todayKey } from '@/lib/storage';
 import styles from './ShareFooter.module.css';
+
+/**
+ * How long the client waits on any of the three requests.
+ *
+ * **THIS IS THE HALF OF `maxDuration` THAT LIVES IN THE BROWSER, AND CLAUDE.md SAYS
+ * WHY IT IS NOT OPTIONAL:** the mint's server budget went 20s -> 30s when it started
+ * resolving the pinned locale, and *"a bigger `maxDuration` is not a latency
+ * regression — but it MUST be paired with a bound on the client, or you have only
+ * made the hang longer."* That was `POST /api/locale`'s lesson, paid for on a real
+ * iPhone.
+ *
+ * 8s rather than `LocaleSwitch`'s 6: this path can legitimately include a model call,
+ * where that one could not. It is a bound on the querent's patience, not on the
+ * lambda -- the mint runs to its own budget and its row still lands, and the next
+ * open of the sheet reads it back through `GET`.
+ */
+const REQUEST_TIMEOUT_MS = 8000;
 
 /** What the sheet knows about a link that exists. NEVER stored, only displayed. */
 type LiveLink = {
@@ -63,9 +81,34 @@ type LiveLink = {
   id: string;
   /** Built by the server. See the header. */
   url: string;
+  /**
+   * The language this address renders, as STORED — `null` means as-written.
+   *
+   * Not the locale the querent was in when they minted it: the mint resolves the
+   * pin and falls back to `null` when it cannot produce a translation, so labelling
+   * from the UI's own locale would call an as-written link "English".
+   */
+  locale: Locale | null;
 };
 
-type Phase = 'idle' | 'sheet' | 'creating' | 'live' | 'revoking' | 'revoked' | 'error';
+type Phase =
+  | 'idle'
+  /**
+   * The GET is in flight.
+   *
+   * **THE SHEET OPENS INTO THIS RATHER THAN WAITING FOR THE FETCH.** A mint is one
+   * of the few actions likely to be the request that wakes a suspended Neon compute
+   * (CLAUDE.md), and the read that precedes it now shares that risk — so a sheet
+   * that only appeared once the links were known would be a dead Share button for
+   * however long the compute takes.
+   */
+  | 'loading'
+  | 'sheet'
+  | 'creating'
+  | 'live'
+  | 'revoking'
+  | 'revoked'
+  | 'error';
 
 export type ShareFooterProps = {
   entity: ShareEntity;
@@ -98,12 +141,50 @@ export type ShareFooterProps = {
 
 export function ShareFooter({ entity, entityId, preview, prose, nickname }: ShareFooterProps) {
   const t = useT();
+  const viewing = useLocale();
   const [phase, setPhase] = useState<Phase>('idle');
-  const [link, setLink] = useState<LiveLink | null>(null);
-  const [copied, setCopied] = useState(false);
+  /**
+   * EVERY live address, not one. See `openSheet`.
+   *
+   * A reading can hold an address per language since 2026-07-28, so a single-link
+   * state would have to pick one — and picking the newest is exactly the bug that
+   * was reported, moved from the server into the client.
+   */
+  const [links, setLinks] = useState<LiveLink[]>([]);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [errorKey, setErrorKey] = useState<
     'share.error.generic' | 'share.error.notShareable' | 'share.error.rateLimit'
   >('share.error.generic');
+
+  /**
+   * The address for the language the querent is reading RIGHT NOW, if it exists.
+   *
+   * **A `null`-pinned link does NOT satisfy this, deliberately.** It renders
+   * as-written, so for a reading in the other language it is not the link the
+   * querent is asking for — and treating it as one would suppress the offer to mint
+   * the language they are actually reading.
+   */
+  const currentLink = links.find((l) => l.locale === viewing) ?? null;
+
+  /**
+   * A link's language, in the querent's language.
+   *
+   * `locale.name.*` is written identically in both catalogs, which is correct here:
+   * the label names the LINK's language, so an English link reads "English" to an
+   * Indonesian querent.
+   *
+   * **A SWITCH AND NOT `t(\`locale.name.${l}\`)`.** A `Localized<>` value inside a
+   * template literal is one of the traps W6 paid for, and the key set is closed and
+   * two long.
+   *
+   * A `null` pin renders as-written, i.e. in the reading's own language, so it is
+   * labelled with `preview.locale`. Truthful, and it means two links can carry the
+   * same label when a legacy unpinned address sits beside a pinned one for the same
+   * language — which is right, because they render the same prose.
+   */
+  function languageName(locale: Locale | null): string {
+    return (locale ?? preview.locale) === 'en' ? t('locale.name.en') : t('locale.name.id');
+  }
 
   /*
    * **THE QUESTION IS ALWAYS INCLUDED AND THERE IS NO SWITCH FOR IT.** Miftah's
@@ -134,7 +215,7 @@ export function ShareFooter({ entity, entityId, preview, prose, nickname }: Shar
         ref={opener}
         type="button"
         className={styles.action}
-        onClick={() => setPhase(link ? 'live' : 'sheet')}
+        onClick={() => void openSheet()}
       >
         {t('share.action')}
       </button>
@@ -145,7 +226,7 @@ export function ShareFooter({ entity, entityId, preview, prose, nickname }: Shar
           returnFocusTo={opener}
           onClose={() => {
             setPhase('idle');
-            setCopied(false);
+            setCopiedId(null);
           }}
           title={t(entity === 'persona' ? 'share.sheet.titlePersona' : 'share.sheet.title')}
           preview={<ReadingView {...previewReadingView(preview, INCLUDE_QUESTION, prose)} />}
@@ -155,6 +236,12 @@ export function ShareFooter({ entity, entityId, preview, prose, nickname }: Shar
               : null
           }
         >
+          {phase === 'loading' ? (
+            <p className={styles.lead} aria-live="polite">
+              {t('share.sheet.loading')}
+            </p>
+          ) : null}
+
           {phase === 'sheet' || phase === 'creating' || phase === 'error' ? (
             <>
               <p className={styles.lead}>{t('share.sheet.lead')}</p>
@@ -194,26 +281,71 @@ export function ShareFooter({ entity, entityId, preview, prose, nickname }: Shar
 
           {phase === 'live' || phase === 'revoking' ? (
             <>
-              <p className={styles.lead}>{t('share.sheet.live')}</p>
-              {/*
-                A read-only input rather than a `<p>`: on iOS a long URL in a
-                paragraph cannot be selected reliably, and `manual` is the copy
-                path of last resort. `readOnly` and not `disabled`, because a
-                disabled input is not selectable either.
-              */}
-              <input className={styles.url} value={link?.url ?? ''} readOnly aria-label="URL" />
+              <p className={styles.lead}>
+                {links.length > 1 ? t('share.sheet.links') : t('share.sheet.live')}
+              </p>
 
-              <button
-                type="button"
-                className={styles.primary}
-                disabled={phase === 'revoking'}
-                onClick={() => void copy()}
-              >
-                {t(copied ? 'share.sheet.copied' : 'share.sheet.copy')}
-              </button>
+              {/*
+                ONE BLOCK PER LANGUAGE. Labelled, because two bare URLs beside each
+                other are indistinguishable and the querent has to know which one to
+                send to which person. The label is rendered even when there is only
+                one link -- an unlabelled single link plus a labelled pair would mean
+                the label appears only in the state the querent reaches least often.
+              */}
+              {links.map((l) => (
+                <div key={l.id} className={styles.linkRow}>
+                  <p className={styles.linkLabel}>{languageName(l.locale)}</p>
+                  {/*
+                    A read-only input rather than a `<p>`: on iOS a long URL in a
+                    paragraph cannot be selected reliably, and `manual` is the copy
+                    path of last resort. `readOnly` and not `disabled`, because a
+                    disabled input is not selectable either.
+                  */}
+                  <input
+                    className={styles.url}
+                    value={l.url}
+                    readOnly
+                    aria-label={`URL — ${languageName(l.locale)}`}
+                  />
+                  <button
+                    type="button"
+                    className={styles.primary}
+                    disabled={phase === 'revoking'}
+                    onClick={() => void copy(l)}
+                  >
+                    {t(copiedId === l.id ? 'share.sheet.copied' : 'share.sheet.copy')}
+                  </button>
+                </div>
+              ))}
+
+              {/*
+                THE OFFER, AND ONLY WHEN THE LANGUAGE ON SCREEN HAS NO ADDRESS. This
+                is the control the reported bug had no way to express: the querent
+                could previously only replace the link they had. It routes back
+                through `sheet` rather than minting on the spot, because the preview
+                is the consent mechanism and a NEW language means a new preview --
+                "this is exactly what they will see" is about the prose, which is
+                about to be different.
+              */}
+              {!currentLink ? (
+                <button
+                  type="button"
+                  className={styles.primary}
+                  disabled={phase === 'revoking'}
+                  onClick={() => setPhase('sheet')}
+                >
+                  {t('share.sheet.createIn', { language: languageName(viewing) })}
+                </button>
+              ) : null}
 
               <p className={styles.warning}>{t('share.sheet.warning')}</p>
 
+              {/*
+                ONE REVOKE, ARTIFACT-WIDE. Miftah's consent ruling: a per-link kill
+                would let the querent tap the wrong one, believe the reading is
+                private, and leave an address serving the public internet. The string
+                says "all" for the same reason.
+              */}
               <button
                 type="button"
                 className={styles.revoke}
@@ -246,6 +378,48 @@ export function ShareFooter({ entity, entityId, preview, prose, nickname }: Shar
     </div>
   );
 
+  /**
+   * Open the sheet, and find out what already exists.
+   *
+   * **THE SHEET HAD NO READ PATH BEFORE THIS, AND THAT IS WHY THE 2026-07-28 BUG
+   * ARRIVED WITH NO WARNING.** `links` only ever held something minted in this
+   * mount, so a reading shared yesterday looked unshared: the querent got the create
+   * flow, minted, and the address they had already sent somebody was replaced with
+   * nothing on screen having said so.
+   *
+   * **ON THE OPEN AND NOT ON MOUNT.** This component renders under every completed
+   * reading and on every history detail page; fetching per mount would put a request
+   * on a screen the querent may never share from. The cost is paid when they tap.
+   *
+   * **A FAILED READ FALLS THROUGH TO THE CREATE FLOW RATHER THAN ERRORING.** The
+   * querent's goal is a link; the list is an improvement on not knowing. Refusing to
+   * open the sheet because a read failed would make an outage in the new code path
+   * break the feature that worked before it.
+   */
+  async function openSheet() {
+    setPhase('loading');
+    const links = await fetchLinks();
+    setLinks(links);
+    setPhase(links.length > 0 ? 'live' : 'sheet');
+  }
+
+  /** The GET. Returns `[]` for every failure — see `openSheet`. */
+  async function fetchLinks(): Promise<LiveLink[]> {
+    try {
+      const query = new URLSearchParams({ entity, entity_id: entityId });
+      const res = await fetch(`/api/share?${query}`, {
+        headers: { [SESSION_HEADER]: getSessionId() },
+        // BOUNDED, for `create()`'s reason: this read can wake a Neon compute too.
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (!res.ok) return [];
+      const body = (await res.json()) as { links?: LiveLink[] };
+      return body.links ?? [];
+    } catch {
+      return [];
+    }
+  }
+
   async function create() {
     setPhase('creating');
     try {
@@ -256,6 +430,19 @@ export function ShareFooter({ entity, entityId, preview, prose, nickname }: Shar
           [SESSION_HEADER]: getSessionId(),
           [LOCAL_DATE_HEADER]: todayKey(),
         },
+        /*
+         * **BOUNDED ON THE CLIENT, BECAUSE THE SERVER'S BUDGET WENT UP.** The mint
+         * now resolves the pinned locale, which can mean a model call, so
+         * `maxDuration` moved 20 -> 30 — and CLAUDE.md's `POST /api/locale` lesson is
+         * that raising a server budget without a client bound does not fix a hang, it
+         * lengthens one.
+         *
+         * **GIVING UP HERE DOES NOT LOSE THE LINK.** The lambda runs to its own
+         * budget, so the row still lands; the next open of the sheet reads it back
+         * through `GET` and shows it. That is only true because the read path exists
+         * — before it, an abandoned mint was an address the querent could never see.
+         */
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         body: JSON.stringify({
           entity,
           entity_id: entityId,
@@ -279,8 +466,21 @@ export function ShareFooter({ entity, entityId, preview, prose, nickname }: Shar
         return;
       }
 
-      const body = (await res.json()) as { id: string; url: string };
-      setLink({ id: body.id, url: body.url });
+      const body = (await res.json()) as { id: string; url: string; locale: Locale | null };
+      /*
+       * **THE STORED PIN, NOT `viewing`.** The mint falls back to a `null` pin when it
+       * cannot produce a translation, so labelling this from the UI's locale would put
+       * "English" under an address that renders Indonesian.
+       *
+       * Merged rather than assigned: this may be the SECOND address for the reading,
+       * and replacing the list would hide the first one until the sheet is reopened.
+       * Keyed on `id`, so a rotation of an existing address replaces its row instead
+       * of appearing twice.
+       */
+      setLinks((prev) => {
+        const next = prev.filter((l) => l.id !== body.id);
+        return [...next, { id: body.id, url: body.url, locale: body.locale ?? null }];
+      });
       setPhase('live');
       /*
        * NO `share.created` HERE. The SERVER fires it, inside the request that
@@ -296,8 +496,20 @@ export function ShareFooter({ entity, entityId, preview, prose, nickname }: Shar
     }
   }
 
+  /**
+   * Stop sharing — **every language at once**.
+   *
+   * The body names ONE id and the server expands it to the artifact (Miftah's consent
+   * ruling). `links[0]` is the anchor: any live row of this artifact identifies it,
+   * and the ownership check is the route's, so which one is sent does not matter.
+   *
+   * `setLinks([])` on success rather than re-fetching. The server just told us it
+   * revoked; a second round trip to learn the same thing would put the querent on a
+   * spinner after the destructive action had already completed.
+   */
   async function revoke() {
-    if (!link) return;
+    const anchor = links[0];
+    if (!anchor) return;
     setPhase('revoking');
     try {
       const res = await fetch('/api/share', {
@@ -307,15 +519,16 @@ export function ShareFooter({ entity, entityId, preview, prose, nickname }: Shar
           [SESSION_HEADER]: getSessionId(),
           [LOCAL_DATE_HEADER]: todayKey(),
         },
-        body: JSON.stringify({ id: link.id }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        body: JSON.stringify({ id: anchor.id }),
       });
       if (!res.ok) {
         setErrorKey('share.error.generic');
         setPhase('error');
         return;
       }
-      setLink(null);
-      setCopied(false);
+      setLinks([]);
+      setCopiedId(null);
       setPhase('revoked');
     } catch {
       setErrorKey('share.error.generic');
@@ -336,8 +549,13 @@ export function ShareFooter({ entity, entityId, preview, prose, nickname }: Shar
    * activation, so awaiting anything before them loses the gesture and the share
    * sheet silently never opens.
    */
-  async function copy() {
-    if (!link) return;
+  async function copy(link: LiveLink) {
+    /*
+     * **THE LINK IS AN ARGUMENT AND NOT READ FROM STATE**, which matters now that
+     * there are several: a `copy()` that reached for `links[0]` would silently copy
+     * the wrong language's address from the second button down, and the querent would
+     * find out in the chat they had already sent it to.
+     */
     const url = link.url;
 
     if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
@@ -359,7 +577,8 @@ export function ShareFooter({ entity, entityId, preview, prose, nickname }: Shar
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
       try {
         await navigator.clipboard.writeText(url);
-        setCopied(true);
+        // PER LINK, so "Copied" appears under the button that was pressed.
+        setCopiedId(link.id);
         track('share.copied', { share_id: link.id, entity, method: 'clipboard' });
         return;
       } catch {
