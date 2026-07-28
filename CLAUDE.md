@@ -325,6 +325,37 @@ that someone will helpfully "fix" back into existence.
   the key at all**, which is also why there is no UTC-versus-local question to get
   wrong. `meter.test.ts` asserts the window slides.
 
+- **A ROUTE THAT IS 22ms WARM CAN BE KILLED AT TEN SECONDS COLD, AND ON THIS
+  STACK THAT IS THREE ROUND TRIPS AND A DATABASE WAKE.** `POST /api/locale` was
+  reported as *hanging in production* and was diagnosed as an LLM call blocking
+  the language switch. It is not one — nothing on that path reaches a model. It
+  was **the only database-writing route in the app declaring neither `runtime`
+  nor `maxDuration`**, and Vercel's Hobby default budget is ten seconds.
+
+  `docs/DEPLOY-VERCEL.md` puts functions on **Hobby** in `sin1`, Neon on the
+  **free plan** in `ap-southeast-1`, and Upstash in **Tokyo**. A free-plan Neon
+  compute **suspends when idle**, so the first switch after a quiet spell is: a
+  cold lambda whose graph includes @auth/core, postgres.js and — via
+  `auth.ts` → `users.ts` — bcrypt; then `setUserLocale`, which may be the request
+  that WAKES the compute, on a `max: 1` connection; then `refreshSession()`,
+  which is one `sin1`→Tokyo Upstash hop (`hit()` in the jwt update branch) and
+  THEN a second query to that same compute. Truncated at ten seconds the write is
+  lost, no response arrives, and the querent is looking at a dead control.
+
+  **The lesson generalises past this one route: a user action that WRITES is one
+  of the few things likely to be the request that wakes a suspended compute**, so
+  measure those cold rather than warm. Warm here was 22ms and hid all of it, and
+  Docker Postgres never sleeps, so no loop available in WSL reproduces it.
+
+  **A BIGGER `maxDuration` IS NOT A LATENCY REGRESSION — it stops the cold path
+  being truncated — BUT IT MUST BE PAIRED WITH A BOUND ON THE CLIENT.** Raise one
+  without the other and you have only made the hang longer. `LocaleSwitch` bounds
+  its own request at six seconds and re-arms regardless; the lambda keeps running
+  to its own budget, so the write still lands. See that component and the route's
+  header. **Upstash is largely exonerated** — `redis.ts` already sets
+  `timeout: 0` and `retry: false`, so a failure there surfaces immediately rather
+  than hanging; it costs one RTT, not seconds.
+
 - **Port 6379 is permanently occupied by another project's `chatbot-redis`
   container**, bound to `0.0.0.0`, exactly like Grafana and port 3000. This
   project's `docker-compose.yml` therefore does **not** publish its Redis port at
@@ -826,6 +857,33 @@ Resolution, once, in middleware: **session `loc` claim → `jmt_locale` cookie �
   branch deliberately ignores its payload and RE-READS the row, so a deferred
   write means the refresh re-stamps the stale claim and the switch silently
   reverts.
+- **`router.refresh()` KEEPS CLIENT STATE, WHICH IS WHY THE SWITCHER USES IT —
+  AND IT IS ALSO WHY EVERY `useEffect` THAT FETCHES LOCALISED CONTENT NEEDS
+  `locale` IN ITS DEPENDENCY ARRAY.** `LocaleSwitch`'s header sells the
+  state-keeping as a feature, and it is one: the frequency line does not flash
+  away and come back. The cost is that a component which fetched its prose on
+  mount **can never fetch it again**, because nothing remounts.
+
+  Shipped that way and found by driving the real page: after tapping EN the chrome
+  was English and both model-written lines were still Indonesian — *"Dalam tiga
+  belas hari terakhir, Strength dan The Star muncul…"* on `/`, *"Kamu sudah punya
+  jawaban untuk yang dipertanyakan…"* on `/thessaly`. **Forever, with nothing
+  failing and nothing logged.** `FrequencyLine`'s deps were `[]` and
+  `useDaySummary`'s were `[readerId]`; `frequency_verdicts` and `daily_summaries`
+  are both keyed on locale, so the English row does not exist until something asks
+  for it.
+
+  **It costs no model call on load** — `locale` is stable for a page's lifetime, so
+  the effect still fires once per mount. **And neither component may blank on
+  switch.** Both assign only on success, so the old line holds the screen for the
+  ~1.8s / ~1.2s a cold generation takes; a `setLine(null)` "to avoid showing stale
+  text" trades a briefly-old sentence for two seconds of nothing, which is exactly
+  the empty state M14 forbids. **Since V5 the stakes are higher than cosmetic:**
+  `ReaderDeck` builds a ONE-panel deck while the summary string is empty, so
+  blanking would not empty the panel — it would REMOVE it, dropping the querent
+  from two panels to one and back, mid-gesture. `localeSwitch.test.ts` fences both
+  halves.
+
 - **A template literal will stringify a `Localized<>` object and typecheck
   clean.** `` `Layanan: ${s.name}` `` shipped `[object Object]` into all nine
   system prompts with a green `npm run typecheck`. Grep for
@@ -1564,6 +1622,15 @@ from the same measurement, not from the plan's guessed 2500.
   async functions. Verified by two negative controls: a client component
   importing `@/lib/auth/auth` directly still fails, and the same action file with
   its directive removed still fails.
+
+  **THE REORDER LANDED WITHOUT A TEST, AND NOW HAS ONE.** `clientBoundary.test.ts`
+  asserts that `isServerAction` is consulted BEFORE the prefix verdict, and that
+  `lib/auth/actions.ts` stays exempt **by directive rather than by allowlist** —
+  an allowlist entry would exempt that file for every reason, not only for being
+  an RPC boundary. Asserted on the script's source because `checkClientBoundary`
+  is not exported and running the real scanner needs a build. Both negative
+  controls above are worth re-running by hand if you touch the walk; only the
+  ordering is guarded automatically.
 - **The blocklist runs BOTH locales' patterns under both locales.** W7-D3 said
   otherwise. `locale` is the UI preference, not a declaration of what language
   the querent types, and an Indonesian speaker with the interface in English is
