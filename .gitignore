@@ -1,4 +1,15 @@
+# BOTH FORMS, AND THE SECOND ONE IS NOT REDUNDANT. `node_modules/` matches a
+# DIRECTORY only, so a SYMLINK named node_modules is a blob (mode 120000) and slips
+# straight past it -- which is exactly what happened while V8 was built in a git
+# worktree: `ln -s ../../node_modules` to avoid a second install, and `git add -A`
+# committed an ABSOLUTE-PATH symlink into fifteen commits. Nothing was pushed, so it
+# was rewritten out; the point of this line is that it cannot recur.
+#
+# Why it matters beyond tidiness: checking out any such commit -- a `git bisect`, a
+# look at an old revision -- silently creates a node_modules symlink pointing at
+# another checkout's dependencies.
 node_modules/
+node_modules
 
 # Next.js
 .next/
