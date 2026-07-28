@@ -1,0 +1,237 @@
+/*
+ * The deletion control and its sheet.
+ *
+ * STRUCTURALLY AccountMenu.module.css -- same scrim colour, same blur, same
+ * `rise` on `--ease-card`, same 520px shell width, same bottom inset, same
+ * reduced-motion kill switch. One modal idiom in this app, not three.
+ *
+ * ONE NEW VALUE IN THE WHOLE FILE: `--danger`, added to tokens.ts and mirrored in
+ * tokens.css, whose only consumer is this file. Its comment there says why gold
+ * could not do the job. Everything else below already exists as a token.
+ */
+
+/* --- the trigger, at the very bottom of /account ------------------------- */
+
+.wrap {
+  /* Pushed away from the disclaimer above it, so it does not read as part of the
+     page's content. It is the last thing on the page and should feel like it. */
+  margin-top: 28px;
+  display: flex;
+  flex-direction: column;
+}
+
+.hairline {
+  height: 1px;
+  margin-bottom: 14px;
+  background: var(--gold-hairline);
+}
+
+/*
+ * TEXT ONLY, IN `--muted`, AND NOT IN `--danger`.
+ *
+ * The trigger is not the destructive act -- it opens a sheet -- so styling it red
+ * would put the only warning colour on the page on a control that does nothing,
+ * and spend it before the moment it is needed. `--danger` appears exactly once, on
+ * the button that actually deletes.
+ *
+ * Left-aligned and quiet, matching `AccountMenu`'s `.signOut`: this is the same
+ * class of control one level further in.
+ */
+.trigger {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 2px;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.trigger:hover,
+.trigger:focus-visible {
+  color: var(--danger);
+  outline: none;
+}
+
+.trigger:focus-visible {
+  border-radius: var(--radius-chip);
+  box-shadow: 0 0 0 1px var(--gold-border);
+}
+
+/* --- the sheet ----------------------------------------------------------- */
+
+/*
+ * 1000, the same rung as AccountMenu. The ladder is written down in that file's
+ * header; this sheet and that one are never open at the same time, because the
+ * menu closes on the navigation to /account that renders this.
+ */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(10, 8, 18, 0.94);
+  backdrop-filter: blur(6px);
+  animation: fade 200ms ease-out;
+}
+
+.sheet {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 520px;
+  /* `position: fixed` and portalled, so body's safe-area padding does not reach
+     it. Without this the buttons sit under the home indicator in standalone
+     mode. AccountMenu's header has the long version. */
+  padding: 10px 16px calc(16px + env(safe-area-inset-bottom));
+  background: var(--canvas);
+  /* THE ONE PLACE THE SHEET ITSELF ADMITS WHAT IT IS FOR. A gold top border here
+     would make it look like the account menu. */
+  border-top: 1px solid var(--danger);
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+  animation: rise 260ms var(--ease-card);
+}
+
+.sheet:focus,
+.sheet:focus-visible {
+  outline: none;
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scrim,
+  .sheet {
+    animation: none;
+  }
+}
+
+.grip {
+  width: 36px;
+  height: 3px;
+  margin: 0 auto 12px;
+  border-radius: var(--radius-chip);
+  background: var(--gold-hairline);
+}
+
+.title {
+  margin: 0 0 10px;
+  font-family: var(--font-display), serif;
+  font-weight: 400;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-section-label);
+  text-transform: uppercase;
+  color: var(--danger);
+  text-align: center;
+}
+
+.body {
+  margin: 0 0 10px;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-hint);
+  line-height: 1.45;
+  color: var(--text-warm);
+}
+
+.body:last-of-type {
+  margin-bottom: 4px;
+}
+
+.failed {
+  margin: 6px 0 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: var(--fs-hint);
+  color: var(--danger);
+}
+
+/* --- the two buttons ---------------------------------------------------- */
+
+.actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.cancel,
+.confirm {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 44px floor, and `AccountMenu`'s `.close` records that 14px of padding plus a
+     10px Cinzel line box measures 43.99 -- which `_accountshot.html` correctly
+     flagged. Same fix, same reason. */
+  min-height: 44px;
+  padding: 14px 12px;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  border-radius: var(--radius-chip);
+  cursor: pointer;
+}
+
+/*
+ * THE SAFE BUTTON IS THE PRIMARY-STYLED ONE. Gold wash, gold border, the app's
+ * ordinary affirmative treatment -- so the control a thumb goes to by habit is
+ * the one that keeps the account.
+ */
+.cancel {
+  color: var(--button-text);
+  background: var(--gold-wash);
+  border: 1px solid var(--gold-border);
+}
+
+.cancel:hover:not(:disabled) {
+  background: var(--gold-wash-strong);
+}
+
+/*
+ * OUTLINED, NEVER FILLED. A filled red button is the brightest thing on the
+ * screen and becomes the visual default; this one has to be chosen deliberately.
+ * It is also second in the Tab order and does not autofocus -- see the component.
+ */
+.confirm {
+  color: var(--danger);
+  background: transparent;
+  border: 1px solid var(--danger);
+}
+
+.confirm:hover:not(:disabled) {
+  /* The label lifts to full brightness; the fill stays absent. */
+  color: var(--gold-pale);
+  background: rgba(163, 66, 58, 0.16);
+}
+
+.cancel:focus-visible,
+.confirm:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--gold-border);
+}
+
+.cancel:disabled,
+.confirm:disabled {
+  /* In flight. Not dimmed -- the confirm label is already the quietest colour
+     that reads, and dimming it further looks broken rather than busy. */
+  cursor: default;
+}

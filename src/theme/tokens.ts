@@ -51,6 +51,27 @@ export const color = {
   cardEdge: 'rgba(198,188,170,0.17)',
 
   /** Translucent golds, used for hairlines, chips and button fills. */
+  /**
+   * The ONE destructive colour in the app, and `/account`'s deletion sheet is its
+   * only consumer (V8).
+   *
+   * `## Styling` says a new value needs a reason worth writing down, and this is
+   * it: a destructive action styled in gold is a destructive action nobody reads
+   * twice. Every other control in this app is gold or muted, so gold carries no
+   * warning at all -- on the draw screen it means "a card goes here", which is the
+   * opposite of a stop signal.
+   *
+   * A DESATURATED BRICK RATHER THAN A UI RED. `#e74c3c` against `--canvas` is the
+   * brightest thing on any screen in this app and would make "Delete account" the
+   * visual focus of a page that is otherwise about who somebody is. This sits at
+   * roughly the luminance of `--muted` and reads as a warning without shouting.
+   *
+   * USED AS A BORDER AND A LABEL, NEVER AS A FILL. The safe button is the
+   * primary-styled one; the destructive one is outlined. A filled red button is
+   * the one a thumb goes to.
+   */
+  danger: '#a3423a',
+
   goldHairline: 'rgba(201,162,39,0.22)',
   goldBorder: 'rgba(201,162,39,0.45)',
   goldWash: 'rgba(201,162,39,0.08)',

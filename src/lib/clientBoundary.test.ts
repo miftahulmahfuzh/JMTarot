@@ -150,6 +150,55 @@ describe('the client boundary', () => {
     }
   });
 
+  /*
+   * V8's Task 22. **`@/lib/persona/prompt.ts` CARRIES BOTH CONTRACTS IN FULL** --
+   * the format rules, the forbidden vocabulary for each locale, the two worked
+   * examples -- so it falls under rule 1 for exactly the same reason
+   * `@/lib/prompt/**` and `@/lib/translate/**` do. `generate.ts` additionally
+   * carries the database and the provider.
+   *
+   * **`lines.ts` IS THE ONE EXCEPTION, AND THE NEXT TEST IS WHAT KEEPS IT HONEST.**
+   * It composes message-catalog strings into the two templated sentences on
+   * `/account`, which is display copy a server component renders and which a
+   * client component may legitimately want. Same shape as the prompt layer's
+   * `sanitize` exception and `share/slug`'s.
+   */
+  it('lets no client component import the persona prompt or generator', () => {
+    for (const file of CLIENT) {
+      const offending = importsOf(file.source).filter(
+        (spec) => spec.startsWith('@/lib/persona/') && !spec.endsWith('/lines'),
+      );
+      expect({ [file.path]: offending }).toEqual({ [file.path]: [] });
+    }
+  });
+
+  it('keeps `@/lib/persona/lines` free of contract prose, so the exception stays earned', () => {
+    /*
+     * Asserted on the SOURCE rather than trusted to the filename, exactly as the
+     * `sanitize` exception is. Comments are stripped first, because `lines.ts`'s own
+     * header explains at length why it must not carry the marker -- the lesson
+     * `queries/contract.test.ts` and `share/slug`'s check both record.
+     */
+    const raw = readFileSync(join(ROOT, 'lib/persona/lines.ts'), 'utf8');
+    const source = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+
+    expect(source).not.toContain("import 'server-only'");
+    expect(source).not.toContain('process.env');
+    for (const sentinel of [
+      'ATURAN', // the Indonesian contract's section headings
+      'CONTENT RULES', // its English counterpart
+      'Kamu menulis', // how the persona contract opens
+      'You are writing',
+      'DILARANG', // the forbidden-vocabulary clause
+      'NEVER use these',
+    ]) {
+      expect({ sentinel, present: source.includes(sentinel) }).toEqual({
+        sentinel,
+        present: false,
+      });
+    }
+  });
+
   it('lets no client component import the database', () => {
     // Not W6's rule, but the same class and the check is free.
     for (const file of CLIENT) {

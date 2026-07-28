@@ -45,6 +45,13 @@
      "a card goes here" (the empty slot), never "a card is here". */
   --card-edge: rgba(198, 188, 170, 0.17);
 
+  /* --- Danger ----------------------------------------------------------- */
+  /* Mirrors `danger` in tokens.ts, which carries the reasoning. V8's deletion
+     sheet is its only consumer: gold means "a card goes here" on the draw screen
+     and carries no warning anywhere, so a destructive control needed its own
+     colour. A border and a label, never a fill. */
+  --danger: #a3423a;
+
   /* --- Translucent golds: hairlines, chips, button fills ----------------- */
   --gold-hairline: rgba(201, 162, 39, 0.22);
   --gold-border: rgba(201, 162, 39, 0.45);

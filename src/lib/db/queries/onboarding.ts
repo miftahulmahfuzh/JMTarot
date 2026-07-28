@@ -35,9 +35,10 @@
  * The property Task 6 Step 5 verifies is unchanged and still verifiable the
  * same way: the column holds `v1.…` ciphertext and a skip holds NULL.
  */
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Profile } from '@/data/types';
 import {
+  ONBOARDING_QUESTION_KEYS,
   ONBOARDING_VERSION,
   isFreeText,
   type OnboardingAnswer,
@@ -124,6 +125,57 @@ export async function getAnsweredKeys(
     .from(onboardingAnswers)
     .where(eq(onboardingAnswers.userId, userId));
   return rows.map((r) => r.questionKey);
+}
+
+/**
+ * WHICH questions have an answer and which are a skip. **DECRYPTS NOTHING.**
+ *
+ * V8's per-answer clearing (reconciliation §7.3) needs to render six rows saying
+ * "answered" or "not answered" with a clear control beside the first kind, and
+ * `getAnsweredKeys` cannot tell the two apart — every one of the six has a row from
+ * the moment the stepper passes it, whether it was answered or skipped.
+ *
+ * **`answer_text IS NOT NULL` IS THE TEST, AND IT IS THE SAME PREDICATE THE AUDIT
+ * QUERY IN `schema.ts` USES.** A skip is `answer_text IS NULL` and NEVER an
+ * encrypted empty string — which would be indistinguishable from a real answer in a
+ * dump, and which is why that audit query must return 0.
+ *
+ * IT READS THE COLUMN'S NULLITY AND NOT THE COLUMN. `worst_thing` is the most
+ * sensitive string in the product; the page that lets somebody delete it has no
+ * business decrypting it, and "show which answers exist without showing their text
+ * until asked" is the requirement §7.3 folded in. There is no "until asked" here:
+ * V8 does not offer a reveal at all, so the plaintext never leaves the server.
+ */
+export async function answerPresence(
+  db: DbOrTx,
+  userId: string,
+): Promise<Array<{ key: OnboardingQuestionKey; answered: boolean }>> {
+  const rows = await db
+    .select({
+      questionKey: onboardingAnswers.questionKey,
+      skipped: onboardingAnswers.skipped,
+      hasText: sql<boolean>`${onboardingAnswers.answerText} is not null`,
+      choice: onboardingAnswers.answerChoice,
+    })
+    .from(onboardingAnswers)
+    .where(eq(onboardingAnswers.userId, userId));
+
+  const byKey = new Map(rows.map((r) => [r.questionKey, r]));
+
+  // CATALOG ORDER, not row order, so the six rows on `/account` are always in the
+  // order the querent was asked -- the same reason `lotusInputHash` iterates it.
+  return ONBOARDING_QUESTION_KEYS.map((key) => {
+    const row = byKey.get(key);
+    return {
+      key,
+      answered:
+        row !== undefined &&
+        !row.skipped &&
+        // A closed question stores its value in `answer_choice`, which is not
+        // encrypted and is not text the querent typed. Both count as answered.
+        (row.hasText || (row.choice !== null && row.choice !== '')),
+    };
+  });
 }
 
 /**

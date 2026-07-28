@@ -107,6 +107,11 @@ export const EVENT_NAMES = [
   'account.opened',
   'account.details_viewed',
 
+  // — /account and the persona (V8) —
+  'account.deleted',
+  'persona.generated',
+  'persona.viewed',
+
   // — trust and safety (W7) —
   'terms.viewed',
   'terms.accepted',
@@ -300,6 +305,49 @@ export type EventMap = {
    * two different facts about whether the shell is discoverable.
    */
   'account.details_viewed':    { from: 'menu' | 'direct' };
+
+  /*
+   * ── V8's THREE (VD13, VD15) ────────────────────────────────────────────────
+   *
+   * `account.deleted` fires from the route's `after()`, AFTER the transaction
+   * commits, so it never records an erasure that rolled back. The row it writes
+   * OUTLIVES the account with `user_id` nulled (rule 1's whole reason), which is
+   * why every prop here is a count or a boolean: this is the only trace that a
+   * deletion happened, and it has to be honest about scale without being about a
+   * person.
+   *
+   * `days_since_signup` IS AN UNBUCKETED INTEGER AND IT IS THE ONE ARGUABLE PROP
+   * IN THIS SET (V8's open question 5). Rule 2 bars unbounded cardinality; this
+   * is bounded by the app's own age in days, which is small now. Bucket it the
+   * day that stops being true -- the shape to reach for is
+   * `'0-7' | '8-30' | '31-90' | '91+'`, and the reason to prefer the integer
+   * until then is that "how long did people stay before leaving" is the single
+   * most useful question a deletion event can answer and a bucket loses it.
+   */
+  'account.deleted':           { reading_count: number; had_persona: boolean;
+                                 flags_redacted: number; links_revoked: number;
+                                 days_since_signup: number; elapsed_ms: number };
+
+  /*
+   * THREE FACET PROPS, NOT AN ARRAY, and this is rule 1's runtime half rather
+   * than a style choice: `sanitizeProps()` DROPS non-scalars, so
+   * `facets: string[]` would arrive as an absent key with nothing logged and
+   * nothing thrown. W5's `recalled_ids` was flattened for exactly this.
+   *
+   * `fallback` IS THE OPERATIONALLY INTERESTING ONE and it is
+   * `onboarding.lotus_generated.fallback`'s twin. If it trends toward every user,
+   * `personaSafetyCheck` is rejecting everything and the fix is the contract, not
+   * the code. `reject_reason` is the closed `PersonaRejectReason` union plus the
+   * generator's own outcomes -- never an error message (rule 2).
+   */
+  'persona.generated':         { model: string; source_version: number; locale: string;
+                                 facet_a: string; facet_b: string; facet_c: string;
+                                 reading_count: number; latency_ms: number;
+                                 fallback: boolean; reject_reason: string | null };
+
+  /** `chars`, NEVER the body (rule 1). The persona is prose about a person. */
+  'persona.viewed':            { cached: boolean; locale: string; fallback: boolean;
+                                 chars: number };
 
   'terms.viewed':              { version: string; from: string };
   'terms.accepted':            { version: string };

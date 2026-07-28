@@ -78,7 +78,7 @@ export async function resetDb(): Promise<void> {
     TRUNCATE TABLE users, profiles, onboarding_answers, lotus_avatars,
                    readings, reading_cards, events, daily_summaries,
                    moderation_flags, frequency_verdicts, translations,
-                   share_links
+                   share_links, personas
     RESTART IDENTITY CASCADE`);
 }
 

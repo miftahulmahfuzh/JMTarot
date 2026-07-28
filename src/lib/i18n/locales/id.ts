@@ -613,6 +613,133 @@ const id = {
   'share.busy.title': 'Terlalu banyak permintaan',
   'share.busy.body': 'Tunggu sebentar, lalu muat ulang halaman ini.',
 
+  // ==========================================================================
+  // V8 — `/account`. "Dirimu", not "Detail Pengguna": this is the screen that
+  // tells someone which card the universe keeps handing them, and the register
+  // of a bank app would undo it. `account.menu.details` already says "Tentang
+  // kamu"; the page's own h1 is shorter because it has a heading's job.
+  //
+  // THE TWO GENERATED-LOOKING LINES ARE TEMPLATES (A8), and the reason is
+  // register rather than cost: `frequency_verdicts` is generated because it
+  // recurs on the picker daily and a template would read identically the fourth
+  // time. `/account` is visited occasionally and its subject is IDENTITY, which
+  // should be stable — a line that rephrased itself every visit would undercut
+  // the claim it is making.
+  //
+  // `{topic}` COMES FROM THE READER'S OWN `specialties[locale][0]`, which is
+  // already `Localized<>` in readers.json. Do not write a third copy of "what
+  // Margaret is for".
+  // ==========================================================================
+  'account.title': 'Dirimu',
+  'account.hint': 'Angka, tanda, dan kartu yang terus kembali kepadamu.',
+
+  'account.facts.heading': 'Fakta',
+  'account.facts.nickname': 'Nama panggilan',
+  'account.facts.fullName': 'Nama lengkap',
+  'account.facts.birthDate': 'Tanggal lahir',
+  'account.facts.edit': 'Ubah',
+  'account.facts.save': 'Simpan',
+  'account.facts.cancel': 'Batal',
+  'account.facts.saving': 'Menyimpan…',
+  'account.facts.failed': 'Belum tersimpan. Coba lagi sebentar lagi.',
+  'account.facts.invalid': 'Periksa lagi isinya.',
+
+  'account.card.heading': 'Kartumu',
+  'account.card.line':
+    'Teratai Batinmu berwujud {card}. Kartu itu memilihmu berulang kali, dan yang dibawanya adalah {gloss}',
+  'account.card.empty': 'Kartumu belum mengulang dirinya. Tariklah beberapa kali lagi.',
+
+  'account.reader.heading': 'Jalanmu',
+  'account.reader.line':
+    'Sebuah jalan terbuka ke {reader}, dan yang kamu bawa ke sana adalah {topic}. {reader} akan menemanimu sejauh yang ia bisa.',
+  // Requirement 3's last sentence, and it is the querent's own words. IT IS THE
+  // ONLY LINE ON THE PAGE THAT IS ABOUT OBLIGATION RATHER THAN ABOUT THE
+  // QUERENT, and that contrast is the point. Do not soften it and do not
+  // translate it word for word — the English keeps its sense, not its grammar.
+  'account.reader.closing':
+    'Langit hanya membuka jalan bagi mereka yang sungguh-sungguh berusaha membuka gerbangnya sendiri.',
+  'account.reader.empty': 'Jalanmu belum memilih pembacanya.',
+
+  'account.persona.heading': 'Teratai Batin',
+  'account.persona.a11yLabel': 'Gambaran tentang dirimu',
+  // Unlike `FrequencyLine`, this block has a heading above it that the querent
+  // came to read, so an empty space under it reads as broken (A9). M14's silence
+  // is for a line that appears unbidden.
+  'account.persona.loading': 'Membaca…',
+  'account.persona.otherLanguage': 'Bagian ini ditulis dalam bahasa lain dan ditampilkan apa adanya.',
+
+  'account.draw.cta': 'Tarik kartu',
+
+  // ── Per-answer clearing (reconciliation §7.3) ─────────────────────────────
+  //
+  // IT SHIPS BECAUSE `/privacy` ALREADY PROMISES IT, TWICE, IN BOTH LOCALES —
+  // clause 3 ("Bisa kamu hapus kapan saja, satu per satu, tanpa menghapus akun")
+  // and clause 7. That made it a published promise of a control nobody could
+  // perform, which is the exact mistake `/account` itself made for a release.
+  //
+  // THE PAGE SAYS WHICH ANSWERS EXIST AND NEVER WHAT IS IN THEM. There is no
+  // reveal control at all, so the plaintext never leaves the server — `worst_thing`
+  // is the most sensitive string in the product and this page is the one that lets
+  // somebody delete it, not read it back.
+  //
+  // "Terhapus" AND NOT "Dilewati" for a cleared answer, even though the column
+  // ends up in the same state as a skip: the querent needs to see that their
+  // deletion happened, and a row that reverts to "not answered" reads as if the
+  // button did nothing.
+  'account.answers.heading': 'Jawabanmu',
+  'account.answers.hint':
+    'Enam pertanyaan yang pernah kamu jawab. Isinya tidak ditampilkan di sini, dan bisa kamu hapus satu per satu tanpa menghapus akun.',
+  'account.answers.answered': 'Tersimpan',
+  'account.answers.empty': 'Tidak dijawab',
+  'account.answers.cleared': 'Terhapus',
+  'account.answers.clear': 'Hapus',
+  'account.answers.clearing': 'Menghapus…',
+  'account.answers.clearAria': 'Hapus jawaban untuk: {question}',
+  'account.answers.failed': 'Belum terhapus. Coba lagi sebentar lagi.',
+  'account.answers.note':
+    'Menghapus satu jawaban juga menulis ulang Teratai Batinmu tanpa jawaban itu.',
+
+  // ==========================================================================
+  // V8 — account deletion (VD13). The copy for a control `/privacy` §8 has
+  // described for an entire release and nobody could perform.
+  //
+  // THE SHEET NAMES THE ONE THING THAT IS *NOT* RECOVERABLE, and that is the
+  // whole reason there are three body strings instead of one. A page that
+  // promises full restoration and then does not restore something is worse than
+  // a page that says which part is gone -- and the part that is gone is the
+  // moderation text, deleted now rather than in thirty days, because
+  // `moderation_flags.user_id` is `on delete set null` and the row outlives the
+  // account.
+  //
+  // `{days}` IS INTERPOLATED, NEVER TYPED AS 30. `profile.ts` exports
+  // `ERASURE_GRACE_DAYS` precisely so the sweep and the copy cannot disagree,
+  // and a hardcoded thirty here is how they would.
+  //
+  // IT SAYS "SIGN IN AGAIN WITH THE SAME GOOGLE ACCOUNT", NOT "CONTACT US",
+  // because that is literally the mechanism `upsertUserOnSignIn` implements.
+  // ==========================================================================
+  'account.delete.trigger': 'Hapus akun',
+  'account.delete.heading': 'Menghapus akunmu',
+  'account.delete.body1':
+    'Akunmu langsung berhenti bekerja. Bacaanmu, jawabanmu, dan Teratai Batinmu tidak lagi bisa dibuka.',
+  'account.delete.body2':
+    'Selama {days} hari kamu masih bisa memulihkannya: masuk lagi dengan akun Google yang sama. Setelah itu semuanya hilang dan tidak bisa dikembalikan.',
+  'account.delete.body3':
+    'Catatan moderasi yang pernah menyimpan tulisanmu dihapus sekarang juga, bukan setelah {days} hari.',
+  // "Batal" and not "Jangan": the safe button cancels an action the querent
+  // started, and Indonesian has a plain word for that. The ENGLISH one is
+  // deliberately not `Cancel` -- see en.ts.
+  'account.delete.cancel': 'Batal',
+  'account.delete.confirm': 'Ya, hapus akunku',
+  'account.delete.working': 'Menghapus…',
+  'account.delete.failed': 'Belum berhasil. Coba lagi sebentar lagi.',
+
+  // The goodbye line on `/login?deleted=1`. NOT threaded through
+  // `errorMessage()`: a deletion is not an error and sharing that slot would
+  // style it as one.
+  'login.deleted.notice':
+    'Akunmu sudah dihapus. Masuk lagi dalam {days} hari kalau kamu berubah pikiran.',
+
   'reading.verdict.yes': 'Ya',
   'reading.verdict.no': 'Tidak',
   'reading.verdict.maybe': 'Belum jelas',

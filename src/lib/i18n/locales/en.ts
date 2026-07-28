@@ -393,6 +393,82 @@ const en: Catalog = {
   'share.busy.title': 'Too many requests',
   'share.busy.body': 'Wait a moment, then reload this page.',
 
+  // V8 — `/account`. See id.ts for why the two generated-looking lines are
+  // templates and where `{topic}` comes from.
+  'account.title': 'About You',
+  'account.hint': 'The numbers, the signs, and the card that keeps coming back.',
+
+  'account.facts.heading': 'Facts',
+  // "What you are called" rather than "Nickname": the questionnaire asked what
+  // the reader should call them, not for a handle.
+  'account.facts.nickname': 'What you are called',
+  'account.facts.fullName': 'Full name',
+  'account.facts.birthDate': 'Date of birth',
+  'account.facts.edit': 'Change',
+  'account.facts.save': 'Save',
+  'account.facts.cancel': 'Cancel',
+  'account.facts.saving': 'Saving…',
+  'account.facts.failed': 'That did not save. Try again in a moment.',
+  'account.facts.invalid': 'Check what you entered.',
+
+  'account.card.heading': 'Your card',
+  'account.card.line':
+    'Your Inner Lotus takes the form of {card}. It has come back to you again and again, and what it carries is {gloss}',
+  'account.card.empty': 'No card has repeated itself for you yet. Draw a few more times.',
+
+  'account.reader.heading': 'Your path',
+  'account.reader.line':
+    'A path opened toward {reader}, and what you carry there is {topic}. {reader} will go with you as far as they can.',
+  // The sense of the Indonesian, not its grammar. Requirement 3's last sentence.
+  'account.reader.closing':
+    'Heaven only opens a path for those who are truly trying to open the gate themselves.',
+  'account.reader.empty': 'Your path has not chosen its reader yet.',
+
+  'account.persona.heading': 'The Inner Lotus',
+  'account.persona.a11yLabel': 'A picture of who you are',
+  'account.persona.loading': 'Reading…',
+  'account.persona.otherLanguage':
+    'This part was written in another language and is shown as it was written.',
+
+  'account.draw.cta': 'Draw a card',
+
+  // Per-answer clearing (reconciliation §7.3). See id.ts for why it ships and why
+  // a cleared answer says "Cleared" rather than reverting to "Not answered".
+  'account.answers.heading': 'Your answers',
+  'account.answers.hint':
+    'The six questions you were asked. What you wrote is not shown here, and you can clear any of them one at a time without deleting your account.',
+  'account.answers.answered': 'Saved',
+  'account.answers.empty': 'Not answered',
+  'account.answers.cleared': 'Cleared',
+  'account.answers.clear': 'Clear',
+  'account.answers.clearing': 'Clearing…',
+  'account.answers.clearAria': 'Clear the answer to: {question}',
+  'account.answers.failed': 'That did not clear. Try again in a moment.',
+  'account.answers.note':
+    'Clearing an answer also rewrites your Inner Lotus without it.',
+
+  // V8 — account deletion (VD13). See id.ts for why there are three body
+  // strings and why `{days}` is interpolated.
+  'account.delete.trigger': 'Delete account',
+  'account.delete.heading': 'Deleting your account',
+  'account.delete.body1':
+    'Your account stops working straight away. Your readings, your answers and your Inner Lotus can no longer be opened.',
+  'account.delete.body2':
+    'For {days} days you can still get it back: sign in again with the same Google account. After that it is gone and cannot be recovered.',
+  'account.delete.body3':
+    'Any moderation record that held something you wrote is removed right now, not in {days} days.',
+  // `Keep it`, NOT `Cancel`. On a destructive sheet the safe button should say
+  // what it DOES, not what it does not do -- "Cancel" next to "Yes, delete my
+  // account" is two negatives and a decision to re-read. Indonesian keeps
+  // `Batal`, which does not carry the same ambiguity.
+  'account.delete.cancel': 'Keep it',
+  'account.delete.confirm': 'Yes, delete my account',
+  'account.delete.working': 'Deleting…',
+  'account.delete.failed': 'That did not go through. Try again in a moment.',
+
+  'login.deleted.notice':
+    'Your account is deleted. Sign in again within {days} days if you change your mind.',
+
   'reading.verdict.yes': 'Yes',
   'reading.verdict.no': 'No',
   'reading.verdict.maybe': 'Not yet clear',
