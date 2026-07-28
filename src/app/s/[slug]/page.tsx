@@ -71,7 +71,9 @@ import type { Metadata } from 'next';
 import { ReadingView } from '@/components/ReadingView';
 import { TryItYourself } from '@/components/TryItYourself';
 import { Eyebrow } from '@/components/Eyebrow';
-import { getT } from '@/lib/i18n/t';
+import { catalogFor, tFor } from '@/lib/i18n/catalog';
+import { LocaleProvider } from '@/lib/i18n/LocaleProvider';
+import { getLocale, getT } from '@/lib/i18n/t';
 import { clientIp } from '@/lib/ratelimit/clientIp';
 import { consume, hit, SHARE_VIEW_GLOBAL_MAX } from '@/lib/ratelimit';
 import { resolveShare, shareOrigin } from '@/lib/share/links';
@@ -182,11 +184,21 @@ export default async function SharePage({ params }: { params: Promise<{ slug: st
    * `Accept-Language` header (there is no cookie on this path and no session), and
    * `resolve.test.ts` proves that rather than assuming it.
    *
-   * **THE VIEWER'S LOCALE IS NO LONGER READ AS A VALUE HERE.** It was, to compare
-   * against the prose's and decide whether to print the other-language notice; with
-   * that notice deleted the only consumer of the comparison is gone, so `getLocale()`
-   * is reached only through `getT()`. Nothing on this page branches on who is
-   * looking, which is the property the header's cache-key argument wants anyway.
+   * **THE VIEWER'S LOCALE IS READ AGAIN, AND FOR EXACTLY ONE THING THAT IS NOT
+   * RENDERING.** This comment used to say it was not read at all — true between the
+   * notice's deletion and the monolingual ruling, and false now.
+   *
+   * The property the header's cache-key argument wants is **that the rendered output
+   * does not vary by who is looking**, and that is now MORE true than when this
+   * comment was written: the chrome used to follow `accept-language` and no longer
+   * does, so two viewers of one slug get byte-identical markup. What `viewerLocale`
+   * decides is only whether a second, output-EQUIVALENT `LocaleProvider` is worth its
+   * bytes — measured at +3.3KB gzipped, a 30% increase on the transferred page, which
+   * is why the guard exists on the one route strangers open on mobile data.
+   *
+   * So: never read the viewer's locale to choose what LANGUAGE to render. Reading it
+   * to choose what to SEND, when both choices render the same, is the exception and
+   * the only one.
    */
   const t = await getT();
 
@@ -229,8 +241,63 @@ export default async function SharePage({ params }: { params: Promise<{ slug: st
    */
   const shownLocale = renderedLocale(reading, translation);
 
-  return (
-    <main className={styles.shell}>
+  /*
+   * ── THE WHOLE PAGE IS IN ONE LANGUAGE, AND IT IS THE READING'S ──────────────
+   *
+   * **Miftah's ruling, 2026-07-28, and it reverses what `share-check.py` asserted
+   * both ways for two workstreams ("chrome follows the viewer").** The report: an
+   * English-pinned link opened with the app set to Indonesian rendered English prose
+   * under `Bacaan yang dibagikan`, `Bacaan untuk Mif` and `Kartu Harian` — a page in
+   * two languages, which reads as half-translated rather than as considerate.
+   *
+   * The alternative was offered and refused: keep the disclaimer and the CTA on the
+   * viewer so a stranger who cannot read the prose can still read the warning and
+   * still find the way into the app. **The cost of the ruling is stated so nobody
+   * rediscovers it as a bug:** an Indonesian visitor opening an English link now has
+   * nothing on the page they can read, `common.disclaimer.long` and
+   * `share.public.cta` included. That is the accepted trade, not an oversight.
+   *
+   * ── HOW, WITHOUT BREAKING I9 ────────────────────────────────────────────────
+   *
+   * `LocaleProvider`'s header says **"NO LOCALE PROP IS DRILLED ANYWHERE"** and I9
+   * says the client ships exactly ONE catalog — the resolved one, as JSON from the
+   * server, never a client-side `catalogFor()` import. A `locale` prop on
+   * `ReadingView` would have broken both, and `ReadingView` is the one renderer
+   * three surfaces mount (VD10), so it would have leaked this page's problem into
+   * `/history` and the draw screen.
+   *
+   * A NESTED PROVIDER breaks neither. The catalog crosses as JSON exactly as the
+   * root layout's does, `useT()` inside reads the nearest one, and **`ReadingView`,
+   * `TryItYourself` and `Eyebrow` are untouched** — `t.locale` inside `ReadingView`
+   * becomes `shownLocale`, so the service name, the date, the slot labels, the
+   * disclaimer and `resolveProse`'s viewer comparison all follow in one move.
+   *
+   * **MOUNTED ONLY ON A MISMATCH.** When the pin equals the viewer's locale — the
+   * common case, because the sharer is normally reading in the language they shared
+   * — the root layout's provider is already correct and a second identical catalog
+   * would be pure duplicated JSON on the one public, uncapped route.
+   */
+  const viewerLocale = await getLocale();
+  const shownT = shownLocale === viewerLocale ? t : tFor(shownLocale);
+
+  /*
+   * `lang` ON `<main>`, WIDENED FROM THE PROSE WRAPPER. It used to sit on the body
+   * div because the prose was the only thing in the reading's language; now the whole
+   * page is, so the attribute belongs where the page is.
+   *
+   * **`<html lang>` STILL FOLLOWS THE VIEWER AND CANNOT BE CHANGED FROM HERE** — the
+   * root layout emits `<html>` and no page can override it in the App Router. The
+   * innermost `lang` is what assistive tech and the browser's translate offer use, so
+   * this is correct rather than merely adequate; it is simply not as tidy as it
+   * sounds, and the residual is one attribute on an element with no text of its own.
+   *
+   * `ReadingView`'s `as-written` branch ALSO tags its paragraph, so there is one
+   * level of redundancy on purpose: this wrapper keeps the language declared if a
+   * future edit to that branch drops the attribute, and a nested identical `lang`
+   * costs nothing.
+   */
+  const page = (
+    <main className={styles.shell} lang={shownLocale}>
       <ShareViewed
         shareId={link.id}
         entity={link.entity}
@@ -238,32 +305,29 @@ export default async function SharePage({ params }: { params: Promise<{ slug: st
       />
 
       <header className={styles.head}>
-        <Eyebrow>{t('share.public.eyebrow')}</Eyebrow>
+        <Eyebrow>{shownT('share.public.eyebrow')}</Eyebrow>
         {nickname ? (
-          <p className={styles.forWhom}>{t('share.public.forNickname', { nickname })}</p>
+          <p className={styles.forWhom}>
+            {shownT('share.public.forNickname', { nickname })}
+          </p>
         ) : null}
       </header>
 
-      {/*
-        `lang` IS NOT DECORATION, AND SINCE THE NOTICE WAS DELETED IT IS THE ONLY
-        THING LEFT DECLARING THE PROSE'S LANGUAGE. It is what makes a screen reader
-        pronounce Indonesian prose as Indonesian inside an English document, and
-        what points the browser's own translate offer at the right language -- which
-        is the honest place for a translation to happen on a page that must not
-        generate one itself.
-
-        `ReadingView`'s `as-written` branch ALSO tags the paragraph, so this is one
-        level of redundancy on purpose: the wrapper is what keeps the language
-        declared if a future edit to that branch drops the attribute, and a nested
-        identical `lang` costs nothing.
-      */}
-      <div lang={shownLocale} className={styles.body}>
+      <div className={styles.body}>
         <ReadingView
           {...props}
           footer={<TryItYourself shareId={link.id} entity={link.entity} />}
         />
       </div>
     </main>
+  );
+
+  if (shownLocale === viewerLocale) return page;
+
+  return (
+    <LocaleProvider locale={shownLocale} messages={catalogFor(shownLocale)}>
+      {page}
+    </LocaleProvider>
   );
 }
 

@@ -1298,8 +1298,10 @@ the full argument. What changed and what did not:
   `prose` and previews it. Without that, the objection stands and the sheet lies.
 - **`lang` comes from `renderedLocale(reading, translation)`, never `reading.locale`.**
   Against the source, a screen reader pronounces English as Indonesian on an
-  English-pinned link. **It is now the ONLY thing declaring the prose's language** — see
-  below — so `lang={shownLocale}` is the line in that page not to touch.
+  English-pinned link. It sits on **`<main>`** since the monolingual ruling below —
+  widened from the prose wrapper, because the whole page is now in that language — and
+  `lang={shownLocale}` is still the line in that page not to touch. **It is no longer the
+  only thing declaring the prose's language**, which is what that ruling changed.
 - **THE OTHER-LANGUAGE NOTICE IS DELETED, AND THIS FILE SAID IN CAPITALS THAT IT "MUST
   NOT BE" (Miftah's ruling, 2026-07-28).** `share.public.otherLanguage` and
   `isForeignProse` are both gone from the repo. The old argument was that an
@@ -1331,6 +1333,63 @@ STILL a live union value resolving to null** — V8 shipped the persona and expo
 mount either yet. **Design C is the only way to make the locale mismatch itself
 impossible** — the notice that used to explain it is deleted, see above — and it has still
 not been costed against the ceiling.
+
+### `/s/<slug>` IS MONOLINGUAL, IN THE READING'S LANGUAGE (2026-07-28)
+
+**The whole page follows the prose, chrome included, and `accept-language` no longer
+changes a byte of it.** Miftah's ruling, on a phone, and it **reverses "chrome follows
+the viewer"** — a rule that stood for two workstreams and that `tools/share-check.py`
+asserted in both directions. The report: an English-pinned link opened with the app set
+to Indonesian rendered English prose under `Bacaan yang dibagikan`, `Bacaan untuk Mif`
+and `Kartu Harian`. A page in two languages reads as half-translated, not as
+considerate.
+
+- **THE COST IS REAL AND WAS ACCEPTED, NOT MISSED.** An Indonesian visitor opening an
+  English link now has nothing on the page they can read — `common.disclaimer.long` and
+  `share.public.cta` included. The narrower option (reading block follows the prose,
+  disclaimer and CTA stay with the viewer) was offered with exactly that argument and
+  refused. Do not "fix" it back without asking; it is a decision, not an omission.
+- **THE MECHANISM IS A NESTED `LocaleProvider`, NEVER A `locale` PROP.** Both halves are
+  load-bearing. `LocaleProvider`'s header says **"NO LOCALE PROP IS DRILLED ANYWHERE"**
+  and I9 says the client ships exactly ONE catalog, as JSON from the server, never a
+  client-side `catalogFor` import (an ESLint rule enforces the second). And a prop would
+  have had to pass through `ReadingView`, **the one renderer three surfaces mount
+  (VD10)** — so this page's problem would have reached `/history` and the draw screen,
+  where chrome-follows-viewer is *correct* because the reading there is already
+  translated to the viewer.
+- **`ReadingView`, `TryItYourself` and `Eyebrow` ARE UNTOUCHED**, which is how you know
+  the mechanism is right. `t.locale` inside `ReadingView` becomes `shownLocale`, so the
+  service name, the slot labels, the disclaimer, **the date and time formats** and
+  `resolveProse`'s viewer comparison all follow in one move. Measured: `28 July 2026 |
+  9:03` against `28 Juli 2026 | 9.03`.
+- **THE PROVIDER IS MOUNTED ONLY ON A MISMATCH, AND THAT IS THE ONE THING ON THIS PAGE
+  THAT READS THE VIEWER'S LOCALE.** A second identical catalog costs **+3.3KB gzipped, a
+  30% increase on the transferred page** (48734→63057 raw, 11333→14686 gzipped) on the
+  one public route strangers open on mobile data. Both branches render byte-identical
+  markup, so the page stays viewer-invariant and cache-safe. **The rule is: never read
+  the viewer's locale to choose what LANGUAGE to render; reading it to choose what to
+  SEND, when both choices render the same, is the only exception.** A contract test
+  asserts `viewerLocale` appears nowhere else.
+- **`<html lang>` STILL FOLLOWS THE VIEWER AND CANNOT BE CHANGED FROM THE PAGE.** The
+  root layout emits `<html>` and no page overrides it in the App Router. The innermost
+  `lang` is what assistive tech and the browser's translate offer use, so `<main
+  lang={shownLocale}>` is correct rather than merely adequate — but the residual is real
+  and is one attribute on an element carrying no text of its own.
+- **THE 429 PAGE AND `generateMetadata` KEEP THE VIEWER'S LOCALE, CORRECTLY.** A
+  rate-limited visitor has no reading, so there is no reading language to follow. The
+  first version of the contract test forbade the viewer's `t` outright and failed on
+  exactly that line. `generateMetadata` is excluded for a second reason: making the OG
+  card follow the pin needs a `resolveShare` call it does not currently make, which
+  doubles the database reads on the one uncapped public route for two generic strings
+  that carry no reading content (VD18).
+- **THE SHEET'S "EXACTLY WHAT THEY WILL SEE" IS NOW APPROXIMATE IN ONE FAILURE PATH.**
+  The preview renders chrome in the sharer's UI locale, which equals the pin in every
+  ordinary case. They diverge only when the sharer reads a language the reading was not
+  generated in, no translation row exists, AND the mint's `translateOrCached` fails — so
+  the pin is NULL and the page falls back to the source for chrome as well as prose. The
+  prose still matches; only the chrome differs. Closing it means shipping the second
+  catalog to `/history/[id]` and the draw screen permanently, to be exact about a state
+  that only exists when a model call fails.
 
 ### Share links, one per language (2026-07-28)
 

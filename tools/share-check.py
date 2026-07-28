@@ -51,10 +51,38 @@ check('the question IS shown, because the link took the column default', SENTINE
 check('and it is inside the question BLOCK, not loose in the prose',
       'questionBlock' in body and 'questionLabel' in body)
 
-en = get('/s/aaaaaaaaaaaa', 'en-GB,en;q=0.9')
-check('chrome follows the viewer (en)', 'A shared reading' in en, 'eyebrow')
-id_ = get('/s/aaaaaaaaaaaa', 'id-ID,id;q=0.9')
-check('chrome follows the viewer (id)', 'Bacaan yang dibagikan' in id_)
+# ---------------------------------------------------------------------------
+# THE PAGE IS MONOLINGUAL, IN THE READING'S LANGUAGE (Miftah's ruling 2026-07-28)
+# ---------------------------------------------------------------------------
+#
+# **THESE TWO ASSERTIONS ARE INVERTED, NOT NEW.** They used to read "chrome follows
+# the viewer", both ways, and that shipped a page in two languages: English prose
+# under `Bacaan yang dibagikan` / `Bacaan untuk Mif` / `Kartu Harian`, which reads as
+# half-translated. The chrome now follows the PROSE, whatever the viewer asked for.
+#
+# `aaaaaaaaaaaa` is pinned `id` on an `id` reading, so its chrome is Indonesian for
+# BOTH viewers. That is the assertion: the `accept-language` header stops mattering.
+id_pinned_en_viewer = get('/s/aaaaaaaaaaaa', 'en-GB,en;q=0.9')
+id_pinned_id_viewer = get('/s/aaaaaaaaaaaa', 'id-ID,id;q=0.9')
+check('an id-pinned page is Indonesian for an ID viewer',
+      'Bacaan yang dibagikan' in id_pinned_id_viewer)
+check('an id-pinned page is STILL Indonesian for an EN viewer',
+      'Bacaan yang dibagikan' in id_pinned_en_viewer and
+      'A shared reading' not in id_pinned_en_viewer)
+
+# And the mirror, which is the case the report was actually about: an en-pinned link
+# opened by an Indonesian reader must be English throughout, chrome included.
+en_pinned_id_viewer = get('/s/bbbbbbbbbbbb', 'id-ID,id;q=0.9')
+check('an en-pinned page is English for an ID viewer',
+      'A shared reading' in en_pinned_id_viewer and
+      'Bacaan yang dibagikan' not in en_pinned_id_viewer)
+check('...including the disclaimer, which is the accepted cost of the ruling',
+      'entertainment only' in en_pinned_id_viewer)
+check('...and the CTA', 'Try it yourself' in en_pinned_id_viewer)
+
+# Kept so the names below still resolve.
+en = id_pinned_en_viewer
+id_ = id_pinned_id_viewer
 
 # ---------------------------------------------------------------------------
 # ONE READING, THREE LIVE ADDRESSES -- the reported bug, checked live.
