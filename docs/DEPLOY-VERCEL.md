@@ -501,7 +501,17 @@ extra job, no extra query and no extra endpoint.
 
 ## 3. Verify the deployment
 
-- `/` redirects to `/login`
+- **`/` returns 200 and shows the LANDING PAGE while signed out.** It used to
+  redirect to `/login` and this line used to say so; S-D5 changed it deliberately
+  in v0.4.0. This is also what unblocks publishing the OAuth consent screen —
+  Google's branding requirement is an app homepage that is not a login page.
+  Signed IN, `/` is still the reader picker, byte for byte.
+- **`curl -s https://www.jmtarot.site/sitemap.xml | head -5` names
+  `https://www.jmtarot.site`** and no `vercel.app` host. See §7a — a canonical at
+  the wrong host de-indexes the right page and nothing reports it.
+- **`tools/seo/crawl.sh` prints `crawl: clean.`** It is the release's acceptance
+  test: every public path 200 with no redirect, no `Set-Cookie`, no `noindex`, and
+  `/s/` still `noindex, nofollow, noarchive`.
 - The login page shows one **Continue with Google** button, and links to
   `/terms` and `/privacy` that both load **while signed out**
 - `curl -sI https://www.jmtarot.site/terms` shows `x-frame-options: SAMEORIGIN`,
@@ -688,6 +698,100 @@ docker compose exec db pg_restore --no-owner --no-privileges -d "$NEW" /tmp/jmta
 It binds to `127.0.0.1` inside WSL and is unreachable from Vercel by design. A
 `DATABASE_URL` set to it in the dashboard is a connection that times out, not
 one that fails loudly.
+
+## 7. Search Console and the sitemap — REQUIRED once, after the first deploy
+
+### 7a. `NEXT_PUBLIC_SITE_ORIGIN` — set it, and then look at the sitemap
+
+**`NEXT_PUBLIC_SITE_ORIGIN=https://www.jmtarot.site` in Production. Set it in
+Preview too, to the preview host or not at all — never to production.**
+
+Every canonical tag, every `hreflang`, every `og:image` and every URL in
+`sitemap.xml` resolves against `siteOrigin()`. Absent, it falls to `AUTH_URL`
+(which production sets to the same value, so you are covered twice), then to
+`VERCEL_PROJECT_PRODUCTION_URL`, then to `VERCEL_URL` — **and a canonical tag
+pointing at `jmtarot-abc123.vercel.app` de-indexes the real page.** Nothing
+reports that; it is the single worst class of SEO bug available.
+
+**So check it, in two commands, and do not skip it:**
+
+```sh
+curl -s https://www.jmtarot.site/sitemap.xml | head -5
+curl -s https://www.jmtarot.site/robots.txt  | grep -i sitemap
+```
+
+Both must name `https://www.jmtarot.site`. A `vercel.app` host in either is the
+misconfiguration, visible before Google ever sees it.
+
+**On a PREVIEW deployment a `vercel.app` origin is CORRECT** — a preview emitting
+production canonicals would ask Google to index the production URL from a page
+that is not it.
+
+### 7b. Verify the domain with a DNS TXT record, not the HTML file
+
+**Use a Domain property on `jmtarot.site`, verified by DNS TXT.** Roadmap §13 left
+the method open; this is the decision. Three reasons, and the second is specific
+to this app:
+
+1. A Domain property covers the apex, `www`, and both schemes in one. **The apex
+   308-redirects to `www`**, so a URL-prefix property on `https://www.jmtarot.site`
+   leaves the host a stranger actually types unverified.
+2. **The HTML-file method DOES NOT WORK HERE AND THE FAILURE LOOKS LIKE A MISSING
+   FILE.** It wants `public/google<token>.html` served at `/google<token>.html`.
+   `src/middleware.ts`'s matcher is
+   `'/((?!_next/|cards/|dukuns/|favicon|icon|apple-icon|manifest|sitemap|robots).*)'`
+   — which **matches that path** — and `isPublic()` in `src/lib/auth/gate.ts` does
+   not name it, so Googlebot, which carries no cookie, is 302'd to `/login`.
+   Verification fails, the error says the file was not found, and the file is
+   right there in `public/`. Making it work would mean a permanent entry in the
+   session allowlist for a one-time act.
+3. It survives every rebuild, every route change, every gate change and every
+   matcher change. There is nothing in the repo to keep in step, which is why
+   roadmap §9 declines to make `GOOGLE_SITE_VERIFICATION` a variable at all.
+
+Procedure:
+
+1. Search Console → **Add property** → **Domain** → `jmtarot.site` (no scheme, no
+   `www`).
+2. Copy the `google-site-verification=…` string.
+3. At the registrar, add a **TXT** record on the apex — host `@`, value the whole
+   string. Leave any existing TXT records alone; a domain may hold several.
+4. Wait for propagation and check it yourself before pressing Verify:
+
+   ```sh
+   RES_OPTIONS=no-aaaa dig +short TXT jmtarot.site
+   ```
+
+   If `dig` is unavailable, `getent` will not do this — use
+   `curl -s 'https://dns.google/resolve?name=jmtarot.site&type=TXT'`.
+5. Press **Verify**. **Do not delete the TXT record afterwards** — Search Console
+   re-checks it and un-verifies the property when it disappears.
+
+### 7c. Submit the sitemap, once
+
+Search Console → **Sitemaps** → `sitemap.xml`. One file, both locales; `robots.txt`
+also names it, which is how every other crawler finds it.
+
+**Then read the two reports that actually say whether v0.4.0 worked**, and do not
+expect either on day one — indexing takes days to weeks:
+
+- **Pages** → the count of indexed URLs. The release's whole thesis is §1's number:
+  three pages before, forty-six or so after. If `Excluded → Alternate page with
+  proper canonical` is large, the `hreflang` pairs are not reciprocal and Google
+  has picked one side; `sitemap.test.ts` asserts reciprocity, so that would mean
+  the emitted tags and the sitemap disagree.
+- **Pages → Not indexed → Page with redirect.** **Any content route here means the
+  gate is refusing a crawler**, which is exactly the failure this release exists to
+  remove. `tools/seo/crawl.sh` answers the same question in two seconds and without
+  waiting for Google.
+
+### 7d. Do not deploy S1 alone
+
+`Landing.tsx` links to `/gallery`, `/arcana/the-moon` and `/blog`, which S3, S4 and
+S6 own. **A homepage linking to three 404s is worse than the redirect it
+replaced**, and no unit test can see it — the pages are *meant* to be missing at
+that point in the sequence. Merging to `main` is fine; deploying a build where
+`tools/seo/crawl.sh` reports 404 on those three paths is not.
 
 ## Deploying from the terminal
 
