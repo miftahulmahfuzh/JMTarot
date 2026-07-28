@@ -1,0 +1,128 @@
+import { describe, expect, it } from 'vitest';
+import en from './locales/en';
+import id from './locales/id';
+import type { MessageKey } from './locales/id';
+
+/**
+ * S-D6, made mechanical.
+ *
+ * ── WHY A LENGTH RULE IS THE RIGHT SHAPE ────────────────────────────────────
+ *
+ * **THE CLIENT IS SHIPPED EXACTLY ONE CATALOG, ENTIRE, AS JSON, ON EVERY FULL PAGE
+ * LOAD** (I9, and `LocaleProvider`'s header says so). That is fine at 268 short
+ * strings and it is the reason twenty-two lore documents may never live here: they
+ * would reach every visitor of every page, including the draw screen, for a page
+ * that renders none of them.
+ *
+ * S-D6 is the kind of rule that decays -- somebody pastes one paragraph in because
+ * it is "basically chrome", and the next person has precedent. Two ceilings make it
+ * mechanical.
+ *
+ * ── BOTH NUMBERS ARE MEASURED, AND THEY ARE CEILINGS RATHER THAN TARGETS ────
+ *
+ * Measured 2026-07-29, WITH S1's 26 keys already in: 268 keys, the longest value
+ * `onboarding.intro.body` at 267 characters, `id` serializing to 15,801 bytes and
+ * `en` to 15,527.
+ *
+ *   MAX_VALUE  320    267 plus headroom. Catches a pasted paragraph.
+ *   MAX_BYTES  20000  ~21% headroom. **This is the load-bearing one**, because the
+ *                     per-value ceiling alone would let 44 documents of 320
+ *                     characters in and quadruple the payload.
+ *
+ * **S-D6's real cost is the PAYLOAD, not the line count** -- the roadmap argues
+ * from `id.ts` being 843 lines, and CLAUDE.md's `## Localization` still claims 118
+ * keys, which has been wrong for two releases. The bytes are the number that
+ * reaches a phone.
+ *
+ * TIGHTENED WHEN THE CATALOG SHRINKS, NEVER WIDENED WITHOUT A WRITTEN REASON --
+ * `LENGTH_BUDGET`'s rule, for the same reason: a ceiling raised on one inconvenient
+ * commit is not a ceiling. **A workstream whose chrome keys would breach either has
+ * content in the wrong place**, and `src/content/**` is where it goes.
+ */
+
+const MAX_VALUE = 320;
+const MAX_BYTES = 20_000;
+
+describe('the catalog holds chrome, not prose (S-D6)', () => {
+  it('has no value longer than the ceiling', () => {
+    for (const [name, catalog] of [
+      ['id', id],
+      ['en', en],
+    ] as const) {
+      for (const [key, value] of Object.entries(catalog)) {
+        expect({ [`${name}:${key}`]: value.length <= MAX_VALUE }).toEqual({
+          [`${name}:${key}`]: true,
+        });
+      }
+    }
+  });
+
+  it('names the longest value, so a regression says what it displaced', () => {
+    // Not a redundant assertion: it fails when a NEW value becomes the longest,
+    // which is the moment to ask whether it is chrome. Update the name and the
+    // number together, in the same commit, with a reason.
+    const longest = (Object.entries(id) as [MessageKey, string][]).sort(
+      (a, b) => b[1].length - a[1].length,
+    )[0];
+    expect(longest[0]).toBe('onboarding.intro.body');
+    expect(longest[1].length).toBeLessThanOrEqual(280);
+  });
+
+  it('keeps each catalog under the payload ceiling', () => {
+    // THE ONE THAT MATTERS. The per-value ceiling alone would let 44 documents of
+    // 320 characters in.
+    for (const [name, catalog] of [
+      ['id', id],
+      ['en', en],
+    ] as const) {
+      const bytes = JSON.stringify(catalog).length;
+      expect({ [name]: bytes < MAX_BYTES }, `${name} is ${bytes} bytes`).toEqual({
+        [name]: true,
+      });
+    }
+  });
+
+  it('holds no paragraph breaks except the one that is framing', () => {
+    /*
+     * Prose has paragraphs; chrome does not. Two exemptions, each earned:
+     *
+     *   `reading.error.midStream`  OPENS with `\n\n[...]`, and `catalog.test.ts`
+     *                             asserts that shape -- the blank line and the
+     *                             brackets are what make a mid-stream notice read
+     *                             as a system message rather than as the reader
+     *                             suddenly saying something strange.
+     *   `onboarding.intro.body`   Genuinely two paragraphs, and it is the invitation
+     *                             screen rather than a label. It is also the longest
+     *                             value in the catalog, which is not a coincidence:
+     *                             it is the boundary case this whole file exists to
+     *                             keep from becoming a precedent.
+     */
+    const EXEMPT = new Set<string>(['reading.error.midStream', 'onboarding.intro.body']);
+    for (const [name, catalog] of [
+      ['id', id],
+      ['en', en],
+    ] as const) {
+      for (const [key, value] of Object.entries(catalog)) {
+        if (EXEMPT.has(key)) continue;
+        expect({ [`${name}:${key}`]: value.replace(/^\n\n/, '').includes('\n\n') }).toEqual({
+          [`${name}:${key}`]: false,
+        });
+      }
+    }
+  });
+
+  it('holds no markup, because a catalog value is a STRING and not HTML', () => {
+    /*
+     * `t()` returns a string and React escapes it. A value containing `<p>` or
+     * `<a href` is somebody reaching for `dangerouslySetInnerHTML`, which §5 rule 3
+     * forbids -- and which reconciliation R1 refused an exception to even for
+     * JSON-LD. `/login`'s four-key legal line is the sanctioned pattern for a
+     * sentence with a link in it, with its limitation recorded in `id.ts`.
+     */
+    for (const catalog of [id, en]) {
+      for (const [key, value] of Object.entries(catalog)) {
+        expect({ [key]: /<\/?[a-z][^>]*>/i.test(value) }).toEqual({ [key]: false });
+      }
+    }
+  });
+});
