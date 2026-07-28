@@ -228,6 +228,59 @@ function buffer(name: EventName, props: Record<string, EventPropValue>): void {
 }
 
 /**
+ * Capture this request's analytics scope, for work that runs AFTER THE RESPONSE HAS
+ * ALREADY STARTED.
+ *
+ * ── THE BUG THIS EXISTS FOR ─────────────────────────────────────────────────
+ *
+ * **A `ReadableStream`'s `pull()` DOES NOT RUN INSIDE THE ALS CONTEXT THAT BUILT
+ * THE STREAM**, and it does not run inside a request scope at all. So `track()` and
+ * `defer()` called from there both miss `als.getStore()`, take their fallback path,
+ * and hit `after()` — which throws `` `after` was called outside a request scope ``.
+ * Measured live on 2026-07-28: **every streamed translation lost its
+ * `translation.generated` event AND its deferred repair pass**, both silently, for
+ * as long as V2 had shipped.
+ *
+ * `ensureRegistered`'s own comment already records half of this — `after()` callbacks
+ * are not guaranteed to run inside the context that registered them, which is why
+ * `drain` re-enters the store. This is the same fact one step earlier: a stream's
+ * `pull()` is the OTHER place work escapes the scope, and it escapes it harder,
+ * because there is no `after()` to be inside of yet.
+ *
+ * ── HOW TO USE IT ───────────────────────────────────────────────────────────
+ *
+ * Call it **synchronously, while still in the handler**, and use the returned
+ * function to wrap anything that will run later:
+ *
+ *     const inScope = bindAnalyticsScope();          // in the handler
+ *     …
+ *     inScope(() => track('…', {…}));                // later, inside pull()
+ *
+ * **IT REGISTERS THE `after()` EAGERLY, AND THAT IS THE LOAD-BEARING PART.**
+ * `als.run(store, fn)` alone would let a later `track()` push onto the buffer — but
+ * if that were the request's FIRST event, `ensureRegistered` would call `after()`
+ * from inside `pull()` and throw exactly as before. Registering here, in the
+ * handler, means the callback exists before anything needs it. The cost is one
+ * `after()` on a request that turns out to emit nothing, and `drain` returns early on
+ * an empty buffer.
+ *
+ * Outside a scope it is the identity, so a script or a test calling the wrapped work
+ * behaves exactly as it does today.
+ */
+export function bindAnalyticsScope(): <T>(fn: () => T) => T {
+  try {
+    if (!enabled()) return (fn) => fn();
+    const store = als.getStore();
+    if (!store) return (fn) => fn();
+    ensureRegistered(store);
+    return (fn) => als.run(store, fn);
+  } catch (err) {
+    logAnalyticsFailure('bind', err);
+    return (fn) => fn();
+  }
+}
+
+/**
  * Register work to run inside this request's single `after()` callback, before
  * the event flush.
  *

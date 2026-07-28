@@ -32,22 +32,80 @@ const reserveModelCall = vi.fn(async () => ({ ok: true }) as { ok: boolean; tier
 vi.mock('@/lib/llm/meter', () => ({ reserveModelCall }));
 
 /**
- * `track` and `defer` are replaced rather than exercised.
+ * `track`, `defer` and `bindAnalyticsScope` are replaced rather than exercised.
  *
  * `defer` in production hands work to the request's `after()`; here it RUNS the
  * callback and hands back its promise, so the repair pass is awaitable. That is a
  * fair substitution for what is being tested — that the repair happens off the
  * response path and that its result is what gets persisted — and it is the only way
  * to assert the second half without a Next request.
+ *
+ * ── THE MOCK MODELS THE REQUEST SCOPE, WHICH IS THE POINT ───────────────────
+ *
+ * **EVERY `track()` AND `defer()` ON THE STREAMED PATH WAS SILENTLY FAILING IN
+ * PRODUCTION AND THIS FILE WAS GREEN THE WHOLE TIME** (found live 2026-07-28). A
+ * `ReadableStream`'s `pull()` runs outside the ALS context that built the stream and
+ * outside any request scope, so `report()` and the deferred repair pass both fell
+ * through to `after()` and threw. Vitest has no request scope at all, so a mock that
+ * merely records the calls cannot tell the difference.
+ *
+ * So `inScope` is modelled: `bindAnalyticsScope` returns a wrapper that raises a
+ * depth counter for the duration of the work, and every recorded call carries whether
+ * it happened inside one. **It follows the promise**, because the real
+ * `AsyncLocalStorage.run` propagates across awaits and a synchronous
+ * enter/exit counter would report `false` for everything after the first `await`
+ * inside `settle()` — a mock stricter than reality, which is its own kind of wrong.
  */
-const tracked: Array<{ name: string; props: Record<string, unknown> }> = [];
+let bindCalls = 0;
+let scopeDepth = 0;
+const tracked: Array<{ name: string; props: Record<string, unknown>; inScope: boolean }> = [];
 const deferred: Array<Promise<void>> = [];
+const deferredInScope: boolean[] = [];
 vi.mock('@/lib/analytics/track', () => ({
   track: (name: string, props: Record<string, unknown>) => {
-    tracked.push({ name, props });
+    tracked.push({ name, props, inScope: scopeDepth > 0 });
   },
   defer: (fn: () => Promise<void>) => {
-    deferred.push(fn());
+    deferredInScope.push(scopeDepth > 0);
+    /*
+     * **THE DEFERRED BODY RUNS INSIDE THE SCOPE, BECAUSE `drain()` DOES.** The first
+     * version of this mock called `fn()` bare, and the repair pass's own
+     * `translation.generated` then recorded `inScope: false` — a failure production
+     * does not have: `ensureRegistered` wraps the whole drain in
+     * `als.run(store, …)` precisely so a `track()` from inside deferred work joins the
+     * same batch, and its comment says so. A mock that models the registration but not
+     * the re-entry reports a bug in the test harness as a bug in the code.
+     */
+    deferred.push(
+      (async () => {
+        scopeDepth += 1;
+        try {
+          await fn();
+        } finally {
+          scopeDepth -= 1;
+        }
+      })(),
+    );
+  },
+  bindAnalyticsScope: () => {
+    bindCalls += 1;
+    return <T>(fn: () => T): T => {
+      scopeDepth += 1;
+      let out: T;
+      try {
+        out = fn();
+      } catch (err) {
+        scopeDepth -= 1;
+        throw err;
+      }
+      if (out && typeof (out as { then?: unknown }).then === 'function') {
+        return (out as unknown as Promise<unknown>).finally(() => {
+          scopeDepth -= 1;
+        }) as unknown as T;
+      }
+      scopeDepth -= 1;
+      return out;
+    };
   },
 }));
 
@@ -129,6 +187,9 @@ beforeEach(() => {
   rows = [];
   tracked.length = 0;
   deferred.length = 0;
+  deferredInScope.length = 0;
+  bindCalls = 0;
+  scopeDepth = 0;
   vi.stubEnv('ANALYTICS_ENABLED', '1');
 });
 
@@ -454,6 +515,81 @@ describe('translateStream', () => {
     await it.return?.(undefined);
 
     await expect(stream.result).resolves.toMatchObject({ fellBack: true });
+  });
+
+  /**
+   * ── THE REGRESSION THIS SUITE COULD NOT SEE ─────────────────────────────────
+   *
+   * **EVERY `track()` AND `defer()` ON THE STREAMED PATH FAILED IN PRODUCTION WHILE
+   * THIS FILE WAS GREEN** (found live 2026-07-28, read out of the dev log):
+   *
+   *     [analytics] track failed  `after` was called outside a request scope
+   *         at report → settle → iterate → Object.pull
+   *     [analytics] defer failed  `after` was called outside a request scope
+   *         at defer → settle → iterate → Object.pull
+   *
+   * `settle()` always runs after the first chunk, so it always ran inside the
+   * `ReadableStream`'s `pull()` — which is outside the ALS context that built the
+   * stream and outside any request scope. Result: **no `translation.generated` event
+   * for any streamed field, and the repair pass never ran at all**, so V2's own
+   * instruction "if the measured `invalid` rate is above about 2%, fix the prompt"
+   * could not be followed because the measurement was not being recorded.
+   *
+   * Vitest has no request scope, so nothing here could fail. The mock models one
+   * instead: `bindAnalyticsScope` must be captured, and everything reported afterwards
+   * must be inside it. **Negative control: drop the `inScope(...)` wrapper in
+   * `translateStream` and this fails on the `inScope` flags while every other test in
+   * the file stays green** — which is exactly the position the suite was in before.
+   */
+  it('reports and defers INSIDE the captured request scope, not from pull()', async () => {
+    // A dirty body, so both halves fire: the `invalid` report AND the repair defer.
+    streams('What has passed: something else entirely.');
+
+    const stream = translateStream(args(), DB);
+    for await (const _ of stream) void _;
+    await stream.result;
+    await Promise.all(deferred);
+
+    /* Captured once, synchronously, while `translateStream` was still in the handler. */
+    expect(bindCalls).toBe(1);
+
+    /* Every event, including the repair pass's own, and there is at least one. */
+    expect(tracked.length).toBeGreaterThan(0);
+    expect(tracked.map((t) => ({ name: t.name, inScope: t.inScope }))).toEqual(
+      tracked.map((t) => ({ name: t.name, inScope: true })),
+    );
+
+    /* And the repair pass was registered from inside the scope too -- the `defer`
+       half of the same bug, and the half with a user-visible consequence. */
+    expect(deferredInScope).toEqual([true]);
+  });
+
+  /*
+   * The cached branch reports from the FIRST pull, which the route awaits in scope, so
+   * it was never broken. Asserted anyway: `translateStream` wraps it deliberately, on
+   * the grounds that "the first pull happens to be in scope" is a fact about the
+   * caller rather than a property of the module.
+   */
+  it('wraps the cached branch too, though that one was never broken', async () => {
+    rows.push({
+      entity: 'reading',
+      entityId: args().entityId,
+      field: 'body',
+      locale: 'en',
+      sourceLocale: 'id',
+      body: CLEAN,
+      model: 'glm-4.6',
+      promptVersion: 'translate-v1',
+      updatedAt: new Date('2026-07-28T00:00:00Z'),
+      createdAt: new Date('2026-07-28T00:00:00Z'),
+    });
+
+    const stream = translateStream(args(), DB);
+    for await (const _ of stream) void _;
+    await stream.result;
+
+    expect(eventOf()).toMatchObject({ outcome: 'cached' });
+    expect(tracked.every((t) => t.inScope)).toBe(true);
   });
 });
 

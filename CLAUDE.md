@@ -1465,13 +1465,7 @@ reading. Four things to know before touching it:
 **Still open:** `GET /api/persona` 500s when the database is down rather than 204 — the same
 omission `/api/memory/{frequency,summary}` carry, and all three should be fixed together; V7
 does not mount the persona on `/s/`; `PERSONA_MIN_AGE_SECONDS=3600` is a guess;
-`account.details_viewed` always reports `from: 'direct'`. **AND ONE FOUND WHILE WIRING THE
-PERSONA, WHICH IS V2's AND AFFECTS READINGS TOO: `settle()` RUNS INSIDE THE STREAM'S `pull()`,
-OUTSIDE THE REQUEST SCOPE**, so for every *streamed* translation `track('translation.generated')`
-and the `defer()`ed repair pass both die with `` `after` was called outside a request scope ``.
-Consequence: no analytics for streamed translations, and **an invalid one is never repaired** —
-the viewer sees it once and the next view regenerates from scratch. The valid path is unaffected
-(`persist()` is awaited directly). Read out of the dev log while diagnosing the budget bug.
+`account.details_viewed` always reports `from: 'direct'`.
 
 ## Trust, safety and secrets (W7)
 
@@ -1589,6 +1583,22 @@ in that table is the whole failure the workstream exists to prevent.
    `effectiveLocaleSource()`, never raw: every pre-v0.3.0 row is NULL and those users may
    well have pressed the toggle. `raw ?? 'default'` is what a reasonable person writes
    without the helper, and it would license overwriting exactly those preferences.
+6. **A `ReadableStream`'s `pull()` IS NOT IN A REQUEST SCOPE, AND `translateStream` HAS TO
+   CAPTURE ONE.** `settle()` always runs after the first chunk, so it always ran inside
+   `pull()` — outside the ALS context that built the stream and outside any request — and both
+   `track('translation.generated')` and the `defer()`ed repair pass died on `` `after` was
+   called outside a request scope ``. **Every streamed translation lost its event and its
+   repair, silently, for as long as V2 had shipped**, which is why the ~2% rule above could
+   not be followed: the measurement was not being written. The fix is
+   `bindAnalyticsScope()` in `@/lib/analytics/track`, called **synchronously inside
+   `translateStream`** — the one line guaranteed to still be in the handler — wrapping every
+   reporting site in `iterate()`. It registers the request's `after()` eagerly, because
+   otherwise a later `track()` would be the first one and `ensureRegistered` would throw from
+   `pull()` all over again. `ensureRegistered`'s own comment records the sibling fact (an
+   `after()` callback is not guaranteed to run in the context that registered it, hence
+   `drain`'s `als.run`); this is that fact one step earlier. **The unit mock models the scope
+   with a depth counter** — Vitest has no request scope, so a mock that only records calls
+   cannot see this class of bug, and the suite was green throughout.
 
 **`translateStream` yields the SOURCE VERBATIM on failure and the route returns it as an
 ordinary 200** (`TranslateResult.fellBack`) — a caller that renders it as `translated`

@@ -39,7 +39,7 @@ import 'server-only';
  * would have justified buffering.
  */
 import type { Locale, ReaderId, ServiceId } from '@/data/types';
-import { defer, track } from '@/lib/analytics/track';
+import { bindAnalyticsScope, defer, track } from '@/lib/analytics/track';
 import type { DbOrTx } from '@/lib/db/types';
 import { getProvider } from '@/lib/llm';
 import {
@@ -179,6 +179,41 @@ export function translateStream(
     settleResult = resolve;
   });
 
+  /*
+   * ── CAPTURED HERE, BECAUSE HERE IS THE ONLY MOMENT WE ARE IN THE REQUEST ────
+   *
+   * **THE GENERATOR BODY BELOW DOES NOT RUN IN THE REQUEST SCOPE, AND EVERY
+   * `track()` AND `defer()` IN IT WAS SILENTLY FAILING** (found live 2026-07-28).
+   * `translateStream()` itself is called by the route inside `withAnalytics`, but an
+   * `async *` generator's body runs when something PULLS it — and after the first
+   * chunk that is the `ReadableStream`'s `pull()`, which Next runs outside any
+   * request scope. So `report()` fell through to `track()`'s unbatched path and
+   * `after()` threw:
+   *
+   *     [analytics] track failed  `after` was called outside a request scope
+   *         at report → settle → iterate → Object.pull
+   *     [analytics] defer failed  `after` was called outside a request scope
+   *         at defer → settle → iterate → Object.pull
+   *
+   * Consequence: **no `translation.generated` event for any streamed field, and the
+   * repair pass never ran** — so V2's own instruction "if the measured `invalid` rate
+   * is above about 2%, fix the prompt" could not be followed, because the measurement
+   * was not being recorded, and an invalid translation was never repaired.
+   *
+   * `bindAnalyticsScope()` is called SYNCHRONOUSLY here, which is the whole trick: it
+   * is the last line of `translateStream` that is guaranteed to be inside the
+   * handler. It also registers the request's `after()` eagerly, so a later `track()`
+   * cannot be the first one and re-throw from `ensureRegistered`.
+   *
+   * **EVERY REPORTING SITE IN `iterate()` GOES THROUGH IT, INCLUDING THE TWO THAT DO
+   * NOT NEED IT TODAY.** The cached branch and the failed-to-open branch both run
+   * during the route's `await iterator.next()`, which IS in scope — so wrapping them
+   * is currently redundant. It is deliberate: "the first pull happens to be in scope"
+   * is an ordering fact about the caller, not a property of this file, and the next
+   * person to add a chunk before them would break it with nothing red.
+   */
+  const inScope = bindAnalyticsScope();
+
   async function* iterate(): AsyncGenerator<string> {
     const startedAt = performance.now();
     let out: TranslateResult = { body: args.source, outcome: 'failed', fellBack: true };
@@ -194,13 +229,15 @@ export function translateStream(
       const cached = await readCache(args, handle);
       if (cached) {
         out = { body: cached, outcome: 'cached', fellBack: false };
-        report(args, {
-          outcome: 'cached',
-          violation: null,
-          chars: cached.length,
-          streamed: true,
-          startedAt,
-        });
+        inScope(() =>
+          report(args, {
+            outcome: 'cached',
+            violation: null,
+            chars: cached.length,
+            streamed: true,
+            startedAt,
+          }),
+        );
         // ONE chunk. T2.
         yield out.body;
         return;
@@ -208,13 +245,15 @@ export function translateStream(
 
       const streamed = await openStream(args);
       if (!streamed) {
-        report(args, {
-          outcome: 'failed',
-          violation: null,
-          chars: 0,
-          streamed: true,
-          startedAt,
-        });
+        inScope(() =>
+          report(args, {
+            outcome: 'failed',
+            violation: null,
+            chars: 0,
+            streamed: true,
+            startedAt,
+          }),
+        );
         yield args.source;
         return;
       }
@@ -249,7 +288,12 @@ export function translateStream(
         yield next.value;
       }
 
-      out = await settle(args, body.trim(), { streamed: true, startedAt, handle });
+      /*
+       * THE ONE THAT WAS ACTUALLY BROKEN. `settle()` both reports and `defer()`s the
+       * repair pass, and it always runs after the first chunk -- so it always ran
+       * inside `pull()`, outside the scope.
+       */
+      out = await inScope(() => settle(args, body.trim(), { streamed: true, startedAt, handle }));
     } finally {
       /*
        * `finally`, so a consumer that abandons the iterator mid-way still settles

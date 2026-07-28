@@ -1789,8 +1789,9 @@ and miss the number entirely.
 
 ### Two more things the same investigation turned up
 
-**`settle()` RUNS INSIDE THE STREAM'S `pull()`, WHICH IS OUTSIDE THE REQUEST SCOPE — AND
-THIS IS V2's, NOT THE PERSONA'S.** Read straight out of the dev log:
+**`settle()` RAN INSIDE THE STREAM'S `pull()`, WHICH IS OUTSIDE THE REQUEST SCOPE — V2's,
+NOT THE PERSONA'S. FIXED THE SAME DAY; SEE THE NEXT SECTION.** Read straight out of the dev
+log:
 
 ```
 [analytics] unbatched track() outside withAnalytics: translation.generated
@@ -1806,10 +1807,10 @@ THIS IS V2's, NOT THE PERSONA'S.** Read straight out of the dev log:
 
 So for **every streamed translation, including `reading.body`**: no `translation.generated`
 event, and **the `defer()`ed repair pass never runs.** The valid path is unaffected because
-`persist()` is awaited inline rather than deferred. Left open deliberately — it is V2's file
-and V2's fix, and it is now written down with the stack rather than rediscovered. The
-practical effect is that V2's own instruction *"if the measured `invalid` rate exceeds ~2%,
-fix the prompt"* cannot be followed, because the measurement is not being recorded.
+`persist()` is awaited inline rather than deferred. Left open at the time, then fixed on
+Miftah's say-so within the hour — the next section. The practical effect while it stood was
+that V2's own instruction *"if the measured `invalid` rate exceeds ~2%, fix the prompt"* could
+not be followed, because the measurement was not being recorded.
 
 **TWO TESTS IN THE TRANSLATION SUITE WERE VACUOUS AND BOTH SAID SO IN THEIR OWN COMMENTS.**
 Both were written for "V8 has not shipped yet" and V8 shipped:
@@ -1869,3 +1870,118 @@ makes the cached translation reusable at all.
 
 `npm test` 1609 (+1), `npm run test:integration` 230 (+1), `npm run typecheck` and
 `npm run build` clean including `audit:secrets`.
+
+---
+
+## The streamed-translation analytics, 2026-07-28 (V2 follow-up)
+
+The defect the persona wiring turned up, fixed. It was never the persona's — it had been
+true of `reading.body` since V2 shipped.
+
+### What was wrong
+
+`translateStream` is an `async *` generator. The route calls it inside `withAnalytics`, but
+a generator's body does not run until something pulls it — and after the first chunk, the
+thing pulling is the `ReadableStream`'s `pull()`, which Next runs **outside the ALS context
+that built the stream and outside any request scope at all**. `settle()` always runs after
+the first chunk. So every time:
+
+```
+[analytics] unbatched track() outside withAnalytics: translation.generated
+[analytics] track failed  `after` was called outside a request scope
+    at report → settle → iterate → Object.pull
+[analytics] defer failed  `after` was called outside a request scope
+    at defer → settle → iterate → Object.pull
+```
+
+`track()` and `defer()` both look for `als.getStore()`, and both fall back to calling
+`after()` directly when it is missing — which throws there. Consequences, for **every
+streamed translation, readings included**:
+
+- **No `translation.generated` event, ever.** V2's own header says *"if the measured
+  `invalid` rate is above about 2%, fix the prompt, not the architecture"* and that
+  `outcome` *"is how that rate is knowable at all"*. It was knowable in principle and
+  recorded nowhere.
+- **The repair pass never ran.** That is the user-visible half: an invalid translation was
+  shown once and never repaired, so the cache stayed empty and the next view paid another
+  model call — the same shape as the budget bug, arriving from a different direction.
+- The valid path was unaffected, because `persist()` is awaited inline rather than deferred.
+  Which is exactly why nobody noticed: translations were being cached and served correctly.
+
+### The fix
+
+`bindAnalyticsScope()` in `@/lib/analytics/track`, called **synchronously inside
+`translateStream`** — the last line of that function guaranteed to still be running in the
+handler. It captures the store and returns a wrapper; every reporting site in `iterate()`
+goes through it.
+
+**It registers the request's `after()` eagerly, and that is the load-bearing half.**
+`als.run(store, fn)` alone would let a later `track()` push onto the buffer — but if that
+were the request's *first* event, `ensureRegistered` would call `after()` from inside
+`pull()` and throw exactly as before. Registering in the handler means the callback exists
+before anything needs it. The cost is one `after()` on a request that emits nothing, and
+`drain` returns early on an empty buffer.
+
+**`ensureRegistered`'s own comment already recorded the sibling fact** — *"`after()`
+callbacks are not guaranteed to run inside the ALS context that registered them"*, which is
+why `drain` does `als.run(store, () => drain(store))`. This is that same fact one step
+earlier: a stream's `pull()` is the other place work escapes the scope, and it escapes
+harder, because there is no `after()` to be inside of yet. **If you write another route that
+hands Next a `ReadableStream` whose producer emits analytics, it needs this too.**
+
+**All four reporting sites are wrapped, including the two that did not need it.** The cached
+branch and the failed-to-open branch both run during the route's `await iterator.next()`,
+which is in scope — so wrapping them is redundant today. Deliberately: "the first pull
+happens to be in scope" is an ordering fact about the caller, not a property of the module,
+and the next person to yield a chunk before them would break it with nothing red.
+
+### Why the unit suite was green through all of it, and what fixed that
+
+**Vitest has no request scope, so the mock could not tell the difference.** The old mock
+replaced `track` and `defer` with recorders; both paths recorded identically whether or not
+the real thing would have thrown.
+
+So the mock now models the scope: `bindAnalyticsScope` returns a wrapper that raises a depth
+counter, every recorded call carries `inScope`, and one test asserts all of them are true.
+Two details were needed to make it faithful rather than merely strict:
+
+- **The wrapper follows the promise.** A synchronous enter/exit counter reports `false` for
+  everything after the first `await` inside `settle()`, because `settle` is async — while the
+  real `AsyncLocalStorage.run` propagates across awaits. A mock stricter than reality is its
+  own kind of wrong.
+- **Deferred bodies run *inside* the scope, because `drain()` runs them inside
+  `als.run(store, …)`.** The first version called `fn()` bare and the repair pass's own event
+  recorded `inScope: false` — a failure production does not have. That one cost a few minutes
+  and is worth recording: **when a mock disagrees with the code, check which one is modelling
+  reality before changing the code.**
+
+**Negative control, run rather than reasoned:** with the `inScope(...)` wrapper removed from
+`settle`'s call site, exactly one test fails — the new one — and the diff is
+`inScope: true → false`. Every other test in the file stays green, which is precisely the
+position the suite was in before.
+
+### Verified live
+
+Deleted the cached persona translation and every `translation.generated` row, restarted the
+dev server, and drove a real streamed translation through loop 5 with a real z.ai call:
+
+```
+grep -c "outside a request scope"  dev.log  -> 0     (was 2 per translation)
+grep -c "unbatched track()"        dev.log  -> 0     (was 1 per translation)
+
+events where name='translation.generated':
+  { entity: 'persona', field: 'body', source_locale: 'id', locale: 'en',
+    outcome: 'ok', violation: null, streamed: true, total_ms: 2168, chars: 427 }
+```
+
+**`streamed: true` is the whole point** — that row is the one that could not exist before.
+Zero rows existed at the start of the check, so the single row is the event, not a leftover.
+`personas` still holds the Indonesian source and `translations` holds the English row, so the
+fix changed the bookkeeping and nothing else.
+
+The `invalid` → repair path is covered by the unit test with its negative control rather than
+live: forcing a real model to violate the contract on demand is not something the harness can
+do, and the deferred half is exactly what the mock now models.
+
+`npm test` 1611 (+2), `npm run test:integration` 230, `npm run typecheck` and `npm run build`
+clean including `audit:secrets`.
