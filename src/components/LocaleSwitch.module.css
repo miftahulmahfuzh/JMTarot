@@ -25,10 +25,17 @@
   background: none;
   border: none;
   /*
-   * 44px tall including padding, so the tap target is a thumb rather than a
-   * 10px word. The negative horizontal padding is deliberate: the text stays
-   * optically centred with the disclaimer above it while the hit area does not.
+   * 44px tall, so the tap target is a thumb rather than a 10px word. The
+   * horizontal padding is deliberately small: the text stays optically centred
+   * with the disclaimer above it while the hit area does not.
+   *
+   * THE `min-height` IS NOT BELT-AND-BRACES. This said 44 and MEASURED 42:
+   * Cinzel at 10px lays out a ~14px line box, so 14 + 14 + 14 is 42 and the
+   * comment had been wrong since W6. V4's `_accountshot.html` flagged it with
+   * `<-- UNDER 44px`. Stating the floor beats re-deriving padding against a
+   * font metric every time the type scale moves.
    */
+  min-height: 44px;
   padding: 14px 6px;
   cursor: pointer;
 }
@@ -55,4 +62,21 @@
   font-family: var(--font-body), Georgia, serif;
   font-size: 11px;
   color: var(--gold-hairline);
+}
+
+/*
+ * The `codes` variant: `ID · EN`, sitting at the right-hand end of a menu row
+ * rather than centred under a disclaimer. Same type, same colours, same 44px
+ * tap height -- only the box changes.
+ */
+.inline {
+  justify-content: flex-end;
+  gap: 4px;
+  margin: 0;
+}
+
+.inline .option {
+  /* Still 44px tall. Narrower horizontally because the row's label is already
+     carrying the meaning and the two codes are two characters each. */
+  padding: 14px 4px;
 }

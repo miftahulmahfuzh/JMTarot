@@ -102,6 +102,10 @@ export const EVENT_NAMES = [
   // — locale (W6) —
   'locale.changed',
 
+  // — the account shell (V4) —
+  'account.opened',
+  'account.details_viewed',
+
   // — trust and safety (W7) —
   'terms.viewed',
   'terms.accepted',
@@ -246,6 +250,27 @@ export type EventMap = {
                                  dominance: 'tied' | 'narrow' | 'clear' | 'overwhelming'; pulse: number };
 
   'locale.changed':            { from: string; to: string; surface: 'settings' | 'onboarding' | 'auto' };
+
+  /*
+   * V4. `surface` is a CLOSED UNION AND NOT A PATHNAME (rule 2: no unbounded
+   * cardinality). It costs nothing to be exact, because the button is mounted
+   * per page and each mounting page passes its own -- there is no pathname to
+   * parse and no `/[reader]` to explode into three values.
+   */
+  'account.opened':            { surface: 'reader_picker' | 'service_picker' | 'account' | 'history' };
+  /*
+   * V4 DECLARES THIS AND V8 FIRES IT, from `/account` via `TrackView`. Declared
+   * here because V4 lands first and a forward declaration costs nothing, and
+   * because §6 wants every name in this file with a prop shape so the count
+   * reaches 59. V8 owns the page and may widen the shape in its own plan; it is
+   * the sole firer, so that is not a shared-file conflict.
+   *
+   * `from` is derived in the browser the way `ReaderViewed` derives
+   * `reader.viewed.from`: the server never sees a Referer on a client-side
+   * navigation, and "reached from the menu" and "reached from a bookmark" are
+   * two different facts about whether the shell is discoverable.
+   */
+  'account.details_viewed':    { from: 'menu' | 'direct' };
 
   'terms.viewed':              { version: string; from: string };
   'terms.accepted':            { version: string };
