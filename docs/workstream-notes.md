@@ -2758,6 +2758,65 @@ was rejected". The landing page also names all three readers, so grepping for `T
 is not a test of which arm rendered; `Landing-module` versus `page-module` in the class
 names is.
 
+### Loop 5: the link really does reload the document, and it is 44px tall
+
+The behavioural half of the `next/link` trap, over CDP against `npm run dev`:
+
+```
+goto /en                            -> /en   lang=en
+eval a[hreflang=id].href            -> /
+tap  Indonesia                      -> /     lang=id   aria-current="Indonesia"
+tap  English                        -> /en   lang=en   aria-label="Change language"
+```
+
+**`lang` flipping is the whole assertion, not the pathname.** With a `next/link` the
+pathname would change and `document.documentElement.lang` would stay `en`, because the
+navigation resolves to the same route under the same root layout and Next does not
+re-render it — a visibly half-translated page with nothing failing anywhere.
+
+Two things the plan's §13.2 gets wrong, both costing a few minutes:
+
+- **`tools/e2e/run.sh tap` matches VISIBLE TEXT, not a CSS selector.** `tap
+  'a[hreflang="id"]'` prints `NO element matching`, which reads like the anchor is
+  missing. `tap 'Indonesia'` is the call.
+- **The harness does not scroll, and a tap it reports as landed can hit nothing.** It
+  filters on `getBoundingClientRect().width/height > 0`, which a below-the-fold element
+  satisfies, then dispatches Input-domain events at coordinates outside the viewport. It
+  printed `tapped "Indonesia" -> [exact] "indonesia"` and the URL did not change. Scroll
+  first: `eval 'document.querySelector("a[hreflang=id]").scrollIntoView({block:"center"})'`.
+  Worth fixing in the harness the next time somebody is in that file.
+
+**And it answers §13.3's deferral with a number instead of an argument.** That section
+says loop 4 is unnecessary because `.link` only adds `display: inline-flex`,
+`align-items: center` and `text-decoration: none` to the geometry `LocaleSwitch` already
+measured. Measured directly: the anchor's box is **92.67 × 44**. The 44 is the number
+`.option`'s comment records as having said 44 and measured 42 for a whole workstream, so
+it is the one worth having twice.
+
+### The crawl gate, and what its FAILED means today
+
+`tools/seo/crawl.sh http://localhost:3001` — **it defaults to production, which is still
+serving v0.3.0, so an unargued run reports every content path as a login redirect and
+tells you nothing about this branch.**
+
+```
+/                200  0 hops   set-cookie: authjs.csrf-token, authjs.callback-url
+/en              200  0 hops   set-cookie: authjs.csrf-token, authjs.callback-url
+/gallery /en/gallery /arcana/the-moon /en/arcana/the-moon /blog /en/blog     404
+/terms /privacy  200  0 hops   set-cookie: jmt_locale, authjs.*
+/sitemap.xml     200  4 urls   /robots.txt 200 with the Sitemap: directive
+/s/              404 + x-robots-tag: noindex, nofollow, noarchive
+crawl: FAILED
+```
+
+**The FAILED is §0.5's, not a regression.** The six 404s are S3, S4 and S6's pages, which
+are *meant* to be missing at this point in the sequence — that is the whole reason the
+script is the deploy gate and no unit test can replace it. What S2 changed is the first
+two rows: `/` and `/en` are 200 at zero hops and no longer report `jmt_locale`. `/terms`
+and `/privacy` still write it, correctly — R4 made them indexable but they are not
+content routes, they serve both languages at one address by D6's chain, and that chain is
+what the cookie is for.
+
 ### The traps
 
 - **`NextResponse.rewrite(url)` without `{ request: { headers } }` is silent.** The right
