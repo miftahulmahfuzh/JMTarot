@@ -21,18 +21,19 @@
  * is the right posture, and a page that assumes middleware ran is a page that breaks
  * silently when the matcher changes. `isPublic()` must never learn this path.
  */
-import Image from 'next/image';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { AccountButton } from '@/components/AccountButton';
 import { AccountAnswers } from '@/components/AccountAnswers';
+import { AccountCard } from '@/components/AccountCard';
 import { AccountFacts } from '@/components/AccountFacts';
 import { DeleteAccount } from '@/components/DeleteAccount';
 import { Eyebrow } from '@/components/Eyebrow';
 import { PersonaBlockClient } from '@/components/PersonaBlock';
 import { TrackView } from '@/components/TrackView';
-import { CARDS, cardThumb } from '@/data/deck';
-import { READERS, readerPortrait } from '@/data/readers';
+import { CARDS } from '@/data/deck';
+import { READERS } from '@/data/readers';
 import { currentUser } from '@/lib/auth/server';
 import { db } from '@/lib/db/client';
 import {
@@ -44,7 +45,7 @@ import { answerPresence } from '@/lib/db/queries/onboarding';
 import { getProfile } from '@/lib/db/queries/profile';
 import { localeSwitcherEnabled } from '@/lib/i18n/resolve';
 import { getLocale, getT } from '@/lib/i18n/t';
-import { topCardLine, topReaderLine } from '@/lib/persona/lines';
+import { linkifyName, topCardLine, topReaderLine } from '@/lib/persona/lines';
 import styles from './page.module.css';
 
 export default async function AccountPage() {
@@ -79,14 +80,25 @@ export default async function AccountPage() {
    */
   if (!profile) redirect('/onboarding');
 
+  /*
+   * Strictly more than half, so an even split reads as upright. The same rule
+   * `personaMaterial` applies, because the sentence and the prompt must agree about
+   * which half of the meaning pair this card has earned.
+   *
+   * **HOISTED OUT OF THE CALL BELOW BECAUSE IT NOW HAS TWO READERS.** `topCardLine`
+   * picks the gloss with it and `AccountCard` turns the artwork over with it, and the
+   * one thing that must never happen is those two disagreeing — a card described by
+   * its reversed meaning while sitting upright contradicts itself a centimetre apart.
+   * Two copies of `reversedCount * 2 > count` is exactly how that ships.
+   */
+  const topCardReversedDominant =
+    topCard === null ? null : topCard.reversedCount * 2 > topCard.count;
+
   const cardLine = topCardLine(t, locale, {
     readingCount,
     topCardId: topCard?.cardId ?? null,
     topCardCount: topCard?.count ?? null,
-    /* Strictly more than half, so an even split reads as upright. The same rule
-       `personaMaterial` applies, because the sentence and the prompt must agree
-       about which half of the meaning pair this card has earned. */
-    topCardReversedDominant: topCard === null ? null : topCard.reversedCount * 2 > topCard.count,
+    topCardReversedDominant,
   });
 
   const readerLine = topReaderLine(
@@ -127,6 +139,26 @@ export default async function AccountPage() {
           discoverable. */}
       <TrackView name="account.details_viewed" props={{ from: 'direct' }} />
 
+      {/*
+        THE WAY OUT, AND THIS PAGE HAD NONE. Exactly the gap `/history` closed one
+        release earlier and for exactly the same reason: the account circle above opens
+        a sheet, the only `href="/"` on the page was inside the three EMPTY states, so a
+        querent WITH a card, a reader and a persona could leave only via the browser's
+        back button — and in a home-screen standalone instance there is no visible back
+        button at all.
+
+        `history.home` AND NOT A NEW KEY. It reads `← Beranda` / `← Home`, which is
+        what it means here too, and a second string for the same control is how two
+        screens end up disagreeing about what "home" is called. The arrow lives in the
+        VALUE, not the JSX -- see that key's comment.
+
+        A `Link`, not an `<a>`: this is inside the app, so a client-side navigation is
+        right, unlike the deliberate `<a>` in the public share tree.
+      */}
+      <Link href="/" className={styles.back}>
+        {t('history.home')}
+      </Link>
+
       <Eyebrow>{t('common.majorArcana')}</Eyebrow>
       <h1 className={styles.title}>{t('account.title')}</h1>
       <p className={styles.hint}>{t('account.hint')}</p>
@@ -147,37 +179,32 @@ export default async function AccountPage() {
         {cardLine && card ? (
           <div className={styles.withArt}>
             {/*
-              THE 240x360 THUMBNAIL, DRAWN AT 88x132 — the same asset and the same
-              size the fan and the slot row use. `cardThumb` appends `ART_VERSION`,
-              which is the whole cache story: `next.config.ts` serves `/cards/*`
-              with a one-year `immutable` header on slug-based, non-content-hashed
-              filenames, so a regenerated deck is only ever visible because of that
-              query string.
+              **`AccountCard` REPLACED A BARE `<img>`, AND IT CARRIES THE TWO THINGS
+              THAT `<img>` COULD NOT: THE NAME ON THE ART AND A ZOOM.** The old comment
+              here argued `CardFace` was deliberately not reused because "the sentence
+              beside this image already names it" — a real de-duplication argument that
+              lost to how the page reads. The sentence names the card mid-clause, in
+              prose; every other 88x132 card in the product wears its name; and at that
+              size the ART is unreadable, which is the exact reason `CardDetail` exists
+              on the draw screen and in `ReadingView`.
 
-              **A PLAIN `<img>` AND NOT `next/image`, WHICH IS `CardFace`'s RULE AND
-              ALSO A HARD CONSTRAINT.** The rule: these are already optimized WebP
-              generated at exactly the two sizes we draw them at, so the optimizer
-              has nothing to improve and would add a serverless invocation and a
-              re-encode. The constraint: `next/image` REFUSES a local `src` carrying
-              a query string unless `images.localPatterns` allows it, and
-              `next.config.ts` configures no `images` block at all — so an `<Image>`
-              here threw `Image with src "/cards/thumb/08_strength.webp?v=3" is using
-              a query string which is not configured` and took the whole page to a
-              500. Found by loading the page, not by reading it; the first draft had
-              exactly that bug and the build was green.
+              The `next/image` constraint the old comment recorded is UNCHANGED and is
+              satisfied rather than dodged — see `AccountCard`'s header. `next/image`
+              refuses `cardThumb`'s `?v=` query string with no `images.localPatterns`
+              block, and `CardFace` uses a plain `<img>` for its own reasons.
 
-              `CardFace` is deliberately NOT reused: it draws the card's name over
-              the art at small sizes, and the sentence beside this image already
-              names it.
+              `reversed` IS THE AGGREGATE ORIENTATION, the same boolean `topCardLine`
+              picked the gloss with — so the artwork and the sentence agree about which
+              half of the meaning pair this card has earned.
+
+              `position` IS THIS SECTION'S OWN HEADING. The overlay's top label is a
+              slot framing on the draw screen ("What has passed"); there is no spread
+              here, and `Your card` is the true answer to "where am I".
             */}
-            {/* eslint-disable-next-line @next/next/no-img-element -- see above */}
-            <img
-              className={styles.thumb}
-              src={cardThumb(card.slug)}
-              alt={card.name}
-              width={88}
-              height={132}
-              decoding="async"
+            <AccountCard
+              card={card}
+              reversed={topCardReversedDominant === true}
+              position={t('account.card.heading')}
             />
             <p className={styles.line}>{cardLine}</p>
           </div>
@@ -189,29 +216,56 @@ export default async function AccountPage() {
       <section className={styles.section}>
         <h2 className={styles.sectionLabel}>{t('account.reader.heading')}</h2>
         {readerLine && reader ? (
-          <div className={styles.withArt}>
-            {/* The 2:1 landscape scene, at the width the block can spare. The
-                picker draws the same asset full-bleed; here it is a stamp beside a
-                sentence, so `sizes` is narrow and nothing is `priority` -- this is
-                the third block on a page nobody arrives at in a hurry. */}
-            <Image
-              className={styles.portrait}
-              src={readerPortrait(reader.id)}
-              alt={t('picker.reader.portraitAlt', { name: reader.name, title: reader.title })}
-              width={1024}
-              height={512}
-              sizes="120px"
-            />
-            <div>
-              <p className={styles.line}>{readerLine.line}</p>
-              {/*
-                THE CLOSING LINE, IN ITS OWN ITALIC. It is the only sentence on this
-                page that asks something OF the querent rather than describing them,
-                and that contrast is requirement 3. Do not fold it into the paragraph
-                above: `lines.ts` returns them separately so this stays visible.
-              */}
-              <p className={styles.closing}>{readerLine.closing}</p>
-            </div>
+          <div>
+            {/*
+              **THE 2:1 PORTRAIT IS GONE, AND THE ARGUMENT FOR IT IS WHAT KILLED IT.**
+              The old comment called it "a stamp beside a sentence" and reached for
+              `readerPortrait` at 120px wide. A 2:1 landscape SCENE — which is what
+              these assets are, deliberately, and why the picker draws readers as wide
+              banners instead of the columns the original sketch showed — cropped to a
+              120px stamp is 60px tall: too small to read as a place and wide enough to
+              take a third of the block's inline size on a 360px screen. So it spent
+              real width to show almost nothing. `next/image` and `readerPortrait` are
+              no longer imported by this page at all.
+
+              **WHAT REPLACED IT IS A LINK, WHICH IS THE THING THE PORTRAIT LOOKED
+              LIKE BUT WAS NOT.** The name inside the sentence now goes to
+              `/{reader.id}` — that reader's own service picker — so the page's one
+              claim about a preference is also the one tap that acts on it. The
+              portrait was the only reader-shaped element here and it was inert.
+
+              `.withArt`'s flex row is gone with the image: there is nothing beside
+              the prose any more, so a plain block is the whole layout.
+            */}
+            <p className={styles.line}>
+              {linkifyName(readerLine.line, reader.name).map((seg, i) =>
+                seg.isName ? (
+                  /*
+                    `/{reader.id}` IS THE SERVICE PICKER, not a reader profile — there
+                    is no such page. `/thessaly` lists her three services, which is the
+                    thing somebody who has just been told a path opened toward her would
+                    want next.
+
+                    THE KEY IS THE INDEX AND THAT IS CORRECT HERE. The segments come
+                    from one synchronous split of one string that is recomputed whole on
+                    every render; there is no reordering, no insertion and no state
+                    below this node for React to mismatch.
+                  */
+                  <Link key={i} href={`/${reader.id}`} className={styles.readerLink}>
+                    {seg.text}
+                  </Link>
+                ) : (
+                  seg.text
+                ),
+              )}
+            </p>
+            {/*
+              THE CLOSING LINE, IN ITS OWN ITALIC. It is the only sentence on this
+              page that asks something OF the querent rather than describing them,
+              and that contrast is requirement 3. Do not fold it into the paragraph
+              above: `lines.ts` returns them separately so this stays visible.
+            */}
+            <p className={styles.closing}>{readerLine.closing}</p>
           </div>
         ) : (
           <Empty t={t} message={t('account.reader.empty')} />

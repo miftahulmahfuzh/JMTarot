@@ -44,10 +44,17 @@
  *     cannot see, which makes the share sheet's "this is exactly what they will
  *     see" preview a lie. The preview promise is worth more than the convenience.
  *
- * The honesty is restored by chrome, not by prose: the page shows
- * `share.public.otherLanguage` when the two disagree, and the body is wrapped in
- * `<div lang={reading.locale}>` so a screen reader pronounces it correctly and
+ * The honesty is carried by the `lang` attribute alone: the body is wrapped in
+ * `<div lang={renderedLocale(...)}>` so a screen reader pronounces it correctly and
  * the browser's own translate offer points at the right language.
+ *
+ * **`isForeignProse` USED TO LIVE HERE AND IS DELETED** (Miftah's ruling,
+ * 2026-07-28). Its whole job was to decide whether to print
+ * `share.public.otherLanguage`, and that notice is gone — see `page.tsx`'s header
+ * for the argument, which is that design A changed what the page shows underneath a
+ * sentence describing the old mechanism. `renderedLocale` survives and is now the
+ * only thing here that answers "what language is on screen"; the comparison against
+ * the VIEWER's locale is what went, not the rendered locale itself.
  */
 import type { ReadingProse, ReadingViewData } from '@/components/ReadingView';
 import type { Locale } from '@/data/types';
@@ -136,38 +143,6 @@ export function adaptSharedReading(
  */
 export function renderedLocale(reading: PublicReading, translation: SharedTranslation): Locale {
   return translation ? translation.locale : reading.locale;
-}
-
-/**
- * Does the viewer read a different language than the prose ON SCREEN?
- *
- * One line, and it is here rather than inline in the page so that the page and
- * the test agree about what "disagree" means. `ReadingView` asks the same question
- * internally in `resolveProse`; this is the CHROME's copy of it, which is the one
- * that decides whether `share.public.otherLanguage` is shown.
- *
- * **IT ASKS ABOUT THE RENDERED LOCALE, WHICH IS THE WHOLE OF DESIGN A's EFFECT ON
- * THE CHROME.** Against `reading.locale` an English viewer opening an English-pinned
- * link would be told the prose is in another language while looking at English — the
- * notice firing on a page it does not describe, which is worse than no notice.
- *
- * **`translation` IS REQUIRED RATHER THAN OPTIONAL, DELIBERATELY.** An optional third
- * argument would let the page keep the pre-design-A behaviour by simply not passing
- * it, silently and with nothing red — the same class of failure the locale facades
- * avoid by making a missing locale a compile error. A caller who has not decided
- * cannot call this.
- *
- * **AND IT STILL RETURNS TRUE SOMETIMES.** An English-pinned link opened by an
- * Indonesian reader is a genuine mismatch. Only design C — generating both locales
- * at mint time — would let this notice be deleted; `adapt.test.ts` asserts that case
- * so nobody removes it believing it is unreachable.
- */
-export function isForeignProse(
-  reading: PublicReading,
-  viewer: Locale,
-  translation: SharedTranslation,
-): boolean {
-  return renderedLocale(reading, translation) !== viewer;
 }
 
 /**

@@ -42,9 +42,27 @@
  * with no gate on it.
  *
  * **THE CHROME IS THE VIEWER'S AND THE `lang` ATTRIBUTE IS THE PROSE'S**, which is
- * `renderedLocale(reading, translation)` and never `reading.locale` — see
- * `isForeignProse`. A NULL pin, i.e. every link minted before design A, still
- * renders as-written.
+ * `renderedLocale(reading, translation)` and never `reading.locale`. A NULL pin,
+ * i.e. every link minted before design A, still renders as-written.
+ *
+ * **THERE IS NO OTHER-LANGUAGE NOTICE ANY MORE** (Miftah's ruling, 2026-07-28).
+ * CLAUDE.md said in capitals that it "MUST NOT BE DELETED", and this is the
+ * amendment rather than an oversight. The argument for it was that a stranger
+ * meeting foreign prose under their own chrome deserves an explanation; the
+ * argument against it is what design A changed underneath it — **the page no
+ * longer shows "whatever language the reading was generated in", it shows the
+ * language the sharer was reading**, so the sentence "this reading was written in
+ * another language and is shown as it was written" describes a mechanism that is
+ * no longer the one running. It fired on the residue: a NULL pin, or an
+ * English-pinned link opened by an Indonesian reader. Both are honest situations
+ * and neither is what that sentence claimed.
+ *
+ * **WHAT CARRIES THE HONESTY NOW IS `lang={shownLocale}` ALONE**, and it is not
+ * decoration — it is what makes a screen reader pronounce the prose correctly and
+ * what points the browser's own translate offer at the right language. Deleting
+ * THAT is the thing that would leave a stranger with no way through. Design C —
+ * generating both locales at mint — remains the only way to make the mismatch
+ * itself impossible, and it still costs one model call per share.
  */
 import { after } from 'next/server';
 import { notFound } from 'next/navigation';
@@ -53,11 +71,11 @@ import type { Metadata } from 'next';
 import { ReadingView } from '@/components/ReadingView';
 import { TryItYourself } from '@/components/TryItYourself';
 import { Eyebrow } from '@/components/Eyebrow';
-import { getLocale, getT } from '@/lib/i18n/t';
+import { getT } from '@/lib/i18n/t';
 import { clientIp } from '@/lib/ratelimit/clientIp';
 import { consume, hit, SHARE_VIEW_GLOBAL_MAX } from '@/lib/ratelimit';
 import { resolveShare, shareOrigin } from '@/lib/share/links';
-import { adaptSharedReading, isForeignProse, renderedLocale, sharedNickname } from './adapt';
+import { adaptSharedReading, renderedLocale, sharedNickname } from './adapt';
 import { ShareViewed } from './ShareViewed';
 import styles from './page.module.css';
 
@@ -160,11 +178,17 @@ export default async function SharePage({ params }: { params: Promise<{ slug: st
   if (!resolved) notFound();
 
   /*
-   * THE VIEWER'S LOCALE, not the sharer's. Middleware resolved it from the
+   * THE CHROME IS THE VIEWER'S. Middleware resolved that locale from the
    * `Accept-Language` header (there is no cookie on this path and no session), and
    * `resolve.test.ts` proves that rather than assuming it.
+   *
+   * **THE VIEWER'S LOCALE IS NO LONGER READ AS A VALUE HERE.** It was, to compare
+   * against the prose's and decide whether to print the other-language notice; with
+   * that notice deleted the only consumer of the comparison is gone, so `getLocale()`
+   * is reached only through `getT()`. Nothing on this page branches on who is
+   * looking, which is the property the header's cache-key argument wants anyway.
    */
-  const [t, viewer] = await Promise.all([getT(), getLocale()]);
+  const t = await getT();
 
   /*
    * THE COUNTER IS THE ONE UNAUTHENTICATED WRITE IN THIS RELEASE. It runs in
@@ -198,7 +222,6 @@ export default async function SharePage({ params }: { params: Promise<{ slug: st
   const { reading, link, translation } = resolved;
   const props = adaptSharedReading(reading, translation);
   const nickname = sharedNickname(reading, link.includeNickname);
-  const reversed = isForeignProse(reading, viewer, translation);
   /*
    * THE LOCALE ON SCREEN, which is the pinned one when a translation was found and
    * the source otherwise. `reading.locale` was right for two workstreams and is now
@@ -222,19 +245,12 @@ export default async function SharePage({ params }: { params: Promise<{ slug: st
       </header>
 
       {/*
-        THE ONE LINE OF CHROME THAT MAKES "NEVER TRANSLATED" HONEST RATHER THAN
-        SURPRISING. Shown only on a mismatch. Without it, a stranger in Jakarta
-        opening an English person's link meets Indonesian chrome around English
-        prose and no explanation.
-      */}
-      {reversed ? <p className={styles.otherLanguage}>{t('share.public.otherLanguage')}</p> : null}
-
-      {/*
-        `lang` IS NOT DECORATION. It is what makes a screen reader pronounce
-        Indonesian prose as Indonesian inside an English document, and what points
-        the browser's own translate offer at the right language -- which is the
-        honest place for a translation to happen on a page that must not generate
-        one itself.
+        `lang` IS NOT DECORATION, AND SINCE THE NOTICE WAS DELETED IT IS THE ONLY
+        THING LEFT DECLARING THE PROSE'S LANGUAGE. It is what makes a screen reader
+        pronounce Indonesian prose as Indonesian inside an English document, and
+        what points the browser's own translate offer at the right language -- which
+        is the honest place for a translation to happen on a page that must not
+        generate one itself.
 
         `ReadingView`'s `as-written` branch ALSO tags the paragraph, so this is one
         level of redundancy on purpose: the wrapper is what keeps the language

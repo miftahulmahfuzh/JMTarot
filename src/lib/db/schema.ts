@@ -853,7 +853,11 @@ export const shareLinks = pgTable(
      *
      * A miss is ordinary, not an error: V2 never persists an unverified
      * translation and the nightly sweep deletes orphans, so the resolver falls
-     * back to as-written and the page shows `share.public.otherLanguage`.
+     * back to as-written and the page renders the source with `lang` set to the
+     * source's locale. **It used to add `share.public.otherLanguage` on top and no
+     * longer does** — that notice is deleted (Miftah's ruling, 2026-07-28), so a miss
+     * is now visible only as prose in the other language, correctly tagged. See
+     * `src/app/s/[slug]/page.tsx`'s header.
      */
     locale: text('locale').$type<Locale>(),
     /**

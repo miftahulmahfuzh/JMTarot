@@ -1,0 +1,51 @@
+/*
+ * `/account`'s card. Two rules and one of them exists only so the other can be
+ * `inset: 0`.
+ *
+ * THE GEOMETRY IS THE SAME 88x132 the fan and the slot row use, and it is written
+ * ONCE — the tap target derives from it rather than restating it. That is
+ * `Slots.module.css`'s `.tap` argument copied verbatim, and it is the reason V6's
+ * plan's "second absolutely-positioned row mirroring the geometry" was rejected
+ * there: there is nothing here for a future width change to drift away from.
+ *
+ * `.thumb` in `../app/account/page.module.css` USED TO CARRY THESE DECLARATIONS and
+ * is deleted. The border moved too, onto `CardFace`'s `.face` — which already draws
+ * `1px solid var(--card-edge)`, the same value for the same measured reason (the
+ * artwork paints its own frame; gold here would compete with the painting).
+ */
+
+.box {
+  position: relative;
+  flex: 0 0 auto;
+  width: 88px;
+  height: 132px;
+  border-radius: var(--radius-card);
+}
+
+/*
+ * Full-bleed, transparent, and ABOVE `CardFace` — which is `position: absolute;
+ * inset: 0` inside this box, so without the `z-index` the artwork would sit on top of
+ * its own control.
+ *
+ * `min-height`/`min-width` are deliberately NOT set to 44px. The box is 88x132, so the
+ * tap target already exceeds the minimum in both axes; a 44px floor here would be a
+ * rule that never fires, and a rule that never fires is one somebody later "fixes"
+ * into one that does.
+ */
+.tap {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-card);
+  padding: 0;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.tap:focus-visible {
+  outline: 2px solid var(--gold-border);
+  outline-offset: 2px;
+}

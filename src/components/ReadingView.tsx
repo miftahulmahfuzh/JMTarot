@@ -117,10 +117,13 @@ export type ReadingProse =
    *
    * Rule 4 is not weakened: the only way to reach this branch is to name it, and
    * `resolveProse`'s truth table is unchanged (it already returns any supplied
-   * non-`original` prose). The honesty the viewer needs is restored by CHROME —
-   * `share.public.otherLanguage` on a mismatch — plus the `lang` attribute below,
-   * which is what points a screen reader and the browser's own translate offer at
-   * the right language.
+   * non-`original` prose). The honesty the viewer needs is restored by **the `lang`
+   * attribute below, which since 2026-07-28 is the WHOLE of it on `/s/`** — it used to
+   * be paired with `share.public.otherLanguage` on a mismatch, and that notice is
+   * deleted (see `src/app/s/[slug]/page.tsx`'s header). `lang` is what points a screen
+   * reader and the browser's own translate offer at the right language, so this branch
+   * MUST keep setting it. `PersonaBlock` still renders a notice of its own, for a
+   * reason that is specific to the untranslated persona rather than general.
    *
    * **DO NOT USE `{ kind: 'translated' }` FOR THIS.** It renders identically and
    * would record in the type that a translation happened when none did, which is

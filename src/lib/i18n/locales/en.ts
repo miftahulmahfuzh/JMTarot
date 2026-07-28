@@ -59,6 +59,12 @@ const en: Catalog = {
   'picker.reader.portraitAlt': '{name}, {title}',
   'picker.reader.bio.a11yLabel': 'About {name}',
 
+  // The readers' pronouns. See id.ts for the ruling, the split between data and
+  // copy, and the "Thessaly refers to herself as they" bug this closes. THIS is the
+  // locale the pair exists for: Indonesian renders `dia` for both.
+  'reader.pronoun.female': 'she',
+  'reader.pronoun.male': 'he',
+
   // --- Service picker -------------------------------------------------------
   'picker.service.eyebrow': 'Choose a reading',
   'picker.service.cardCount.one': '{count} card',
@@ -383,8 +389,7 @@ const en: Catalog = {
   'share.public.forNickname': 'A reading for {nickname}',
   'share.public.readBy': 'Read by {name}',
   'share.public.questionLabel': 'The question',
-  'share.public.otherLanguage':
-    'This reading was written in another language and is shown as it was written.',
+  // `share.public.otherLanguage` was here and is deleted; see id.ts for why.
   'share.public.cta': 'Try it yourself',
   'share.public.ctaLead': 'Three readers, twenty-two Major Arcana cards.',
   'share.gone.title': 'This link does not exist',
@@ -400,9 +405,21 @@ const en: Catalog = {
   'account.hint': 'The numbers, the signs, and the card that keeps coming back.',
 
   'account.facts.heading': 'Facts',
-  // "What you are called" rather than "Nickname": the questionnaire asked what
-  // the reader should call them, not for a handle.
-  'account.facts.nickname': 'What you are called',
+  /*
+   * "Nickname", and this REVERSES a decision recorded right here.
+   *
+   * It said: *"What you are called" rather than "Nickname": the questionnaire asked
+   * what the reader should call them, not for a handle.* That reading of the register
+   * was right and it lost to a measurement — `.label` in `AccountFacts.module.css` is
+   * `text-transform: uppercase`, so five words became `WHAT YOU ARE CALLED` and took
+   * TWO ROWS on Miftah's phone, beside a one-word value. A label that wraps where the
+   * two rows either side of it do not reads as a layout bug, and the nuance it was
+   * buying is not visible to anybody who never saw the other version.
+   *
+   * The Indonesian stays `Nama panggilan` — two words, one row, and it never had the
+   * problem.
+   */
+  'account.facts.nickname': 'Nickname',
   'account.facts.fullName': 'Full name',
   'account.facts.birthDate': 'Date of birth',
   'account.facts.edit': 'Change',
@@ -416,10 +433,15 @@ const en: Catalog = {
   'account.card.line':
     'Your Inner Lotus takes the form of {card}. It has come back to you again and again, and what it carries is {gloss}',
   'account.card.empty': 'No card has repeated itself for you yet. Draw a few more times.',
+  // Says what tapping does, not what the image is; see id.ts.
+  'account.card.zoomAria': 'See {name} larger',
 
+  // `{Subject}`/`{subject}` replaced a second `{reader}` AND the word `they`. The
+  // ruling, the data/copy split and the bug are all recorded at `reader.pronoun.*`
+  // in id.ts. The name is still plain text here — the page linkifies it.
   'account.reader.heading': 'Your path',
   'account.reader.line':
-    'A path opened toward {reader}, and what you carry there is {topic}. {reader} will go with you as far as they can.',
+    'A path opened toward {reader}, and what you carry there is {topic}. {Subject} will go with you as far as {subject} can.',
   // The sense of the Indonesian, not its grammar. Requirement 3's last sentence.
   'account.reader.closing':
     'Heaven only opens a path for those who are truly trying to open the gate themselves.',

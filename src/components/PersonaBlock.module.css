@@ -27,9 +27,16 @@
  * "This part was written in another language."
  *
  * ABOVE the prose rather than below it, so a viewer reads the caveat before the
- * sentence it applies to -- the same ordering V7 chose for
- * `share.public.otherLanguage`, and for the same reason: a note underneath is a
- * note after the confusion.
+ * sentence it applies to: a note underneath is a note after the confusion.
+ *
+ * **THIS IS NOW THE ONLY SUCH NOTICE IN THE APP.** V7's `/s/` twin,
+ * `share.public.otherLanguage`, is deleted (Miftah's ruling, 2026-07-28) because
+ * design A made the sentence describe a mechanism that had stopped running -- the
+ * shared page renders the language the SHARER was reading. **That argument does not
+ * reach here**: `/account`'s persona is genuinely served in whatever language it was
+ * generated in, because V2's translator is not wired to it, so this block really is
+ * showing foreign prose with no explanation available anywhere else. Do not delete
+ * this one by association with that one; delete it when the persona gets translated.
  */
 .foreign {
   margin: 0;

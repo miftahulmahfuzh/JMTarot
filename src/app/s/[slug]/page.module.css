@@ -37,19 +37,12 @@
 }
 
 /*
- * The mismatch notice. Quiet on purpose: it is a fact about the page, not a
- * warning, and a boxed alert here would read as though something had gone wrong
- * when the reading is exactly as its author left it.
+ * THE MISMATCH NOTICE IS GONE (Miftah's ruling, 2026-07-28). `.otherLanguage`
+ * lived here and styled `share.public.otherLanguage`; both are deleted. The rule
+ * that replaced it is in `page.tsx`'s header — a share link renders the language
+ * the sharer was reading, and the `lang` attribute below is what still declares
+ * it. Do not reintroduce a paragraph of chrome here without reading that.
  */
-.otherLanguage {
-  margin: 0;
-  padding: 10px 12px;
-  border-left: 1px solid var(--gold-hairline);
-  font-family: var(--font-body), serif;
-  font-size: var(--fs-hint);
-  font-style: italic;
-  color: var(--label);
-}
 
 .body {
   display: contents;

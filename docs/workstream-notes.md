@@ -1551,3 +1551,188 @@ rule for the reader paragraphs applies here too — do not tighten on one run:**
   was not written. The one thing it would add is the patched-`fetch` check that
   `DELETE /api/account` carries no nickname in its body; V8 verified that by
   reading the route, which sends no body at all.
+
+---
+
+## Five phone-found fixes on `/account` and `/s/`, 2026-07-28 (post-V8)
+
+Miftah read both pages on an iPhone the day V8 and design A landed and reported five
+things. Four of them **reverse a decision the code argued for in a comment**, which is why
+each one is recorded with the argument it beat rather than as a changelog line. The branch
+is `feat/v9-account-polish`, cut from `origin/main` at `e884b4b`.
+
+### 1. The other-language notice is deleted, and CLAUDE.md said it must not be
+
+`share.public.otherLanguage` and `isForeignProse` are gone. **CLAUDE.md's V7 section said
+in capitals "THE NOTICE SURVIVES AND MUST NOT BE DELETED"** and `adapt.test.ts` carried a
+test named for keeping it alive — so this is an amendment, not an oversight, and the
+overturned argument is worth having in front of whoever reads it next.
+
+The notice's argument was: an English-pinned link opened by an Indonesian reader is a
+genuine mismatch, and a stranger meeting foreign prose under their own chrome deserves an
+explanation. What overturned it is that **design A changed what the page shows underneath
+a sentence describing the old mechanism.** Before design A the page rendered whatever
+language the reading was *generated* in, and "this reading was written in another language
+and is shown as it was written" was a true description of that. Design A pins the language
+the **sharer was reading**, so the sentence now describes a mechanism that has stopped
+running, and it fires only on the residue: a NULL pin (every link minted before design A),
+or a viewer who reads neither. Miftah's own report was exactly that — *"this shared page
+shows in the language the user had set when he created the share link, not the language the
+card was predicted in"* — which is the feature working and the sentence lying about it.
+
+**What carries the honesty now is `lang={shownLocale}` alone**, and that raises its stakes:
+it is the only thing left declaring the prose's language to a screen reader and to the
+browser's own translate offer. `page.contract.test.ts` still asserts it, and now also
+asserts `viewer` does not appear in the page at all — the notice was the only consumer of
+the viewer's locale *as a value*, and a page that reads it again is a page that branches on
+who is looking, which the header's cache-key argument forbids independently.
+
+**Three tests were INVERTED rather than deleted**, which is the part worth copying. A
+deletion with no test leaves the codebase with no record that the absence was chosen, and
+the failure mode of removing a paragraph of chrome is somebody adding it back in six
+months. So `adapt.test.ts` gained a `describe('the other-language notice is gone')` that
+asserts the adapter's export list exactly, that the catalog key is absent from **both**
+locales, and that `lang={shownLocale}` survives.
+
+**`account.persona.otherLanguage` is a different key on a different page and still
+renders.** V2's translator is not wired to the persona, so `/account` genuinely does show
+a foreign-locale persona as-written and label it. Deleting that one by association would
+reintroduce the unexplained-prose problem the `/s/` notice was written for, on the one page
+where the original argument still holds.
+
+**Verified live**, dev server + loop 5 + `npx tsx tools/share-seed.ts`, against the
+EN-pinned fixture `/s/bbbbbbbbbbbb` on an `id` reading:
+
+```
+Accept-Language: id-ID   lang wrapper: en   body: "SENTINEL-EN …"   notice: absent
+Accept-Language: en-GB   lang wrapper: en   body: "SENTINEL-EN …"   notice: absent
+```
+
+**A `curl | grep` FOR THE NOTICE TEXT IS A FALSE POSITIVE AND COST A MINUTE.** Both
+locales' full message catalogs are serialized into every page as `LocaleProvider`'s props,
+so `grep 'written in another language'` matches the flight payload —
+`account.persona.otherLanguage` — on a page that renders no notice at all. The first check
+reported the notice present in both locales and the code was correct. **Grep the rendered
+text (loop 5's `text` verb) or the CSS class name, never the message.**
+
+### 2–5. `/account`
+
+- **A way out.** The page had none: the account circle opens a sheet, and the only
+  `href="/"` was inside the three empty states, so a querent *with* a card, a reader and a
+  persona could leave only via the browser's back button — and in a home-screen standalone
+  instance there is no visible back button. `history.home` reused rather than a new key.
+  No negative `margin-top`, unlike `/history`: this `.shell` has 64px of top padding that
+  V4 measured against the fixed account circle, and stealing 8px back erodes it.
+
+- **`account.facts.nickname` is "Nickname", reversing its own comment.** The comment said
+  *"What you are called" rather than "Nickname": the questionnaire asked what the reader
+  should call them, not for a handle.* Correct about register, and it lost to
+  `AccountFacts.module.css`'s `.label { text-transform: uppercase }` — five words became
+  `WHAT YOU ARE CALLED` and wrapped to **two rows** beside a one-word value, on a phone.
+  A label that wraps where the two rows either side of it do not reads as a layout bug, and
+  the nuance it bought is invisible to anybody who never saw the other version. The
+  Indonesian `Nama panggilan` is unchanged and never had the problem.
+
+- **The card wears its name and opens a zoom** (`AccountCard.tsx` + its CSS module). The
+  old comment argued `CardFace` was *"deliberately NOT reused: it draws the card's name
+  over the art at small sizes, and the sentence beside this image already names it"* — the
+  same de-duplication argument `CardDetail` makes for suppressing the caption at
+  `size="full"`. It lost twice over: the sentence names the card **mid-clause, in prose**
+  (`Your Inner Lotus takes the form of The Star`) rather than as a label on an object, and
+  **every other 88x132 card in the product wears its name**, so the one that did not read
+  as the one that failed to load its label. At that size the art is unreadable, which is
+  the exact reason `CardDetail` exists on the draw screen and in `ReadingView`.
+
+  **The `next/image` constraint that comment recorded is UNCHANGED and is satisfied rather
+  than dodged.** `cardThumb` appends `ART_VERSION` as a query string; `next/image` refuses
+  a local `src` carrying one unless `images.localPatterns` allows it, and `next.config.ts`
+  configures no `images` block — which took the page to a 500 with a green build once
+  already. Routing through `CardFace`, which uses a plain `<img>` for its own measured
+  reasons, keeps that true.
+
+  Three smaller decisions inside it: the tap target is `inset: 0` inside the box so it
+  coincides with the card **by construction** (`Slots.module.css`'s `.tap` argument, and
+  the reason V6's "second absolutely-positioned row mirroring the geometry" was rejected);
+  `position` is the section heading `Your card` rather than a slot framing, because there
+  is no spread here; and **no `onReturn`**, which is `ReadingView`'s VD14 omission — there
+  is no deck on this page to return anything to.
+
+  `topCardReversedDominant` was **hoisted out of the `topCardLine` call into one `const`
+  because it now has two readers.** The gloss and the artwork must never disagree, and two
+  copies of `reversedCount * 2 > count` is exactly how a card described by its reversed
+  meaning ends up sitting upright.
+
+- **The 2:1 reader portrait is gone and the name is a link.** The old comment called it
+  "a stamp beside a sentence" at 120px wide. These assets are landscape *scenes*
+  deliberately — it is why the picker draws readers as wide banners instead of the columns
+  the original sketch showed — and a 2:1 scene at 120px is **60px tall**: too small to read
+  as a place, wide enough to cost a third of the block's inline size on a 360px screen. It
+  spent real width to show almost nothing, and it was the only reader-shaped element on the
+  page while being completely inert. The name now links to `/{reader.id}`, that reader's
+  own service picker, so the page's one claim about a preference is also the one tap that
+  acts on it. `next/image` and `readerPortrait` are no longer imported by the page.
+
+  **`linkifyName` derives the segments from the rendered string rather than the catalog
+  returning `{ before, name, after }`.** Three fields would be two representations of one
+  sentence and therefore two things that can drift; one mechanical split means a copy edit
+  that moves the name cannot break the link. Plain `split`, no regexp — a reader name
+  interpolated into a pattern buys nothing and the next name needing an escape would fail
+  silently. **The empty-name guard is the one that matters:** `''.split('')` explodes a
+  string into characters, so without it the page would render one `<Link>` per letter.
+
+### The readers have fixed genders now: Thessaly female, Margaret female, Adrian male
+
+**The bug was "Thessaly refers to herself as they".** `account.reader.line`'s English read
+*"{reader} will go with you as far as they can"* — the correct default for a person whose
+pronouns are unknown, and the wrong one for three authored characters. And the app already
+knew: `readers.json`'s `bio.en` has said `She works…`, `Her way…` and `He is mostly here…`
+since the first release, so **the page and the picker disagreed about the same three
+people** and the gender existed only in three sentences of prose nothing read.
+
+The split is the part to preserve. **`gender` is DATA** — `readers.json`, beside the name,
+a two-value union so a new reader cannot omit it and a third value is a decision somebody
+has to make rather than a `?? 'they'` fallback. **The pronoun WORDS are COPY** —
+`reader.pronoun.{female,male}` in both catalogs. `readerPronoun()` in
+`@/lib/persona/lines` is the only place the two meet; a second join is how one call site
+ends up disagreeing about Thessaly. `{Subject}` is capitalised by code rather than by four
+catalog keys, because both locales capitalise the same way here.
+
+**Indonesian renders `dia` for both keys and that is not a stub.** The language is
+genderless in the third person. It exists as a pair anyway so the call site is
+locale-independent and so `en.ts` is not the only catalog whose sentence takes a pronoun —
+the same argument the locale facades make about a missing locale being a compile error.
+Two tests fence it: the Indonesian values must match **and** must not be English (identical
+is only correct if it is `dia`, not if `en.ts` leaked in), and `gender` is cross-checked
+against `\b(she|her)\b` / `\b(he|him|his)\b` in each `bio.en`. That cross-check is the
+evidence this was a **correction rather than a choice**: the bios were written before the
+column existed and independently of it, so a mismatch means either the column or years of
+copy is wrong and somebody has to look.
+
+`lines.test.ts`'s two placeholder guards were `/\{[a-z]+\}/` — **case-blind, so an
+unreplaced `{Subject}` would have shipped silently.** Now `/\{\w+\}/`.
+
+### Verified live
+
+`npm test` 1608 passed (1598 before, +10), `npm run typecheck` clean, `npm run build`
+clean including `audit:secrets`. Loop 5 at a true 390px against the dev server with a
+`POST /api/auth/dev-session` session, both locales:
+
+```
+/account?lang=en   "← HOME"  "NICKNAME | Mif"  card captioned STRENGTH
+                   links: ["← Home -> /", "Thessaly -> /thessaly"]
+                   "A path opened toward Thessaly, … She will go with you as far as she can."
+/account           "← BERANDA"  "NAMA PANGGILAN | Mif"  one row
+                   "… Dia akan menemanimu sejauh yang dia bisa."
+tap "See Strength larger" -> [role=dialog]: YOUR CARD / art / Strength / VIII /
+                             "Gentleness that turns out to be holding the reins." / CLOSE
+                             (no "Return to deck" — look-only, VD14)
+```
+
+**A `tap` at a viewport coordinate silently does nothing when the element is scrolled out
+of view.** `tapIn` reads `getBoundingClientRect()` and dispatches `Input.dispatchMouseEvent`
+at that x/y with no `scrollIntoView` first, so after `window.scrollTo(0, 620)` the card's
+`top` was negative and the click landed outside the viewport. The verb still printed
+`tapped "See Strength larger" -> [exact]` and exited 0. **Scroll to 0 before tapping, and
+assert the effect (`document.querySelectorAll('[role=dialog]').length`) rather than
+trusting the verb's own success line** — which is the same lesson its `substring` warning
+already records for a different reason.

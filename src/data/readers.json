@@ -3,6 +3,7 @@
     "id": "thessaly",
     "name": "Thessaly",
     "title": "The Grounded Guide",
+    "gender": "female",
     "bio": {
       "id": "Thessaly membaca tarot dengan serius tapi tetap dekat dengan situasi sehari-hari. Dia menggabungkan intuisi dengan logika — pendekatannya terang dan membumi.",
       "en": "Thessaly takes the cards seriously and keeps them close to ordinary life. She works intuition and plain reasoning together, and her readings come out clear and grounded."
@@ -20,6 +21,7 @@
     "id": "margaret",
     "name": "Margaret",
     "title": "The Old Soul",
+    "gender": "female",
     "bio": {
       "id": "Margaret pembaca veteran dengan pengalaman puluhan tahun. Caranya lebih mistis dan mendalam, sering mengaitkan bacaan dengan simbolisme lama dan falsafah hidup. Cocok untuk kamu yang mencari penelusuran diri yang lebih dalam, bukan sekadar jawaban cepat.",
       "en": "Margaret has read for decades. Her way is older and more mystical, and she will reach for the symbolism the cards were built on and for what a long life has taught her. She suits you if you are after a slower search through yourself, rather than a quick answer."
@@ -37,6 +39,7 @@
     "id": "adrian",
     "name": "Adrian",
     "title": "The Modern Mystic",
+    "gender": "male",
     "bio": {
       "id": "Adrian membawa tarot dengan gaya santai dan mudah didekati — seperti ngobrol dengan kawan yang paham psikologi. Dia fokus pada cinta, hubungan, dan emosi, dengan cara yang langsung tapi empatik.",
       "en": "Adrian reads the way you would talk it over with a friend who happens to be good at reading people. He is mostly here for love, the people around you, and how you are actually feeling — direct about it, but never cold."

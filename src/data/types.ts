@@ -148,6 +148,25 @@ export type Reader = {
    * prompt forks and the portrait alt text (plan §7.13, open question 6).
    */
   title: string;
+  /**
+   * **FIXED, AND FIXED HERE BECAUSE IT IS A FACT ABOUT A CHARACTER RATHER THAN
+   * COPY** (Miftah's ruling, 2026-07-28): Thessaly female, Margaret female, Adrian
+   * male. It does not vary by locale, so it is not `Localized<>` and it is not in the
+   * message catalog -- the WORDS are, at `reader.pronoun.female`/`.male`, and
+   * `readerPronoun()` in `@/lib/persona/lines` is the only thing that joins the two.
+   *
+   * It was not recorded anywhere for three releases, and the bios were the only place
+   * it existed: `bio.en` has said `She works…`, `Her way…` and `He is mostly here…`
+   * since the first release, while `account.reader.line` said `they`. So the app
+   * disagreed with itself about the same three people, and the fix is a column rather
+   * than a fourth hand-written sentence.
+   *
+   * TWO VALUES, NOT AN OPEN STRING. These are three authored characters with settled
+   * biographies, not user-supplied profiles -- the pronoun lookup is exhaustive over
+   * this union, so adding a reader whose gender is neither is a compile error and a
+   * decision somebody has to make deliberately rather than a `?? 'they'` fallback.
+   */
+  gender: 'female' | 'male';
   /** UI only. Localized anyway, because it is the longest prose on the picker. */
   bio: Localized<string>;
   specialties: Localized<string[]>;

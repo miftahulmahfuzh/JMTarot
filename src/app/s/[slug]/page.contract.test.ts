@@ -153,14 +153,28 @@ describe('the public share page', () => {
     expect(CODE).toMatch(/lang=\{shownLocale\}/);
   });
 
-  it('drives the other-language notice off the translation, not the source', () => {
+  it('renders NO other-language notice and reads no viewer locale to decide one', () => {
     /*
-     * `isForeignProse` takes the translation as a REQUIRED third argument
-     * precisely so this cannot regress silently -- but the page could still pass
-     * `null` and look correct, so the wiring is asserted here too. Getting it
-     * wrong shows a stranger "this is in another language" over prose in their own.
+     * **THIS ASSERTION IS INVERTED FROM WHAT IT SAID** (Miftah's ruling,
+     * 2026-07-28). It used to require `isForeignProse(reading, viewer, translation)`
+     * to appear, on the ground that the page could pass `null` and look correct. The
+     * notice is deleted -- `page.tsx`'s header carries the argument, which is that
+     * design A changed what the page shows underneath a sentence describing the old
+     * mechanism -- so the check now fences the absence.
+     *
+     * Kept rather than deleted for the same reason the adapter's own deletion test
+     * exists: the failure mode of removing a paragraph of chrome is somebody adding it
+     * back six months later, and a test named for the deletion is the only thing in
+     * the file that says the absence was chosen.
+     *
+     * `viewer` is asserted absent too, because the notice was the ONLY consumer of the
+     * viewer's locale as a value here. A page that reads it again is a page that
+     * branches on who is looking, which the header's cache-key argument forbids
+     * independently of the notice.
      */
-    expect(CODE).toMatch(/isForeignProse\(reading, viewer, translation\)/);
+    expect(CODE).not.toContain('isForeignProse');
+    expect(CODE).not.toContain('otherLanguage');
+    expect(CODE).not.toMatch(/\bviewer\b/);
   });
 
   it('takes the pinned translation from the resolver and never fetches one', () => {

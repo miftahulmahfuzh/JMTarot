@@ -21,6 +21,43 @@
   gap: 18px;
 }
 
+/*
+ * The route home, COPIED FROM `history/page.module.css`'s `.back`, which was itself
+ * copied from `history/[id]`'s. Three copies of nine declarations is one more than
+ * that comment allowed for, so if a FOURTH screen needs it, extract all four.
+ *
+ * `align-self: flex-start` matters: `.shell` is a flex column, so without it the link
+ * stretches the full width and its 12px tap padding becomes a 520px-wide target
+ * sitting above the title.
+ *
+ * NO NEGATIVE `margin-top` HERE, unlike `/history`. That file pulls the link up
+ * against an 18px top padding; `/account`'s `.shell` has 64px of it, measured by V4
+ * so `Eyebrow`'s full-width hairlines clear the fixed account circle at the top
+ * right. Stealing 8px back would start eroding the number that comment says not to
+ * eyeball.
+ */
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 12px 10px 12px 0;
+}
+
+.back:hover {
+  color: var(--gold-lift);
+}
+
+.back:focus-visible {
+  outline: 2px solid var(--gold-border);
+  outline-offset: 2px;
+}
+
 .title {
   margin: 0;
   font-family: var(--font-display), serif;
@@ -67,6 +104,9 @@
  * Art beside a sentence. `align-items: flex-start` rather than `center`, so the
  * first line of prose sits level with the top of the image — a centred 132px card
  * next to two lines of text puts the sentence in the middle of nowhere.
+ *
+ * ONE CONSUMER NOW, the card block. The reader block used this too and no longer has
+ * anything beside its prose; see `page.tsx` on why the 2:1 portrait went.
  */
 .withArt {
   display: flex;
@@ -74,27 +114,43 @@
   gap: 14px;
 }
 
-.thumb {
-  flex: 0 0 auto;
-  width: 88px;
-  height: 132px;
-  border-radius: var(--radius-card);
-  /* The artwork paints its own frame; this is the outermost millimetre of it, and
-     the same value the fan uses. Gold here would compete with the painting. */
-  border: 1px solid var(--card-edge);
-  object-fit: cover;
+/*
+ * `.thumb` AND `.portrait` WERE HERE AND ARE DELETED.
+ *
+ * `.thumb`'s 88x132 and its `1px solid var(--card-edge)` moved into
+ * `AccountCard.module.css` and `CardFace.module.css` respectively — the border was
+ * always a second copy of the one `CardFace` already draws, at the same value and for
+ * the same measured reason. `.portrait` went with the reader portrait itself.
+ */
+
+/*
+ * The reader's name, inside the sentence, as a link to their service picker.
+ *
+ * UNDERLINED, AND THAT IS THE POINT. `globals.css` strips `text-decoration` from
+ * every `a` in the app, which is right for chrome — a nav row, a chip, a CTA all say
+ * "link" by their shape. This one is three words in the middle of a paragraph of
+ * `--text-warm` prose, so shape says nothing and colour alone would be the only
+ * signal. `1px from-font` under a serif at `--fs-hint` is the quietest thing that
+ * still reads as tappable at arm's length; a gold pill here would turn a sentence
+ * about somebody's path into a button.
+ */
+.readerLink {
+  color: var(--gold-text);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--gold-hairline);
 }
 
-.portrait {
-  flex: 0 0 auto;
-  width: 120px;
-  /* 2:1, like the source scene. Height is derived rather than declared so the
-     aspect ratio cannot drift from the asset. */
-  height: auto;
-  aspect-ratio: 2 / 1;
-  border-radius: var(--radius-card);
-  border: 1px solid var(--gold-hairline);
-  object-fit: cover;
+.readerLink:hover {
+  color: var(--gold-lift);
+  text-decoration-color: var(--gold-border);
+}
+
+.readerLink:focus-visible {
+  outline: 2px solid var(--gold-border);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
 .line {

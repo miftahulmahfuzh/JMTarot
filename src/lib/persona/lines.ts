@@ -28,7 +28,7 @@
  */
 import { CARDS } from '@/data/deck';
 import { READERS } from '@/data/readers';
-import type { Locale, ReaderId } from '@/data/types';
+import type { Locale, Reader, ReaderId } from '@/data/types';
 import type { TFunction } from '@/lib/i18n/format';
 import type { PersonaFacts } from './prompt';
 
@@ -116,8 +116,46 @@ export function topCardLine(
 }
 
 /**
- * "A path opened toward Margaret, and what you carry there is … Margaret will go
- * with you as far as they can." Then the closing line.
+ * The reader's pronoun, lowercase, in the querent's language.
+ *
+ * **THE ONE PLACE `readers.json`'s `gender` MEETS `reader.pronoun.*`**, and it is
+ * three lines so that there is exactly one. The gender is a fact about a character
+ * and lives in the data; the word is copy and lives in the catalog; joining them
+ * anywhere else means two call sites that can disagree about Thessaly.
+ *
+ * **INDONESIAN RETURNS `dia` FOR BOTH VALUES AND THAT IS CORRECT**, not a stub — the
+ * language is genderless in the third person. The pair exists for English, and it
+ * exists as a PAIR rather than as `locale === 'en' ? … : 'dia'` so that neither the
+ * catalog nor this function has to know which locales care.
+ *
+ * `t` is passed in rather than the locale, because it is a catalog lookup like every
+ * other one on this page and `makeT` is already the thing that resolved the locale.
+ */
+export function readerPronoun(t: TFunction, gender: Reader['gender']): string {
+  return gender === 'female' ? t('reader.pronoun.female') : t('reader.pronoun.male');
+}
+
+/** `dia` -> `Dia`, `she` -> `She`. Sentence position, not a title. */
+function capitalize(word: string): string {
+  return word.charAt(0).toUpperCase() + word.slice(1);
+}
+
+/**
+ * "A path opened toward Margaret, and what you carry there is … She will go with you
+ * as far as she can." Then the closing line.
+ *
+ * **THE SECOND `{reader}` BECAME A PRONOUN, AND THE PRONOUN USED TO BE `they`.**
+ * That was the correct default for a person whose pronouns are not known and the
+ * wrong one for three authored characters — `readers.json`'s `bio.en` has said `She`,
+ * `Her` and `He` since the first release, so the page contradicted the picker about
+ * the same three people. `gender` is now recorded beside the name and
+ * `readerPronoun` is the only lookup. `{Subject}` is capitalised because the clause
+ * starts a sentence; `{subject}` is not because it does not.
+ *
+ * **THE NAME IS STILL PLAIN TEXT IN THE RETURNED STRING**, even though the page
+ * renders it as a link to `/{reader.id}`. `linkifyName` below does that on the
+ * rendered string, which keeps the catalog value one sentence a translator can read
+ * and keeps this function returning something `lines.test.ts` can assert on directly.
  *
  * **THE CLOSING LINE IS RETURNED SEPARATELY**, so the page can set it in its own
  * italic and so `lines.test.ts` can assert it is byte-identical to the catalog
@@ -142,8 +180,52 @@ export function topReaderLine(
   const topic = reader.specialties[locale][0];
   if (!topic) return null;
 
+  const subject = readerPronoun(t, reader.gender);
+
   return {
-    line: t('account.reader.line', { reader: reader.name, topic: topic.toLowerCase() }),
+    line: t('account.reader.line', {
+      reader: reader.name,
+      topic: topic.toLowerCase(),
+      Subject: capitalize(subject),
+      subject,
+    }),
     closing: t('account.reader.closing'),
   };
+}
+
+/** One run of the rendered line: the reader's name, or everything between. */
+export type LineSegment = { text: string; isName: boolean };
+
+/**
+ * Split a rendered line so the page can wrap the reader's name in a `<Link>`.
+ *
+ * **THE STRING STAYS THE SINGLE SOURCE OF TRUTH AND THE SEGMENTS ARE DERIVED.** The
+ * alternative was for `topReaderLine` to return `{ before, name, after }` — three
+ * fields the catalog value and this function would both have to agree about, which is
+ * two representations of one sentence and therefore two things that can drift. Here
+ * there is one sentence and one mechanical split of it, so a copy edit that moves the
+ * name cannot break the link.
+ *
+ * **PLAIN `split`, AND NO REGEXP, DELIBERATELY.** A reader name interpolated into a
+ * regexp is an injection surface for nothing — the names are `Thessaly`, `Margaret`
+ * and `Adrian`, none of which needs escaping today, and the next name that does would
+ * break silently rather than loudly.
+ *
+ * **AN EMPTY OR ABSENT NAME RETURNS THE WHOLE LINE UNSPLIT.** `''.split('')` explodes
+ * a string into characters, which would render one `<Link>` per letter; the guard is
+ * what makes that impossible rather than unlikely. A name that does not occur returns
+ * one non-name segment, so the page renders correct prose with no link — the right
+ * failure, because the sentence still says everything it needs to.
+ */
+export function linkifyName(line: string, name: string): LineSegment[] {
+  if (name === '' || !line.includes(name)) return [{ text: line, isName: false }];
+
+  const out: LineSegment[] = [];
+  const parts = line.split(name);
+  parts.forEach((part, i) => {
+    if (part !== '') out.push({ text: part, isName: false });
+    /* Between every pair of parts, which is exactly once per occurrence. */
+    if (i < parts.length - 1) out.push({ text: name, isName: true });
+  });
+  return out;
 }

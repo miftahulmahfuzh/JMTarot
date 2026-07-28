@@ -99,6 +99,37 @@ const id = {
    */
   'picker.reader.bio.a11yLabel': 'Tentang {name}',
 
+  /*
+   * ── THE READERS' PRONOUNS ─────────────────────────────────────────────────
+   *
+   * **THE THREE READERS HAVE FIXED GENDERS AND THIS IS WHERE THE WORDS LIVE**
+   * (Miftah's ruling, 2026-07-28): Thessaly female, Margaret female, Adrian male.
+   * The GENDER is data — `readers.json`'s `gender`, beside the name it belongs to —
+   * and only the WORD is copy, which is the split that makes both halves right:
+   * a gender is a fact about a character and does not vary by locale, while `she`
+   * and `dia` are two languages' answers to the same fact.
+   *
+   * **THE BUG THIS FIXES WAS "THESSALY REFERS TO HERSELF AS THEY".**
+   * `account.reader.line`'s English read *"{reader} will go with you as far as they
+   * can"* — a neutral singular chosen when the readers had no recorded gender, which
+   * is the correct default for a person whose pronouns are unknown and the wrong one
+   * for three fictional characters whose bios have said `She`, `Her` and `He` in
+   * `readers.json` since the first release. The prose and the chrome disagreed about
+   * the same three people.
+   *
+   * **INDONESIAN RENDERS ONE WORD FOR BOTH KEYS AND THAT IS NOT A MISTAKE.** `dia`
+   * is genderless, so `female` and `male` are identical here; the pair exists so the
+   * call site is locale-independent and so `en.ts` cannot be the only catalog whose
+   * sentence takes a pronoun. A test asserts the Indonesian values match each other,
+   * or somebody edits one and concludes the mechanism is broken.
+   *
+   * LOWERCASE IN THE CATALOG, capitalised by `readerPronoun` for sentence position.
+   * A `.subject`/`.Subject` pair of keys would be four values a translator has to
+   * keep consistent by hand for zero gain in either of these two locales.
+   */
+  'reader.pronoun.female': 'dia',
+  'reader.pronoun.male': 'dia',
+
   // --- Service picker -------------------------------------------------------
   'picker.service.eyebrow': 'Pilih layanan',
   'picker.service.cardCount.one': '{count} kartu',
@@ -607,11 +638,13 @@ const id = {
   'share.public.forNickname': 'Bacaan untuk {nickname}',
   'share.public.readBy': 'Dibacakan oleh {name}',
   'share.public.questionLabel': 'Pertanyaannya',
-  // Shown ONLY when the viewer's language and the prose's disagree. The prose is
-  // never translated here (VD7/VD8), so this line is what makes that honest
-  // instead of surprising.
-  'share.public.otherLanguage':
-    'Bacaan ini ditulis dalam bahasa lain dan ditampilkan apa adanya.',
+  // `share.public.otherLanguage` WAS HERE AND IS DELETED (Miftah's ruling,
+  // 2026-07-28). It said "Bacaan ini ditulis dalam bahasa lain dan ditampilkan apa
+  // adanya" and it described the pre-design-A mechanism: a share page rendering
+  // whatever language the reading was GENERATED in. Design A pins the language the
+  // SHARER was reading, so the sentence outlived the thing it explained. The `lang`
+  // attribute on `/s/[slug]` carries the language now; `adapt.test.ts` asserts this
+  // key stays absent. Do not add it back without reading that page's header.
   'share.public.cta': 'Coba sendiri',
   'share.public.ctaLead': 'Tiga pembaca, dua puluh dua kartu Major Arcana.',
   // ONE page for five different failures -- typo, revoked, deleted, never
@@ -660,10 +693,27 @@ const id = {
   'account.card.line':
     'Teratai Batinmu berwujud {card}. Kartu itu memilihmu berulang kali, dan yang dibawanya adalah {gloss}',
   'account.card.empty': 'Kartumu belum mengulang dirinya. Tariklah beberapa kali lagi.',
+  // The zoom control's accessible name. Its only content is the artwork, whose own
+  // alt text comes from `CardFace` — so this has to say what TAPPING does, not what
+  // the image is, or a screen reader announces the card's name twice and the action
+  // never. Same shape as `draw.card.aria.picked`, which is the slot row's version.
+  'account.card.zoomAria': 'Lihat {name} lebih besar',
 
+  // ── Your path (requirement 3), and the two things it now carries ───────────
+  //
+  // THE READER'S NAME IS A LINK on the page, to `/{reader.id}` — their own service
+  // picker. It is still interpolated as ordinary text here and the page splits the
+  // rendered string on it (`linkifyName`), so this value stays one sentence a
+  // translator can read. Do NOT put markup or a placeholder pair in it.
+  //
+  // `{Subject}`/`{subject}` ARE A PRONOUN, capital and lowercase, and Indonesian is
+  // the locale where that looks like pointless machinery: `dia` serves every reader,
+  // so both params render the same word. It is here anyway because the ENGLISH half
+  // needs the distinction and a per-locale template shape is how the two halves
+  // silently stop being the same sentence. See `reader.pronoun.*` below.
   'account.reader.heading': 'Jalanmu',
   'account.reader.line':
-    'Sebuah jalan terbuka ke {reader}, dan yang kamu bawa ke sana adalah {topic}. {reader} akan menemanimu sejauh yang ia bisa.',
+    'Sebuah jalan terbuka ke {reader}, dan yang kamu bawa ke sana adalah {topic}. {Subject} akan menemanimu sejauh yang {subject} bisa.',
   // Requirement 3's last sentence, and it is the querent's own words. IT IS THE
   // ONLY LINE ON THE PAGE THAT IS ABOUT OBLIGATION RATHER THAN ABOUT THE
   // QUERENT, and that contrast is the point. Do not soften it and do not

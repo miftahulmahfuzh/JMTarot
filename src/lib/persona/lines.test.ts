@@ -8,8 +8,10 @@ import { makeT } from '@/lib/i18n/format';
 import { LOCALES, type Locale } from '@/lib/i18n/locale';
 import {
   ALL_TIME_GATE,
+  linkifyName,
   passesCardGate,
   passesReaderGate,
+  readerPronoun,
   topCardLine,
   topReaderLine,
 } from './lines';
@@ -113,7 +115,7 @@ describe('topCardLine', () => {
 
   it('leaves no placeholder unreplaced', () => {
     for (const locale of LOCALES) {
-      expect(topCardLine(T[locale], locale, FACTS)).not.toMatch(/\{[a-z]+\}/);
+      expect(topCardLine(T[locale], locale, FACTS)).not.toMatch(/\{\w+\}/);
     }
   });
 });
@@ -159,7 +161,7 @@ describe('topReaderLine', () => {
   it('leaves no placeholder unreplaced', () => {
     for (const locale of LOCALES) {
       const out = topReaderLine(T[locale], locale, 9, standing)!;
-      expect(out.line).not.toMatch(/\{[a-z]+\}/);
+      expect(out.line).not.toMatch(/\{\w+\}/);
     }
   });
 
@@ -167,6 +169,158 @@ describe('topReaderLine', () => {
     for (const reader of READERS) {
       const out = topReaderLine(T.id, 'id', 9, { readerId: reader.id, count: 5, runnerUpCount: 1 });
       expect({ reader: reader.id, ok: out !== null }).toEqual({ reader: reader.id, ok: true });
+    }
+  });
+
+  it('uses each reader’s own pronoun and NEVER "they"', () => {
+    /**
+     * **THE REGRESSION THIS FILE EXISTS TO HOLD** (Miftah's ruling, 2026-07-28).
+     * The English line said *"{reader} will go with you as far as they can"* — the
+     * correct default for a person whose pronouns are unknown, and the wrong one for
+     * three authored characters whose bios in `readers.json` have said `She`, `Her`
+     * and `He` since the first release. So the page and the picker disagreed about the
+     * same three people.
+     *
+     * Asserted per reader and as an ABSENCE, because the way `they` comes back is a
+     * copy edit to one sentence that nothing else in the app reads.
+     */
+    const expected = { thessaly: 'she', margaret: 'she', adrian: 'he' } as const;
+    for (const reader of READERS) {
+      const out = topReaderLine(T.en, 'en', 9, {
+        readerId: reader.id,
+        count: 5,
+        runnerUpCount: 1,
+      })!;
+      const word = expected[reader.id];
+      expect({ reader: reader.id, line: out.line }).toEqual({
+        reader: reader.id,
+        line: `A path opened toward ${reader.name}, and what you carry there is ${reader
+          .specialties.en[0]!.toLowerCase()}. ${word[0]!.toUpperCase()}${word.slice(1)} will go with you as far as ${word} can.`,
+      });
+      expect(out.line).not.toMatch(/\bthey\b/i);
+    }
+  });
+
+  it('renders one word for both genders in Indonesian, and it is not English', () => {
+    /*
+     * `dia` is genderless, so the two catalog values are identical there BY DESIGN --
+     * see `reader.pronoun.*`. Asserted so nobody edits one Indonesian value, sees the
+     * other reader's line unchanged, and concludes the mechanism is broken. The second
+     * expectation is the negative control: identical is only correct if it is
+     * Indonesian, not if `en.ts` leaked in.
+     */
+    const [she, he] = [
+      topReaderLine(T.id, 'id', 9, { readerId: 'margaret', count: 5, runnerUpCount: 1 })!,
+      topReaderLine(T.id, 'id', 9, { readerId: 'adrian', count: 5, runnerUpCount: 1 })!,
+    ];
+    const tail = (line: string) => line.slice(line.lastIndexOf('. ') + 2);
+    expect(tail(she.line)).toBe(tail(he.line));
+    expect(tail(she.line)).toContain('Dia');
+    expect(tail(she.line)).not.toMatch(/\b(she|he|they)\b/i);
+  });
+});
+
+describe('readerPronoun', () => {
+  it('is the one place `gender` meets the catalog', () => {
+    expect(readerPronoun(T.en, 'female')).toBe('she');
+    expect(readerPronoun(T.en, 'male')).toBe('he');
+    expect(readerPronoun(T.id, 'female')).toBe('dia');
+    expect(readerPronoun(T.id, 'male')).toBe('dia');
+  });
+
+  it('has a fixed gender recorded for every reader', () => {
+    /*
+     * THE RULING, ASSERTED AGAINST THE DATA. Thessaly female, Margaret female, Adrian
+     * male. `gender` is a two-value union so a new reader cannot omit it — but it
+     * could be given the wrong value, and the bios are the only other place in the
+     * repo that would disagree.
+     */
+    expect(READERS.map((r) => [r.id, r.gender])).toEqual([
+      ['thessaly', 'female'],
+      ['margaret', 'female'],
+      ['adrian', 'male'],
+    ]);
+  });
+
+  it('agrees with the pronouns the English bios already used', () => {
+    /**
+     * **THE CROSS-CHECK, AND IT IS THE EVIDENCE THE RULING WAS A CORRECTION RATHER
+     * THAN A CHOICE.** `bio.en` was written before `gender` existed and independently
+     * of it, so a mismatch here means either the new column or three years of copy is
+     * wrong — and either way somebody has to look. `bio.id` is not checked: Indonesian
+     * `dia`/`-nya` carries no gender, which is the same fact `reader.pronoun.id`
+     * encodes.
+     */
+    for (const reader of READERS) {
+      const feminine = /\b(she|her)\b/i.test(reader.bio.en);
+      const masculine = /\b(he|him|his)\b/i.test(reader.bio.en);
+      expect({ id: reader.id, feminine, masculine }).toEqual({
+        id: reader.id,
+        feminine: reader.gender === 'female',
+        masculine: reader.gender === 'male',
+      });
+    }
+  });
+});
+
+describe('linkifyName', () => {
+  it('splits the line so the page can wrap the name in a link', () => {
+    expect(linkifyName('A path opened toward Margaret, and so on.', 'Margaret')).toEqual([
+      { text: 'A path opened toward ', isName: false },
+      { text: 'Margaret', isName: true },
+      { text: ', and so on.', isName: false },
+    ]);
+  });
+
+  it('marks every occurrence, not only the first', () => {
+    /*
+     * The English line carries the name once TODAY, because the second `{reader}`
+     * became a pronoun. A copy edit that brings it back must produce two links rather
+     * than one link and one bare name.
+     */
+    const out = linkifyName('Adrian, and later Adrian again.', 'Adrian');
+    expect(out.filter((s) => s.isName).length).toBe(2);
+    expect(out.map((s) => s.text).join('')).toBe('Adrian, and later Adrian again.');
+  });
+
+  it('emits no empty segments when the name is at either end', () => {
+    expect(linkifyName('Adrian walks.', 'Adrian')).toEqual([
+      { text: 'Adrian', isName: true },
+      { text: ' walks.', isName: false },
+    ]);
+    expect(linkifyName('a path to Adrian', 'Adrian')).toEqual([
+      { text: 'a path to ', isName: false },
+      { text: 'Adrian', isName: true },
+    ]);
+  });
+
+  it('returns the whole line unsplit for an absent or empty name', () => {
+    /*
+     * **THE EMPTY CASE IS THE ONE THAT MATTERS.** `''.split('')` explodes a string
+     * into characters, so without the guard the page would render one `<Link>` per
+     * letter. An absent name is the benign half: correct prose, no link.
+     */
+    expect(linkifyName('A path opened.', 'Thessaly')).toEqual([
+      { text: 'A path opened.', isName: false },
+    ]);
+    expect(linkifyName('A path opened.', '')).toEqual([
+      { text: 'A path opened.', isName: false },
+    ]);
+  });
+
+  it('round-trips the line for every real reader name', () => {
+    for (const reader of READERS) {
+      for (const locale of LOCALES) {
+        const out = topReaderLine(T[locale], locale, 9, {
+          readerId: reader.id,
+          count: 5,
+          runnerUpCount: 1,
+        })!;
+        const segs = linkifyName(out.line, reader.name);
+        // Nothing added, nothing lost, and the name is reachable as a link.
+        expect(segs.map((s) => s.text).join('')).toBe(out.line);
+        expect(segs.some((s) => s.isName)).toBe(true);
+      }
     }
   });
 });

@@ -646,6 +646,12 @@ prompt rule too, because the model tries to translate them and invents names lik
 `stage`, `polarity` and `element` feed the prompt as grounding. Reversal flips
 `polarity` light↔shadow and `yesno` yes↔no; see `src/data/deck.ts`.
 
+**READER names stay English too, and since 2026-07-28 each reader also carries a fixed
+`gender`** — Thessaly female, Margaret female, Adrian male, in `readers.json` beside the
+name. It is data rather than copy because a gender does not vary by locale; the WORDS are
+`reader.pronoun.{female,male}` in the catalog, joined in exactly one place by
+`readerPronoun()`. See `## /account and the persona (V8)`.
+
 **The yes/no verdict is derived in code, never by the model.** `effectiveYesNo()`
 decides it, including the reversal flip, and the prompt hands the model the word and
 tells it to open with it. Letting the model choose produced answers that contradicted
@@ -1272,14 +1278,27 @@ the full argument. What changed and what did not:
   preview a lie."** That argument binds a *viewer-adaptive* page. It does not bind one that
   renders what the SHARER was reading — but only because `ShareFooter` now takes the host's
   `prose` and previews it. Without that, the objection stands and the sheet lies.
-- **`lang` and `share.public.otherLanguage` come from `renderedLocale(reading, translation)`,
-  never `reading.locale`.** Against the source, an English viewer on an English-pinned link
-  is told the prose is in another language while looking at English, and a screen reader
-  pronounces English as Indonesian.
-- **THE NOTICE SURVIVES AND MUST NOT BE DELETED.** An English-pinned link opened by an
-  Indonesian reader is a genuine mismatch; `adapt.test.ts` asserts that case for exactly
-  this reason. Only design C — generating both locales at mint — removes it, and it costs
-  one model call per share.
+- **`lang` comes from `renderedLocale(reading, translation)`, never `reading.locale`.**
+  Against the source, a screen reader pronounces English as Indonesian on an
+  English-pinned link. **It is now the ONLY thing declaring the prose's language** — see
+  below — so `lang={shownLocale}` is the line in that page not to touch.
+- **THE OTHER-LANGUAGE NOTICE IS DELETED, AND THIS FILE SAID IN CAPITALS THAT IT "MUST
+  NOT BE" (Miftah's ruling, 2026-07-28).** `share.public.otherLanguage` and
+  `isForeignProse` are both gone from the repo. The old argument was that an
+  English-pinned link opened by an Indonesian reader is a genuine mismatch a stranger
+  deserves an explanation for. What overturned it is that **design A changed what the
+  page shows underneath a sentence describing the old mechanism**: the page no longer
+  renders "whatever language the reading was generated in", it renders the language the
+  sharer was reading, so *"this reading was written in another language and is shown as
+  it was written"* described a mechanism that had stopped running and fired only on the
+  residue — a NULL pin, or a viewer who reads neither. **Three tests were inverted
+  rather than deleted** (`adapt.test.ts`'s deletion block, `page.contract.test.ts`),
+  because the failure mode of removing chrome is somebody adding it back in six months.
+  Design C — generating both locales at mint — is still the only way to make the
+  mismatch itself impossible, and still costs one model call per share.
+  **`account.persona.otherLanguage` IS A DIFFERENT KEY ON A DIFFERENT PAGE and still
+  renders**; V2's translator is not wired to the persona, so `/account` labels a
+  foreign-locale persona in chrome. Do not delete that one by association.
 - **`NULL` locale means as-written**, which is every link minted before this shipped. There
   is deliberately no column default; the integration test named for the guarantee is what
   stops a "tidy" default silently rewriting what historic links show.
@@ -1290,7 +1309,8 @@ third party on `/s/` and `/privacy` §4.4 names them; no resolve cache is shippe
 still resolves — and now also one in which a re-pinned locale is stale); **`'persona'` is
 STILL a live union value resolving to null** — V8 shipped the persona and exports
 `readPersonaView` plus the presentational `PersonaBlock` for it, but `/s/<slug>` does not
-mount either yet. **Design C is the only way to delete the other-language notice** and has
+mount either yet. **Design C is the only way to make the locale mismatch itself
+impossible** — the notice that used to explain it is deleted, see above — and it has still
 not been costed against the ceiling.
 
 **AND ONE GAP THAT ONLY EXISTS BECAUSE V8 AND DESIGN A LANDED TOGETHER: the pinned locale
@@ -1324,7 +1344,46 @@ src/app/api/account/route.ts   DELETE. Clears the session cookie by name.
 src/app/api/account/facts/     PATCH. upsertProfileFacts's FIRST caller.
 src/app/api/persona/route.ts   GET. BUFFERED, not streamed.
 src/components/{DeleteAccount,AccountFacts,AccountAnswers,PersonaBlock}.tsx
+src/components/AccountCard.tsx  the card, with its name and its zoom. CLIENT.
 ```
+
+**FIVE THINGS CHANGED ON THIS PAGE ON 2026-07-28, ALL OF THEM MIFTAH'S RULINGS ON A
+PHONE, AND FOUR OF THEM REVERSE A DECISION THIS FILE OR THAT CODE ARGUED FOR.**
+
+- **THE CARD WEARS ITS NAME AND OPENS A ZOOM.** `AccountCard` mounts `CardFace` +
+  `CardDetail` where a bare `<img>` used to be. The old comment argued `CardFace` was
+  "deliberately NOT reused: the sentence beside this image already names it" — a real
+  de-duplication argument that lost, because the sentence names the card mid-clause in
+  prose and every other 88x132 card in the product wears its name, so the one that did
+  not read as the one that failed to load its label. **The `next/image` constraint that
+  comment recorded is UNCHANGED and is satisfied rather than dodged**: `cardThumb`
+  appends `?v=`, `next/image` refuses a local `src` with a query string when no
+  `images.localPatterns` is configured, and `CardFace` uses a plain `<img>` anyway.
+  `reversed` is `topCardReversedDominant`, **hoisted to one `const` because it now has
+  two readers** — the gloss and the artwork, which must never disagree.
+- **THE 2:1 READER PORTRAIT IS GONE, AND THE NAME IS A LINK TO `/{reader.id}`.** A
+  landscape SCENE cropped to a 120px stamp is 60px tall: too small to read as a place,
+  wide enough to cost a third of the block on a 360px screen. `linkifyName` splits the
+  rendered line so the catalog value stays one sentence a translator can read — **the
+  string is the single source of truth and the segments are derived**, because
+  `{ before, name, after }` would be two representations of one sentence.
+- **THE THREE READERS HAVE FIXED GENDERS: Thessaly female, Margaret female, Adrian
+  male.** `readers.json`'s `gender` (a two-value union, so a new reader cannot omit it)
+  meets `reader.pronoun.{female,male}` in exactly one place, `readerPronoun()`. **The bug
+  was "Thessaly refers to herself as they"** — the neutral singular is right for a person
+  whose pronouns are unknown and wrong for three authored characters whose `bio.en` has
+  said `She`, `Her` and `He` since the first release, so the page and the picker
+  disagreed about the same three people. **Indonesian renders `dia` for both keys and
+  that is not a stub**; `lines.test.ts` asserts the pair matches AND that it is not
+  English, and cross-checks `gender` against the pronouns in each `bio.en`.
+- **`account.facts.nickname` IS "Nickname" IN ENGLISH, REVERSING ITS OWN COMMENT.** It
+  said *"What you are called" rather than "Nickname": the questionnaire asked what the
+  reader should call them.* `.label` is `text-transform: uppercase`, so that rendered as
+  `WHAT YOU ARE CALLED` over TWO ROWS beside a one-word value. The Indonesian
+  `Nama panggilan` never had the problem and is unchanged.
+- **THE PAGE HAS A WAY OUT.** `history.home` and not a new key — the same gap `/history`
+  closed one release earlier, and in a standalone home-screen instance there is no
+  visible back button at all.
 
 - **`redactForUser()` AND `revokeAllForUser()` RUN IN THE SAME TRANSACTION THAT SETS
   `deleted_at`, IN THAT ORDER** (VD13, reconciliation §5.6). `moderation_flags.user_id` is

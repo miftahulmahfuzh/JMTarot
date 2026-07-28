@@ -11,7 +11,6 @@ import type { ReadingViewProps } from '@/components/ReadingView';
 import type { PublicReading } from '@/lib/share/types';
 import {
   adaptSharedReading,
-  isForeignProse,
   renderedLocale,
   sharedNickname,
   type SharedTranslation,
@@ -62,8 +61,9 @@ describe('adaptSharedReading', () => {
      * `null` IS STILL THE COMMON CASE and this test is what protects it: a link
      * minted before `share_links.locale` existed has no pinned locale, and V2 never
      * persists an unverified translation, so a miss is ordinary rather than
-     * exceptional. Both locales render the same way and differ only in the one line
-     * of chrome `isForeignProse` decides.
+     * exceptional. Both locales render it the same way, and since the other-language
+     * notice was deleted they now differ in NOTHING but the `lang` attribute -- which
+     * is why the deletion has its own describe block further down.
      */
     expect(adaptSharedReading(BASE, null).prose).toEqual({ kind: 'as-written' });
     expect(adaptSharedReading({ ...BASE, locale: 'en' }, null).prose).toEqual({
@@ -165,33 +165,45 @@ describe('renderedLocale', () => {
   });
 });
 
-describe('isForeignProse', () => {
-  it('is true exactly when the viewer reads the other language', () => {
-    expect(isForeignProse(BASE, 'id', null)).toBe(false);
-    expect(isForeignProse(BASE, 'en', null)).toBe(true);
-    expect(isForeignProse({ ...BASE, locale: 'en' }, 'en', null)).toBe(false);
-    expect(isForeignProse({ ...BASE, locale: 'en' }, 'id', null)).toBe(true);
+describe('the other-language notice is gone', () => {
+  /**
+   * **THE NEGATIVE CONTROL FOR A DELETION.** `isForeignProse` and
+   * `share.public.otherLanguage` were removed on Miftah's ruling (2026-07-28), and
+   * three tests here used to assert the notice's behaviour — including one named for
+   * keeping it alive. Deleting them silently would leave the codebase with no record
+   * that the comparison ever existed, and the next person to notice foreign prose
+   * under English chrome would write it again.
+   *
+   * So the deletion is asserted instead of merely performed: neither the adapter nor
+   * the page may reacquire a viewer-versus-prose comparison, and the catalog key must
+   * stay absent. What survives is `renderedLocale`, tested above — the `lang`
+   * attribute is now the only thing declaring the prose's language, which is why the
+   * assertion below is on the page's source rather than only on this module's exports.
+   */
+  it('exports no viewer-versus-prose comparison from the adapter', async () => {
+    const mod = await import('./adapt');
+    expect(Object.keys(mod).sort()).toEqual([
+      'adaptSharedReading',
+      'renderedLocale',
+      'sharedNickname',
+    ]);
   });
 
-  it('compares the RENDERED locale, not the source', () => {
-    /*
-     * THE CASE DESIGN A FIXES. An Indonesian reading, shared by somebody reading
-     * English. Against `reading.locale` an English viewer would be told the prose
-     * is in another language while looking at English -- the notice firing on a
-     * page it does not describe.
-     */
-    expect(isForeignProse(BASE, 'en', PINNED_EN)).toBe(false);
+  it('leaves no catalog key for it in either locale', async () => {
+    const [{ default: id }, { default: en }] = await Promise.all([
+      import('@/lib/i18n/locales/id'),
+      import('@/lib/i18n/locales/en'),
+    ]);
+    expect('share.public.otherLanguage' in id).toBe(false);
+    expect('share.public.otherLanguage' in en).toBe(false);
   });
 
-  it('STILL fires for a viewer who reads neither the pin nor nothing', () => {
-    /*
-     * THE CASE DESIGN A DOES NOT FIX, and the reason `share.public.otherLanguage`
-     * survives this branch. English-pinned link, Indonesian viewer: the prose is
-     * genuinely foreign to them and only design C (generate both locales at mint)
-     * would remove it. Asserted so nobody deletes the notice believing this is
-     * unreachable.
-     */
-    expect(isForeignProse(BASE, 'id', PINNED_EN)).toBe(true);
+  it('keeps the `lang` attribute, which is what replaced it', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const source = readFileSync(join(process.cwd(), 'src/app/s/[slug]/page.tsx'), 'utf8');
+    expect(source).toContain('lang={shownLocale}');
+    expect(source).not.toContain('otherLanguage');
   });
 });
 
