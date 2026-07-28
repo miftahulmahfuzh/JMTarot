@@ -55,6 +55,7 @@ export const EVENT_NAMES = [
   // — navigation and choice —
   'reader.viewed',
   'reader.chosen',
+  'reader.panel_swiped',
   'service.chosen',
 
   // — the draw —
@@ -161,6 +162,22 @@ export type EventMap = {
 
   'reader.viewed':             { reader_id: string; from: 'picker' | 'direct' | 'back' };
   'reader.chosen':             { reader_id: string };
+  /*
+   * V5. Which panel of the reader swipe deck is showing, and who moved it.
+   *
+   * NO FREE TEXT, rule 1. Nothing here is a word the querent wrote or the model
+   * generated. `panel` is a closed union of two machine tokens, not a label.
+   *
+   * `panel` IS A KEY, NOT AN INDEX (rule 3). An index would silently change
+   * meaning the day a third panel is inserted before the summary.
+   *
+   * `source: 'auto'` IS NOT REDUNDANT WITH THE NAME. The roadmap fixed the name
+   * as `panel_swiped`; the automatic slide is not a swipe, and `source` is the
+   * only thing that lets a query separate "the app moved" from "the querent
+   * moved". The ratio of the two is the number that says whether D-V5-2 -- slide
+   * on the first byte -- was the right call.
+   */
+  'reader.panel_swiped':       { reader_id: string; panel: 'bio' | 'summary'; source: 'auto' | 'user' };
   'service.chosen':            { reader_id: string; service_id: string };
 
   'draw.started':              { reader_id: string; service_id: string; card_count: number; reduced_motion: boolean };
