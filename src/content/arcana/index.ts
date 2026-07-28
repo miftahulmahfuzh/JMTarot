@@ -20,6 +20,10 @@
  */
 import type { Locale, Localized } from '@/data/types';
 import type { LoreDoc } from '@/content/types';
+import { theFoolId } from './the-fool.id';
+import { theFoolEn } from './the-fool.en';
+import { theMagicianId } from './the-magician.id';
+import { theMagicianEn } from './the-magician.en';
 import { theMoonId } from './the-moon.id';
 import { theMoonEn } from './the-moon.en';
 
@@ -30,6 +34,8 @@ import { theMoonEn } from './the-moon.en';
  * would let the sitemap's order drift for no reason a reviewer could see.
  */
 export const ARCANA_LORE: Record<string, Localized<LoreDoc>> = {
+  'the-fool': { id: theFoolId, en: theFoolEn },
+  'the-magician': { id: theMagicianId, en: theMagicianEn },
   'the-moon': { id: theMoonId, en: theMoonEn },
 };
 

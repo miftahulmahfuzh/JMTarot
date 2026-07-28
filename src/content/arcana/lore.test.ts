@@ -135,6 +135,8 @@ const bounded = (w: string) => new RegExp(`\\b${w.replace(/'/g, "['\u2019]")}\\b
  * registry impossible to drift apart.
  */
 const DIVERGENCE: Record<string, string[]> = {
+  'the-fool': ['bored', 'equipment', 'ceremony', 'cheaper'],
+  'the-magician': ['table', 'meeting', 'sentence', 'aimed'],
   'the-moon': ['step', 'night', 'guess', 'message', 'seven', 'two in the morning'],
 };
 
