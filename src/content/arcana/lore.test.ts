@@ -139,6 +139,8 @@ const DIVERGENCE: Record<string, string[]> = {
   'the-magician': ['table', 'meeting', 'sentence', 'aimed'],
   'the-high-priestess': ['puzzle', 'schedule', 'patient', 'unpleasant'],
   'the-empress': ['feed', 'season', 'quietly', 'reliable'],
+  'the-emperor': ['fence', 'Monday', 'written down', 'room'],
+  'the-hierophant': ['shelf', 'generations', 'expired', 'unique'],
   'the-moon': ['step', 'night', 'guess', 'message', 'seven', 'two in the morning'],
 };
 
