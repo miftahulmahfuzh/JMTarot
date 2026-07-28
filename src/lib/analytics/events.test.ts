@@ -42,17 +42,26 @@ describe('the event taxonomy', () => {
 
   /*
    * V0.3.0's REGISTER (reconciliation §4): 44 at v0.2.0, plus the fifteen names
-   * roadmap §6 fixes, plus V9's two, is 61 when the release is complete.
+   * roadmap §6 fixes, plus V9's two, is 61 when that release is complete.
    *
-   * A BOUND RATHER THAN AN EXACT COUNT, because five workstreams still have names to
-   * add and an exact number would make each of them edit this line — which is how a
-   * count assertion becomes a number people bump without reading. What is asserted
-   * exactly is the ceiling: nothing may take the taxonomy past 61 without the
-   * register being revisited.
+   * **v0.4.0's REGISTER IS FIVE MORE, AND THE CEILING MOVED ONCE, DELIBERATELY**
+   * (S-D13): `public.page_viewed`, `public.link_clicked`, `public.link_shared`,
+   * `public.card_zoomed`, `wallpaper.downloaded`. **S1 is the SINGLE OWNER of
+   * `events.ts` for the whole release** — every other workstream declares its
+   * events in its own plan's `## Analytics deltas` and S1 folds them in, in one
+   * edit. Six agents editing the data dictionary in parallel is the "seven agents
+   * inventing `user_id`" failure the v0.2.0 roadmap names.
+   *
+   * A BOUND RATHER THAN AN EXACT COUNT, because an exact number makes every
+   * workstream edit this line — which is how a count assertion becomes a number
+   * people bump without reading. What is asserted exactly is the ceiling: nothing
+   * may take the taxonomy past 66 without the register being revisited. **If S3,
+   * S4, S5 or S6 needs a name, the answer is almost always a prop on one of the
+   * five above**, and that plan says so rather than raising this number.
    */
-  it('stays inside v0.3.0’s fixed name budget', () => {
+  it('stays inside v0.4.0’s fixed name budget', () => {
     expect(EVENT_NAMES.length).toBeGreaterThanOrEqual(44);
-    expect(EVENT_NAMES.length).toBeLessThanOrEqual(61);
+    expect(EVENT_NAMES.length).toBeLessThanOrEqual(66);
   });
 
   /*

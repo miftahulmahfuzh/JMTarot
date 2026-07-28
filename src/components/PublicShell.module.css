@@ -1,0 +1,60 @@
+/*
+ * The public frame. Composed entirely from `src/theme/tokens.css`; `## Styling`
+ * requires `tokens.ts` to change first and there was no reason to change it.
+ *
+ * The link row WRAPS rather than scrolling. Four to six short labels at 320px is
+ * two rows and that is fine; a horizontally scrolling footer hides links from a
+ * thumb and from a crawler's rendered snapshot. `tools/seo/fit.sh` measures it.
+ */
+.frame {
+  min-height: 100dvh;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 64px 16px calc(40px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.footer {
+  margin-top: auto;
+  padding-top: 20px;
+  border-top: 1px solid var(--gold-hairline);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.links,
+.legal {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 16px;
+}
+
+.links a,
+.legal a {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--gold-pale);
+  text-decoration: none;
+}
+
+.links a:hover,
+.legal a:hover {
+  color: var(--gold-text);
+}
+
+.brand,
+.disclaimer {
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: 13px;
+  color: var(--faint);
+  margin: 0;
+}
