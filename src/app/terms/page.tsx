@@ -26,15 +26,37 @@ import { TermsId } from './terms.id';
  * working.
  */
 
-export const metadata: Metadata = {
-  title: 'Syarat & Ketentuan — JMTarot',
-  /*
-   * `noindex` deliberately. The consent-screen reviewer reaches this by URL and
-   * a signed-out stranger reaches it from the login page; neither needs it in a
-   * search index, and an indexed legal page for an app behind auth is noise.
-   */
-  robots: { index: false, follow: false },
-};
+/**
+ * **TWO THINGS CHANGED HERE IN v0.4.0, AND THEY ARE ONE CHANGE (reconciliation
+ * R4). BOTH REVERSE WHAT THIS FILE USED TO DO.**
+ *
+ * 1. **The `robots: { index: false, follow: false }` field is GONE.** Its
+ *    recorded reason was *"an indexed legal page for an app behind auth is
+ *    noise."* **The app stops being behind auth in this release** — `/` renders a
+ *    landing page signed out (S-D5) — so the premise expired with it. A public
+ *    site normally wants its terms indexed: Google's trust signals look for
+ *    them, and `jsonld.ts` points a licence at `/terms#9`, which a de-indexed
+ *    page cannot serve as a licence target. `src/app/sitemap.ts` lists this path
+ *    in the same commit; doing one half leaves a sitemap naming a noindex page,
+ *    which Search Console reports against the whole file.
+ *
+ * 2. **`static metadata` became `generateMetadata`, because the title was
+ *    hardcoded Indonesian while the body renders per locale.** An English reader
+ *    got an English document under a browser tab reading
+ *    `Syarat & Ketentuan — JMTarot`, and `og:title` shares it, so every chat
+ *    preview said it too. **This is the same bug class fixed on `/s/` on
+ *    2026-07-28**: `<title>` was the last string resolved from the wrong input.
+ *    It needed no new key — `common.terms` is the words on the link that brought
+ *    the reader here, which is the right thing for the tab to agree with.
+ *
+ * The page STAYS `ƒ`, as it already was: it awaited `getLocale()` for the
+ * document choice before this edit and `generateMetadata` awaits `getT()` for the
+ * same reason. Nothing about the dynamic/static story changed.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT();
+  return { title: `${t('common.terms')} — ${t('app.title')}` };
+}
 
 export default async function TermsPage() {
   const locale = await getLocale();
