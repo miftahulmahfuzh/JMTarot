@@ -151,6 +151,13 @@ LOTUS_STUB=                                   # 1 => skip the model, write the
                                               # alert on it.
 
 LOCALE_SWITCHER=1                             # W6. Render the language toggle.
+                                              # V4 MOVED IT (v0.3.0 R1): the
+                                              # account menu, plus the /login
+                                              # footer. Not the reader picker.
+                                              # It is now a PROP resolved by the
+                                              # mounting server page, because a
+                                              # non-NEXT_PUBLIC_ var inlines as
+                                              # undefined in a client component.
                                               # RENDERING ONLY -- English is still
                                               # reachable by Accept-Language and
                                               # cookie with it off. ONLY '0'
@@ -470,6 +477,19 @@ that someone will helpfully "fix" back into existence.
   updaters, so an `onToggle` called from inside one fires twice and cancels
   itself out. The fan was completely dead in development and would have worked
   in production. Read the drag from a ref instead.
+
+- **SAFARI DOES NOT FOCUS A `<button>` WHEN IT IS CLICKED OR TAPPED**, so
+  `const opener = document.activeElement` on the way into a dialog captures
+  `<body>` on the one platform this app is built for. Only text inputs take focus
+  from a pointer there; Chrome and Firefox focus buttons, which is why this looks
+  correct in every loop available from WSL. Restoring focus to that "opener"
+  drops the querent at the top of the document with no idea where the sheet went.
+  `AccountMenu` therefore takes the opener as a **prop** (`returnFocusTo`, a ref
+  owned by `AccountButton`) rather than inferring it. **`CardDetail` still has the
+  latent version of this bug** — same idiom, smaller consequence, because its
+  opener is a card in a long list rather than a fixed control. Found because
+  `_accountshot.html` dispatches synthetic `PointerEvent`s, which do not focus
+  their target either, and so reproduced Safari's behaviour by accident.
 
 - **`container-type` does not make an element its own container.** `cqw` in the
   declarations of the element that *declares* `container-type` resolves against
@@ -965,7 +985,8 @@ Indonesian throughout, interface and readings (W6)**, **the moderation gate,
 fleet-wide rate limiter and a global model-call ceiling (V9)**, **the
 correspondence engine (V1)**, **on-demand translation and locale-tagged
 generation (V2)**, **mystical memory verdicts — the Shadow Arcana replacing the
-tally (V3)**, reader
+tally (V3)**, **the account shell — the circle, the bottom sheet, and the first
+sign-out control this app has ever had (V4)**, reader
 picker, service picker, the draw (fan, pick, flip, reduced-motion grid), the card
 detail overlay, the streaming reading endpoint, the prompt layer, and the web app
 manifest.
@@ -1412,6 +1433,20 @@ from the same measurement, not from the plan's guessed 2500.
   The transitive boundary walk reported both as violations on its first run;
   neither is one. Server actions are the sanctioned way for a client component
   to reach server code.
+
+  **AND THE TWO CHECKS WERE IN THE WRONG ORDER UNTIL V4, WHICH BANNED THE
+  SANCTIONED PATTERN FROM `lib/auth/` SPECIFICALLY.** The `FORBIDDEN` prefix rule
+  ran *before* `isServerAction`, so a server action living under a forbidden
+  prefix failed the walk before anything asked whether it was a boundary. W3's
+  `app/onboarding/actions.ts` never exposed it, because `app/` is not a forbidden
+  prefix. V4's sign-out is: the only honest home for a session-clearing action is
+  `lib/auth/`, and the alternatives were hiding it somewhere nobody looks or
+  suppressing a finding. **Nothing is weakened by the reorder** — `isServerAction`
+  is a fact about how Next compiles the module, not an assertion a caller can
+  make, and Next refuses to build a `'use server'` file that exports anything but
+  async functions. Verified by two negative controls: a client component
+  importing `@/lib/auth/auth` directly still fails, and the same action file with
+  its directive removed still fails.
 - **The blocklist runs BOTH locales' patterns under both locales.** W7-D3 said
   otherwise. `locale` is the UI preference, not a declaration of what language
   the querent types, and an Indonesian speaker with the interface in English is

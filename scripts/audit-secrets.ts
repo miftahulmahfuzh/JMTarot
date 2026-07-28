@@ -490,20 +490,52 @@ function checkClientBoundary() {
       if (seen.has(file)) continue;
       seen.add(file);
 
-      const rel = relative(ROOT, file).replace(/\\/g, '/').replace(/^src\//, '');
-      const rule = FORBIDDEN.find((r) => rel.startsWith(r.prefix));
-      if (rule && !rule.allow.includes(rel) && file !== entry) {
-        fail('boundary', path.join(' -> '), relative(ROOT, entry), 0);
-        continue;
-      }
-
       let source: string;
       try {
         source = readFileSync(file, 'utf8');
       } catch {
         continue;
       }
+
+      /*
+       * THE RPC-BOUNDARY CHECK RUNS BEFORE THE PREFIX RULE, AND THE ORDER IS THE
+       * WHOLE FIX (V4).
+       *
+       * It used to run after, which made the two disagree for any server action
+       * living under a FORBIDDEN prefix: the walk failed the file before ever
+       * asking whether it was a boundary. W3's `app/onboarding/actions.ts` never
+       * exposed this because `app/` is not a forbidden prefix.
+       *
+       * V4 hit it head-on. Sign out has to call @auth/core's `signOut`, the
+       * sanctioned way for a client component to reach server code is a server
+       * action, and the honest place for a session-clearing action is
+       * `lib/auth/` -- which is forbidden, correctly, for everything that is not
+       * one. So the rule as ordered banned the correct implementation of the
+       * feature from the correct directory, and the two alternatives were both
+       * worse: put session-clearing code somewhere nobody will look for it, or
+       * suppress a finding.
+       *
+       * NOTHING IS WEAKENED. `isServerAction` is not a suppression a caller can
+       * assert; it is a fact about how Next compiles the module. Every export of
+       * a `'use server'` file becomes a server reference and the import site
+       * gets a fetch stub, so the transitive graph is not bundled for the
+       * browser -- which is exactly what this walk is looking for. Marking a
+       * module `'use server'` to dodge the scanner is not possible either: Next
+       * refuses to build a `'use server'` file that exports anything but async
+       * functions.
+       *
+       * This is also W7's own principle about `.next/server/chunks/**`, applied
+       * one directory over: a scanner that flags the intended pattern is a
+       * scanner somebody switches off, and then nothing is checked at all.
+       */
       if (file !== entry && isServerAction(source)) continue;
+
+      const rel = relative(ROOT, file).replace(/\\/g, '/').replace(/^src\//, '');
+      const rule = FORBIDDEN.find((r) => rel.startsWith(r.prefix));
+      if (rule && !rule.allow.includes(rel) && file !== entry) {
+        fail('boundary', path.join(' -> '), relative(ROOT, entry), 0);
+        continue;
+      }
 
       for (const spec of importsOf(source)) {
         const next = resolveSpec(file, spec);
