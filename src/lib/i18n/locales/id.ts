@@ -90,6 +90,15 @@ const id = {
   'picker.reader.hint': 'Pilih pembaca yang cocok denganmu.',
   'picker.reader.portraitAlt': '{name}, {title}',
 
+  /*
+   * V5. The name of the BIO PANEL inside the reader swipe deck.
+   *
+   * The summary panel reuses `memory.summary.a11yLabel`, which already names its
+   * reader -- so the two panels announce as two different things, which is the
+   * whole reason they are named at all (D-V5-4). Neither panel is aria-hidden.
+   */
+  'picker.reader.bio.a11yLabel': 'Tentang {name}',
+
   // --- Service picker -------------------------------------------------------
   'picker.service.eyebrow': 'Pilih layanan',
   'picker.service.cardCount.one': '{count} kartu',

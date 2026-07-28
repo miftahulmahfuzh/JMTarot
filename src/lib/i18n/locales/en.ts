@@ -57,6 +57,7 @@ const en: Catalog = {
   // --- Reader picker --------------------------------------------------------
   'picker.reader.hint': 'Choose the reader who suits you.',
   'picker.reader.portraitAlt': '{name}, {title}',
+  'picker.reader.bio.a11yLabel': 'About {name}',
 
   // --- Service picker -------------------------------------------------------
   'picker.service.eyebrow': 'Choose a reading',

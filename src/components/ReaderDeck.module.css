@@ -1,0 +1,136 @@
+/*
+ * ============================================================================
+ * THE READER DECK'S HEIGHT -- derived, not guessed. Read this before changing
+ * `--summary-lines`, because a smaller number is not a tidier number.
+ * ============================================================================
+ *
+ * THE PROBLEM. Two panels of different heights on one horizontal track, one of
+ * which arrives incrementally. Three ways to size the track:
+ *
+ *   A. tallest panel, no reserve   -> the deck GROWS ON EVERY STREAMED CHUNK
+ *                                     and the service list reflows six times.
+ *   B. the active panel's height   -> the deck changes height on EVERY SWIPE,
+ *      (JS + ResizeObserver)          so the service list moves under the
+ *                                     querent's own thumb, repeatedly. Also
+ *                                     the JS layout machinery VD17 exists to
+ *                                     avoid.
+ *   C. tallest panel + a RESERVE   -> the deck changes height exactly ONCE, at
+ *      on the summary panel           first byte, at the same instant as the
+ *                                     slide, and never again.
+ *
+ * C is chosen. `FrequencyLine`'s header records that "the list does not jump"
+ * was verified by screenshot precisely because it is easy to believe and easy
+ * to get wrong; C is the only one of the three where the claim is true for the
+ * whole life of the page.
+ *
+ * WHAT IT COSTS. When there are two panels, the bio panel gains trailing space
+ * equal to (reserve - its own height). Measured by _swipefit.html; the numbers
+ * are in the table below. It is paid only by a querent who has already read
+ * today -- for everyone else there is one panel, no reserve, and a deck exactly
+ * as tall as the bio, which is byte-identical to what shipped before V5.
+ *
+ * ---------------------------------------------------------------------------
+ * THE DERIVATION
+ * ---------------------------------------------------------------------------
+ * The panel's only input is its container's inline size, which is what makes
+ * this exact rather than approximate (CLAUDE.md's verification tier 4).
+ *
+ *   shell content width  = viewport - 32px (16px padding each side), capped 520
+ *   panel text width     = shell content width  (no gap, no panel padding --
+ *                          the summary's left rule was removed for exactly this)
+ *   line box             = 16px x 1.5 = 24px, the `.bio` register
+ *
+ * THE RESERVE IS SIZED TO THE TYPICAL SUMMARY, NOT THE 45-WORD CEILING.
+ * `SUMMARY_MAX_WORDS` is 50 (V3 raised it from 45; margaret's is 65) and lives
+ * in src/lib/prompt/summary.ts, which is `server-only` (W7-D14) and CANNOT be
+ * imported here -- it is an input to this comment, not to the code. Do not
+ * "fix" that by re-exporting it: that is a prompt module reaching the browser
+ * bundle for a CSS constant.
+ *
+ * Sizing to the ceiling would put the reserve at 9-10 lines and leave three
+ * empty lines under Thessaly's four-line bio at every width. Sizing to the
+ * observed typical length leaves at most two, and an over-length outlier
+ * crosses the `min-height` and grows the deck one extra time. One extra reflow
+ * for an outlier beats permanent dead space for everyone. THAT is why it is
+ * `min-height` and not `height`.
+ *
+ * MEASURED 2026-07-28 by public/cards/_swipefit.html, against the six real
+ * summaries from `npm run smoke -- --summary` and the three real bios. The
+ * six spread 191-372 chars, which is FOUR TO EIGHT rendered lines at 358px --
+ * and that spread, not any single number, is the difficulty here. No reserve
+ * both covers the long summaries and avoids a hole under the short ones.
+ *
+ *   deck px   summary lines                bio lines (3 readers x 2 locales)
+ *   (=vw-32)  short(14ch) longest(372ch) 414ch
+ *   288           1            10          11          4 .. 7
+ *   328           1             8          --          4 .. 6
+ *   343           1             8          --          3 .. 6
+ *   358           1             8           9          3 .. 5
+ *
+ * CHOSEN: 6 lines, which is the plan's own value -- the MEDIAN of the six real
+ * summaries, not the maximum. D-V5-3 says exactly that ("sized to the typical
+ * summary, not to the theoretical maximum"), and `min-height` rather than
+ * `height` exists so a long one crosses it and grows the deck one extra time.
+ *
+ * AN 8-LINE RESERVE WAS TRIED FIRST AND REVERTED, and it is recorded because
+ * the measurement on its own argued for it. Sizing to the LONGEST of the six
+ * makes the deck perfectly stable -- and puts a four-line hole between a short
+ * summary and the dots, ON THE PANEL THE QUERENT LANDS ON, because the deck
+ * auto-slides to the summary. Task 13's screenshot is what showed it. The
+ * numbers could not: `_swipefit.html` reports dead space against the BIO, where
+ * 5 lines looked tolerable on the ground that a querent only meets it by
+ * swiping back. But the reserve lives on the SUMMARY panel, so a short summary
+ * pays it immediately and unavoidably. Growth during a stream is two or three
+ * reflows over about a second; the hole is permanent. The hole loses.
+ *
+ * TASK 12 STEP 3 IS THEREFORE SATISFIED RATHER THAN DEPARTED FROM. Dead space
+ * under the shortest bio (thessaly, 3 lines at 358px) is 3 lines, which is its
+ * threshold and not over it. At 8 lines it was 5 -- which is precisely the
+ * condition that step was written to catch, and it caught it.
+ *
+ * ---------------------------------------------------------------------------
+ * THE BREAKPOINT IS 300px OF CONTAINER, NOT 339px OF VIEWPORT
+ * ---------------------------------------------------------------------------
+ * The plan wrote `@container (max-width: 339px)`, which is a viewport number in
+ * a container query. THE DECK IS NOT THE VIEWPORT: it is `.shell`'s content
+ * box, so `viewport - 32px` (16px of padding each side), capped at 520.
+ *
+ *   viewport  320  360  375  390
+ *   deck      288  328  343  358
+ *
+ * 339 therefore catches 328 -- the 360px phone, the single most common Android
+ * width -- and hands it the narrow-width reserve it does not need. The
+ * measurement above puts the real step between 288 and 328, so 300 is the
+ * middle of the only gap there is. Anything from 289 to 327 is correct;
+ * 339 is not.
+ *
+ * @container AND NOT @media, because the query must follow the DECK's inline
+ * size and not the viewport's -- V6 may mount a deck in a narrower column, and
+ * _swipefit.html measures in iframes where the two happen to agree and would
+ * therefore never catch the difference. `.deck` in SwipeDeck.module.css
+ * declares `container-type: inline-size`; this file queries it from a
+ * descendant, which is the only place the query resolves against that box.
+ */
+
+.bio {
+  /* MOVED VERBATIM from src/app/[reader]/page.module.css. Not restyled. The
+     bio is now inside the deck, so its rule belongs to the deck. */
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--text-warm);
+  margin: 0;
+}
+
+.summaryPanel {
+  --summary-lines: 6;
+  min-height: calc(var(--summary-lines) * 16px * 1.5);
+}
+
+/* 300px OF DECK, not of viewport. See the header -- 339 would catch the 360px
+   phone, whose deck is 328. */
+@container (max-width: 300px) {
+  .summaryPanel {
+    --summary-lines: 7;
+  }
+}

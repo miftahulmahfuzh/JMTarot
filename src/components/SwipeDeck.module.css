@@ -1,0 +1,183 @@
+/*
+ * ============================================================================
+ * SWIPE DECK GEOMETRY -- N panels on one horizontal scroll-snap track.
+ * ============================================================================
+ *
+ * VD17: CSS scroll-snap, no carousel library and no drag handler. The project
+ * has no runtime UI dependencies and must not acquire one for two panels. What
+ * the platform gives for free here is momentum, the snap itself, pointer
+ * cancellation, and -- in Firefox and recent Chrome -- keyboard scrolling. What
+ * it does NOT give is a position indicator or a Safari keyboard path; the dots
+ * below are both.
+ *
+ * ---------------------------------------------------------------------------
+ * THE ONE PIECE OF ARITHMETIC IN HERE, AND WHY THERE IS NO `gap`
+ * ---------------------------------------------------------------------------
+ * `panelIndexAt()` in src/lib/swipeDeck.ts computes the settled panel as
+ * `round(scrollLeft / clientWidth)`. That identity holds only while each panel
+ * is exactly the track's width and there is nothing between them. A `gap` of
+ * even 1px makes panel i sit at `i * (width + gap)`, so the rounding drifts by
+ * a whole panel at i = width/gap and the dots start disagreeing with the page.
+ *
+ *   NO GAP. NO PADDING ON THE TRACK. NO BORDER ON THE TRACK.
+ *
+ * Separation between panels is unnecessary because only one is ever visible.
+ * If a future deck wants peeking neighbours, it must also stop using
+ * `panelIndexAt` and read `offsetLeft` instead -- change both or neither.
+ *
+ * ---------------------------------------------------------------------------
+ * `overscroll-behavior-inline: contain` IS NOT COSMETIC ON AN IPHONE
+ * ---------------------------------------------------------------------------
+ * Without it, a right-swipe that starts at scrollLeft 0 falls through to
+ * Safari's edge back-gesture and navigates the querent off the picker. The deck
+ * spends most of its life at scrollLeft 0, so this is the common case, not the
+ * edge case. It cannot be checked in WSL; it is the item on the real-iPhone
+ * list.
+ *
+ * ---------------------------------------------------------------------------
+ * SCROLLBAR HIDDEN, DOTS MANDATORY
+ * ---------------------------------------------------------------------------
+ * A visible horizontal scrollbar under a paragraph on a desktop browser reads
+ * as a layout bug. Hiding it removes the only mouse-and-eyes affordance, so the
+ * dots are not decoration: they are the replacement, and they are rendered
+ * whenever there is more than one panel and never when there is one.
+ *
+ * ---------------------------------------------------------------------------
+ * REDUCED MOTION AND ?still=1
+ * ---------------------------------------------------------------------------
+ * `scroll-behavior: smooth` is declared only under
+ * `prefers-reduced-motion: no-preference`, and the JS passes an explicit
+ * `behavior` too, because a JS `scrollTo({behavior})` overrides the CSS and the
+ * component must not depend on which one wins.
+ *
+ * `html[data-still]` (globals.css, the screenshot hook) kills transitions and
+ * animations -- it does NOT kill `scroll-behavior: smooth`, which is neither.
+ * A headless capture would otherwise photograph the deck mid-glide. The rule
+ * below is the missing half of that hook.
+ *
+ * BUT IT IS ONLY HALF OF THE MISSING HALF, AND THE OTHER HALF IS IN THE TSX.
+ * This rule cannot reach the auto-slide: `goTo` calls
+ * `scrollTo({ behavior })`, and that option OVERRIDES CSS `scroll-behavior`
+ * rather than defaulting from it. What this rule does govern is every scroll
+ * this component does not make -- keyboard, scrollbar drag, `scrollIntoView`
+ * from anywhere else -- which is worth having and is why it stays. The
+ * auto-slide reads `data-still` itself; see the comment in `goTo`.
+ */
+
+.deck {
+  /*
+   * DECLARES THE CONTAINER AND PAINTS NOTHING. The @container queries that size
+   * the summary reserve live in ReaderDeck.module.css, on a DESCENDANT of this
+   * element -- which is the only place they resolve against this box. A query
+   * (or a `cqw`) in the declarations of the element that DECLARES
+   * `container-type` resolves against the nearest ANCESTOR container instead.
+   * Same trap, same split, as CardBack's `.back` / `.plate`.
+   */
+  container-type: inline-size;
+  width: 100%;
+}
+
+.scroller {
+  display: flex;
+  /* See the header. Do not add one. */
+  gap: 0;
+
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-inline: contain;
+
+  /*
+   * The panels' `offsetLeft` is read to compute the scroll target, and
+   * `offsetLeft` is measured from the offsetParent's padding box. Making the
+   * track the offsetParent is what makes `scrollTo({ left: panel.offsetLeft })`
+   * mean what it says, at any scroll position.
+   */
+  position: relative;
+
+  scrollbar-width: none;
+}
+
+.scroller::-webkit-scrollbar {
+  display: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .scroller {
+    scroll-behavior: smooth;
+  }
+}
+
+:global(html[data-still]) .scroller {
+  scroll-behavior: auto;
+}
+
+.panel {
+  /* Exactly the track's width. `min-width: 0` because a flex item's default
+     `min-width: auto` refuses to shrink below its longest unbreakable word,
+     which on a narrow phone is enough to widen the track and break the
+     `scrollLeft / clientWidth` identity above. */
+  flex: 0 0 100%;
+  min-width: 0;
+  scroll-snap-align: start;
+  /* A hard flick past a panel is a panel the querent never saw. With two panels
+     this is nearly unreachable; it is here for the three-panel reuse. */
+  scroll-snap-stop: always;
+}
+
+/* --- the dots -------------------------------------------------------------
+ *
+ * Rendered only when there is more than one panel. NOT hidden when there is
+ * one -- a hidden row still occupies 28px and moves the service list, which is
+ * the M14 empty state arriving by another route.
+ *
+ * NO NEW TOKENS. `--gold-border` is the hairline the chips, the banner and the
+ * summary rule already use; `--gold-pale` is the summary's own ink. A 6px
+ * circle needs a 50% radius, which is a shape and not a value -- `--radius-chip`
+ * is 2px and would give two tiny squares.
+ *
+ * 44 x 28 HIT AREA AROUND A 6px DOT. 44 on the horizontal because that is the
+ * axis where two adjacent targets can be mis-tapped, 28 on the vertical because
+ * this row is a position indicator sitting under a paragraph, not a control bar
+ * -- `.back` in the page stylesheet is 44 tall and is a primary control. A
+ * mis-tap here costs nothing: it scrolls to a panel you can already point at.
+ */
+.dots {
+  display: flex;
+  justify-content: center;
+  margin-top: 2px;
+}
+
+.dot {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  width: 44px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.dot::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1px solid var(--gold-border);
+  transition:
+    background-color var(--dur) var(--ease-card),
+    border-color var(--dur) var(--ease-card);
+}
+
+.dot[aria-current='true']::before {
+  background: var(--gold-pale);
+  border-color: var(--gold-pale);
+}
+
+.dot:focus-visible {
+  outline: 1px solid var(--gold-border);
+  outline-offset: -6px;
+  border-radius: var(--radius-chip);
+}

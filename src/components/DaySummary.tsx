@@ -3,39 +3,44 @@
 import { useEffect, useState } from 'react';
 import { SESSION_HEADER } from '@/lib/analytics/localdate';
 import { getSessionId } from '@/lib/analytics/track.client';
-import { useT } from '@/lib/i18n/LocaleProvider';
 import { todayKey } from '@/lib/storage';
 import styles from './DaySummary.module.css';
 
 /**
- * What this reader remembers about the querent's day (W5 §5.4).
+ * What this reader remembers about the querent's day (W5 §5.4), as a hook and a
+ * paragraph.
  *
- * IT RENDERS NOTHING UNTIL THE FIRST BYTE, AND NOTHING AT ALL IF THERE IS
- * NOTHING TO SAY (M14). No skeleton, no reserved height, no "you haven't read
- * today" -- roadmap §5 is explicit that the empty state destroys the effect,
- * because it announces the feature exists and that this user has not earned it.
- * A first-time visitor gets a 204 and never knows the component was here.
+ * SPLIT BY V5, AND THE M14 CONTRACT MOVED UP ONE LEVEL RATHER THAN AWAY. This
+ * used to be one component that returned `null` until the first byte and
+ * nothing at all if there was nothing to say -- no skeleton, no reserved
+ * height, no "you haven't read today" -- because roadmap §5 is explicit that an
+ * empty state destroys the effect: it announces that the feature exists and
+ * that this user has not earned it.
  *
- * WHY IT IS A CLIENT COMPONENT, and this is the §6 constraint that shapes the
- * whole design. This used to read "`src/app/[reader]/page.tsx` is STATICALLY
- * PRERENDERED via `generateStaticParams`", with the build output listing
- * `/thessaly`, `/margaret` and `/adrian` as the canary. W6 ENDED THAT: the root
- * layout awaits `getLocale()` for `<html lang>`, so every route is now ƒ and
- * there is no prerendering left to protect. Plan §8 says to expect it.
+ * That rule is UNCHANGED and is now enforced by `ReaderDeck`, which asks
+ * `useDaySummary()` and builds a ONE-panel deck while the text is empty. A
+ * second panel is never rendered blank, so there is still no empty state -- and
+ * a deck with one panel has no dots and no affordance, so a first-time visitor
+ * still never knows the component was here.
  *
- * The constraint that outlived the canary is the one that was always the point:
- * an `await`ed database read plus a possible model call in that page BLOCKS THE
- * FIRST BYTE, and roadmap §6 forbids that regardless of how the route is
- * rendered. So this still mounts empty and fills in.
+ * WHY THE SPLIT AT ALL: the deck has to know whether a second panel exists
+ * BEFORE deciding what to render, and a component that answers that by
+ * returning `null` cannot be asked. The state had to be lifted; nothing else
+ * about it changed.
+ *
+ * WHY IT IS STILL A CLIENT COMPONENT. An `await`ed database read plus a possible
+ * model call in `src/app/[reader]/page.tsx` BLOCKS THE FIRST BYTE, and roadmap
+ * §6 forbids that regardless of how the route renders. (The old canary --
+ * `/thessaly` listed as prerendered -- died with W6, which made every route ƒ
+ * for `<html lang>`. Plan §8 said to expect it.) So this still mounts empty and
+ * fills in.
  *
  * IT STREAMS, unlike `FrequencyLine`. The endpoint sends 45 words in the
- * reader's own voice, and watching them arrive reads as the reader speaking --
- * the same treatment the reading result already gets. The frequency verdict is
- * one clause meant to be read whole and is fetched in one piece; the difference
- * is deliberate.
+ * reader's own voice and watching them arrive reads as the reader speaking.
+ * V5 leans on that: the deck slides on the FIRST BYTE so the querent is present
+ * for it, not after `done` (D-V5-2).
  */
-export function DaySummary({ readerId, readerName }: { readerId: string; readerName: string }) {
-  const t = useT();
+export function useDaySummary(readerId: string): string {
   const [text, setText] = useState('');
 
   useEffect(() => {
@@ -87,18 +92,26 @@ export function DaySummary({ readerId, readerName }: { readerId: string; readerN
     return () => controller.abort();
   }, [readerId]);
 
-  if (!text) return null;
+  return text;
+}
 
-  /*
-   * `aria-label` because a paragraph that appears seconds after load, with no
-   * heading, is disorienting to a screen reader -- and unlike the frequency
-   * line, this one is in a named reader's voice, so the label says whose.
-   *
-   * W6 landed; the hardcoded 'id' is gone and the key is unchanged.
-   */
-  return (
-    <p className={styles.summary} aria-label={t('memory.summary.a11yLabel', { reader: readerName })}>
-      {text}
-    </p>
-  );
+/**
+ * The paragraph. NOT NAMED -- and that is deliberate, not an omission.
+ *
+ * This used to carry `aria-label={t('memory.summary.a11yLabel', ...)}`, because a
+ * paragraph that appears seconds after load with no heading is disorienting.
+ * That is still true and the name still exists; it moved to the panel that wraps
+ * this, so there is exactly ONE naming layer instead of a group and a paragraph
+ * announcing the same sentence twice. The catalog key is unchanged and
+ * `ReaderDeck` passes it.
+ *
+ * IF YOU EVER MOUNT THIS OUTSIDE A DECK, name it at the mount. `t()` is not
+ * called here any more precisely so that the caller cannot forget to.
+ */
+export function DaySummary({ text }: { text: string }) {
+  /* Belt and braces. `ReaderDeck` never builds a summary panel for empty text,
+     so this is unreachable -- and it is the M14 rule stated where somebody
+     grepping for it will find it. */
+  if (!text) return null;
+  return <p className={styles.summary}>{text}</p>;
 }
