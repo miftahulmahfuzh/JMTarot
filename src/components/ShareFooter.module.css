@@ -275,11 +275,52 @@
  * bottom sheet on a 360px screen is most of the viewport, and the sheet already has
  * a border. Composed entirely from existing tokens.
  *
- * `.linkRow + .linkRow` and not a `gap`, because the parent is not a flex container
- * and making it one would change how the preview and the toggles lay out.
+ * ── TWO THINGS MEASURED HERE RATHER THAN ASSUMED (2026-07-28) ───────────────
+ *
+ * **`.linkRow` IS A FLEX COLUMN BECAUSE A `<button>` DOES NOT FILL A BLOCK
+ * CONTAINER.** `.sheet` is `flex-direction: column` with the default
+ * `align-items: stretch`, so a `.primary` that is a DIRECT child stretches to the
+ * full 468px. Wrapping the copy button in this div made it a grandchild of that
+ * flex container and a child of a plain block — and `width: auto` on a button is
+ * fit-content, not fill, so it collapsed to 154px and sat beside a full-width
+ * `Create a link in …` at 468px. Measured, after it shipped that way.
+ *
+ * **`.linkRow + .linkRow` AND NOT A `gap` ON `.sheet`.** The conclusion is right and
+ * the reason first written here was not: it said "the parent is not a flex container",
+ * and `.sheet` has been `display: flex` all along. The real reason is that `.sheet`
+ * carries NO row gap, so adding one to space these rows would also space the preview,
+ * the toggles and the warning — every child of the sheet — which is a different
+ * change wearing this one's clothes.
  */
+.linkRow {
+  display: flex;
+  flex-direction: column;
+}
+
 .linkRow + .linkRow {
   margin-top: 4px;
+}
+
+/*
+ * THE MINT OFFER, WHEN IT FOLLOWS THE LIST OF EXISTING ADDRESSES.
+ *
+ * `Copy link` and `Create a link in <language>` are both `.primary`, and neither
+ * carries a vertical margin — so with no rule here they sat flush against each other
+ * and read as one control group rather than as "your links" followed by "and here is
+ * a new one". Reported on a phone, 2026-07-28.
+ *
+ * **14px IS `.close`'s NUMBER, TAKEN ON PURPOSE.** It is the gap between
+ * `Turn all links off` and `Close`, and this is the same relationship — a control that
+ * follows a group rather than belonging to it — so the two must stay equal. They are
+ * two literals rather than one custom property because there are exactly two of them
+ * in one file; if a third appears, promote it to a token instead of copying again.
+ *
+ * The ADJACENT-SIBLING selector matters: the offer only renders when the language on
+ * screen has no address, so this must not add space when it is absent, and it must not
+ * fire for the `Copy link` buttons inside each `.linkRow`.
+ */
+.linkRow + .primary {
+  margin-top: 14px;
 }
 
 /*
