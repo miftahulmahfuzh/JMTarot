@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { tFor } from './catalog';
-import { formatDate, makeT, type Catalog } from './format';
+import { formatDate, formatTime, makeT, type Catalog } from './format';
 
 describe('interpolation', () => {
   const t = tFor('id');
@@ -133,5 +133,78 @@ describe('formatDate', () => {
 
   it('is day-first in English, so en-GB vs en-US never has to be decided', () => {
     expect(formatDate(new Date(2026, 0, 7), 'en')).toBe('7 January 2026');
+  });
+});
+
+/**
+ * ASSERTED ON `.includes` AND ON SHAPE, NEVER ON A GOLDEN STRING.
+ *
+ * ICU output moves between Node versions and between ICU data builds -- the
+ * narrow no-break space before `PM` has already changed once in Node's history.
+ * A golden string here is a test that fails on a runtime upgrade for no reason,
+ * and the fix somebody reaches for is deleting the assertion.
+ *
+ * The time is built with a LOCAL-time `Date` on purpose: this helper renders in
+ * the runner's own zone, which is the whole thing that distinguishes it from
+ * `formatLocalDate`, so constructing from UTC would make the expected hour
+ * depend on where the test runs.
+ */
+describe('formatTime', () => {
+  const evening = new Date(2026, 6, 26, 19, 40);
+
+  it('renders the hour and the minute in both locales', () => {
+    for (const locale of ['id', 'en'] as const) {
+      const out = formatTime(evening, locale);
+      expect({ locale, out }).toMatchObject({ locale, out: expect.stringMatching(/\d/) });
+      expect(out).toContain('40');
+    }
+  });
+
+  it('pads the minute but not the hour', () => {
+    // '2-digit' minute, 'numeric' hour -- 09.05 would be wrong, 9.05 is right.
+    expect(formatTime(new Date(2026, 6, 26, 9, 5), 'id')).toContain('05');
+    expect(formatTime(new Date(2026, 6, 26, 9, 5), 'id')).not.toContain('09');
+  });
+
+  /**
+   * BOTH LOCALES ARE 24-HOUR AND ONLY THE SEPARATOR DIFFERS, because
+   * `intlTag('en')` is `en-GB` and its default hour cycle is h23. V6's plan
+   * predicted `7:40 PM`, which is what `en-US` would give.
+   *
+   * Asserted rather than merely noted, because it is the same decision
+   * `formatDate` records: English here is day-first and spelled-month so that
+   * `en-GB` versus `en-US` never has to be settled for a date the user reads, and
+   * a meridiem would reopen that question for a time they read.
+   */
+  it('is a 24-hour clock in both locales, differing only in the separator', () => {
+    const id = formatTime(evening, 'id');
+    const en = formatTime(evening, 'en');
+
+    expect(id).toContain('19');
+    expect(id).toContain('.');
+    expect(en).toContain('19');
+    expect(en).toContain(':');
+    expect(id).not.toBe(en);
+  });
+
+  it('carries no meridiem in either locale, so en-GB vs en-US stays undecided', () => {
+    for (const locale of ['id', 'en'] as const) {
+      for (const hour of [0, 9, 12, 19, 23]) {
+        const out = formatTime(new Date(2026, 6, 26, hour, 0), locale);
+        expect({ locale, hour, out }).toEqual({
+          locale,
+          hour,
+          out: expect.not.stringMatching(/[AP]\.?M\.?/i),
+        });
+      }
+    }
+  });
+
+  it('renders midnight and noon without collapsing them', () => {
+    const midnight = formatTime(new Date(2026, 6, 26, 0, 0), 'en');
+    const noon = formatTime(new Date(2026, 6, 26, 12, 0), 'en');
+    expect(midnight).not.toBe(noon);
+    expect(midnight).toContain('0');
+    expect(noon).toContain('12');
   });
 });

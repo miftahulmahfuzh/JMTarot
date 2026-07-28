@@ -192,3 +192,45 @@ export function formatLocalDate(
   const dayMonth = `${Number(d)} ${month}`;
   return withYear ? `${dayMonth} ${y}` : dayMonth;
 }
+
+/**
+ * `19.40` / `19:40`. The clock time of a reading, in the VIEWER'S zone.
+ *
+ * **BOTH LOCALES ARE A 24-HOUR CLOCK AND ONLY THE SEPARATOR DIFFERS. V6's plan
+ * said `19.40 / 7:40 PM` and that is wrong here** -- `intlTag('en')` is `en-GB`,
+ * whose default hour cycle is h23. Measured: `id-ID` gives `19.40`, `en-GB` gives
+ * `19:40`, and it is `en-US` that gives `7:40 PM`.
+ *
+ * That is the RIGHT outcome and not an accident to correct. It is the same
+ * decision `formatDate` already records: English here is day-first, spelled-month
+ * `26 July 2026`, chosen so `en-GB` versus `en-US` never has to be settled for a
+ * date the user reads. A meridiem would reopen exactly that question for a time
+ * they read. Do not "fix" this to `en-US` or to `hour12: true`; a test asserts
+ * the absence of AM/PM.
+ *
+ * THE THIRD OF THREE, AND THE CONTRAST WITH THE OTHER TWO IS WHY IT LIVES HERE
+ * RATHER THAN IN A HISTORY FILE.
+ *
+ *   - `formatLocalDate` takes a STRING and splits it, because a `local_date` is a
+ *     calendar day the querent declared and must never be re-derived through a
+ *     timezone.
+ *   - `formatDate` takes a `Date`, for a moment in time rendered as a day.
+ *   - this takes a `Date` too, and it is the ONE PLACE IN THE APP where handing
+ *     an instant to `Intl` and letting it render in the reader's own zone is
+ *     exactly right. `readings.created_at` IS an instant, and "what time did I
+ *     take this reading" is a question about the clock the querent was looking
+ *     at.
+ *
+ * Saying that next to two helpers that exist because it is usually NOT right is
+ * the entire point of the placement. Move this into `src/lib/history/` and the
+ * next person to need a time formatter writes a second one.
+ *
+ * NO OPTIONS PARAMETER, same rule as `formatDate`: a second call site with a
+ * different format is how an app ends up rendering three time styles.
+ */
+export function formatTime(d: Date, locale: Locale): string {
+  return new Intl.DateTimeFormat(intlTag(locale), {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(d);
+}
