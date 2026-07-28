@@ -132,3 +132,27 @@
   margin: 0;
   min-height: 1.2em;
 }
+
+/*
+ * V8's goodbye line, after `?deleted=1`.
+ *
+ * ITS OWN CLASS RATHER THAN `.error`, AND THE COLOUR IS THE WHOLE POINT.
+ * `.error` is `#e0a3a3` -- a red, correctly, for a failed sign-in. A deletion
+ * SUCCEEDED, and telling somebody the thing they asked for worked in the colour
+ * the app uses for failure is a bad way to say it. This is `--muted`: a quiet
+ * statement of fact, in the register of the disclaimer below rather than the
+ * error above.
+ *
+ * NO `min-height`. `.error` reserves 1.2em so the button does not jump when a
+ * code arrives on a page that is already open; this line is only ever present on
+ * first paint, so reserving space for it would leave a permanent gap on the
+ * screen every stranger sees.
+ */
+.notice {
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: 15px;
+  color: var(--muted);
+  text-align: center;
+  margin: 0;
+}

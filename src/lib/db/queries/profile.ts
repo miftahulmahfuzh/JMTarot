@@ -27,11 +27,20 @@ import { profiles, users, type NewProfile, type Profile, type User } from '../sc
 /**
  * The erasure grace period, in days (reconciliation §7.8).
  *
- * Exported so W7's daily sweep uses the same number rather than re-deriving it.
- * A sweep that purges at 30 days and a sign-in that restores at 31 would leave a
- * window where the row is gone and the promise was still "recoverable".
+ * **THE VALUE MOVED TO `@/lib/account/grace` AND IS RE-EXPORTED HERE.** V8's
+ * confirmation sheet is a client component that has to say the number out loud,
+ * and `clientBoundary.test.ts` forbids a client component importing
+ * `@/lib/db/**` -- so the constant needed a leaf, the same treatment V2 gave
+ * `translate/keys.ts`. That file carries the full reasoning.
+ *
+ * The re-export stays so every server-side call site keeps working and so this
+ * remains the place somebody reasoning about the restore window will look. There
+ * is still exactly one number: a sweep that purges at 30 days and a sign-in that
+ * restores at 31 would leave a window where the row is gone and the promise was
+ * still "recoverable".
  */
-export const ERASURE_GRACE_DAYS = 30;
+export { ERASURE_GRACE_DAYS } from '@/lib/account/grace';
+import { ERASURE_GRACE_DAYS } from '@/lib/account/grace';
 
 /**
  * The one lookup on the auth path (W2).

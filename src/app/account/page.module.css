@@ -1,0 +1,175 @@
+/*
+ * `/account`.
+ *
+ * `.shell` COPIES `src/app/page.module.css`'s, INCLUDING THE 64px TOP PADDING, and
+ * that number is V4's measurement rather than a guess: the account circle is fixed
+ * at the top-right occupying roughly y 10-54, and `Eyebrow`'s hairlines run the full
+ * width of this column — at 28 they pass straight under it. That file's comment says
+ * to measure it and not eyeball it, and this page mounts the same circle.
+ *
+ * NO NEW HEX, NO NEW FONT SIZE, NO NEW CURVE beyond V8's one `--danger` token, whose
+ * consumers are the deletion sheet and the two error lines.
+ */
+
+.shell {
+  min-height: 100dvh;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 64px 16px calc(40px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-display), serif;
+  font-weight: 500;
+  font-size: var(--fs-title);
+  letter-spacing: var(--ls-title);
+  color: var(--gold-text);
+  text-align: center;
+}
+
+.hint {
+  margin: 0 0 4px;
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: var(--fs-hint);
+  color: var(--muted);
+  text-align: center;
+}
+
+/*
+ * A section is a hairline plus a Cinzel label. `Eyebrow`'s treatment without its
+ * flanking rules, because four flanked eyebrows down one page would read as four
+ * separate screens stacked rather than as one page with four parts.
+ */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--gold-hairline);
+}
+
+.sectionLabel {
+  margin: 0;
+  font-family: var(--font-display), serif;
+  font-weight: 400;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-section-label);
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+/*
+ * Art beside a sentence. `align-items: flex-start` rather than `center`, so the
+ * first line of prose sits level with the top of the image — a centred 132px card
+ * next to two lines of text puts the sentence in the middle of nowhere.
+ */
+.withArt {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.thumb {
+  flex: 0 0 auto;
+  width: 88px;
+  height: 132px;
+  border-radius: var(--radius-card);
+  /* The artwork paints its own frame; this is the outermost millimetre of it, and
+     the same value the fan uses. Gold here would compete with the painting. */
+  border: 1px solid var(--card-edge);
+  object-fit: cover;
+}
+
+.portrait {
+  flex: 0 0 auto;
+  width: 120px;
+  /* 2:1, like the source scene. Height is derived rather than declared so the
+     aspect ratio cannot drift from the asset. */
+  height: auto;
+  aspect-ratio: 2 / 1;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--gold-hairline);
+  object-fit: cover;
+}
+
+.line {
+  margin: 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-hint);
+  line-height: 1.45;
+  color: var(--text-warm);
+}
+
+/*
+ * The closing line: requirement 3's own sentence, and the only one on the page that
+ * asks something OF the querent. Italic and `--muted`, so it reads as an aside
+ * rather than as a second claim about them — the contrast IS the point, and giving
+ * it the same weight as the line above would make it a rule rather than a remark.
+ */
+.closing {
+  margin: 8px 0 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: var(--fs-hint);
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+/* --- the empty states (A9) ---------------------------------------------- */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.emptyLine {
+  margin: 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: var(--fs-hint);
+  color: var(--muted);
+}
+
+/*
+ * The one call to action on the page, and it is quiet on purpose: `/account` is not
+ * a funnel, and a filled gold button here would make "draw a card" the point of a
+ * page whose subject is who somebody already is.
+ */
+.cta {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 12px 18px;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--button-text);
+  text-decoration: none;
+  background: var(--gold-wash);
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-chip);
+}
+
+.cta:hover,
+.cta:focus-visible {
+  background: var(--gold-wash-strong);
+  border-color: var(--gold-border);
+  outline: none;
+}
+
+.disclaimer {
+  margin: 6px 0 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: var(--fs-hint);
+  color: var(--faint);
+  text-align: center;
+}

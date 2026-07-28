@@ -69,6 +69,24 @@ const COMPLETE_CALLS: Array<{
     marker: "repairing || !spec.stream ? 'deferred' : 'interactive'",
     why: 'a body translation is watched; the gist and the deferred repair pass are not',
   },
+  {
+    /*
+     * V8. A THREADED PARAMETER, like `lotus.generate.ts`, and for the same reason:
+     * two callers with genuinely different answers.
+     *
+     * `/account`'s FIRST visit is `interactive` -- the querent is looking at a
+     * heading with a placeholder under it and there is nothing true to show them
+     * instead, so shedding costs them the fallback rather than costing them nothing.
+     * The serve-stale branch passes `deferred`: a true paragraph is already on
+     * screen, and a shed refresh leaves it exactly as slightly-out-of-date as it
+     * already was. The facts editor's regeneration is interactive, because somebody
+     * just renamed themselves and the whole point is that the persona moves.
+     */
+    file: 'src/lib/persona/generate.ts',
+    expect: 'interactive',
+    marker: "callClass: CallClass = 'interactive'",
+    why: "the first /account visit has nothing to show instead; only the serve-stale branch passes deferred",
+  },
 ];
 
 /**

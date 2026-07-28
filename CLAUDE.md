@@ -64,6 +64,8 @@ npm run smoke -- --all   # EIGHTEEN readings: 2 locales x 3 readers x 3 services
 npm run smoke -- --all --locale en   # nine, one locale, for iterating
 npm run smoke -- --lotus # one real Lotus distillation, end to end. READ IT.
 npm run smoke -- --translate  # SIX real translations, both directions. READ THEM.
+npm run smoke -- --persona    # one real persona PER LOCALE, whole. READ IT.
+npm run smoke -- --persona --locale en   # one, for iterating
 npm run smoke -- --all --lotus   # the nine WITH a canned Lotus block, fixed hands
 npm run smoke -- --all --fixed   # the nine without one, same hands, for the diff
 ```
@@ -140,6 +142,18 @@ TRANSLATION_MODEL=          # V2. Defaults to LLM_MODEL, and WANTS the reading m
 LOTUS_STUB=                 # 1 => skip the model, write the template. NEVER in
                             # production: every user silently gets the fallback and
                             # nothing alerts on it.
+PERSONA_MODEL=              # V8. Defaults to LLM_MODEL, and WANTS the reading model:
+                            # a persona is prose about a person that V7 can make
+                            # public. Same argument as TRANSLATION_MODEL.
+PERSONA_STUB=               # 1 => skip the model, write the template. LOTUS_STUB's
+                            # exact rule and exact reason.
+PERSONA_MIN_AGE_SECONDS=3600 # The floor under regeneration, checked on the READ path
+                            # ONLY. `personas.input_hash` covers the last ten reading
+                            # ids so it moves after every draw; this bounds the model
+                            # calls. IT MUST NEVER GUARD A USER-CAUSED REGENERATION --
+                            # a facts edit and a cleared answer call generatePersona
+                            # DIRECTLY, because a throttle inside the generator is W3's
+                            # swallowed answer-edit bug. 3600 IS A GUESS.
 
 LOCALE_SWITCHER=1           # W6. Render the language toggle. V4 MOVED IT (v0.3.0 R1):
                             # the account menu, plus the /login footer. Not the reader
@@ -950,7 +964,8 @@ limiter and a global model-call ceiling (V9)**, **the correspondence engine (V1)
 the Shadow Arcana replacing the tally (V3)**, **the account shell — the circle, the bottom
 sheet, and the first sign-out control this app has ever had (V4)**, **the reader swipe deck
 (V5)**, **history — `/history`, `/history/[id]`, and `ReadingView` (V6)**, **sharing —
-`/s/<slug>`, its OG preview, and the share sheet (V7)**, plus the reader picker, service
+`/s/<slug>`, its OG preview, and the share sheet (V7)**, **`/account` — the deletion button, the
+editable facts, per-answer clearing, and the Inner Heavenly Lotus persona (V8)**, plus the reader picker, service
 picker, the draw (fan, pick, flip, reduced-motion grid), the card detail overlay, the
 streaming reading endpoint, the prompt layer, and the web app manifest.
 
@@ -1272,9 +1287,99 @@ the full argument. What changed and what did not:
 **Still open:** `share.viewed` has not been observed firing; two `authjs.*` cookies reach a
 third party on `/s/` and `/privacy` §4.4 names them; no resolve cache is shipped
 (`SHARE_RESOLVE_CACHE_MS` is `0`, and turning it on buys a window in which a revoked link
-still resolves — and now also one in which a re-pinned locale is stale); `'persona'` is a
-live union value resolving to null until V8. **Design C is the only way to delete the
-other-language notice** and has not been costed against the ceiling.
+still resolves — and now also one in which a re-pinned locale is stale); **`'persona'` is
+STILL a live union value resolving to null** — V8 shipped the persona and exports
+`readPersonaView` plus the presentational `PersonaBlock` for it, but `/s/<slug>` does not
+mount either yet. **Design C is the only way to delete the other-language notice** and has
+not been costed against the ceiling.
+
+**AND ONE GAP THAT ONLY EXISTS BECAUSE V8 AND DESIGN A LANDED TOGETHER: the pinned locale
+covers the READING arm only.** `share_links.locale` is written for every mint and
+`resolveShare` reads a translation for `entity = 'reading'`; the persona arm returns before
+that. `'persona'` is already in V2's translation registry with a `body` field, so the day
+`/s/<slug>` mounts `PersonaBlock` the pin is there, unused, and a shared persona will render
+in the language it was generated in rather than the one the sharer was reading. That is one
+`getTranslation` call and the same `renderedLocale` treatment — do it in the same change that
+mounts the block, not after somebody notices.
+
+## /account and the persona (V8)
+
+**The button `/privacy` §8 described for a whole release now exists**, and so do the four blocks
+requirements 1–4 asked for: the three editable facts, the card that keeps arriving, the reader
+whose path opened, and a generated four-sentence reading *of the person* in house voice. Plus
+per-answer clearing, which `/privacy` promises twice in both locales and nobody could perform.
+The three defects a green build did not notice, the two near-misses, the live deletion round trip
+and the measurements are in `docs/workstream-notes.md`.
+
+```
+src/lib/account/delete.ts      the deletion TRANSACTION (VD13). Handle first.
+src/lib/account/grace.ts       LEAF. ERASURE_GRACE_DAYS, re-exported by profile.ts.
+src/lib/persona/prompt.ts      server-only. PURE: contracts, hash, facets, checks, fallback.
+src/lib/persona/generate.ts    server-only. The model call, the write, readPersonaView.
+src/lib/persona/lines.ts       PURE, CLIENT-IMPORTABLE. ALL_TIME_GATE + the two templates.
+src/lib/db/queries/persona.ts  get/upsert. `updated_at` BY HAND.
+src/lib/db/queries/allTime.ts  topCard / topReader / readingCount / recentReadingIds.
+src/app/account/**             the page. Four server reads, one client fetch.
+src/app/api/account/route.ts   DELETE. Clears the session cookie by name.
+src/app/api/account/facts/     PATCH. upsertProfileFacts's FIRST caller.
+src/app/api/persona/route.ts   GET. BUFFERED, not streamed.
+src/components/{DeleteAccount,AccountFacts,AccountAnswers,PersonaBlock}.tsx
+```
+
+- **`redactForUser()` AND `revokeAllForUser()` RUN IN THE SAME TRANSACTION THAT SETS
+  `deleted_at`, IN THAT ORDER** (VD13, reconciliation §5.6). `moderation_flags.user_id` is
+  `on delete set null` and `share_links.user_id` cascades only at the HARD delete thirty days
+  later, so both rows outlive the soft delete — a self-harm disclosure and a public URL. Redaction
+  runs BEFORE the flag so a failure aborts the whole thing rather than marking an account deleted
+  with its text intact. **`clearFreeTextAnswers()` is deliberately NOT in there**: the asymmetry
+  with `moderation_flags` is the asymmetry in the foreign keys, and clearing it now would break the
+  thirty-day restore the confirmation copy promises.
+- **THE ROUTE CLEARS THE SESSION COOKIE ITSELF, BY NAME.** There is no server-side revocation on
+  the JWT path, so a session surviving the soft delete keeps returning the querent's data — and a
+  client-side `signOut()` that fails leaves exactly that. `SESSION_COOKIE_NAME`, never a literal:
+  Auth.js prefixes `__Secure-` on https, so a typed name clears the wrong cookie in production
+  only and looks correct locally.
+- **THE STALENESS THROTTLE IS ON THE READ PATH AND NEVER INSIDE `generatePersona`** (A13).
+  `input_hash` covers the last ten reading ids — which is what makes the persona MOVE as the
+  querent reads — so it changes after every draw. A throttle on the *reader* is a latency
+  decision; a throttle inside the *generator* is W3's swallowed answer-edit bug. **A facts edit
+  and a cleared answer both call `generatePersona` DIRECTLY.** A source-version mismatch is not
+  throttled at all.
+- **`personaInputHash` HAS NO LOCALE AND `personas.facts` IS LOCALE-FREE.** If either carried one,
+  tapping `EN` would regenerate the persona and replace the prose the querent just read — and V2's
+  translation, whose whole purpose is that switch, would never be used.
+- **THE PERSONA PROMPT NEVER RECEIVES A RAW ONBOARDING ANSWER** (A5). It gets the engine facts
+  (machine-built), the closed values (closed sets) and the Lotus summary (model output
+  `lotusSafetyCheck` already passed). D10's abstraction rule enforced by CONSTRUCTION rather than
+  by prompting, and `prompt.test.ts` asserts it with a canary. `<sosok>` is the sixth fence and is
+  defence in depth *because* of that — say so, or somebody reads the fence as evidence the block
+  carries raw text, or deletes it along with the rule that made it unnecessary.
+- **`/api/persona` BUFFERS AND MUST NOT STREAM** (reconciliation §5.8, amending roadmap §6). A
+  safety check that runs before the first byte means the body is buffered anyway; declaring it a
+  stream is a lie in the type and an invitation to delete the check.
+- **THE TWO TEMPLATED LINES ARE NOT GENERATED, AND THE REASON IS REGISTER** (A8).
+  `frequency_verdicts` is generated because it recurs on the picker daily; `/account` is visited
+  occasionally and its subject is IDENTITY, which should be stable. A line that rephrased itself
+  every visit would undercut the claim it is making.
+- **`lines.ts` IS THE ONE PERSONA MODULE WITHOUT `server-only`**, and `clientBoundary.test.ts`
+  fences `@/lib/persona/**` with exactly that exception plus an assertion that it carries no
+  contract prose. Same shape as the prompt layer's `sanitize` exception.
+- **NO NEW INDEX** (A12). `reading_cards_user_date_card_idx`'s leading column serves an unbounded
+  per-user aggregate, and the test proves it with `enable_seqscan = off` — because at forty rows
+  the planner seq-scans one page and is right to.
+- **A CARD NAME IS STRIPPED BEFORE THE NAME CHECKS.** The contract requires the life-path arcana's
+  English name, so a querent nicknamed `Star` or `Moon` would otherwise have every generation
+  rejected and see only the fallback, silently.
+- **`answerPresence` DECRYPTS NOTHING** and there is no reveal control on the page, so
+  `worst_thing`'s plaintext never leaves the server. The six are deletable and **not** editable
+  (L13); the three facts are the other way round.
+
+**Still open:** `GET /api/persona` 500s when the database is down rather than 204 — the same
+omission `/api/memory/{frequency,summary}` carry, and all three should be fixed together; V2's
+translator is not wired, so a foreign-locale persona is served as-written and labelled in chrome
+(`ReadingView`'s `{ kind: 'as-written' }` decision); V7 does not mount the persona on `/s/`;
+`PERSONA_MIN_AGE_SECONDS=3600` is a guess; `account.details_viewed` always reports
+`from: 'direct'`.
 
 ## Trust, safety and secrets (W7)
 
@@ -1333,8 +1438,7 @@ near-miss test written first.
 7. **The blocklist runs BOTH locales' patterns under both locales** (W7-D3 said otherwise).
    `locale` is the UI preference, not a declaration of what language the querent types.
 
-**Still open, and none of it is code W7 could write:** `/account` does not exist, so
-`/privacy` §8 describes a deletion the user cannot perform; clauses 10–12 need a lawyer; the
+**Still open, and none of it is code W7 could write:** clauses 10–12 need a lawyer; the
 Jakarta district needs confirming against PT Citra Suka Buana's deed (one string in
 `src/app/terms/operator.ts`); `findahelpline.com` and `112` are unverified and absent from
 `resources.ts`; Vercel's log retention is unverified.
@@ -1417,7 +1521,8 @@ src/lib/db/
                  NODE_ENV=production. Do not trim that comment.
   types.ts       Db / Tx / DbOrTx. Type-only, no runtime imports, so a query module cannot
                  acquire the singleton by accident.
-  schema.ts      the ten tables. ONE OWNER: W1.
+  schema.ts      the tables. ONE OWNER: W1. Ten at W1; v0.3.0 added `translations`
+                 (V2), `share_links` (V7) and `personas` (V8), so thirteen now.
   crypto.ts      AES-256-GCM field encryption, `v1.<iv>.<ct>.<tag>` base64url
   queries/       profile, onboarding, lotus, history, frequency, summary -- one file per
                  read concern; every function takes the handle first. `onboarding.ts` and
@@ -1456,14 +1561,13 @@ with W3, the memory features with W5, and the reading-history screen with V6. Th
 `/history`, not `/jejak`, which this paragraph promised for two releases: `Jejak` is the word on
 screen and the path stays English like every other one in the app.
 
-**`/account` IS ON THAT LIST AND SHOULD NOT BE — it is the one real gap W7 leaves.** W3's plan
-owns it and W3 did not build it, so there is no user-facing way to delete an account, while
-`/privacy` §8 describes that deletion in detail and reconciliation §7.8 promises it in thirty
-days. Everything underneath exists: `users.deleted_at`, the cascade, `upsertUserOnSignIn`'s lazy
-purge, W7's `redactForUser()`, and the daily sweep. What is missing is the button. **Whoever
-builds it must call `redactForUser()` in the same transaction that sets `deleted_at`**, not
-afterwards — `moderation_flags.user_id` is `on delete set null`, so the row outlives the account
-and a self-harm disclosure would otherwise sit there for up to thirty more days.
+**`/account` IS OFF THAT LIST: V8 BUILT IT, AND THE DELETION BUTTON `/privacy` §8 DESCRIBED FOR
+A WHOLE RELEASE EXISTS.** This paragraph used to open *"it is the one real gap W7 leaves"* and
+is kept, rewritten, because the rule it carried is still the load-bearing one: **`redactForUser()`
+runs in the SAME TRANSACTION that sets `deleted_at`**, never afterwards — `moderation_flags.user_id`
+is `on delete set null`, so the row outlives the account and a self-harm disclosure would otherwise
+sit there for up to thirty more days. `src/lib/account/delete.ts` is the caller and
+`delete.integration.test.ts` proves the boundary with a trigger. See `## /account and the persona (V8)`.
 
 ## Onboarding and the Lotus (W3)
 

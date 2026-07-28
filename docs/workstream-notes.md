@@ -10,7 +10,7 @@ carries the evidence behind those rules — read the relevant section before cha
 anything in the files it names, and add to it rather than to `CLAUDE.md` when you pay
 for a new trap.
 
-Order is chronological by workstream: W3, W4, W5, W6, W7, V2, V3, V5, V6, V7.
+Order is chronological by workstream: W3, W4, W5, W6, W7, V2, V3, V5, V6, V7, V8.
 
 ## Onboarding and the Lotus (W3)
 
@@ -1305,3 +1305,249 @@ which only ever appear in markup the renderer emitted.
   turning it on costs: a window in which a revoked link still resolves. Somebody should decide the
   acceptable window *before* the night it is needed.
 
+
+## `/account` and the Inner Heavenly Lotus persona (V8)
+
+The button `/privacy` §8 described for a whole release, and the four blocks
+requirements 1–4 asked for. Deletion first, because that is the order in which it
+actually gets built.
+
+### The three defects a green build and 1,579 green tests did not notice
+
+All three were found by loading the page. Recorded together because they are one
+lesson: `npm run build` type-checks a page and never renders it.
+
+- **`next/image` REFUSES A LOCAL `src` CARRYING A QUERY STRING** unless
+  `images.localPatterns` allows it, and `next.config.ts` configures no `images`
+  block at all. `cardThumb` appends `?v=<ART_VERSION>` — which is the whole cache
+  story for `/cards/*`, served `immutable` for a year on non-content-hashed
+  filenames — so an `<Image>` threw *Image with src
+  "/cards/thumb/08_strength.webp?v=3" is using a query string which is not
+  configured* at request time and took `/account` to a 500. The fix is a plain
+  `<img>`, which is `CardFace`'s own rule for a second reason: these are already
+  optimized WebP at exactly the two sizes we draw them at, so the optimizer has
+  nothing to improve and would add a serverless invocation per card.
+- **A DOUBLE FULL STOP, TWICE, IN TWO FILES.** `topCardLine` and
+  `fallbackPersona` both spliced a gloss after a colon and appended `.` — and
+  every gloss in `cards.json` and in `glosses.ts` is already a whole sentence.
+  `lines.ts` was caught by its own unit test; `fallbackPersona` was caught by
+  reading `/api/persona`'s output, because no test asserted the punctuation of a
+  string it only checked for safety. Both now use a `stop()` helper that checks
+  first, so a future gloss written *without* terminal punctuation still lands.
+- **`Tandamu scorpio, unsurnya water`.** The sign and element enums rendered
+  lower-case in reader-facing prose and read as two untranslated column values.
+  The *values* stay English in both locales — `## Localization` rule 1 — but a
+  proper noun in prose is capitalised in both languages, and lower case is
+  exactly what makes an enum look like an enum.
+
+### Two near-misses that would have cost a correct persona its body
+
+Both are in `personaSafetyCheck`, and both are the shape of check that fires on
+correct output.
+
+- **CARD NAMES ARE STRIPPED BEFORE THE NAME CHECKS.** The contract *requires* the
+  life-path arcana's English name, so a querent nicknamed `Star`, `Moon`, `Sun`,
+  `World` or `Fool` — or whose onboarding answer capitalised any of those — would
+  have had every generation rejected and would only ever have seen the fallback.
+  **Silently**, because `persona.generated.fallback` is a rate and one user is not
+  a trend. `withoutCardNames()` is applied to the nickname check and the
+  proper-name check and deliberately to nothing else: the banned, tic, Malay,
+  bracket, length and pronoun checks have no legitimate overlap with a card name,
+  and narrowing a check that does not need it is how a check stops binding.
+- **THE TIC CHECK IS CASE-SENSITIVE PER CHARACTER, NOT PER PHRASE.** A
+  whole-phrase rule gets `the Universe` wrong in *both* directions:
+  case-insensitive fires on "you live in the universe of small decisions", which
+  is ordinary English; fully case-sensitive misses "The Universe keeps handing you
+  this" at the start of a sentence, which is precisely the mystical usage. That
+  was the first draft and its own test caught it. `vocab.ts` writes the capital U
+  deliberately — the capitalisation *is* the distinction between the deity and the
+  noun — and `ticRegex` encodes that instead of approximating it. Every
+  all-lowercase entry is unaffected.
+
+### `enable_seqscan = off` is how you assert an index serves a predicate
+
+A12 claims `reading_cards_user_date_card_idx` — `(user_id, local_date, card_id)`
+— serves an unbounded per-user aggregate through its leading column, so no second
+`(user_id, card_id)` index is needed. The naive test asserts the `explain` plan
+names the index, and it **failed**: at forty rows the planner chooses
+`Seq Scan on reading_cards` and is *right* to, because the whole table is one page
+and no index beats reading one page.
+
+The claim is about the index's *usability*, not about the cost model at toy scale.
+`set local enable_seqscan = off` is exactly how you ask that question, and the
+measured plan is in `allTime.ts`'s header. An assertion that fails for a reason
+that is not a defect is an assertion people delete.
+
+### `ERASURE_GRACE_DAYS` moved, and the client fence is why
+
+The constant lived in `queries/profile.ts`, reachable by the sweep, the sign-in
+restore, `/privacy`'s facts table and `deleteAccount` — and by **none** of the
+places that show the number to a person, because `clientBoundary.test.ts` forbids
+a client component importing `@/lib/db/**` and the confirmation sheet says "for 30
+days you can still get it back".
+
+The alternatives were both worse: hardcode `30` in the copy path, which is the
+drift the constant was exported to prevent, or relax the client fence for one
+integer. So it became `@/lib/account/grace.ts`, a dependency-free leaf, with
+`queries/profile.ts` **re-exporting** it — the same treatment V2 gave
+`translate/keys.ts`. Do not "clean up" the re-export by repointing the server call
+sites: it is what makes this a move rather than a fork, and `profile.ts` is where
+somebody reasoning about the restore window will look.
+
+### The deletion round trip, verified live
+
+Driven in a real Chrome at a true 390px against the dev server, with a seeded
+`moderation_flags` row still holding text and two live `share_links` rows — one
+the querent's, one another user's:
+
+```
+tap "Yes, delete my account"
+  -> 200, Set-Cookie clearing the session by name
+  -> location.assign('/login?deleted=1'), goodbye line rendered
+  -> users.deleted_at            set
+     moderation_flags.question   NULL, redacted_at stamped
+     share_links (mine)          revoked_at set
+     share_links (another user)  UNTOUCHED
+  -> POST /api/auth/dev-session  { outcome: "restored" }, deleted_at NULL again
+```
+
+**The revoked link stays revoked after the restore, and that is correct.** The
+account comes back; the URL the querent deliberately killed does not. Re-sharing
+rotates the slug (V7's rule), so there is no path by which an old address starts
+working again — which is the safer direction and is worth knowing before somebody
+reads it as a restore bug.
+
+**The sheet, measured in the same run:** the dialog itself takes focus (not a
+button — Chrome puts `:focus-visible` on programmatic focus, so focusing a button
+would put a gold ring on one of two choices on a destructive sheet),
+`aria-modal="true"`, `document.body.style.overflow = 'hidden'`, and **both buttons
+exactly 44px** — `AccountMenu`'s `.close` measured 43.99 with the same padding and
+a 10px Cinzel line box, which `_accountshot.html` correctly flagged.
+
+### The 390px screenshot found a control that read as a heading
+
+The facts editor's `Change` button was borderless Cinzel micro-caps in `--muted` —
+**identical in treatment to the `FACTS` and `YOUR CARD` section labels directly
+above and below it** — so the only control in the block read as a heading for
+nothing. `AccountAnswers`' `.clear` had a border from the start and read correctly
+in the same shot, which is what made the comparison obvious. Neither a unit test
+nor a typecheck can see this; it took one look at the whole page.
+
+### `npm run smoke -- --all` is unaffected, and that was proved rather than assumed
+
+V8 edits `sanitize.ts` (a sixth delimiter) and `lotus.ts` (five `export`
+keywords), both of which sit on the reading path. The nine Indonesian readings
+came back with four FAILs — two word ceilings, one total, one card name — and
+"that is model variance" is a claim, not a check.
+
+**The check: hash all eighteen assembled prompts on both branches.** A throwaway
+`scripts/_dumpprompts.ts` walking 2 locales × 3 readers × 3 services through
+`buildPrompt` with a fixed hand, a fixed question and a fixed Lotus block:
+
+```
+clean question       main 5ffbd3d3… 103790 bytes   branch 5ffbd3d3… 103790 bytes
+question containing  main 2d43a1b6… 103916 bytes   branch d27557cc… 103754 bytes
+  "</sosok>"
+```
+
+Byte-identical for ordinary input; 162 bytes shorter when the question contains
+`</sosok>`, which is the new fence doing precisely its job. So the four FAILs are
+pre-existing, and the technique is worth reaching for again: **a prompt-layer edit
+can be proved inert by hashing the assembly, which costs no model calls.**
+
+### The persona, measured
+
+First two real runs, `glm-4.6`, 2026-07-28:
+
+```
+id   59 words / 4 sentences / 383 chars   accepted    3.1s TTFT
+en   90 words / 4 sentences / 514 chars   accepted   10.8s TTFT
+```
+
+Ceilings are 4 sentences and 95 words. Both named `The Chariot` exactly, neither
+greeted, neither offered help, neither carried a name, a date or a gendered
+pronoun. **Two calibration findings, recorded rather than acted on, because the
+rule for the reader paragraphs applies here too — do not tighten on one run:**
+
+1. **The Indonesian body spent two of its three sentences on `partner`** instead
+   of one per facet in order. The English body got the order right
+   (partner → growth → caution). If it recurs, the fix is the `BENTUK:` clause,
+   not the code.
+2. **The English body paraphrased the Lotus abstraction** — "the heavy memory of
+   early loss" — where the contract asks it to *sharpen* rather than retell. This
+   is not a D10 breach: the incident itself is nowhere near it, and the Lotus
+   summary is already the safe abstraction that `lotusSafetyCheck` passed. But it
+   is the boundary the contract names, and it is the sentence to watch on a page
+   V7 can make public.
+
+### Nine smaller things, each of which will otherwise be undone
+
+- **`personaInputHash` HAS NO LOCALE, DELIBERATELY.** If it did, tapping `EN`
+  would regenerate the persona and replace the prose the querent just read — and
+  V2's translation, whose entire purpose is that switch, would never be used.
+  `personas.facts` stores V1's locale-free `PersonNumbers` for the same reason.
+- **THE STALENESS THROTTLE IS ON THE READ PATH AND NEVER INSIDE THE GENERATOR**
+  (A13). `input_hash` covers the last ten reading ids, so it moves after every
+  draw; without a floor, opening `/account` after a reading always pays for a
+  model call. A throttle on the *reader* is a latency decision; a throttle inside
+  the *generator* is W3's swallowed answer-edit bug. A **source-version** mismatch
+  is not throttled at all — that is a deploy, happens once, and must reach
+  everybody.
+- **IDEMPOTENCE IS CHECKED ON THE HASH *AND* THE LOCALE.** Without the locale
+  clause a stored `id` body satisfies a request to write the `en` one, and the
+  wrong language stays stored forever.
+- **`personaMaterial` NARROWS `lotus_avatars.traits` AT READ TIME.** `schema.ts`
+  types `color` as `string | null` on purpose (it keeps W3's unions out of
+  itself), and jsonb is not validated by Postgres — so a value outside the closed
+  set would reach `COLOUR_LABEL[locale][colour]` and interpolate `undefined` into
+  a prompt. Tested with `chartreuse`.
+- **`generatePersona` HAS NO COOLDOWN AND NO IN-PROCESS CACHE, AND BOTH ABSENCES
+  ARE THE DECISION.** `lotus.generate.ts` has a cooldown because the *reading*
+  path fires a speculative repair; that path does not exist here. `getLotusBlock`
+  has a cache because a *reading* needs its block on the request path; nothing
+  here is.
+- **A CLEARED ANSWER REGENERATES THE PERSONA TOO**, ordered after the Lotus
+  because the persona reads the Lotus summary. `getLocale()` is resolved *before*
+  the `after()`: it reads the request's forwarded header, and an `after()`
+  callback runs once the response is on its way.
+- **`answerPresence` DECRYPTS NOTHING.** It reads `answer_text IS NOT NULL` — the
+  same predicate as the audit query in `schema.ts` — and there is no reveal
+  control anywhere on the page, so `worst_thing`'s plaintext never leaves the
+  server. V8's answer to reconciliation §7.3's "without showing their decrypted
+  text until asked" is that it is never asked.
+- **THE DELETION EVENT'S THREE FACTS ARE READ BEFORE THE TRANSACTION.** `readings`
+  and `personas` both cascade at the *hard* delete, so reading them afterwards
+  works today and silently starts reporting zeroes the day anybody makes it hard.
+- **A source-level test asserts the transaction's ORDER** — revoke → redact → set
+  the flag. The runtime test proves the rollback with a `pg_temp` trigger; the
+  source test is what stops somebody keeping it green by refactoring the redaction
+  out of the transaction. Its first draft **failed on `delete.ts`'s own doc
+  comment**, which explains at length why `clearFreeTextAnswers()` is absent —
+  parentheses and all. Comments are stripped first, the lesson
+  `queries/contract.test.ts` and `clientBoundary.test.ts` both already record.
+
+### Still open
+
+- **`GET /api/persona` returns 500 when the database is down, not 204.** The
+  client renders its retry affordance so the user-visible behaviour is correct and
+  nothing sensitive reaches the log, but it is the same omission
+  `/api/memory/frequency` and `/api/memory/summary` carry. Fix all three together.
+- **V2's translator is not wired to the persona.** A foreign-locale body is served
+  as written and labelled in chrome, with `lang` set to the body's own locale —
+  `ReadingView`'s `{ kind: 'as-written' }` decision, made for the same reason.
+  `translateOnDemand('persona', userId, 'body', …)` is the next step; the registry
+  entry and the sweep's fourth delete already cover `'persona'`.
+- **V7's persona share page is not built.** V8 exports `readPersonaView` and the
+  presentational `PersonaBlock` for it; `'persona'` is still a live union value in
+  `share/slug.ts` resolving to null.
+- **`PERSONA_MIN_AGE_SECONDS=3600` IS A GUESS AND NOT A MEASUREMENT.** It decides
+  how often a heavy user pays for a model call, and it cannot be calibrated before
+  there is a heavy user.
+- **`account.details_viewed` always reports `from: 'direct'`.** The prop's whole
+  point is telling a bookmark from the menu, and doing that needs a referrer check
+  in the browser that V8 did not write. One prop, one component.
+- **No `_accountshot.html` iframe harness.** Loop 5 covered every question V8 had
+  — a true 390px, real taps, a real session, the request bodies — so the harness
+  was not written. The one thing it would add is the patched-`fetch` check that
+  `DELETE /api/account` carries no nickname in its body; V8 verified that by
+  reading the route, which sends no body at all.

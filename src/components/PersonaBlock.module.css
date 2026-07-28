@@ -1,0 +1,57 @@
+/*
+ * The persona paragraph on `/account`, and on V7's public page.
+ *
+ * NO NEW HEX, NO NEW FONT SIZE, NO NEW CURVE. Every value below is a token.
+ */
+
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/*
+ * The reading's own prose treatment, because that is what this is: one paragraph
+ * of generated text meant to be read slowly. `ReadingPanel` uses the same three
+ * declarations, and a persona set in a different face would read as a caption.
+ */
+.body {
+  margin: 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-reading);
+  line-height: var(--lh-reading);
+  color: var(--text-warm);
+}
+
+/*
+ * "This part was written in another language."
+ *
+ * ABOVE the prose rather than below it, so a viewer reads the caveat before the
+ * sentence it applies to -- the same ordering V7 chose for
+ * `share.public.otherLanguage`, and for the same reason: a note underneath is a
+ * note after the confusion.
+ */
+.foreign {
+  margin: 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: var(--fs-hint);
+  color: var(--muted);
+}
+
+/*
+ * The loading and the retry state share one class, because they are the same
+ * shape: one italic line in the reading screen's `Membaca…` treatment, holding the
+ * space under a heading the querent came to read.
+ *
+ * NO `min-height` RESERVE. The block is one paragraph of variable length, so any
+ * number chosen here is wrong for most personas -- and reserving three lines that
+ * resolve to two leaves a permanent gap above the disclaimer.
+ */
+.placeholder {
+  margin: 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: var(--fs-hint);
+  color: var(--muted);
+}

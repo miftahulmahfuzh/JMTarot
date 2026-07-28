@@ -21,15 +21,19 @@
  * set changed, and `generateLotus` rewrites the block without that material. A
  * delete button whose effect stops at this table is worse than no delete button.
  *
- * THE SCREEN THAT HOSTS THIS IS NOT W3's TO SHIP HERE. Reconciliation R14 puts
- * the controls at `/account`, which W3 owns and which is not in this task. W3
- * ships the endpoint; `/account` wires the button.
+ * THE SCREEN THAT HOSTS THIS IS `/account`, AND IT EXISTS NOW. W3 shipped this
+ * endpoint and left the button to whoever built that page; v0.3.0's
+ * reconciliation §7.3 assigned it to V8 on the evidence that `/privacy` promises
+ * per-answer clearing TWICE, in both locales -- clause 3 and clause 7 -- which made
+ * it a published promise of a control nobody could perform, the exact mistake
+ * `/account` itself made for a release. `AccountAnswers` is the caller.
  */
 import { NextResponse, after } from 'next/server';
 import { isOnboardingQuestionKey } from '@/data/onboarding';
 import { db } from '@/lib/db/client';
 import { deleteAnswer } from '@/lib/db/queries/onboarding';
-import { getT } from '@/lib/i18n/t';
+import { getLocale, getT } from '@/lib/i18n/t';
+import { generatePersona } from '@/lib/persona/generate';
 import { generateLotus } from '@/lib/prompt/lotus.generate';
 import { badRequest, onboardingGate, serverError } from '../../shared';
 
@@ -72,8 +76,31 @@ export async function DELETE(_request: Request, ctx: { params: Promise<{ key: st
    * answer route gives. The scheduler's cooldown exists to bound the speculative
    * repair the reading path fires; used here it would swallow the erasure the
    * user just asked for, and that is exactly how the delete button becomes a lie.
+   *
+   * **V8 ADDS THE PERSONA, AND IT IS THE SAME ARGUMENT ONE ARTIFACT FURTHER OUT.**
+   * `personas.input_hash` covers the sanitized answer set, so a cleared answer
+   * changes it -- and the persona is generated FROM the Lotus block, so the deleted
+   * material is paraphrased twice over. Erasing it from `onboarding_answers` and
+   * from `lotus_avatars` while leaving it inside a current-looking persona would be
+   * the delete button being two thirds of a lie, on the one artifact V7 can make
+   * public.
+   *
+   * **`generatePersona` DIRECTLY TOO, AND `PERSONA_MIN_AGE_SECONDS` MUST NOT GUARD
+   * IT** (reconciliation §7.3, V8's A13). That floor is a READ-path latency
+   * decision; applied to a user-caused regeneration it is W3's swallowed edit
+   * again, with the same signature -- `input_hash` moved and `updated_at` frozen.
+   *
+   * ORDERED, NOT PARALLEL: the persona reads the Lotus summary, so a concurrent
+   * pair would race and could build the new persona from the old block.
    */
-  after(() => generateLotus(gate.user.id));
+  /* RESOLVED BEFORE THE `after()`, not inside it: `getLocale()` reads the request's
+     forwarded header, and an `after()` callback runs once the response is on its
+     way. */
+  const locale = await getLocale();
+  after(async () => {
+    await generateLotus(gate.user.id).catch(() => {});
+    await generatePersona(gate.user.id, locale).catch(() => {});
+  });
 
   return NextResponse.json({ ok: true, key });
 }
