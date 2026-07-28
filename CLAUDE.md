@@ -986,7 +986,8 @@ fleet-wide rate limiter and a global model-call ceiling (V9)**, **the
 correspondence engine (V1)**, **on-demand translation and locale-tagged
 generation (V2)**, **mystical memory verdicts — the Shadow Arcana replacing the
 tally (V3)**, **the account shell — the circle, the bottom sheet, and the first
-sign-out control this app has ever had (V4)**, reader
+sign-out control this app has ever had (V4)**, **the reader swipe deck — the bio
+and today's summary as two panels of one scroll-snap track (V5)**, reader
 picker, service picker, the draw (fan, pick, flip, reduced-motion grid), the card
 detail overlay, the streaming reading endpoint, the prompt layer, and the web app
 manifest.
@@ -1322,12 +1323,128 @@ generations, and a blind read identifying 6 of 6 readers.
   never wrapped `firstPassingWindow`/`getVerdict` in a try/catch. **Pre-existing
   W5 behaviour, verified against a live dev server.** A 204 would be the honest
   status and would stop Next logging the failing query.
+
+  **`GET /api/memory/summary` HAS THE SAME SHAPE, measured by V5 on 2026-07-28**
+  — `readingsOnDay` throws straight out of the route and Next logs the query.
+  Same verdict: user-visible behaviour correct (`useDaySummary` discards
+  anything that is not a 200, so the deck stays at one panel, which is the M14
+  empty state), and nothing sensitive in the log, because the bound parameters
+  are a `user_id` and a `local_date` rather than the querent's text. Fix them
+  together; they are one omission in two files.
 - **Whether the mysticism LANDS is not something V3 can verify.** Roadmap §9's
   first risk is that this reads as generated filler. The Shadow Arcana being a
   specific card the querent recognises is the mitigation and the smoke run is the
   check, but the real check is Miftah reading twelve lines. **That should happen
   before V6 and V7 build on top of it**, because the day summary is what V5's
   swipe deck slides in.
+
+## The reader swipe deck (V5)
+
+V5 of v0.3.0 is done. On `/[reader]` the bio and today's summary stopped being
+two stacked paragraphs and became two panels of one horizontal scroll-snap
+track. The summary **slides itself in once**, on the first byte, and the querent
+can swipe back.
+
+```
+src/lib/swipeDeck.ts          PURE. panelIndexAt + shouldAutoSlide. The whole
+                              auto-slide policy, and the only part `npm test`
+                              can reach.
+src/components/SwipeDeck.tsx  'use client'. GENERIC -- N panels, the dots, the
+                              aria, the once-only scroll. Knows nothing about
+                              readers, summaries, fetching or analytics, so V6
+                              and V7 can mount it.
+src/components/ReaderDeck.tsx 'use client'. THE POLICY MOUNT. Owns the fetch,
+                              decides there are 1 or 2 panels, fires the event.
+src/components/DaySummary.tsx SPLIT into `useDaySummary()` and `DaySummary`.
+```
+
+**THE CALLER'S ARRAY LENGTH IS THE M14 CONTRACT.** One panel until the first
+byte, so a querent who has not read today gets no dots, no affordance and a deck
+exactly as tall as the bio — verified to the pixel at all 24 width × locale ×
+reader cells. A deck rendering two panels with the second one blank **is** the
+empty state roadmap §5 forbids, wearing a dot.
+
+### The three things V5 measured that the plan had wrong
+
+Each was invisible to the unit tests and to a screenshot, and each was found by
+a harness under `public/cards/`.
+
+- **`html[data-still] .scroller` COULD NOT WORK, and the same trap will catch
+  the next component that auto-scrolls.** A JS `scrollTo({ behavior })`
+  **overrides** CSS `scroll-behavior` rather than defaulting from it, and `goTo`
+  always passes one — so the screenshot hook had no say over the auto-slide at
+  all. `goTo` reads `data-still` itself now; the CSS rule stays because it does
+  govern the scrolls the component does not make. Surfaced as `case=auto`
+  settling at scrollLeft **2** of 358, because under Chrome's
+  `--virtual-time-budget` a smooth-scroll animation advances one frame and
+  stalls — it runs on the compositor clock, not the task queue.
+
+- **THE DEPENDENCY LIST IS WHAT MAKES THE DECK SLIDE ONCE, not `slidTo`.** The
+  plan's premise — "the summary streams, so the effect runs again on every
+  chunk" — is false: `panels` is a fresh array per chunk but is not a dependency,
+  and `arrivedPanel` is the constant `'summary'` from the first byte on. Five
+  negative controls, and the table is in `SwipeDeck.tsx`:
+
+  ```
+  deps                    slidTo    cleanup   slides
+  [arrivedPanel, goTo]    absent    absent      1     <- plan expected 3
+  + panels                absent    absent      3
+  + panels                present   absent      1
+  + panels                present   present     0
+  ```
+
+  `slidTo` and the absent `cancelAnimationFrame` are unobservable today and are
+  the only thing standing between the querent and three slides, or none, the
+  moment somebody adds `panels` to that list — which `react-hooks/exhaustive-deps`
+  will never argue about either way, because the body reads `panelsRef.current`.
+
+- **`@container (max-width: 339px)` WAS A VIEWPORT NUMBER IN A CONTAINER
+  QUERY.** The deck is `.shell`'s content box — `viewport - 32px` — so a 360px
+  phone has a **328px** deck and the 339 breakpoint caught it, handing the most
+  common Android width a reserve meant for 320. It is 300.
+
+### The height reserve, and the reason it is 6 and not 8
+
+`--summary-lines: 6`, stepping to 7 below 300px of deck. The six real summaries
+from `npm run smoke -- --summary` spread **191–372 chars**, which is four to
+eight rendered lines — and no single reserve both covers the long ones and
+avoids a hole under the short ones.
+
+**An 8-line reserve was tried, measured as better, and reverted after looking at
+it.** Sizing to the longest of the six makes the deck perfectly stable and puts
+four blank lines between a short summary and the dots — **on the panel the
+querent lands on**, since the deck auto-slides to the summary. The measurement
+could not catch that: `_swipefit.html` reports dead space against the **bio**,
+where five lines looked survivable because a querent only meets it by swiping
+back. Growth during a stream is two or three reflows over a second; a hole is
+permanent. **`min-height` and not `height`** is what lets a long summary cross
+it and grow the deck one extra time, which is the accepted trade.
+
+### Verifying it
+
+```sh
+BUDGET=250000 tools/dump.sh '/cards/_swipeshot.html?case=all'
+for s in empty short typical worst; do for w in 320 360 375 390; do
+  BUDGET=400000 tools/dump.sh "/cards/_swipefit.html?state=$s&w=$w"; done; done
+PORT=3001 BUDGET=6000 tools/shot.sh '/cards/_sumshot.html?reader=thessaly&state=present' 500 760 /tmp/x.png
+```
+
+**`tools/dump.sh` is `shot.sh`'s sibling for harnesses that report in text**
+rather than in pixels. A screenshot of forty PASS/FAIL lines cannot be grepped
+or diffed, and a line that scrolls off is silently lost. Set `BUDGET`
+generously: the dump happens when the virtual-time budget is exhausted, so a
+short one truncates the report at whatever line it reached, **which looks
+exactly like a hang.** Both harnesses take a filter (`?case=`, `?state=&w=`)
+for the same reason — against a dev server the real compile waits eat the
+budget non-deterministically.
+
+**`_swipefit.html`'s `short` body is the only case that can see the reserve at
+all.** Against a 372-char summary a 6-line reserve and an 8-line reserve measure
+identically, because the panel is sized by its own content either way. That is
+how a wrong value survives review.
+
+**`npm run smoke` is unaffected and was not re-run for the readings**: V5 touches
+no file under `src/lib/prompt/**`. `--summary` was run, for the real body lengths.
 
 ## Trust, safety and secrets (W7)
 
