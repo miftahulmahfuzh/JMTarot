@@ -42,7 +42,10 @@ describe('catalogs', () => {
      *   - the brand and the eyebrow are not translated at all (§7.13)
      *   - language names are written in their own language in both catalogs,
      *     which is the only convention that works for a user who cannot read
-     *     the locale they are currently in
+     *     the locale they are currently in. V4's SHORT TAGS (`locale.code.*`,
+     *     the `ID · EN` toggle inside the account menu) are the same rule at a
+     *     different length: a language's own two-letter tag is written the same
+     *     way whoever is reading it, and `ID`/`EN` are ISO codes besides.
      *   - the four placeholder-only values have no prose to differ in. They are
      *     keyed anyway so a locale can add words around them ("{name}, the
      *     card") without a code change.
@@ -52,6 +55,8 @@ describe('catalogs', () => {
       'common.majorArcana',
       'locale.name.id',
       'locale.name.en',
+      'locale.code.id',
+      'locale.code.en',
       'card.alt.upright',
       'picker.reader.portraitAlt',
       'nav.back.reader',

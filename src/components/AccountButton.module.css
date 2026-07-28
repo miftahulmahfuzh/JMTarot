@@ -1,0 +1,57 @@
+/*
+ * The account circle. 44x44 -- the tap-target floor exactly, because it sits in
+ * the corner and must not eat more of the screen than it needs to.
+ *
+ * NO NEW HEX, NO NEW FONT SIZE, NO NEW CURVE. `--gold-wash` / `--gold-hairline`
+ * at rest and `--gold-wash-strong` / `--gold-border` lifted, which is the same
+ * pair CardDetail's `.close` uses.
+ */
+.button {
+  position: fixed;
+  /*
+   * AGAINST THE VIEWPORT, NOT THE PADDED BODY. globals.css pads <body> with
+   * env(safe-area-inset-top) -- and that padding does nothing for a fixed
+   * element, which is positioned against the viewport. Without adding the inset
+   * back here the circle sits under the clock and the notch in standalone mode,
+   * which is the one place it cannot be checked from WSL.
+   *
+   * The right inset is for landscape on a notched device, where
+   * safe-area-inset-right is nonzero and 0 in every orientation we design for.
+   */
+  top: calc(10px + env(safe-area-inset-top));
+  right: calc(10px + env(safe-area-inset-right));
+  /* See the ladder in AccountMenu.module.css. Chrome, under any content overlay. */
+  z-index: 800;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  color: var(--gold-pale);
+  background: var(--gold-wash);
+  border: 1px solid var(--gold-hairline);
+  /* It floats over a scrolling page, including reader portraits. Without the
+     blur the mark competes with whatever art happens to be under it. */
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+}
+
+.button:hover,
+.button:focus-visible {
+  color: var(--gold-text);
+  background: var(--gold-wash-strong);
+  border-color: var(--gold-border);
+  outline: none;
+}
+
+.button[aria-expanded='true'] {
+  color: var(--gold-text);
+  border-color: var(--gold-border);
+}
+
+.mark {
+  width: 22px;
+  height: 22px;
+}

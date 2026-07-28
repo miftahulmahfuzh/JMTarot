@@ -451,6 +451,34 @@ const id = {
   'memory.frequency.windows.quarter': 'Kuartal ini',
   'memory.frequency.windows.year': 'Tahun ini',
   'memory.frequency.windows.birthday': 'Sejak ulang tahunmu yang terakhir',
+
+  // ==========================================================================
+  // V4 — the account shell.
+  //
+  // "Tentang kamu" AND NOT "Detail Pengguna". VD12 fixes what the item IS
+  // (`/account`, V8); the wording is this file's job, and V8's page is the
+  // querent's persona, their facts and the deletion button -- not a settings
+  // form. "Detail Pengguna" is the register of a bank app and this is the
+  // screen that tells someone which card the universe keeps handing them.
+  //
+  // "Keluar" AND NOT "Keluar akun" or "Logout". The menu row above it already
+  // says the sheet is about the account, and `Logout` is the one English word
+  // an Indonesian interface reaches for out of habit rather than need.
+  // ==========================================================================
+  'account.button.aria': 'Buka menu akun',
+  'account.menu.title': 'Akun',
+  'account.menu.details': 'Tentang kamu',
+  'account.menu.language': 'Bahasa',
+  'account.menu.history': 'Riwayat bacaan',
+  'account.menu.signOut': 'Keluar',
+
+  // The SHORT tags, for the two-item toggle inside the menu (R1/VD12). The long
+  // names in `locale.name.*` stay exactly as they are and stay on /login -- see
+  // LocaleSwitch's header for why both are correct in the place each applies.
+  // Identical across catalogs for the same reason `locale.name.*` is: a
+  // language's own tag is written the same way whoever is reading it.
+  'locale.code.id': 'ID',
+  'locale.code.en': 'EN',
 } as const satisfies Record<string, string>;
 
 export default id;

@@ -1,0 +1,236 @@
+/*
+ * The account sheet. STRUCTURALLY CardDetail.module.css with the sheet pinned to
+ * the bottom edge instead of centred -- same scrim colour, same blur, same
+ * animation, same tokens. One modal idiom in this app.
+ *
+ * NO NEW HEX, NO NEW FONT SIZE, NO NEW CURVE. Every value below appears in
+ * src/theme/tokens.css or in CardDetail.module.css already.
+ */
+
+/*
+ * THE Z-INDEX LADDER, written down once because it is now three deep:
+ *   Backdrop           -1     (root layout, behind everything)
+ *   AccountButton      800    (chrome, under any overlay)
+ *   CardDetail         900    (content overlay)
+ *   AccountMenu       1000    (chrome overlay, above both)
+ * V6's ReadingView overlay, if it has one, belongs at 900 with CardDetail.
+ */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  /* --canvas at 94%, the same treatment CardDetail and the sticky footer use. */
+  background: rgba(10, 8, 18, 0.94);
+  backdrop-filter: blur(6px);
+  animation: fade 200ms ease-out;
+}
+
+.sheet {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  /* The app's shell width. The sheet is never wider than the page it belongs to. */
+  max-width: 520px;
+  /*
+   * THE BOTTOM INSET IS NOT OPTIONAL AND body's PADDING DOES NOT HELP.
+   * globals.css pads <body> with env(safe-area-inset-bottom), but this is
+   * `position: fixed` -- positioned against the VIEWPORT, not the padded body --
+   * and it is portalled, so it is not inside that padding box either. Without
+   * this line the Close button sits under the home indicator in standalone mode.
+   */
+  padding: 10px 16px calc(16px + env(safe-area-inset-bottom));
+  background: var(--canvas);
+  border-top: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+  animation: rise 260ms var(--ease-card);
+}
+
+/* The sheet takes focus on open (see the component) and is a container rather
+   than a control, so a ring around the whole thing would say nothing. The rows
+   inside keep theirs. */
+.sheet:focus,
+.sheet:focus-visible {
+  outline: none;
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scrim,
+  .sheet {
+    animation: none;
+  }
+}
+
+/* The drag affordance. Purely a signifier -- there is no drag handler and there
+   must not be (VD17's reasoning applies: no pointer geometry we do not need). */
+.grip {
+  width: 36px;
+  height: 3px;
+  margin: 0 auto 12px;
+  border-radius: var(--radius-chip);
+  background: var(--gold-hairline);
+}
+
+.title {
+  margin: 0 0 6px;
+  font-family: var(--font-display), serif;
+  font-weight: 400;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-section-label);
+  text-transform: uppercase;
+  color: var(--gold);
+  text-align: center;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  /*
+   * 56px, not 44px. 44 is the floor for a tap target; these are stacked
+   * full-width rows a thumb hits without looking, and the extra 12px is what
+   * stops History being tapped when Language was meant. The Language row's own
+   * buttons carry their 44px from LocaleSwitch.module.css.
+   */
+  min-height: 56px;
+  padding: 0 6px;
+  border-bottom: 1px solid var(--gold-hairline);
+}
+
+/*
+ * The last NAVIGATION row loses its rule, because `.divider` below is the line
+ * that separates the group from Sign out. `:last-of-type` resolves per element
+ * type: the last <a> is History, and the Language row is a <div> whose type's
+ * last sibling is `.divider`, which carries no `.item`. So exactly one row is
+ * cleared and it is the right one.
+ */
+a.item:last-of-type {
+  border-bottom: none;
+}
+
+a.item:hover,
+a.item:focus-visible {
+  outline: none;
+}
+
+a.item:hover .label,
+a.item:focus-visible .label {
+  color: var(--gold-lift);
+}
+
+a.item:focus-visible {
+  /* Keyboard users get a visible ring; the hairline alone is not enough on a row
+     whose only other state change is a text colour. */
+  border-radius: var(--radius-chip);
+  box-shadow: 0 0 0 1px var(--gold-border);
+}
+
+.label {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-card-title);
+  letter-spacing: var(--ls-card-title);
+  color: var(--gold-text);
+}
+
+.chevron {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-card-title);
+  color: var(--faint);
+}
+
+/*
+ * SIGN OUT IS SEPARATED AND IS NOT DESTRUCTIVE.
+ *
+ * The gap plus one hairline says "different group"; nothing here says "danger".
+ * Deleting the account IS destructive and V8 puts it behind the row above --
+ * two controls on one sheet that look alike is how the wrong one gets tapped.
+ * `--danger` is V8's token and is deliberately not borrowed. The separation
+ * here is: 12px of air, a rule, and a QUIETER colour than the three links
+ * above, because leaving is not the thing this sheet is for.
+ */
+.divider {
+  height: 1px;
+  margin: 12px 0 0;
+  background: var(--gold-hairline);
+}
+
+.signOut {
+  /* Left-aligned like the rows above it, so it reads as part of the same list
+     rather than as a second Close. Same 56px, same padding, no chevron -- it
+     does not navigate anywhere the user can come back from with a back gesture. */
+  display: flex;
+  align-items: center;
+  min-height: 56px;
+  padding: 0 6px;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-card-title);
+  letter-spacing: var(--ls-card-title);
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.signOut:hover:not(:disabled),
+.signOut:focus-visible:not(:disabled) {
+  color: var(--text-warm);
+  outline: none;
+}
+
+.signOut:focus-visible {
+  border-radius: var(--radius-chip);
+  box-shadow: 0 0 0 1px var(--gold-border);
+}
+
+.signOut:disabled {
+  /* In flight, and about to navigate. Not `opacity` -- the label is already the
+     quietest thing on the sheet and dimming it further reads as broken. */
+  cursor: default;
+}
+
+/*
+ * CardDetail's `.return`: the quiet dismiss, not a call to action. One value
+ * differs and it is the `min-height` -- that padding plus a 10px Cinzel line box
+ * measures 43.99, which `_accountshot.html` correctly flagged as under the 44px
+ * floor. Same fix and same reason as `LocaleSwitch.module.css`'s `.option`.
+ */
+.close {
+  align-self: center;
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-chip);
+  padding: 14px 20px;
+  cursor: pointer;
+}
+
+.close:hover {
+  color: var(--button-text);
+  border-color: var(--gold-border);
+}

@@ -299,6 +299,20 @@ const en: Catalog = {
   'memory.frequency.windows.quarter': 'This quarter',
   'memory.frequency.windows.year': 'This year',
   'memory.frequency.windows.birthday': 'Since your last birthday',
+
+  // ==========================================================================
+  // V4 — the account shell. See id.ts for why "About you" and not "User
+  // details", and why the sign-out row is one word.
+  // ==========================================================================
+  'account.button.aria': 'Open account menu',
+  'account.menu.title': 'Account',
+  'account.menu.details': 'About you',
+  'account.menu.language': 'Language',
+  'account.menu.history': 'Reading history',
+  'account.menu.signOut': 'Sign out',
+
+  'locale.code.id': 'ID',
+  'locale.code.en': 'EN',
 };
 
 export default en;

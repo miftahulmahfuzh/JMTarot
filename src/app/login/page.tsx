@@ -115,8 +115,15 @@ export default async function Login({
 
         {/* Before there is a session, so /api/locale writes only the cookie. A
             querent whose browser says en-GB should not have to sign in through
-            an Indonesian form to find this. */}
-        {localeSwitcherEnabled() ? <LocaleSwitch /> : null}
+            an Indonesian form to find this.
+
+            THE ONE FOOTER SWITCHER LEFT (v0.3.0 R1). Everywhere else it moved
+            into the account menu; here there is no session and therefore no
+            account button, so the footer is the only place it can be -- and
+            `variant="names"` because a stranger meeting an unlabelled control
+            needs the target language's own name for itself. See the component's
+            header. */}
+        {localeSwitcherEnabled() ? <LocaleSwitch variant="names" /> : null}
       </div>
     </main>
   );

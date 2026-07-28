@@ -1,12 +1,14 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { AccountButton } from '@/components/AccountButton';
 import { DaySummary } from '@/components/DaySummary';
 import { Eyebrow } from '@/components/Eyebrow';
 import { ReaderViewed } from '@/components/ReaderViewed';
 import { TrackLink } from '@/components/TrackLink';
 import { READERS, readerById, readerPortrait } from '@/data/readers';
 import { SERVICES } from '@/data/services';
+import { localeSwitcherEnabled } from '@/lib/i18n/resolve';
 import { getT } from '@/lib/i18n/t';
 import styles from './page.module.css';
 
@@ -28,6 +30,17 @@ export default async function ServicePicker({
 
   return (
     <main className={styles.shell}>
+      {/* V4. Fixed to the viewport's top-right corner, so it takes no space here
+          and needs no CSS from this file -- the first row is the left-aligned
+          back link, about 110px wide at 390px, and the circle is at the right
+          edge. `showLanguage` is resolved in this SERVER component because
+          LOCALE_SWITCHER has no NEXT_PUBLIC_ prefix and would inline as
+          `undefined` inside a client one.
+
+          THIS FILE IS V5's under roadmap §8. The line is additive and trivially
+          mergeable; if V5's swipe deck lands on top of it, keep both. */}
+      <AccountButton surface="service_picker" showLanguage={localeSwitcherEnabled()} />
+
       {/* Renders nothing. Kept out of the server component so this page stays
           static; `from` is derived in the browser because the server cannot
           see a client-side navigation. */}
