@@ -1,21 +1,90 @@
+import type { Metadata } from 'next';
 import Image from 'next/image';
 import { AccountButton } from '@/components/AccountButton';
 import { Eyebrow } from '@/components/Eyebrow';
 import { FrequencyLine } from '@/components/FrequencyLine';
 import { TrackLink } from '@/components/TrackLink';
 import { READERS, readerPortrait } from '@/data/readers';
+import { currentUser } from '@/lib/auth/server';
 import { localeSwitcherEnabled } from '@/lib/i18n/resolve';
 import { getT } from '@/lib/i18n/t';
+import { Landing } from './Landing';
 import styles from './page.module.css';
 
 /**
- * Reader picker -- the root screen.
+ * `/` -- the one route in this app that renders two different pages (S-D5).
+ *
+ * Signed out: a static, crawlable landing page. Signed in: the reader picker,
+ * exactly as before.
+ *
+ * ── WHY THE BRANCH IS HERE AND NOT IN THE GATE ──────────────────────────────
+ *
+ * `gate.ts`'s `decide()` gained one clause -- no session and `pathname === '/'` is
+ * `next` -- and `'/'` is deliberately NOT in `isPublic()`, because that function
+ * short-circuits above the onboarding check and a half-onboarded querent would land
+ * on this picker, which assumes a completed `profiles` row. So the gate lets the
+ * request through and this component decides what it means. `gate.test.ts` has the
+ * assertion named for that case.
+ *
+ * `currentUser()` and not `auth()`: `src/lib/auth/server.ts` says everything needing
+ * "who is this, on the server" goes through it, and `/login`'s header records what
+ * happens when two surfaces use two predicates. **It is DATABASE-FREE**, which is
+ * what makes this branch legal on a public route -- roadmap §10 forbids a database
+ * read on a public page's render path, and this reads a decoded JWT.
+ *
+ * ── THIS ROUTE IS DELIBERATELY UNCACHEABLE, AND THAT IS S-D5's PRICE ────────
+ *
+ * `next.config.ts` gives `/gallery`, `/arcana/*` and `/blog*` an `s-maxage`; it
+ * gives `/` nothing. Three independent reasons, and all three would have to be
+ * solved together: the output varies by session; middleware writes `jmt_locale`
+ * here, and a `Set-Cookie` makes a response uncacheable at the edge whatever
+ * `Cache-Control` says; and its LANGUAGE follows D6's chain rather than the URL,
+ * because the signed-in arm is an app route where D6 survives (S-D1) -- which is
+ * also why `contentRewrite('/', true)` is `passthrough`, and `/` is the only path
+ * for which that function reads the session at all.
+ *
+ * The crawler pays a warm `sin1` lambda, which is what `/login` has always cost.
+ * The one design that would fix all three is a middleware rewrite of signed-out `/`
+ * to an internal, session-invariant, prefix-pinned path -- the shape S2 is already
+ * building for `/en/*` -- and it belongs to S2's file, not this one.
+ */
+
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT();
+  return {
+    /*
+     * SESSION-INVARIANT ON PURPOSE. The title, the description and the canonical
+     * are the same for both arms -- a session read here would be a second decode
+     * that can disagree with the page's, and it would make the one part of this
+     * route a crawler caches vary by cookie. There is a test.
+     *
+     * `title` is absent: the root layout already sets `t('app.title')` and a
+     * duplicate here would be the same string twice in a diff.
+     *
+     * RELATIVE, resolved by `metadataBase`. **S2 REPLACES THIS WITH S-D15's
+     * `contentAlternates('/')`**, which adds the reciprocal `id`/`en`/`x-default`
+     * set. One line, in this file, and it is the only line S2 owns here.
+     */
+    alternates: { canonical: '/' },
+    description: t('meta.description'),
+  };
+}
+
+export default async function Home() {
+  const user = await currentUser();
+  if (!user) return <Landing />;
+  return <ReaderPicker />;
+}
+
+/**
+ * Reader picker -- the root screen for a signed-in querent. **UNCHANGED by S1**
+ * apart from being given a name.
  *
  * Plain interpolated hrefs. The expo-router trap recorded in CLAUDE.md, where
  * `/${reader.id}` failed typed-route validation and the object form was
  * required, was specific to expo-router's typedRoutes and does not apply here.
  */
-export default async function Home() {
+async function ReaderPicker() {
   const t = await getT();
 
   return (
