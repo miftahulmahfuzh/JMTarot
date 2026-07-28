@@ -54,6 +54,14 @@
  * animations -- it does NOT kill `scroll-behavior: smooth`, which is neither.
  * A headless capture would otherwise photograph the deck mid-glide. The rule
  * below is the missing half of that hook.
+ *
+ * BUT IT IS ONLY HALF OF THE MISSING HALF, AND THE OTHER HALF IS IN THE TSX.
+ * This rule cannot reach the auto-slide: `goTo` calls
+ * `scrollTo({ behavior })`, and that option OVERRIDES CSS `scroll-behavior`
+ * rather than defaulting from it. What this rule does govern is every scroll
+ * this component does not make -- keyboard, scrollbar drag, `scrollIntoView`
+ * from anywhere else -- which is worth having and is why it stays. The
+ * auto-slide reads `data-still` itself; see the comment in `goTo`.
  */
 
 .deck {

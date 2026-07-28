@@ -89,10 +89,25 @@ export function SwipeDeck({ panels, arrivedPanel = null, onPanelChange }: SwipeD
        * stays correct if a future deck ever gains a gap, and the failure mode of
        * the other one is silent.
        *
-       * An explicit `behavior` because a JS value overrides the stylesheet's,
-       * and this component must not depend on which of the two wins.
+       * AN EXPLICIT `behavior`, AND THAT IS WHY `data-still` HAS TO BE READ
+       * HERE RATHER THAN LEFT TO THE STYLESHEET. A JS `scrollTo({behavior})`
+       * beats CSS `scroll-behavior` -- the option is not a default, it is an
+       * override -- so `html[data-still] .scroller { scroll-behavior: auto }`
+       * in SwipeDeck.module.css governs a keyboard or scrollbar scroll and has
+       * no say at all over this call. The rule is kept because it covers those;
+       * this line is what makes the screenshot hook true for the auto-slide.
+       *
+       * FOUND BY THE HARNESS, NOT BY READING. `_swipeshot.html?case=auto`
+       * settled at scrollLeft 2 instead of 358: under Chrome's
+       * `--virtual-time-budget` the smooth-scroll animation advances one frame
+       * and then stops, because it is driven by the compositor clock rather
+       * than by the task queue. A capture or a driven assertion would have
+       * photographed every deck mid-glide, and the CSS alone could never have
+       * prevented it.
        */
-      el.scrollTo({ left: target.offsetLeft, behavior: reduce ? 'auto' : 'smooth' });
+      const still =
+        typeof document !== 'undefined' && document.documentElement.hasAttribute('data-still');
+      el.scrollTo({ left: target.offsetLeft, behavior: reduce || still ? 'auto' : 'smooth' });
       lastReported.current = index;
       setActive(index);
       const key = panelsRef.current[index]?.key;
@@ -132,20 +147,44 @@ export function SwipeDeck({ panels, arrivedPanel = null, onPanelChange }: SwipeD
     slidTo.current.add(arrivedPanel as string);
 
     /*
-     * TWO FRAMES, AND NO CLEANUP. Both halves of that are load-bearing.
-     *
      * TWO FRAMES because the panel being scrolled to was appended in this very
      * commit: the first frame is where it has been laid out, the second is where
      * its first chunk of text has painted. Scrolling in the effect body targets
      * an element with no width yet.
      *
-     * NO `cancelAnimationFrame` IN A CLEANUP, even though every lint instinct
-     * says to add one. THE SUMMARY STREAMS: the second chunk lands ~50ms later,
-     * `ReaderDeck` re-renders, this effect's cleanup runs, and it would cancel
-     * the frame before it ever fired. The effect then re-runs and finds the key
-     * already in `slidTo`, so the deck NEVER SLIDES AT ALL -- silently, with no
-     * error and nothing in the log. A stray frame after unmount is harmless
-     * because `goTo` returns early on a null ref.
+     * AND NO `cancelAnimationFrame` IN A CLEANUP, even though every lint
+     * instinct says to add one. A stray frame after unmount is harmless -- `goTo`
+     * returns early on a null ref -- and a cleanup is actively dangerous the
+     * moment this effect re-runs while the stream is still open: it cancels the
+     * pending frame, the effect re-enters, finds the key already in `slidTo`,
+     * and the deck NEVER SLIDES AT ALL, silently, with nothing in the log.
+     *
+     * ---------------------------------------------------------------------
+     * WHAT THE NEGATIVE CONTROLS ACTUALLY SHOWED (2026-07-28), AND IT IS NOT
+     * WHAT THIS COMMENT CLAIMED BEFORE THEY WERE RUN.
+     * `_swipeshot.html?case=auto`, five runs, counting `source:'auto'` events:
+     *
+     *   deps                    slidTo    cleanup   slides
+     *   [arrivedPanel, goTo]    absent    absent      1     <- plan expected 3
+     *   [arrivedPanel, goTo]    present   present     1
+     *   + panels                absent    absent      3
+     *   + panels                present   absent      1
+     *   + panels                present   present     0
+     *
+     * THE DEPENDENCY LIST IS THE PRIMARY MECHANISM, not `slidTo`. The plan's
+     * premise -- "the summary streams, so `ReaderDeck` re-renders on every chunk
+     * and this effect runs again each time" -- is false. `panels` is a fresh
+     * array per chunk but it is not a dependency, and `arrivedPanel` is the
+     * constant string 'summary' from the first byte onward. React simply never
+     * re-runs the effect, so with the shipped deps BOTH guards are unobservable.
+     *
+     * They are kept because rows 3 and 5 are what happens on one plausible edit.
+     * Adding `panels` to the list is exactly what someone does while making the
+     * deck do something new, and `react-hooks/exhaustive-deps` will never argue
+     * either way -- the body reads `panelsRef.current`, not `panels`. At that
+     * moment these two lines go from unobservable to the only thing standing
+     * between the querent and three slides, or none. Change none of the three
+     * without re-running the harness.
      */
     requestAnimationFrame(() => requestAnimationFrame(() => goTo(index, 'auto')));
   }, [arrivedPanel, goTo]);
