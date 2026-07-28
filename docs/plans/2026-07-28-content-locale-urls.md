@@ -55,8 +55,14 @@ paths, and the negative controls for that predicate are written before the predi
 `{ request: { headers } }` serves the right route and forwards no `x-jmt-locale`; `getLocale()`
 then falls through to the `jmt_locale` cookie and *appears* to work, so `/en/gallery` comes out
 in English for you and in Indonesian for the next visitor whose cookie says `id`. **No test in
-this plan catches that except the live one in Task 12** — a `curl` against `/gallery` with a
+this plan catches that except the live one in Task 9** — a `curl` against `/gallery` with a
 planted `jmt_locale=en` cookie. Do not skip it.
+
+*(Corrected during reconciliation: this said "Task 12" and this plan has nine
+tasks. The check is Task 9, `## 12. Task 9 — the live checks that do not need S1`
+— the section number, not the task number. **It is the single most important
+verification in this plan**, so a dangling reference to it was worth fixing:
+nothing in the unit suite can see a missing `x-jmt-locale`.)
 
 ### Environment
 
