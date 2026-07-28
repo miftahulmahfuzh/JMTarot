@@ -119,6 +119,59 @@ async function negotiatedLocaleForSignIn(): Promise<{
   }
 }
 
+/**
+ * The SQLSTATE, the error's class, and nothing else.
+ *
+ * ── THIS IS THE SAME RULE AS `flush.ts` AND THE MODERATION PATH, AND THE
+ *    SIGN-IN PATH WAS THE ONE PLACE STILL BREAKING IT ─────────────────────────
+ *
+ * CLAUDE.md's Traps section says "never log a driver error" twice, for
+ * `flush.ts` (whose bound parameters include `readings.question`) and for
+ * `moderation/log.ts` (same reason). `upsertUserOnSignIn`'s statement binds
+ * **nine** parameters and four of them identify a person: the Google `sub`, the
+ * email, the display name and the avatar URL.
+ *
+ * NOT HYPOTHETICAL. Read out of a real production log on 2026-07-28, while
+ * diagnosing the missing `locale_source` migration:
+ *
+ *     sign-in upsert failed; refusing the session Error: Failed query: ...
+ *       params: 105739332935278811728,105739332935278811728,
+ *               <address>@gmail.com,true,<full name>,
+ *               https://lh3.googleusercontent.com/a/<id>=s96-c,en,negotiated,30
+ *
+ * So every failed sign-in wrote the querent's email and real name into Vercel's
+ * log -- a different audience and a different retention story from the column
+ * they were meant to live in, which is the exact wording `/privacy` relies on.
+ * The failure that exposed it was a schema drift, i.e. the case where EVERY
+ * sign-in fails, so the leak scales with the outage.
+ *
+ * `sqlstate` is duplicated rather than imported: `flush.ts` is an analytics
+ * module that reaches `@/lib/db/client` through a dynamic import to stay out of
+ * the auth graph, and importing it here to save six lines would drag that whole
+ * module into the edge-adjacent auth bundle. The comment is the shared thing,
+ * not the code.
+ *
+ * Development still prints the error, for the reason `flush.ts` gives: there is
+ * nobody to leak it to, and a stack trace is the difference between a
+ * five-minute fix and an hour. `JSON.stringify` because Next's dev logger
+ * renders a bare object argument as `{}`.
+ */
+function logSignInFailure(where: string, err: unknown): void {
+  try {
+    const kind = err instanceof Error ? err.name : typeof err;
+    const cause = (err as { cause?: { code?: unknown } } | null)?.cause;
+    const code = typeof cause?.code === 'string' ? cause.code : undefined;
+    const detail = JSON.stringify({ where, sqlstate: code, kind });
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[auth] sign-in failed; refusing the session', detail);
+    } else {
+      console.error('[auth] sign-in failed; refusing the session', detail, err);
+    }
+  } catch {
+    /* a logger that throws must not take the sign-in with it */
+  }
+}
+
 export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
   ...authConfig,
 
@@ -252,7 +305,7 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
             localeSource: negotiated.source,
           });
         } catch (err) {
-          console.error('sign-in upsert failed; refusing the session', err);
+          logSignInFailure('upsert', err);
           return null;
         }
 

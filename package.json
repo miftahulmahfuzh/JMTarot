@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "RES_OPTIONS=no-aaaa next dev",
-    "build": "RES_OPTIONS=no-aaaa next build && npm run audit:secrets",
+    "build": "npm run db:migrate:deploy && RES_OPTIONS=no-aaaa next build && npm run audit:secrets",
+    "db:migrate:deploy": "RES_OPTIONS=no-aaaa tsx scripts/db-migrate-deploy.ts",
     "audit:secrets": "RES_OPTIONS=no-aaaa NODE_OPTIONS=--conditions=react-server tsx scripts/audit-secrets.ts",
     "start": "RES_OPTIONS=no-aaaa next start",
     "typecheck": "tsc --noEmit",
