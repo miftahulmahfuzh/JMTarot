@@ -216,3 +216,102 @@ describe('the /s/ block (V7)', () => {
     expect(h['content-security-policy']).toBeUndefined();
   });
 });
+
+describe('the content cache rules (S1, S-D10)', () => {
+  const CONTENT = 'public, s-maxage=3600, stale-while-revalidate=86400';
+
+  async function ruleFor(source: string) {
+    return (await rules()).find((r) => r.source === source);
+  }
+
+  it('caches every session-invariant content route, in both locales', async () => {
+    /*
+     * **BOTH LOCALES ARE LISTED, AND THAT IS NOT REDUNDANT.** Next's `headers()`
+     * matches the INCOMING request path, before middleware's rewrite -- the
+     * ordering is headers -> redirects -> middleware -> rewrites -- so
+     * `/en/gallery` never matches the `/gallery` entry.
+     */
+    for (const source of [
+      '/gallery',
+      '/en/gallery',
+      '/arcana/:slug',
+      '/en/arcana/:slug',
+      '/blog',
+      '/en/blog',
+      '/blog/:slug',
+      '/en/blog/:slug',
+    ]) {
+      const rule = await ruleFor(source);
+      expect(rule, source).toBeDefined();
+      expect(rule!.headers).toEqual([{ key: 'cache-control', value: CONTENT }]);
+    }
+  });
+
+  it('gives / NO cache entry, and that is S-D5s price', async () => {
+    /*
+     * `/` dual-renders by session, middleware writes `jmt_locale` on it (so the
+     * response carries a Set-Cookie and is uncacheable at the edge regardless), and
+     * its LANGUAGE follows D6's chain because the signed-in arm is an app route.
+     * A shared CDN entry would serve the landing to a signed-in user or the picker
+     * to a stranger.
+     *
+     * Asserted as an ABSENCE, because the tempting edit is to add `/` to the list
+     * above and it would look symmetrical. MEASURED 2026-07-29 against a real
+     * `next start`: `/` answers `private, no-cache, no-store, max-age=0,
+     * must-revalidate`, which is Next's dynamic default and is correct here.
+     */
+    expect(await ruleFor('/')).toBeUndefined();
+    expect(await ruleFor('/en')).toBeUndefined();
+  });
+
+  it('carries cache-control and NOTHING else on those entries (S-D12)', async () => {
+    /*
+     * An entry carrying `x-robots-tag` that matched broadly would silently
+     * `noindex` the whole site, and this file is the only thing that would notice.
+     * A `referrer-policy` here would fight `/s/`'s override.
+     */
+    for (const rule of await rules()) {
+      if (rule.source.startsWith('/s/') || rule.source === '/(.*)') continue;
+      const keys = rule.headers.map((h) => h.key);
+      expect({ [rule.source]: keys }).toEqual({ [rule.source]: ['cache-control'] });
+    }
+  });
+
+  it('serves /wallpapers/* immutably, on its own entry (S-D9)', async () => {
+    /*
+     * S5 declares this and S1 writes it. **A NEW ASSET CLASS GETS ITS OWN ENTRY**
+     * rather than joining `/cards/*`, so its lifecycle can change independently --
+     * and the caveat `/cards/*` records applies here too and is worse, because a
+     * wallpaper is something somebody DOWNLOADED: the filenames are not
+     * content-hashed, so regenerating means changing the filenames or shortening
+     * this header first.
+     */
+    const rule = await ruleFor('/wallpapers/:path*');
+    expect(rule?.headers).toEqual([
+      { key: 'cache-control', value: 'public, max-age=31536000, immutable' },
+    ]);
+  });
+
+  it('adds every new entry AFTER the catch-all (S-D12)', async () => {
+    const all = await rules();
+    const security = all.findIndex((r) => r.headers.some((h) => h.key === 'x-frame-options'));
+    for (const source of ['/gallery', '/wallpapers/:path*']) {
+      expect(all.findIndex((r) => r.source === source), source).toBeGreaterThan(security);
+    }
+  });
+
+  it('leaves /s/ as the ONLY entry carrying x-robots-tag', async () => {
+    /*
+     * Restated from S1's side, because this release adds nine entries to a file
+     * whose ordering is load-bearing and whose most important property is that
+     * `noindex` does NOT spread. One broadly-matching new entry with that key
+     * would de-index the whole site and this file is the only thing that would
+     * notice.
+     */
+    const tagged = (await rules()).filter((r) => r.headers.some((h) => h.key === 'x-robots-tag'));
+    expect(tagged.map((r) => r.source)).toEqual(['/s/:path*']);
+    const h = Object.fromEntries(tagged[0].headers.map((x) => [x.key, x.value]));
+    expect(h['x-robots-tag']).toBe('noindex, nofollow, noarchive');
+    expect(h['referrer-policy']).toBe('no-referrer');
+  });
+});

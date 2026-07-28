@@ -1,5 +1,15 @@
 import type { NextConfig } from 'next';
 
+/**
+ * One hour at the edge, a day of stale-while-revalidate (v0.4.0 / S-D10).
+ *
+ * A CONSTANT because eight entries share it and eight hand-typed copies is eight
+ * chances for one to say `s-maxage=360`. `headers.test.ts` asserts the value.
+ */
+const CONTENT_CACHE = [
+  { key: 'cache-control', value: 'public, s-maxage=3600, stale-while-revalidate=86400' },
+];
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
 
@@ -136,6 +146,79 @@ const nextConfig: NextConfig = {
             ].join('; '),
           },
         ],
+      },
+      /*
+       * ── v0.4.0 / S1. THE CONTENT ROUTES ARE CDN-CACHEABLE (S-D10) ──────────
+       *
+       * These are the pages whose TTFB a crawler measures, and they are
+       * session-invariant by construction: `PublicShell` calls no `currentUser()`,
+       * `ReadingView` is not mounted, and after S2's rewrite the LANGUAGE comes
+       * from the URL prefix rather than from a cookie. That last property is what
+       * makes an edge cache correct rather than merely fast -- **a page whose
+       * language depends on the visitor's cookie cannot be cached and cannot be
+       * canonicalised** (§4.1).
+       *
+       * `s-maxage` and not `max-age`: the shared cache holds it for an hour, the
+       * browser revalidates. `stale-while-revalidate=86400` means a crawler after
+       * the hour is up gets the stale copy immediately and the refresh happens
+       * behind it, which is the whole point on a Hobby lambda in `sin1`.
+       *
+       * **NO `x-robots-tag` ON ANY OF THESE, AND THAT IS S-D12.** Next applies
+       * every matching entry and a later one with the same key wins, so a
+       * broadly-matching entry carrying that header would silently `noindex` the
+       * site. `headers.test.ts` asserts these entries carry `cache-control` and
+       * nothing else, and that `/s/:path*` is the only entry in the file with an
+       * `x-robots-tag`.
+       *
+       * **`/` AND `/en` ARE DELIBERATELY ABSENT.** `/` dual-renders by session
+       * (S-D5), middleware writes `jmt_locale` on it -- and a `Set-Cookie` makes a
+       * response uncacheable at the edge whatever this header says -- and its
+       * language follows D6's chain because the signed-in arm is an app route
+       * (S-D1). All three would have to be solved together. The test asserts the
+       * absence, because adding `/` here would look symmetrical.
+       *
+       * **BOTH LOCALES ARE LISTED, AND THAT IS NOT REDUNDANT.** Next's `headers()`
+       * matches the INCOMING request path, before middleware's rewrite -- ordering
+       * is headers -> redirects -> middleware -> rewrites -- so `/en/gallery` never
+       * matches `/gallery`.
+       *
+       * **WHETHER THESE SURVIVE A DYNAMIC RESPONSE IS MEASURED, NOT ASSUMED
+       * (R21).** Four plans flagged it independently. Answered locally on
+       * 2026-07-29 against a real `next start` -- see `docs/workstream-notes.md`
+       * -- and it must still be re-checked with `curl -sI` against a Vercel
+       * PREVIEW before anything is allowed to depend on the cache, because the dev
+       * server has no CDN in front of it. **Nothing in v0.4.0 depends on it today
+       * and nothing new may.**
+       */
+      { source: '/gallery', headers: CONTENT_CACHE },
+      { source: '/en/gallery', headers: CONTENT_CACHE },
+      { source: '/arcana/:slug', headers: CONTENT_CACHE },
+      { source: '/en/arcana/:slug', headers: CONTENT_CACHE },
+      { source: '/blog', headers: CONTENT_CACHE },
+      { source: '/en/blog', headers: CONTENT_CACHE },
+      { source: '/blog/:slug', headers: CONTENT_CACHE },
+      { source: '/en/blog/:slug', headers: CONTENT_CACHE },
+      {
+        /*
+         * S5's asset class, declared in its plan and written here (§6.4).
+         *
+         * ITS OWN ENTRY RATHER THAN JOINING `/cards/*` (S-D9), so the two
+         * lifecycles can diverge -- and the caveat `/cards/*` records is WORSE
+         * here, because a wallpaper is a file somebody chose to download: these
+         * filenames are not content-hashed either, so regenerating means changing
+         * the filenames or shortening this header first. The source art is never
+         * regenerated in v0.4.0, which is what makes a year safe today.
+         *
+         * **`wallpapers/` ALSO HAS TO JOIN `src/middleware.ts`'s NEGATIVE
+         * LOOKAHEAD, AND THAT IS S2's LINE (R7).** Without it a signed-out
+         * stranger is 302'd to `/login` on every wallpaper request, and adding
+         * `/wallpapers` to `isPublic()` instead returns 200 but leaves middleware
+         * running -- so the locale-cookie write fires and puts a `Set-Cookie` on a
+         * ~550KB static response, making it edge-uncacheable. A direct S-D10
+         * breach on the response where CDN caching matters most.
+         */
+        source: '/wallpapers/:path*',
+        headers: [{ key: 'cache-control', value: 'public, max-age=31536000, immutable' }],
       },
       {
         /*
