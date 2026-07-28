@@ -817,6 +817,67 @@ const id = {
   'reading.verdict.yes': 'Ya',
   'reading.verdict.no': 'Tidak',
   'reading.verdict.maybe': 'Belum jelas',
+
+  // --- The public surface (v0.4.0 / S1) -------------------------------------
+  //
+  // CHROME ONLY (S-D6). Lore and article prose live in `src/content/**`, one
+  // module per locale, imported by the page that renders it -- because this
+  // catalog is shipped ENTIRE, as JSON, to every visitor of every page including
+  // the draw screen, and 22 lore documents x 2 locales is an order of magnitude
+  // more than the 242 short strings here. `src/lib/i18n/prose.test.ts` makes that
+  // mechanical: a value over 320 characters, or a catalog over 20,000 bytes,
+  // fails.
+  //
+  // These are the shared keys. S3, S4, S5 and S6 add their own page's chrome to
+  // THIS EDIT -- S1 folds every workstream's keys in, one file, one commit, the
+  // same rule S-D13 applies to `events.ts`. A workstream does not open this file.
+
+  /** The landing hero. `app.title` is the <h1>; this is the line under it. */
+  'landing.tagline': 'Dua puluh dua Major Arcana, dibacakan oleh tiga pembaca.',
+  'landing.lede':
+    'Tarik kartumu, ajukan pertanyaanmu, dan dapatkan satu bacaan yang ditulis khusus untuk hari itu — dalam bahasa Indonesia atau Inggris.',
+  'landing.signIn': 'Masuk untuk membaca',
+  'landing.hero.alt': 'Kartu {name}',
+
+  /** Four blocks, each at most one link. The order on screen is the order here. */
+  'landing.gallery.title': 'Lihat dua puluh dua kartunya',
+  'landing.gallery.body':
+    'Setiap Major Arcana, digambar ulang untuk aplikasi ini. Ketuk satu kartu untuk melihatnya besar.',
+  'landing.gallery.link': 'Buka galeri',
+  'landing.arcana.title': 'Arti setiap kartu',
+  'landing.arcana.body':
+    'Satu halaman per kartu: angka, unsur, lambang, arti tegak dan terbalik, serta ceritanya.',
+  'landing.arcana.link': 'Mulai dari The Moon',
+  'landing.readers.title': 'Tiga pembaca, tiga suara',
+  'landing.readers.body':
+    'Thessaly, Margaret dan Adrian membaca kartu yang sama dengan cara yang tidak sama.',
+  'landing.blog.title': 'Tulisan',
+  'landing.blog.body': 'Cara membaca tarot, dijelaskan tanpa istilah yang membingungkan.',
+  'landing.blog.link': 'Baca tulisannya',
+
+  /**
+   * The shared public footer (S1), mounted by every public content page.
+   *
+   * NO `otherLanguage` KEY HERE. R17 makes `PublicShell` mount S2's
+   * `ContentLocaleLink`, which names each language IN ITS OWN LANGUAGE through
+   * the existing `locale.name.*` pair -- because the reader of that control
+   * cannot, by definition, read the locale they are currently in.
+   */
+  'public.footer.gallery': 'Galeri',
+  'public.footer.arcana': 'Arti kartu',
+  'public.footer.blog': 'Tulisan',
+  'public.footer.app': 'Buka aplikasinya',
+  'public.footer.brandLine': 'JMTarot — bacaan Major Arcana.',
+
+  /** S-D8's control. NOT `/api/share` -- the page's own URL is already public. */
+  'public.share.button': 'Bagikan halaman ini',
+  'public.share.copied': 'Tautan disalin.',
+  'public.share.failed': 'Tidak bisa menyalin. Salin dari bilah alamat.',
+
+  /** Breadcrumb labels. English card names stay English (`## Card data`). */
+  'public.crumb.home': 'JMTarot',
+  'public.crumb.gallery': 'Galeri',
+  'public.crumb.blog': 'Tulisan',
 } as const satisfies Record<string, string>;
 
 export default id;

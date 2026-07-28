@@ -61,6 +61,9 @@ describe('catalogs', () => {
       'picker.reader.portraitAlt',
       'nav.back.reader',
       'onboarding.progress',
+      // v0.4.0 / S1: the breadcrumb's first rung is the brand, and the brand is
+      // not translated -- the same reason `app.title` is the first entry here.
+      'public.crumb.home',
     ]);
 
     for (const k of KEYS) {

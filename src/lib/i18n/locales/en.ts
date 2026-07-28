@@ -517,6 +517,49 @@ const en: Catalog = {
   'reading.verdict.yes': 'Yes',
   'reading.verdict.no': 'No',
   'reading.verdict.maybe': 'Not yet clear',
+
+  // --- The public surface (v0.4.0 / S1) -------------------------------------
+  //
+  // REWRITTEN, NOT TRANSLATED (§8.2, and `## Localization` rule 3). The
+  // enforcement is that a reviewer can see a translation in five seconds, so the
+  // English lede leads with a different fact than the Indonesian one does and the
+  // gallery heading is a different sentence rather than the same sentence in
+  // English.
+
+  'landing.tagline': 'The twenty-two Major Arcana, read aloud by three readers.',
+  'landing.lede':
+    'Pick your cards, ask what you came to ask, and read one interpretation written for that draw and no other — in English or Indonesian.',
+  'landing.signIn': 'Sign in to read',
+  'landing.hero.alt': 'The {name} card',
+
+  'landing.gallery.title': 'See all twenty-two',
+  'landing.gallery.body':
+    'Every Major Arcana, drawn for this app. Tap any card to see it full size.',
+  'landing.gallery.link': 'Open the gallery',
+  'landing.arcana.title': 'What each card means',
+  'landing.arcana.body':
+    'One page per card: the numeral, the element, the glyph, upright and reversed, and where the card sits in the sequence.',
+  'landing.arcana.link': 'Start with The Moon',
+  'landing.readers.title': 'Three readers, three voices',
+  'landing.readers.body':
+    'Thessaly, Margaret and Adrian read the same three cards and do not say the same thing.',
+  'landing.blog.title': 'Writing',
+  'landing.blog.body': 'How to read tarot, explained without the vocabulary.',
+  'landing.blog.link': 'Read it',
+
+  'public.footer.gallery': 'Gallery',
+  'public.footer.arcana': 'Card meanings',
+  'public.footer.blog': 'Writing',
+  'public.footer.app': 'Open the app',
+  'public.footer.brandLine': 'JMTarot — Major Arcana readings.',
+
+  'public.share.button': 'Share this page',
+  'public.share.copied': 'Link copied.',
+  'public.share.failed': "Couldn't copy. Take it from the address bar.",
+
+  'public.crumb.home': 'JMTarot',
+  'public.crumb.gallery': 'Gallery',
+  'public.crumb.blog': 'Writing',
 };
 
 export default en;
