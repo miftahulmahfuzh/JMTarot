@@ -488,6 +488,70 @@ const id = {
   // language's own tag is written the same way whoever is reading it.
   'locale.code.id': 'ID',
   'locale.code.en': 'EN',
+
+  // ==========================================================================
+  // V6 — history. `/history` is the route; `Jejak` is the word, because
+  // `riwayat` is already the prompt fence tag in both locales (W5/R17) and one
+  // word meaning two things in one codebase is how somebody greps the wrong
+  // file at the worst moment. The account menu's own row is
+  // `account.menu.history` and says `Riwayat bacaan`, which is V4's copy and
+  // reads as a sentence rather than as a fence — that is fine and is not the
+  // same string.
+  //
+  // UNLIKE W5's MEMORY BLOCK, THIS ONE HAS EMPTY-STATE AND ERROR COPY, and the
+  // difference is deliberate. M14's silence is right for an AMBIENT feature the
+  // querent did not ask for. The querent tapped a menu item called History;
+  // silence there is a broken page, not tact.
+  // ==========================================================================
+  'history.title': 'Jejak',
+  'history.hint': 'Bacaan yang pernah kamu ambil.',
+
+  'history.filter.aria': 'Pilih hari',
+  'history.filter.label': 'Tanggal',
+  'history.filter.today': 'Hari ini',
+
+  'history.count.one': '{count} bacaan',
+  'history.count.other': '{count} bacaan',
+
+  // Two empty states, and conflating them is the bug. The first tells someone
+  // who HAS read that this particular day is quiet; the second tells someone
+  // who never has that there is nothing here yet, which is a different sentence
+  // and a different next step. Telling a first-time visitor "nothing on 27 July"
+  // implies other days might have something and sends them hunting.
+  'history.empty.day': 'Tidak ada bacaan pada {date}.',
+  'history.empty.nearest': 'Lihat {date}',
+  'history.empty.never.title': 'Belum ada jejak di sini.',
+  'history.empty.never.body':
+    'Setiap bacaan yang kamu ambil akan tersimpan di halaman ini, lengkap dengan kartunya.',
+  'history.empty.never.action': 'Ambil bacaan pertama',
+
+  'history.error': 'Jejakmu tidak bisa dibuka sekarang. Coba lagi sebentar.',
+
+  // A row whose reading never finished. It is SHOWN -- the querent drew those
+  // cards, and the frequency verdict already counts them -- so it has to say why
+  // there is no text behind it, or opening it reads as a bug.
+  'history.item.unfinished': 'Bacaan ini tidak selesai.',
+  'history.item.shared': 'Dibagikan',
+
+  'history.detail.back': '← Jejak',
+  'history.detail.question': 'Pertanyaanmu',
+  'history.detail.noBody': 'Tidak ada teks yang tersimpan untuk bacaan ini.',
+  // The pulsing label while V2's translator streams. Same register and same job
+  // as `reading.waiting`: it has to hold a screen for several seconds without
+  // looking hung.
+  'history.translating': 'Menerjemahkan…',
+
+  // ── The yes/no verdict, rendered ──────────────────────────────────────────
+  //
+  // FROM `readings.verdict`, WHICH `effectiveYesNo()` DECIDED IN CODE AT DRAW
+  // TIME. Never parsed out of the prose and never asked of the model — the same
+  // rule that exists because letting the model choose produced answers
+  // contradicting the card's own orientation. It matters most under translation:
+  // a translated body's first word is whatever the translator produced, and this
+  // is the fact that survives it untouched.
+  'reading.verdict.yes': 'Ya',
+  'reading.verdict.no': 'Tidak',
+  'reading.verdict.maybe': 'Belum jelas',
 } as const satisfies Record<string, string>;
 
 export default id;
