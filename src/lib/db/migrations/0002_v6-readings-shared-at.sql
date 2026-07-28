@@ -1,0 +1,1 @@
+ALTER TABLE "readings" ADD COLUMN "shared_at" timestamp with time zone;

@@ -15,6 +15,13 @@
       "when": 1785162554725,
       "tag": "0001_v2-translations-and-locale-source",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785208415722,
+      "tag": "0002_v6-readings-shared-at",
+      "breakpoints": true
     }
   ]
 }

@@ -359,6 +359,24 @@ export const readings = pgTable(
     sessionId: text('session_id'),
     /** The QUERENT'S own calendar day, sent by the client. Roadmap §7. */
     localDate: dateCol('local_date').notNull(),
+    /**
+     * First time a share link was minted for this reading (roadmap §4, VD9).
+     *
+     * DENORMALIZED FROM `share_links` ON PURPOSE, so V6's history list can show a
+     * share badge without a join per row -- which is the exact justification §4
+     * gives for the column existing at all.
+     *
+     * ADDED BY V6'S MIGRATION AND WRITTEN BY V7 (reconciliation §3). The build
+     * order puts V6 first and V6 only ever READS it; a column a shipped query
+     * names has to exist by then, and splitting one column across two migrations
+     * to match the ownership of the writer would be ceremony.
+     *
+     * NULL MEANS NEVER SHARED, AND IT STAYS NULL AFTER A REVOKE. "Was this ever
+     * public" is a different question from "is it public now", and
+     * `share_links.revoked_at` answers the second. A reader who conflates them
+     * will make the badge disappear on revoke, which is a lie about the past.
+     */
+    sharedAt: tsCol('shared_at'),
     createdAt: tsCol('created_at').notNull().defaultNow(),
   },
   (t) => [
