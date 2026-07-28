@@ -1237,15 +1237,44 @@ tell what any of it is about. `share_links.include_question` defaults to `true` 
 - **`ReadingView` gained a fifth prose state, `{ kind: 'as-written' }`,** because
   `resolveProse` deliberately treats an explicit `original` exactly like an omitted prop —
   so reconciliation §5.5's literal instruction would have shipped the pulsing spinner it was
-  written to prevent, forever, for a stranger. Do not use `{ kind: 'translated' }` for this:
-  it renders identically and would record that a translation happened when none did. The
-  honesty a viewer needs comes from CHROME (`share.public.otherLanguage`,
-  `lang={reading.locale}`), not prose — **the public route must never generate anything.**
+  written to prevent, forever, for a stranger. Do not use `{ kind: 'translated' }` when
+  nothing was translated: it renders identically and would record that a translation
+  happened when none did.
+
+### A SHARE LINK NOW CARRIES THE LANGUAGE IT WAS SHARED IN (design A, 2026-07-28)
+
+**This section used to say the body is rendered verbatim in `readings.locale` and NEVER
+translated, and that `lang={reading.locale}`. Both are now wrong, and the third reason
+`adapt.ts` gave for them has been overturned rather than forgotten.** `share_links.locale`
+pins the locale the sharer was reading; the resolver reads that `translations` row and the
+stranger sees what the sharer saw. `docs/plans/2026-07-28-share-live-locale-design.md` is
+the full argument. What changed and what did not:
+
+- **VD7 and VD8 still bind. THE PUBLIC ROUTE STILL MUST NEVER GENERATE ANYTHING** — it is
+  the one route with no session and no per-user budget, so a model call there is
+  `LLM_WINDOW_CALL_CEILING` with no gate on it. The page only ever READS.
+- **The overturned reason was "reading an existing `translations` row would make the
+  preview a lie."** That argument binds a *viewer-adaptive* page. It does not bind one that
+  renders what the SHARER was reading — but only because `ShareFooter` now takes the host's
+  `prose` and previews it. Without that, the objection stands and the sheet lies.
+- **`lang` and `share.public.otherLanguage` come from `renderedLocale(reading, translation)`,
+  never `reading.locale`.** Against the source, an English viewer on an English-pinned link
+  is told the prose is in another language while looking at English, and a screen reader
+  pronounces English as Indonesian.
+- **THE NOTICE SURVIVES AND MUST NOT BE DELETED.** An English-pinned link opened by an
+  Indonesian reader is a genuine mismatch; `adapt.test.ts` asserts that case for exactly
+  this reason. Only design C — generating both locales at mint — removes it, and it costs
+  one model call per share.
+- **`NULL` locale means as-written**, which is every link minted before this shipped. There
+  is deliberately no column default; the integration test named for the guarantee is what
+  stops a "tidy" default silently rewriting what historic links show.
 
 **Still open:** `share.viewed` has not been observed firing; two `authjs.*` cookies reach a
 third party on `/s/` and `/privacy` §4.4 names them; no resolve cache is shipped
 (`SHARE_RESOLVE_CACHE_MS` is `0`, and turning it on buys a window in which a revoked link
-still resolves); `'persona'` is a live union value resolving to null until V8.
+still resolves — and now also one in which a re-pinned locale is stale); `'persona'` is a
+live union value resolving to null until V8. **Design C is the only way to delete the
+other-language notice** and has not been costed against the ceiling.
 
 ## Trust, safety and secrets (W7)
 

@@ -33,9 +33,18 @@
  * public route that can spend a model call is a provider quota with no gate in
  * front of it — which since V9 is the app's primary abuse control.
  *
- * **THE BODY IS RENDERED VERBATIM IN `readings.locale` AND NEVER TRANSLATED.**
- * Chrome from the viewer, prose from the sharer — see `adapt.ts`, which carries
- * the three reasons and the mechanism.
+ * **THE BODY IS RENDERED IN THE LANGUAGE THE SHARER WAS READING, AND NOTHING HERE
+ * EVER GENERATES IT.** This header used to say "verbatim in `readings.locale` and
+ * NEVER translated"; design A (2026-07-28) replaced that with a pinned
+ * `share_links.locale` and a READ of the `translations` row the sharer's own
+ * viewing had already produced. `adapt.ts` carries the mechanism, and the reason
+ * that survived unchanged is the one above: reading is free, generating is a quota
+ * with no gate on it.
+ *
+ * **THE CHROME IS THE VIEWER'S AND THE `lang` ATTRIBUTE IS THE PROSE'S**, which is
+ * `renderedLocale(reading, translation)` and never `reading.locale` — see
+ * `isForeignProse`. A NULL pin, i.e. every link minted before design A, still
+ * renders as-written.
  */
 import { after } from 'next/server';
 import { notFound } from 'next/navigation';
