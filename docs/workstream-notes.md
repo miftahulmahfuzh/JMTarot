@@ -2366,3 +2366,216 @@ move into the cached function. And the new test's first version asserted **zero*
 `resolveShare` occurrences, which fails on the one legitimate call — the property is not
 "nobody resolves" but "nobody resolves *outside the gate*", which is what would put a
 query in front of the limiter.
+
+---
+
+# v0.4.0
+
+## S1 — the public surface and the technical SEO foundation
+
+The rules and the invariants are in `CLAUDE.md`'s `## The public surface (v0.4.0 / S1)`.
+This section is the **evidence**: what was measured, on what, and what it means.
+
+### R21 is answered locally, and it is the answer four plans wanted
+
+**A `next.config.ts` `cache-control` DOES survive a dynamically rendered App Router
+response.** Four plans flagged this independently (S1 flag 5, S2 flag 11, S3 flag 9,
+S4 flag 2) and it is the premise S-D10's whole TTFB argument rests on. Nobody had
+measured it, and every route in this app is `ƒ` because the root layout awaits
+`getLocale()`.
+
+Measured 2026-07-29 against a real `npx next start -p 3001` on a production build, with
+a **temporary probe entry** pointing `CONTENT_CACHE` at `/terms` — a route that exists
+and is dynamic, which is the whole point. The probe was removed in the same session.
+
+```
+/terms                  ƒ, WITH an entry   cache-control: public, s-maxage=3600, stale-while-revalidate=86400
+/                       ƒ, no entry        Cache-Control: private, no-cache, no-store, max-age=0, must-revalidate
+/cards/18_moon.webp     static, WITH one   cache-control: public, max-age=31536000, immutable
+```
+
+The middle line is the negative control and it is what makes the first line mean
+something: Next's dynamic default is real and visible, and the config entry beats it.
+
+**THIS IS NOT THE WHOLE OF R21 AND MUST NOT BE READ AS IT.** It proves the header
+reaches the wire. It does **not** prove Vercel's CDN honours `s-maxage` on a function
+response — the dev server has no CDN in front of it, and R21 asks for `curl -sI`
+against a **Vercel preview**. Until that is recorded here, every workstream still
+assumes the content routes are not edge-cached. Nothing in v0.4.0 depends on the cache
+and nothing new may.
+
+### The crawl baseline at S1 alone
+
+`tools/seo/crawl.sh http://localhost:3001`, production build, no cookie jar,
+2026-07-29. **It reports FAILED and that is correct** — it is the release's acceptance
+test, not S1's, and S1 must not deploy alone (flag 9).
+
+```
+/                    200  0   SET-COOKIE (jmt_locale, authjs.csrf-token, authjs.callback-url)
+/en                  200  1   REDIRECTED to /login?callbackUrl=%2Fen; LANDED ON LOGIN
+/gallery             404  0   NOT 200
+/en/gallery          404  0   NOT 200
+/arcana/the-moon     404  0   NOT 200
+/en/arcana/the-moon  404  0   NOT 200
+/blog                404  0   NOT 200
+/en/blog             404  0   NOT 200
+/terms               200  0   SET-COOKIE (...)
+/privacy             200  0   SET-COOKIE (...)
+/sitemap.xml         200  0   ok
+/robots.txt          200  0   ok
+```
+
+Read it line by line, because three of these are the change working:
+
+- **`/` is 200 with 0 hops.** It was a 302 to `/login` for anyone without a cookie. This
+  is the release's core change and the closed OAuth branding blocker.
+- **`/gallery`, `/arcana/the-moon` and `/blog` are 404, NOT 302.** That is the gate
+  change: `isPublic()` now lets them through and Next answers honestly. Before S1 they
+  were login redirects, which Google reads as soft 404s. S3/S4/S6 turn these into 200s.
+- **`/en` is still a login redirect** because S2's rewrite is not landed. Expected.
+- **`/terms` and `/privacy` are 200 with no `noindex`** (R4).
+- **`/s/` still answers `x-robots-tag: noindex, nofollow, noarchive` and
+  `referrer-policy: no-referrer`.** That line is the script's own negative control: if
+  it printed nothing, the crawl above would prove less than it looks like it does.
+
+**The `Set-Cookie` on `/` is expected and is S2's** — its cookie-write guard grows from
+`/s/` to `/s/` plus the content routes plus `/api/events` (R22). **But note what the
+crawl actually caught, which no plan predicted: there are THREE cookies, not one.**
+`jmt_locale` is S2's to suppress; `authjs.csrf-token` and `authjs.callback-url` come
+from the `auth()` wrapper around middleware and will still be there afterwards. That is
+the same gap `/s/` already carries and `/privacy` §4.4 already names, arriving on the
+landing page. S-D10 says a stranger leaves with nothing in their jar; **after S2 lands,
+that will still be false on every public page, and somebody has to decide whether it
+matters.**
+
+### The landing fits a phone — loop 4, not a screenshot
+
+`tools/seo/fit.sh /` against the production build, 2026-07-29:
+
+```
+{"width":320,"rootOverflows":false,"offenders":[]}
+{"width":360,"rootOverflows":false,"offenders":[]}
+{"width":390,"rootOverflows":false,"offenders":[]}
+```
+
+**Neither Chrome here gives a phone width** — both floor at ~500px — so this is a
+fixed-width container plus `scrollWidth > clientWidth`, which is exact for
+container-driven layout. Two things were expected to overflow and did not: the footer's
+`.links` row (it wraps) and the hero `<img>`, which is declared at `width={800}` and is
+held by `max-width: 100%`. `Landing.test.ts` asserts that CSS rule directly, because
+this loop needs a browser and that assertion does not.
+
+### Loop 5: the page agrees with what it renders
+
+`tools/e2e/run.sh` against the production build, signed out:
+
+- `text` returns the landing's `<h1>`, tagline, lede and all four block headings.
+- `document.querySelectorAll('h1').length` is **1**. Two `<h1>`s is the commonest
+  on-page SEO defect and it is invisible in a browser.
+- `document.querySelectorAll('script[type="application/ld+json"]').length` is **1**, and
+  `JSON.parse(...)['@graph'].map(n => n['@type'])` is **`Organization,WebSite`**.
+
+That last one is the interesting one, and it is R1's measurement repeated in a real
+browser rather than in a test: the plain text child parses. Confirmed again on the raw
+HTML — `publisher['@id']` matches the organization's `@id`, `inLanguage` is the bare
+`id`, and `SearchAction` appears nowhere.
+
+**One observation worth keeping: the harness reported `lang=en` on `/`.** That is
+correct today and will change: signed out, `/` currently follows D6's chain, so an
+`Accept-Language: en` browser gets English. After S2's `contentRewrite` reaches
+middleware, signed-out `/` pins `id` (§4.1) and only the signed-in arm keeps the chain.
+If it still says `en` after S2 lands, the pin is not wired.
+
+### `metadataBase` reached `/s/`, and that is the only visible evidence it works
+
+Before: `og:image` resolved against Next's guess. After, on the wire:
+
+```
+<meta property="og:image" content="http://localhost:3001/s/abcdefghjkmn/opengraph-image?..."/>
+```
+
+Absolute, at the origin the leaf decided. **VD18 is untouched** — the image still draws
+only `MAJOR ARCANA` and carries neither the question nor the prose.
+
+### The secrets tripwire's premise expired, and amending it was the real work
+
+`npm run build` **failed** the first time `origin.ts` existed, with four findings. The
+rule was *"JMTarot has no `NEXT_PUBLIC_` variables"* and S-D11 introduced one.
+
+The audit's own output says *"If a finding is legitimate, do not add a suppression"*,
+and that instruction is right, so the fix is not an allowlist entry:
+
+1. **The allowlist pairs the VARIABLE with its ONE legitimate reader**
+   (`NEXT_PUBLIC_READERS`), not just the name. Any other module reading
+   `NEXT_PUBLIC_SITE_ORIGIN` still fails the build — which is *stricter* than the old
+   rule was for every other variable, because the old one had nothing to say about
+   where a permitted read may live.
+2. **`lib/seo/origin.ts` joined the transitive `FORBIDDEN` client-boundary walk**, which
+   is the fence R10 actually asks for. `clientBoundary.test.ts` covers the direct
+   import; this covers a helper in between.
+3. **Test files are skipped in the read scan.** Nothing imports a `*.test.ts` from a
+   route, so Next never compiles one. Three of them tripped it, and
+   `layout.contract.test.ts`'s read is inside a `.not.toContain(...)` — a test asserting
+   the layout must NOT read the variable. Firing on that is the same pathology the
+   scanner's own comment already describes for `resolve.ts`.
+
+**Both new fences were negative-controlled rather than assumed**, by planting a probe
+and watching the build fail:
+
+```
+src/lib/_probe.ts reading it        -> [NEXT_PUBLIC_] a NEXT_PUBLIC_ read in source (NEXT_PUBLIC_SITE_ORIGIN)
+a 'use client' component importing  -> [boundary] src/components/_Probe.tsx -> src/lib/seo/origin.ts
+```
+
+### Three traps this workstream paid for
+
+- **`pkill -f next-server` KILLED THE SHELL RUNNING IT.** `pkill -f` matches full
+  command lines, and the command line *containing the pkill invocation* contains the
+  string `next-server`. The compound command died at exit 144 with the config edit
+  half-applied and no server running. Use `pkill -f 'next[-]server'`, which cannot
+  match itself. This is a sharper version of the trap `headers.test.ts` already
+  records (`pkill -f "next start"` does not work because the process renames itself).
+- **`npm start` LISTENS ON 3000, AND 3000 IS PERMANENTLY HELD** by another project's
+  Grafana container. `npm run dev` passes the port; `npm start` does not. The symptom
+  is `EADDRINUSE ::: 3000` from a script that looks like it should work, and every
+  documented local `curl` in the S1 plan assumed otherwise. Use
+  `npx next start -p 3001`.
+- **`*/` INSIDE A BLOCK COMMENT ENDS THE COMMENT.** `sitemap.test.ts` documented the
+  permitted import families as `@/content/*/index.ts` and produced
+  `[PARSE_ERROR] Unterminated string` twenty lines further down. Write the glob in
+  prose, not as a glob.
+- **THE UNIT PROJECT GLOBS `src/**` `/*.test.ts` ONLY.** A `.test.tsx` file is silently
+  never collected — `vitest run <path>` says "No test files found" and a bare run says
+  nothing at all. `JsonLd.test.ts` renders JSX through `createElement` rather than
+  widening the glob for every other workstream.
+
+### The catalog, measured
+
+268 keys after S1's 26. `id` serializes to **15,801 bytes**, `en` to **15,527**. The
+longest value is still `onboarding.intro.body` at **267** characters; the next three are
+`onboarding.q.worst_thing.hint` (182), `moderation.blocked.selfHarm.closing` (168) and
+`account.delete.body2` (147). `prose.test.ts`'s ceilings — 320 per value, 20,000 bytes
+per catalog — are set against those, with ~21% headroom on the one that matters.
+
+**CLAUDE.md said 118 keys for two releases** and the roadmap argues S-D6 from a line
+count. The bytes are the number that reaches a phone, and they are why 44 lore documents
+may never live in the catalog.
+
+### What S1 did NOT do, and where it deviated from its own plan
+
+- **The plan's `EN_PREFIX` placeholder in `sitemap.ts` was never written.** S2's
+  `prefix.ts` had to land first anyway (R11/R14), so the sitemap imports `localePath`
+  directly and the seam closed instead of being created.
+- **The plan's gate tests are inverted.** §1.1 chose "the gate knows no `/en/`
+  spelling", so `isPublic('/en/gallery')` would be `false`. **Reconciliation R14 kept
+  S2's contract G2 instead** — the content clause strips, every other clause does not —
+  and the tests assert that, plus the `/en/api/events` case that makes the narrowness
+  load-bearing.
+- **The plan's `dangerouslySetInnerHTML` in `JsonLd.tsx` was refused** (R1). See the
+  trap above.
+- **`/arcana` is public** (R6), reversing S1's flag 6, which had accepted a soft 404.
+  **`src/app/arcana/page.tsx` calling `notFound()` is NOT written** — the path 404s
+  today because no route file exists there at all, so the behaviour is already correct.
+  It belongs to whoever owns `src/app/arcana/**`, which is S4.
+- **`/terms` and `/privacy` became indexable** (R4), which S1's flag 7 raised and
+  explicitly declined to do alone.

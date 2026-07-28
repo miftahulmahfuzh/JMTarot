@@ -330,6 +330,31 @@ Recorded rather than deleted, because each looks like a bug someone will helpful
   migration (drizzle takes no advisory lock; not worth a lock table for one developer),
   and a *destructive* migration still deploys ahead of the code that tolerates it.
 
+- **FRAMEWORK BEHAVIOUR IS MEASURED HERE, NEVER RECALLED. TWO AGENTS PRODUCED TWO
+  CONFIDENT, MUTUALLY EXCLUSIVE, BOTH-WRONG ANSWERS ABOUT THE SAME FOUR LINES.**
+  S1 asked to carve JSON-LD out of the "no `dangerouslySetInnerHTML`" rule, claiming
+  React HTML-escapes a `<script>` text child so every `"` becomes `&quot;`; S6
+  independently claimed the opposite mechanism, that `&` is doubled. **Neither failure
+  mode exists.** On react-dom 19.2.8 a plain text child of `<script>` round-trips
+  through `JSON.parse` intact — `&` stays literal, `"` stays `\"`, and React applies
+  *script-aware* escaping to `</script` instead. Nobody ran the measurement before
+  arguing. `JsonLd.tsx` therefore uses a plain child and `serializeJsonLd` pre-escapes
+  `& < >` anyway — **not for correctness, but because that behaviour is an unspecified
+  implementation detail and a release must not depend on one.** The test renders the
+  component and parses the result, so it fails on both predicted failures *and* on a
+  future React that starts escaping. Same rule `docs/provider-comparison.md` learned
+  the hard way about its own numbers.
+
+- **THE SEARCH CONSOLE HTML-FILE METHOD IS 302'd BY THE MIDDLEWARE MATCHER, AND THE
+  ERROR NAMES THE WRONG CAUSE.** It wants `public/google<token>.html` served at
+  `/google<token>.html`; the matcher
+  `'/((?!_next/|cards/|dukuns/|favicon|icon|apple-icon|manifest|sitemap|robots).*)'`
+  **matches that path**, `isPublic()` does not name it, and Googlebot carries no
+  cookie — so it is sent to `/login`. Verification fails saying the file was not
+  found, and the file is right there in `public/`. Use a **DNS TXT Domain property**
+  instead (`docs/DEPLOY-VERCEL.md` §7b): it also covers the apex, which
+  308-redirects to `www` and which a URL-prefix property would leave unverified.
+
 - **`middleware.ts` must be at `src/middleware.ts`**, not the repo root, because the
   app lives under `src/`. At the root it is silently never executed and every route is
   open.
@@ -801,12 +826,20 @@ Two locales, `id` and `en`, **interface and readings**. `id` is the default and 
 source language. Locale is **never a URL segment** (D6): nine routes stay nine, no link
 is locale-aware, and anything reaching for `router.push('/en/...')` is wrong.
 
+**v0.4.0 BREACHES D6 FOR FIVE PUBLIC CONTENT ROUTES AND NOTHING ELSE (S-D1).** The nine
+app routes are untouched and `router.push('/en/...')` is still wrong in every one of
+them. The prefix is a middleware **rewrite**, not a route segment, so there is still one
+route tree. `src/lib/i18n/prefix.ts` is the pure leaf that owns the prefix maths *and*
+the content route table — it lives there rather than in `resolve.ts` because `gate.ts`
+imports it and `resolve.ts` carries a `next/server` type (R11).
+
 ```
 src/lib/i18n/
   locale.ts        LEAF. Locale (re-exported from @/data/types), LOCALES, isLocale,
                    Localized<T>, intlTag, negotiate. No React, no next/*, no catalog --
                    the edge middleware and db/schema.ts both import it.
-  locales/id.ts    THE SOURCE CATALOG. Defines the key set. 118 keys.
+  locales/id.ts    THE SOURCE CATALOG. Defines the key set. 268 keys, 15.8KB as
+                   shipped JSON. (It said 118 for two releases. MEASURED.)
   locales/en.ts    typed FROM id.ts, so a missing key is a red typecheck.
   format.ts        makeT, the {param} derivation, formatDate, formatLocalDate.
                    NO runtime catalog import.
@@ -985,7 +1018,9 @@ the Shadow Arcana replacing the tally (V3)**, **the account shell — the circle
 sheet, and the first sign-out control this app has ever had (V4)**, **the reader swipe deck
 (V5)**, **history — `/history`, `/history/[id]`, and `ReadingView` (V6)**, **sharing —
 `/s/<slug>`, its OG preview, and the share sheet (V7)**, **`/account` — the deletion button, the
-editable facts, per-answer clearing, and the Inner Heavenly Lotus persona (V8)**, plus the reader picker, service
+editable facts, per-answer clearing, and the Inner Heavenly Lotus persona (V8)**,
+**the public surface and the technical SEO foundation -- a signed-out homepage, the
+gate change, a sitemap, JSON-LD, canonicals and cache headers (v0.4.0 S1)**, plus the reader picker, service
 picker, the draw (fan, pick, flip, reduced-motion grid), the card detail overlay, the
 streaming reading endpoint, the prompt layer, and the web app manifest.
 
@@ -1004,8 +1039,10 @@ on the path of a byte the user is waiting for.** Detail, and the database-down c
 
 ```
 src/lib/analytics/
-  events.ts        the closed taxonomy: 60 names, a prop shape each, two compile-time
+  events.ts        the closed taxonomy: 66 names, a prop shape each, two compile-time
                    guards. NO IMPORTS -- it is the data dictionary, read by people.
+                   ONE OWNER PER RELEASE: S1 for v0.4.0 (S-D13). Every other
+                   workstream declares its events in its plan and S1 folds them in.
   track.ts         SERVER. AsyncLocalStorage store, ONE after() per request, defer().
   track.client.ts  'use client'. Batched: 2s debounce, flush at 20, queue capped at
                    200, fetch(keepalive) normally and sendBeacon on the hide path.
@@ -1465,6 +1502,90 @@ in the language it was generated in rather than the one the sharer was reading. 
 `getTranslation` call and the same `renderedLocale` treatment — do it in the same change that
 mounts the block, not after somebody notices.
 
+## The public surface (v0.4.0 / S1)
+
+**Before this, a search engine could see three pages of this application and one of them
+was a login form.** S1 is the keystone of v0.4.0: the gate change, a signed-out homepage,
+one leaf that owns the site's origin, a sitemap, JSON-LD, cache headers and the shared
+public footer. The evidence, the measurements and the crawl baseline are in
+`docs/workstream-notes.md`.
+
+```
+src/lib/seo/origin.ts     THE ORIGIN LEAF. Env only, ZERO imports. siteOrigin,
+                          absoluteUrl. `shareOrigin()` DELEGATES to it.
+src/lib/seo/jsonld.ts     PURE builders. No imports, origin as an argument.
+src/lib/i18n/prefix.ts    S2's leaf, landed early -- `gate.ts` imports it (R11/R14).
+src/components/JsonLd.tsx the ONE ld+json mount in the whole app.
+src/components/PublicShell.tsx   the frame + footer. Takes `path` (R17).
+src/components/PublicShare.tsx   S-D8's control. Takes a finished URL as a PROP.
+src/app/Landing.tsx       the signed-out homepage. No session, no DB, no model.
+src/app/page.tsx          the dual render. `currentUser()` and nothing else.
+src/app/sitemap.ts        a LEAF. Alternates are PER PATH, not per release.
+src/content/copy.test.ts  the copy lint over authored content, negative-controlled.
+tools/seo/crawl.sh        THE ACCEPTANCE TEST. No cookie jar.
+tools/seo/fit.sh          loop 4, committed.
+```
+
+### The six things a future session will otherwise undo
+
+1. **`'/'` IS NOT IN `isPublic()` AND MUST NEVER BE (S-D5).** That function
+   short-circuits `decide()` **above** the onboarding check, so `/` in the allowlist
+   stops sending a signed-in, half-onboarded querent to `/onboarding` and lands them on
+   a picker that assumes a completed `profiles` row. The clause is `!signedIn &&
+   pathname === '/'` in `decide()`, below the public check. `isPublicContentPath`
+   differs from `isContentPath` by exactly that one path, and both test files say so.
+2. **`isPublic()`'s CONTENT CLAUSE STRIPS `/en/`; THE OTHER CLAUSES MUST NOT
+   (contract G2).** Middleware strips first (G1), so in production the gate never sees
+   a prefix -- this is defence in depth. **Unconditional stripping would make
+   `/en/api/events` public.** `/en/history` is `false` and there is a test named for
+   the worst outcome available in this release.
+3. **`/arcana` IS PUBLIC THOUGH IT HAS NO PAGE (R6), so its 404 is a real 404.** It is
+   the parent of 22 indexed URLs and Google reads a login redirect on a content path as
+   a soft 404. The negative controls are `/arcanax` and `/arcana-foo`, never `/arcana`.
+4. **`/` IS DELIBERATELY UNCACHEABLE AND HAS NO `next.config.ts` ENTRY.** Three
+   independent reasons that would all have to be solved together: it dual-renders by
+   session, middleware writes `jmt_locale` on it (a `Set-Cookie` makes a response
+   edge-uncacheable whatever `Cache-Control` says), and its language follows D6's chain
+   because the signed-in arm is an app route. Adding it to the cache list would look
+   symmetrical; `headers.test.ts` asserts the absence.
+5. **`inLanguage` IS THE BARE TAG -- `id` / `en`, NEVER `intlTag()` (R15).**
+   `intlTag('en')` is `en-GB`, which V6 chose for date formats and which is a factual
+   claim we cannot make about our prose. `id-ID` on the `WebSite` node beside `id` on
+   S3's 22 `ImageObject`s in one `@graph` is what the rule prevents.
+6. **`sitemap.ts` ALTERNATES ARE PER PATH, NOT PER RELEASE (R2).** `/` is localized and
+   emits a reciprocal `id`/`en`/`x-default` set; `/terms` and `/privacy` have ONE address
+   serving both languages and emit **none**. A `hreflang` pair naming a URL that 404s is
+   non-reciprocal and **Google discards the whole set silently.** S3/S4/S6 add a path
+   only in the commit that adds its page, and only with the English document written.
+
+**`/terms` and `/privacy` ARE INDEXED NOW (R4).** Their `noindex` said "an indexed legal
+page for an app behind auth is noise"; the app stopped being behind auth in this release.
+Three things landed together and doing one half is worse than none: the `robots` field
+came off, both joined `SITEMAP_PATHS`, and both hardcoded Indonesian `<title>`s became
+`generateMetadata` reading the catalog -- the same `<title>`-from-the-wrong-input bug
+`/s/` was fixed for on 2026-07-28.
+
+**`NEXT_PUBLIC_SITE_ORIGIN` IS THE FIRST AND ONLY `NEXT_PUBLIC_` VARIABLE THIS PROJECT
+DECLARES**, and `scripts/audit-secrets.ts`'s "JMTarot has no NEXT_PUBLIC_ variables" rule
+is amended rather than suppressed: the allowlist pairs the name with its ONE legitimate
+reader, so any other module reading it still fails the build, and `lib/seo/origin.ts`
+joined the transitive client-boundary walk. **The prefix is misleading and kept anyway**
+(R10) -- the chain's other three rungs carry no prefix, so `siteOrigin()` inlines to
+`http://localhost:3001` in a browser bundle. A client component takes a finished URL as a
+prop.
+
+**`npm start` LISTENS ON 3000, WHICH IS PERMANENTLY HELD** by another project's Grafana
+container. `npm run dev` passes the port and `npm start` does not, so a local production
+check is `npx next start -p 3001`.
+
+**Still open:** S2's rewrite, cookie guard and `ContentLocaleLink` are not landed, so
+`/en` 302s to `/login`, `/` still writes `jmt_locale`, and `PublicShell` renders no
+language link (the mount point is a marked hole, deliberately -- a placeholder anchor is
+the second definition R17 exists to prevent). **Two `authjs.*` cookies are set on every
+public page** and S2's guard covers only `jmt_locale`; that is the same pre-existing gap
+`/s/` carries. The `s-maxage` is measured locally but **not** against a Vercel CDN (R21).
+
+
 ## /account and the persona (V8)
 
 **The button `/privacy` §8 described for a whole release now exists**, and so do the four blocks
@@ -1869,5 +1990,7 @@ the `www` host — serve one, never both, because an OAuth redirect URI is a str
 and `AUTH_URL` pointed at the apex fails the callback after a redirect that looks successful.
 Production `AUTH_URL=https://www.jmtarot.site`; Google's Authorized Domain is the registrable
 `jmtarot.site`. The consent screen is still in **Testing** mode, so only manually-added test
-accounts can sign in. **What blocks publishing is Google's branding requirement of an app
-homepage that is not a login page** — signed out, `/` redirects to `/login`.
+accounts can sign in. **What blocked publishing was Google's branding requirement of an
+app homepage that is not a login page. Signed out, `/` now renders a landing page
+(v0.4.0, S-D5), so that blocker is closed**; what remains is pressing Publish on the
+consent screen. See `## The public surface (v0.4.0)`.
