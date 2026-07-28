@@ -17,10 +17,29 @@
 # Measured: requesting 375, 390 and 430 all reported the same viewport.
 #
 # So this script is for LOOKING at a page, not for measuring phone layout.
-# Two things were tried and did not work: the Linux Chrome in
-# ~/.cache/puppeteer cannot start (missing libasound.so.2, needs sudo), and
-# CDP over --remote-debugging-address=0.0.0.0 is blocked by the Windows
-# firewall, so real device emulation is not reachable from WSL.
+#
+# THE TWO PARAGRAPHS THAT USED TO END HERE ARE BOTH OBSOLETE AS OF 2026-07-28.
+# They read: "the Linux Chrome in ~/.cache/puppeteer cannot start (missing
+# libasound.so.2, needs sudo), and CDP over --remote-debugging-address=0.0.0.0
+# is blocked by the Windows firewall, so real device emulation is not reachable
+# from WSL."
+#
+# Both diagnoses were right and both conclusions were wrong.
+#
+#   - libasound.so.2 was the ONLY missing library, and a .deb unpacks into a
+#     home directory with no sudo at all. `tools/e2e/setup.sh` does it.
+#   - the firewall problem was reaching WINDOWS Chrome across the WSL NAT. A
+#     LINUX Chrome is a local process and its CDP port is on 127.0.0.1, with
+#     nothing in between.
+#
+# So `tools/e2e/run.sh` honours 390px exactly and drives real Input-domain
+# events -- see CLAUDE.md `## How to verify things here` loop 6, and the
+# /test-prod-using-headless-chrome skill. PREFER IT for anything narrow, or
+# anything needing a session.
+#
+# THIS SCRIPT IS DELIBERATELY KEPT. It needs nothing but a Windows Chrome
+# install, so it is the fallback if ~/.cache/puppeteer is ever cleared, and the
+# ~500px clamp above is still a true fact about Windows.
 #
 # To check phone geometry, put the component in a fixed-width container and
 # read getBoundingClientRect -- for anything whose only input is its container

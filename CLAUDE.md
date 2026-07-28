@@ -61,7 +61,9 @@ npm install
 npm run dev          # http://localhost:3001 -- 3000 is permanently taken, see Traps
 npm run typecheck    # tsc --noEmit
 npm test             # vitest, UNIT ONLY. No database. Keep it that way.
-npm run build        # DO NOT SKIP -- see the TypeScript trap below
+npm run build        # DO NOT SKIP -- see the TypeScript trap below. Since
+                     # 2026-07-28 this ALSO applies migrations, but only on
+                     # Vercel: locally it skips and touches no database.
 npm run smoke        # one live LLM call: is the key/baseURL/model right?
 npm run smoke -- --all   # EIGHTEEN readings: 2 locales x 3 readers x 3 services
 npm run smoke -- --all --locale en   # nine, one locale, for iterating
@@ -136,6 +138,17 @@ AUTH_USERS=[{"u":"...","h":"$2b$12$..."}]     # bcrypt hashes, cost 12
 
 DATABASE_URL=postgres://jmtarot:jmtarot@127.0.0.1:5432/jmtarot
 TEST_DATABASE_URL=postgres://jmtarot:jmtarot@127.0.0.1:5432/jmtarot_test
+MIGRATE_DATABASE_URL=                         # REQUIRED ON VERCEL, both Production
+                                              # AND Preview, or `npm run build`
+                                              # FAILS BY DESIGN. Neon's DIRECT
+                                              # string -- the one WITHOUT `-pooler`
+                                              # in the host. DATABASE_URL stays the
+                                              # POOLED one: that is right for the
+                                              # runtime and wrong for DDL, because
+                                              # pgbouncer in transaction mode does
+                                              # not reliably carry a migration's
+                                              # session state. Locally unset; the
+                                              # script skips off-Vercel anyway.
 FIELD_ENCRYPTION_KEY=...                      # 32 bytes, base64url
 
 LOTUS_MODEL=                                  # defaults to LLM_MODEL
@@ -181,6 +194,16 @@ RATELIMIT_BACKEND=            # `memory` forces local. The 2am kill switch.
 RATELIMIT_TIMEOUT_MS=1000     # bounds a hung fetch, not a target (~80-120ms).
 RATELIMIT_GLOBAL_HOURLY=1200  # fleet-wide. 400 in v0.2.0 meant 400 PER INSTANCE.
 RATELIMIT_EVENTS_BACKEND=     # `redis` moves /api/events off memory. See below.
+RATELIMIT_SESSION_BACKEND=    # `redis` moves the SESSION-UPDATE budget onto
+                              # Upstash. LEAVE IT UNSET. It is on memory for
+                              # LATENCY, not cost -- `refreshSession()` spends one
+                              # hit() and `POST /api/locale` pays it on the request
+                              # path of a language switch. There is no Upstash
+                              # Singapore region, so on Redis that is a sin1->Tokyo
+                              # hop between a DB write and a DB read. Its own
+                              # variable, NOT the one above: `memoryOnly` used to
+                              # test EVENTS_BACKEND first and return early, so one
+                              # variable governed every memory-only budget.
 LLM_WINDOW_CALL_CEILING=280   # MODEL CALLS per ROLLING 5 HOURS, not readings and
                               # not per day. THIS IS WHAT REPLACED THE SPEND CAP.
                               # 280 = the Pro tier's ~400/5h x 70%.
@@ -199,9 +222,23 @@ good, and there is deliberately no re-encryption path.
 
 ## How to verify things here
 
-There is no Playwright and there must not be. Chromium cannot launch in this
-WSL image — it needs `libasound2t64`, which needs sudo. Five loops instead, in
-increasing cost:
+**There is no Playwright and there must not be. That half is unchanged.** The
+sentence that used to follow it — *"Chromium cannot launch in this WSL image — it
+needs `libasound2t64`, which needs sudo"* — was a correct diagnosis with a wrong
+conclusion, and it stood for three workstreams. `ldd` on the Chrome already in
+`~/.cache/puppeteer` names **exactly one** missing library, and a `.deb` unpacks
+into a home directory with no privileges at all:
+
+```sh
+tools/e2e/setup.sh          # does this, idempotently, and verifies it
+# apt-get download libasound2t64 && dpkg-deb -x *.deb ~/tools/chrome-libs
+# LD_LIBRARY_PATH=~/tools/chrome-libs/usr/lib/x86_64-linux-gnu
+```
+
+So there are **six** loops now, and loop 6 is what found the production sign-in
+outage of 2026-07-28. Still no Playwright, no Puppeteer at runtime and no new
+dependency of any kind: `tools/e2e/chrome.mjs` speaks CDP over Node 24's global
+`WebSocket`. In increasing cost:
 
 1. **Vitest** for anything logic-shaped: deck maths, prompt assembly, question
    sanitization, session tokens, the rate limiter, `togglePick`, field
@@ -216,16 +253,35 @@ increasing cost:
    a database.
 3. **Screenshots via Windows Chrome.** `tools/shot.sh <path> <w> <h> <out.png>`
    drives `/mnt/c/.../chrome.exe` headless against the WSL dev server and
-   writes a PNG you can read back. **Read that script's header before trusting
-   a narrow one** — Windows clamps a Chrome window to ~500px, so
-   `--window-size=375` lays out at ~500 and merely crops the image. It looks
-   like a phone screenshot and is not one.
+   writes a PNG you can read back. **Its ~500px clamp is real and is a WINDOWS
+   limitation, not a Chrome one** — Windows refuses to size a window below
+   roughly 500px, so `--window-size=375` lays out at ~500 and merely crops the
+   image. It looks like a phone screenshot and is not one. **Loop 6 does not have
+   this problem**; prefer it for anything narrow. `shot.sh` is kept because it
+   needs nothing but a Windows install, so it is the fallback if
+   `~/.cache/puppeteer` is ever cleared.
 4. **Fixed-width containers plus `getBoundingClientRect`** for phone-width
    layout. For anything whose only input is its container's inline size — the
    fan, for instance — this is exact, not an approximation.
-5. **A real iPhone against a Vercel preview URL.** The only way to check
-   `100dvh`, safe-area insets, real touch, Add to Home Screen, and standalone
-   mode.
+5. **A real Chrome in WSL, driven over CDP.** `tools/e2e/run.sh` — see
+   `/test-prod-using-headless-chrome` and `.claude/skills/`. Launch, navigate,
+   tap with real Input-domain events, screenshot at a **true** 390px, read the
+   DOM, list requests with their POST bodies. It holds a **persistent Google
+   session**, so a signed-in production flow can be exercised repeatedly. Point
+   it at production, a preview, or `E2E_BASE=http://localhost:3001`.
+
+   **The human authenticates and the harness never holds a credential** — no verb
+   accepts a password, sign-in happens in a headed WSLg window somebody types
+   into, and `whoami` prints the session cookie's length and never its value.
+
+   This is the most expensive loop that is still automatable. Reach for it when
+   the question needs a real session, real touch, or the deployed lambda.
+6. **A real iPhone against a Vercel preview URL.** Still the only way to check
+   `100dvh`, safe-area insets, real touch on glass, Add to Home Screen, and
+   standalone mode. **Loop 5 cannot substitute for it, and two live bugs prove
+   it:** the iOS standalone sign-in risk is about two cookie jars and loop 5 has
+   one, and the language switch's iPhone timeout could not be reproduced in WSL
+   at all, because Docker Postgres never sleeps and a Neon compute does.
 
 **Driving the real page without a WebDriver.** Two of the worst bugs in this
 project were invisible to unit tests and to screenshots: the page looked
@@ -264,6 +320,49 @@ that someone will helpfully "fix" back into existence.
    expo-router-specific. `<Link href={`/${reader.id}`}>` is right in Next.
 
 ### These will bite you
+
+- **A COMMITTED MIGRATION THAT NOBODY APPLIED TOOK PRODUCTION DOWN, AND THE APP
+  LOOKED PERFECTLY HEALTHY WHILE IT DID.** This is the worst outage this project
+  has had, on 2026-07-28, and the mechanism generalises past the one column.
+
+  `0001_v2-translations-and-locale-source` was committed 2026-07-27 and applied
+  locally. Nothing ever applied it to Neon — `drizzle.__drizzle_migrations` held
+  only `0000_baseline`. So:
+
+  ```
+  GET /api/auth/callback/google   error
+  sign-in upsert failed; refusing the session
+    [cause]: column "locale_source" of relation "users" does not exist
+    code: '42703'
+  ```
+
+  `upsertUserOnSignIn` threw, `auth.ts`'s catch returned `null`, no session cookie
+  was minted, and the gate bounced the querent back to `/login`. **Google's consent
+  screen succeeded every single time**, so the whole OAuth round trip looked
+  correct and the app was simply impossible to sign in to. **And the same column
+  killed the language switch**, because `setUserLocale` writes `localeSource` too —
+  ONE unapplied migration presenting as TWO unrelated-looking bugs, neither of
+  which named a migration.
+
+  **The class of failure: code and schema shipped on different rails.** `npm run
+  build` was `next build && audit:secrets`, and `db:migrate` was a command a human
+  remembered. Every deploy carried code that assumed columns production might not
+  have, and the drift was silent until a user hit the exact one.
+
+  **`npm run build` now runs `scripts/db-migrate-deploy.ts` FIRST**, and it **fails
+  the build** rather than skipping when it cannot run — same defaulting argument as
+  `ANALYTICS_ENABLED`: a typo must not silently disable the thing, because a green
+  deploy over a drifted schema is exactly this outage. It needs
+  `MIGRATE_DATABASE_URL` (see `## Environment variables`), refuses a `-pooler`
+  host, and skips on a non-Vercel build so a local `npm run build` still touches no
+  database. The guard is `VERCEL`, not `NODE_ENV`, for the reason `db/client.ts`
+  gives.
+
+  **Two things this does NOT fix, written down rather than solved.** Concurrent
+  builds could both try to apply the same migration; drizzle takes no advisory
+  lock, and for one developer that is not worth a lock table. And a migration that
+  is *destructive* still deploys ahead of the code that tolerates it — the ordering
+  problem is unchanged, only the omission is fixed.
 
 - **`middleware.ts` must be at `src/middleware.ts`**, not the repo root,
   because the app lives under `src/`. At the root it is not an error — it is
@@ -355,6 +454,36 @@ that someone will helpfully "fix" back into existence.
   header. **Upstash is largely exonerated** — `redis.ts` already sets
   `timeout: 0` and `retry: false`, so a failure there surfaces immediately rather
   than hanging; it costs one RTT, not seconds.
+
+  **AND THE PARAGRAPHS ABOVE WERE STILL NOT THE WHOLE BUG. TWO MORE THINGS
+  LANDED ON 2026-07-28, AFTER THE SWITCH WAS REPORTED DEAD ON iPHONE SAFARI WHILE
+  BEING FINE ON A DESKTOP.** Both are worth reading before touching this path.
+
+  First: **the chain above is now TWO round trips, not three.** `session-update:`
+  moved to the memory backend, which deletes the `sin1`→Tokyo hop from between the
+  write and the read. That budget only ever stopped ONE authenticated user
+  spamming `POST /api/auth/session`, and one user's requests land mostly on one
+  warm instance, so per-instance costs nothing real — unlike `global` or
+  `llm:window`, which are meaningless per-instance. `RATELIMIT_SESSION_BACKEND`
+  moves it back.
+
+  Second: **"the write still lands" was true and was NOT good enough, and the
+  querent's own description of it was the diagnosis.** Reported as "changing
+  language does nothing", then refined to *"it only takes effect after we change
+  to another page"* — which is exactly what the old code did. The catch treated a
+  timeout identically to a refusal: revert the marker, deliberately do not
+  refresh. So the toggle flicked back, nothing else happened, and the new language
+  was waiting on the next navigation. **A timeout is the one outcome that means
+  UNKNOWN**, so it is now the only one retried — once, with the marker KEPT, while
+  `!response.ok` and offline still revert because those are answers. The retry is
+  cheap precisely because whatever was cold is warm by the time the first attempt
+  gives up. `localeSwitch.test.ts` fences all of it, negative-controlled.
+
+  **THE MEASUREMENT LESSON IS THE DURABLE ONE: 1348ms warm from WSL told us
+  nothing.** A desktop on a LAN against a warm lambda cannot see this class of
+  bug, and neither can Docker Postgres, which never sleeps. Loop 6 in
+  `## How to verify things here` drives the real production page and still could
+  not reproduce it. **A phone is the instrument for anything on the cold path.**
 
 - **Port 6379 is permanently occupied by another project's `chatbot-redis`
   container**, bound to `0.0.0.0`, exactly like Grafana and port 3000. This
@@ -884,6 +1013,13 @@ Resolution, once, in middleware: **session `loc` claim → `jmt_locale` cookie �
   from two panels to one and back, mid-gesture. `localeSwitch.test.ts` fences both
   halves.
 
+  **AND THE SWITCH HAD A THIRD FAILURE THAT WAS iPHONE-ONLY.** A timed-out request
+  used to revert the marker and skip the refresh while the write landed anyway, so
+  the new language appeared only on the next navigation. It is retried once now,
+  and `session-update:` left Upstash to delete a Tokyo hop from the path. The full
+  write-up is the `POST /api/locale` entry under `## Traps` — read it before
+  changing `SWITCH_DEADLINE_MS`, `SWITCH_RETRY_DEADLINE_MS` or the catch.
+
 - **A template literal will stringify a `Localized<>` object and typecheck
   clean.** `` `Layanan: ${s.name}` `` shipped `[object Object]` into all nine
   system prompts with a green `npm run typecheck`. Grep for
@@ -1022,6 +1158,40 @@ Two smaller ones: `state` and `nonce` are **not** sent — `@auth/core` appends
 role here, so do not "fix" it by adding two more cookies to the round trip. And a
 folder under `src/app/` whose name starts with `_` is **private**: it registers no
 route, and the path falls through to `[reader]/[service]`.
+
+### A fifth trap, paid for in production on 2026-07-28
+
+- **THE SIGN-IN FAILURE PATH LOGGED THE QUERENT'S EMAIL AND REAL NAME, AND THE
+  RULE FORBIDDING IT WAS ALREADY WRITTEN TWICE.** `## Traps` says "never log a
+  driver error" for `flush.ts` (whose bound parameters include
+  `readings.question`) and for `moderation/log.ts`. `auth.ts` was the one place
+  still doing it: `console.error('...', err)` on a failed upsert, and a postgres
+  error quotes its bound parameters. `upsertUserOnSignIn` binds nine of them and
+  four identify a person — the Google `sub`, the email, the display name and the
+  avatar URL.
+
+  Not hypothetical. Read out of a real Vercel log while diagnosing the missing
+  migration:
+
+  ```
+  params: 105739332935278811728,105739332935278811728,<address>@gmail.com,
+          true,<full name>,https://lh3.googleusercontent.com/a/<id>=s96-c,...
+  ```
+
+  **The leak scaled with the outage**, which is the part worth carrying: the
+  failure that exposed it was a schema drift, i.e. the case where EVERY sign-in
+  fails, so a rule that had been harmless for weeks started writing one row of PII
+  per attempt at the exact moment nobody was watching the log for privacy.
+
+  `logSignInFailure` follows `flush.ts` exactly — SQLSTATE and the error's class in
+  production, the whole error in development, because there is nobody to leak it
+  to and a stack trace is the difference between a five-minute fix and an hour.
+  `sqlstate` is duplicated rather than imported so the auth bundle does not
+  acquire an analytics module for six lines.
+
+  **The generalisation: every `catch` that touches the database is a potential PII
+  sink, and the audit is "which of my bound parameters came from a person".** Grep
+  for `console.error` with an error object in any path that runs a query.
 
 ### Verifying the gate without Google
 
@@ -1760,10 +1930,18 @@ from the same measurement, not from the plan's guessed 2500.
    reasoning excludes `moderation/types.ts` and `resources.ts` from needling —
    they are supposed to reach the client.
 2. **`x-frame-options: SAMEORIGIN`, and `frame-ancestors 'self'`, never `DENY` /
-   `'none'`.** A security checklist will say otherwise. This project's only way
-   to drive its own UI is a same-origin iframe harness under `public/cards/` —
-   Chromium cannot launch in this WSL image — and `DENY` kills it while blocking
-   nothing that SAMEORIGIN does not. `src/lib/headers.test.ts` asserts both.
+   `'none'`.** A security checklist will say otherwise. `DENY` kills the
+   same-origin iframe harnesses under `public/cards/` while blocking nothing that
+   SAMEORIGIN does not. `src/lib/headers.test.ts` asserts both.
+
+   **THE CONCLUSION IS UNCHANGED AND ONE CLAUSE OF THE REASONING IS NOT.** This
+   used to say the iframe harnesses were "this project's only way to drive its own
+   UI — Chromium cannot launch in this WSL image". Since 2026-07-28 a real Chrome
+   does launch (loop 6), so they are no longer the *only* way. They are still a
+   dozen committed harnesses that a header change would break for no gain, and
+   they remain the cheapest loop for "does the UI agree with what it sends?"
+   against a dev server. Do not flip the header on the strength of the stale
+   clause.
 3. **The gate PRIMES the reading before awaiting the verdict.** `iterator.next()`
    in `gateReading` issues the HTTP request; deleting it looks like a tidy-up,
    breaks nothing, logs nothing, and doubles every reading's latency forever.
