@@ -55,48 +55,38 @@
  * `min-height` and not `height`.
  *
  * MEASURED 2026-07-28 by public/cards/_swipefit.html, against the six real
- * summaries from `npm run smoke -- --summary` (191-372 chars) and the three
- * real bios. THE PLAN'S PROVISIONAL TABLE WAS WRONG BY TWO LINES IN THE SAME
- * DIRECTION AT EVERY WIDTH, and it is left below the measurement because the
- * gap is the point: it guessed a 260-char summary and the model writes 372.
+ * summaries from `npm run smoke -- --summary` and the three real bios. The
+ * six spread 191-372 chars, which is FOUR TO EIGHT rendered lines at 358px --
+ * and that spread, not any single number, is the difficulty here. No reserve
+ * both covers the long summaries and avoids a hole under the short ones.
  *
- *   deck px   summary lines             bio lines (min..max over 3 readers x 2 loc)
- *   (=vw-32)  typical(372ch) worst(414ch)
- *   288          10             11              4 .. 7
- *   328           8             --              4 .. 6
- *   343           8             --              3 .. 6
- *   358           8              9              3 .. 5
+ *   deck px   summary lines                bio lines (3 readers x 2 locales)
+ *   (=vw-32)  short(14ch) longest(372ch) 414ch
+ *   288           1            10          11          4 .. 7
+ *   328           1             8          --          4 .. 6
+ *   343           1             8          --          3 .. 6
+ *   358           1             8           9          3 .. 5
  *
- *   PLAN GUESSED:  6 lines at 328-358, 7 at 288.   Both two low.
+ * CHOSEN: 6 lines, which is the plan's own value -- the MEDIAN of the six real
+ * summaries, not the maximum. D-V5-3 says exactly that ("sized to the typical
+ * summary, not to the theoretical maximum"), and `min-height` rather than
+ * `height` exists so a long one crosses it and grows the deck one extra time.
  *
- * SO THE 6-LINE RESERVE WAS INERT. 6 lines is 144px and the typical summary
- * renders 192px, so `min-height` never bound: the panel was sized by its own
- * content, which is EXACTLY option A above -- the deck growing on every streamed
- * chunk, the failure this whole file exists to prevent. It would have shipped
- * looking correct in every static screenshot.
+ * AN 8-LINE RESERVE WAS TRIED FIRST AND REVERTED, and it is recorded because
+ * the measurement on its own argued for it. Sizing to the LONGEST of the six
+ * makes the deck perfectly stable -- and puts a four-line hole between a short
+ * summary and the dots, ON THE PANEL THE QUERENT LANDS ON, because the deck
+ * auto-slides to the summary. Task 13's screenshot is what showed it. The
+ * numbers could not: `_swipefit.html` reports dead space against the BIO, where
+ * 5 lines looked tolerable on the ground that a querent only meets it by
+ * swiping back. But the reserve lives on the SUMMARY panel, so a short summary
+ * pays it immediately and unavoidably. Growth during a stream is two or three
+ * reflows over about a second; the hole is permanent. The hole loses.
  *
- * CHOSEN: 8 lines at >= 300px of deck, 10 below. The typical summary then fits
- * the reserve exactly at 328-358, so the deck reaches its final height at the
- * FIRST byte and never moves again; the 414-char outlier crosses it and grows
- * once more, which is the accepted trade and the reason this is `min-height`.
- *
- * ---------------------------------------------------------------------------
- * DEPARTING FROM THE PLAN'S TASK 12 STEP 3, DELIBERATELY
- * ---------------------------------------------------------------------------
- * That step says: if dead space under the shortest bio exceeds 3 lines at any
- * width >= 360, drop `--summary-lines` by one. Measured, it is FIVE lines
- * (thessaly, 3-line bio, against an 8-line reserve at 358px). The rule is not
- * followed, because it was calibrated against the guessed 6-line summary and
- * obeying it here would walk straight back into the inert reserve above --
- * 7 lines still leaves 4 lines of dead space AND reintroduces the growth.
- *
- * What makes 5 lines acceptable is WHERE it is: the dead space is under the
- * BIO, and the bio is not on screen at the moment the deck grows, because the
- * deck slides to the summary in the same instant (D-V5-1, D-V5-3). It is seen
- * only by a querent who deliberately swipes back. Per-chunk growth, by
- * contrast, is seen by everybody, every time, as the service list reflowing
- * under a paragraph that is still arriving. Task 13 is the judgement on whether
- * the hole reads as breathing room; the numbers cannot make it.
+ * TASK 12 STEP 3 IS THEREFORE SATISFIED RATHER THAN DEPARTED FROM. Dead space
+ * under the shortest bio (thessaly, 3 lines at 358px) is 3 lines, which is its
+ * threshold and not over it. At 8 lines it was 5 -- which is precisely the
+ * condition that step was written to catch, and it caught it.
  *
  * ---------------------------------------------------------------------------
  * THE BREAKPOINT IS 300px OF CONTAINER, NOT 339px OF VIEWPORT
@@ -133,7 +123,7 @@
 }
 
 .summaryPanel {
-  --summary-lines: 8;
+  --summary-lines: 6;
   min-height: calc(var(--summary-lines) * 16px * 1.5);
 }
 
@@ -141,6 +131,6 @@
    phone, whose deck is 328. */
 @container (max-width: 300px) {
   .summaryPanel {
-    --summary-lines: 10;
+    --summary-lines: 7;
   }
 }
