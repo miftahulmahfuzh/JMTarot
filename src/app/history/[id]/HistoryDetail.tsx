@@ -11,6 +11,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { ReadingView, type ReadingProse, type ReadingViewData } from '@/components/ReadingView';
+import { ShareFooter } from '@/components/ShareFooter';
 import { LOCAL_DATE_HEADER, SESSION_HEADER } from '@/lib/analytics/localdate';
 import { getSessionId, track } from '@/lib/analytics/track.client';
 import { useT } from '@/lib/i18n/LocaleProvider';
@@ -19,10 +20,19 @@ import { todayKey } from '@/lib/storage';
 export function HistoryDetail({
   reading,
   cachedTranslation,
+  nickname,
 }: {
   reading: ReadingViewData;
   /** Read on the server from `translations`, so a second view has no spinner. */
   cachedTranslation: string | null;
+  /**
+   * V7. `profiles.nickname`, for the share sheet's preview of the
+   * "A reading for {nickname}" line the public page renders.
+   *
+   * Passed in rather than fetched: this is a client component, and the page above
+   * it is already doing one primary-key read.
+   */
+  nickname: string | null;
 }) {
   const t = useT();
   const needs = reading.locale !== t.locale && reading.body !== null;
@@ -103,6 +113,29 @@ export function HistoryDetail({
     <ReadingView
       reading={reading}
       prose={prose}
+      /*
+       * V7's SECOND MOUNT (VD10). Offered only for a reading a stranger could
+       * actually read: `ok` and a body. `/history` deliberately SHOWS `partial`,
+       * `failed` and `aborted` rows -- the querent drew those cards -- and none of
+       * them is shareable, so the condition here is narrower than the list's on
+       * purpose rather than by omission. `createShareLink` refuses the same set
+       * server-side, which is what makes this a UI decision rather than the
+       * enforcement.
+       *
+       * IN THE `footer` SLOT, not appended after the component: that is the slot's
+       * whole reason for existing, and it keeps the disclaimer the last thing above
+       * the share control in every mount.
+       */
+      footer={
+        reading.status === 'ok' && reading.body !== null ? (
+          <ShareFooter
+            entity="reading"
+            entityId={reading.id}
+            preview={reading}
+            nickname={nickname}
+          />
+        ) : null
+      }
       onCardOpened={(c) =>
         track('draw.card_detail_opened', {
           card_id: c.cardId,

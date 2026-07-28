@@ -30,6 +30,7 @@ import { notFound } from 'next/navigation';
 import { currentUser } from '@/lib/auth/server';
 import { db } from '@/lib/db/client';
 import { readingWithCards } from '@/lib/db/queries/history';
+import { getProfile } from '@/lib/db/queries/profile';
 import { getTranslation } from '@/lib/db/queries/translations';
 import { getLocale, getT } from '@/lib/i18n/t';
 import { logHistoryFailure } from '@/app/api/history/log';
@@ -120,12 +121,32 @@ export default async function HistoryDetailPage({
     }
   }
 
+  /*
+   * V7. The nickname, for the share sheet's preview of the public page's
+   * "A reading for {nickname}" line.
+   *
+   * WRAPPED AND SWALLOWED, like the cached translation above and for the same
+   * reason: the reading is the page and is allowed to take the page down with it,
+   * while this is a label inside a sheet nobody has opened yet. A null nickname
+   * disables the toggle rather than breaking anything.
+   *
+   * NOT on the request path of anything the querent is waiting for -- it is one
+   * primary-key read in a request that has already made one, which is the
+   * exemption reconciliation §6 granted this route.
+   */
+  let nickname: string | null = null;
+  try {
+    nickname = (await getProfile(db, user.id))?.nickname ?? null;
+  } catch (err) {
+    logHistoryFailure('detail', err);
+  }
+
   return (
     <main className={styles.shell}>
       <Link href="/history" className={styles.back}>
         {t('history.detail.back')}
       </Link>
-      <HistoryDetail reading={reading} cachedTranslation={cached} />
+      <HistoryDetail reading={reading} cachedTranslation={cached} nickname={nickname} />
     </main>
   );
 }

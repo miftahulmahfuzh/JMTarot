@@ -11,7 +11,27 @@ Padding (never cropping) is deliberate. It was originally because cropping to 2:
 would clip the card titles on the 1024x1536 generation; the regenerated deck has
 no titles, but padding is still the option that cannot silently eat artwork.
 
-Two sizes come out, because the app draws cards at two very different scales.
+THREE sizes come out. Two of them are WebP for the app; the third is PNG and
+exists for one reason, which is worth stating before somebody deletes it as
+redundant:
+
+**SATORI CANNOT DECODE WEBP.** `next/og`'s image pipeline is vendored inside
+`next` (satori + resvg + yoga, no new dependency), and its allowed-format list --
+read out of the bundle rather than out of documentation -- is
+
+    var qI = [image/png, image/apng, image/jpeg, image/gif, image/svg+xml];
+    ...
+    if (!qI.includes(t)) throw new Error(`Unsupported image type: ${t}`);
+
+`image/webp` and `image/avif` are *detected* and then *rejected*. Every card in
+`public/cards/` and `public/cards/thumb/` is WebP, so the naive OG image throws at
+REQUEST time -- in the one code path nobody looks at, because a missing WhatsApp
+preview is invisible from inside the app. Hence `public/cards/og/NN_slug.png` at
+200x300: three cards render at ~190x285 on a 1200x630 canvas, so the size is exact
+rather than generous.
+
+Two sizes come out for the app itself, because it draws cards at two very
+different scales.
 The fan renders all 22 at roughly 88x132 CSS pixels; serving 800x1200 art for
 that means 4.1MB to paint 22 thumbnails, which on mobile data would be the
 single worst thing this app does. The result panel genuinely needs the full
@@ -22,9 +42,15 @@ size. So: full for the reading, thumb for the fan and the slots.
 Reads  assets/major_arcanas/*.png     (left untouched)
 Writes public/cards/NN_slug.webp      at TARGET_W x TARGET_H
        public/cards/thumb/NN_slug.webp at THUMB_W x THUMB_H
+       public/cards/og/NN_slug.png     at OG_W x OG_H -- PNG, for satori (V7)
        tools/_contactsheet.jpg        for eyeballing the result
 
-Idempotent: re-running overwrites both outputs with identical bytes.
+Idempotent: re-running overwrites all three outputs with identical bytes.
+
+`public/cards/og/` inherits `/cards/*`'s one-year `immutable` cache header from
+next.config.ts, which is correct and is one more directory covered by CLAUDE.md's
+existing warning: regenerating the art means changing the filenames or shortening
+that header first, or existing installs keep the old images.
 """
 
 from PIL import Image
@@ -34,6 +60,7 @@ import sys
 SRC = Path("assets/major_arcanas")
 OUT = Path("public/cards")
 THUMB_OUT = OUT / "thumb"
+OG_OUT = OUT / "og"
 TARGET_W, TARGET_H = 800, 1200
 QUALITY = 82
 
@@ -43,6 +70,15 @@ QUALITY = 82
 # because compression artefacts are invisible at this scale.
 THUMB_W, THUMB_H = 240, 360
 THUMB_QUALITY = 80
+
+# V7's OG previews. 200x300 because the layout draws three cards at ~190x285 on a
+# 1200x630 canvas, so this is one device pixel of headroom rather than a guess.
+#
+# PALETTE-QUANTIZED to 128 colours. The art is dark navy and cream with a narrow
+# gamut, so the loss is invisible at 200px and the saving is large -- measured
+# below, and the total is what matters: 22 files that are committed and served.
+OG_W, OG_H = 200, 300
+OG_COLORS = 128
 MAT = (0, 0, 0)
 DARK_THRESHOLD = 40
 
@@ -138,13 +174,17 @@ def main():
         sys.exit(f"missing source directory: {SRC}")
     OUT.mkdir(parents=True, exist_ok=True)
     THUMB_OUT.mkdir(parents=True, exist_ok=True)
+    OG_OUT.mkdir(parents=True, exist_ok=True)
 
     missing = [f"{s}.png" for s in ARCANA if not (SRC / f"{s}.png").is_file()]
     if missing:
         sys.exit(f"missing source art: {', '.join(missing)}")
 
-    thumbs, total_in, total_out, total_thumb = [], 0, 0, 0
-    print(f"{'card':22s} {'source':>12s} {'trimmed':>12s} {'bars':>6s} {'kb':>7s} {'thumb kb':>9s}")
+    thumbs, total_in, total_out, total_thumb, total_og = [], 0, 0, 0, 0
+    print(
+        f"{'card':22s} {'source':>12s} {'trimmed':>12s} {'bars':>6s} {'kb':>7s} "
+        f"{'thumb kb':>9s} {'og kb':>7s}"
+    )
 
     for slug in ARCANA:
         src_path = SRC / f"{slug}.png"
@@ -172,12 +212,24 @@ def main():
         thumb_bytes = thumb_dst.stat().st_size
         total_thumb += thumb_bytes
 
+        # V7's OG copy. Derived from the SAME padded 2:3 card as the other two, so
+        # the WhatsApp preview frames the artwork exactly as the app does -- a
+        # preview cropped differently from the page reads as a different deck.
+        og_dst = OG_OUT / f"{slug}.png"
+        (
+            card.resize((OG_W, OG_H), Image.LANCZOS)
+            .quantize(colors=OG_COLORS, method=Image.MEDIANCUT)
+            .save(og_dst, "PNG", optimize=True)
+        )
+        og_bytes = og_dst.stat().st_size
+        total_og += og_bytes
+
         # Side bars appear when the trimmed art is narrower than 2:3.
         bars = (TARGET_W - drawn_w) // 2
         print(
             f"{slug:22s} {'x'.join(map(str, source_size)):>12s} "
             f"{'x'.join(map(str, trimmed_size)):>12s} {bars:>6d} {out_bytes/1024:>7.1f} "
-            f"{thumb_bytes/1024:>9.1f}"
+            f"{thumb_bytes/1024:>9.1f} {og_bytes/1024:>7.1f}"
         )
         thumbs.append(card.resize((160, 240), Image.LANCZOS))
 
@@ -190,6 +242,8 @@ def main():
           f"({total_in/total_out:.0f}x smaller)")
     print(f"{len(ARCANA)} thumbs {total_thumb/1e3:.0f}KB total "
           f"-- the whole fan, at {total_thumb/total_out*100:.0f}% of the full-size cost")
+    print(f"{len(ARCANA)} og pngs {total_og/1e3:.0f}KB total "
+          f"-- satori cannot read WebP; see the header")
     print("contact sheet: tools/_contactsheet.jpg")
 
 

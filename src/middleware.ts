@@ -69,8 +69,23 @@ export default auth((request) => {
    * carry a redundant Set-Cookie. This cannot run for paths outside the matcher
    * and must not: `manifest`, `cards/`, `dukuns/` and `_next/` are excluded, which
    * is precisely why `manifest.ts` reads the cookie rather than the header (I13).
+   *
+   * **V7: `/s/` IS EXCLUDED, AND A THIRD PARTY MUST LEAVE WITH NOTHING IN THEIR
+   * JAR.** A share page's viewer is a stranger who never agreed to anything and
+   * may never come back; setting a cookie on them buys a locale preference for a
+   * visit that is usually one page long, and it is the difference between
+   * `/privacy` §4.4 saying "we count the view" and having to say "we also set a
+   * cookie". `share.viewed` carries no `session_id` for the same reason, so there
+   * is nothing to correlate on either way.
+   *
+   * **THE HEADER IS STILL SET**, on the line above, so `await getLocale()` and
+   * `await getT()` work normally on the public page and the chrome comes out in
+   * the VIEWER's language. Only the write is skipped. `manifest.ts` is the
+   * precedent for a path resolving locale without the cookie being refreshed for
+   * it; the difference is that the manifest is outside the matcher entirely and
+   * `/s/` is inside it, because it needs `decide()` to say `next`.
    */
-  if (request.cookies.get(LOCALE_COOKIE)?.value !== locale) {
+  if (!pathname.startsWith('/s/') && request.cookies.get(LOCALE_COOKIE)?.value !== locale) {
     response.cookies.set(LOCALE_COOKIE, locale, {
       httpOnly: true,
       sameSite: 'lax',

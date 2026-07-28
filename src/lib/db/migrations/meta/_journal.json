@@ -22,6 +22,20 @@
       "when": 1785208415722,
       "tag": "0002_v6-readings-shared-at",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785214878706,
+      "tag": "0003_v7-share-links",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785217709187,
+      "tag": "0004_v7-question-included-by-default",
+      "breakpoints": true
     }
   ]
 }

@@ -23,6 +23,13 @@
  *      discipline: a caller who forgets `prose` gets the translating state, not
  *      an Indonesian paragraph inside an English app.
  *
+ * **V7 ADDED A FIFTH PROSE STATE, `as-written`, AND RULE 4 IS UNCHANGED BY IT.**
+ * The public page renders foreign-language prose verbatim on purpose, because it
+ * cannot translate and must not generate; the caller has to NAME that, and an
+ * omitted `prose` still yields the spinner. `resolveProse`'s truth table did not
+ * move a line -- including the test asserting that an explicit `original` is not a
+ * way around rule 4. See `ReadingProse`.
+ *
  * READ-ONLY (VD14). No fan, no picking, no reshuffle, no reset, and `CardDetail`
  * is mounted WITHOUT `onReturn`, which is what removes the return-to-deck button.
  * Reconstruct, never re-run: regenerating would cost a model call and produce
@@ -90,6 +97,36 @@ export type ReadingViewData = ReadingDetail;
  */
 export type ReadingProse =
   | { kind: 'original' }
+  /**
+   * **V7. "THE PROSE STAYS IN ITS OWN LANGUAGE, AND I HAVE DECIDED THAT."**
+   *
+   * A FOURTH MEMBER RATHER THAN LETTING `original` MEAN IT, and the distinction is
+   * the whole reason this exists. `resolveProse` deliberately treats an explicit
+   * `{ kind: 'original' }` exactly like an omitted prop — there is a test named for
+   * it — because rule 4's value is that a caller who FORGOT gets a spinner rather
+   * than an Indonesian paragraph in an English app, and a caller who forgot and a
+   * caller who typed `original` are indistinguishable in intent.
+   *
+   * V7's public page needs the opposite outcome and needs it deliberately:
+   * `/s/[slug]` renders `readings.body` verbatim in `readings.locale` and NEVER
+   * translates, because VD7 makes the prose immutable, VD8 forbids the public
+   * route generating anything, and reading an existing `translations` row would
+   * make the share sheet's "this is exactly what they will see" preview a lie.
+   * Reconciliation §5.5 calls that legitimate — *"deciding not to translate is a
+   * decision"* — and this member is what a decision looks like in the type.
+   *
+   * Rule 4 is not weakened: the only way to reach this branch is to name it, and
+   * `resolveProse`'s truth table is unchanged (it already returns any supplied
+   * non-`original` prose). The honesty the viewer needs is restored by CHROME —
+   * `share.public.otherLanguage` on a mismatch — plus the `lang` attribute below,
+   * which is what points a screen reader and the browser's own translate offer at
+   * the right language.
+   *
+   * **DO NOT USE `{ kind: 'translated' }` FOR THIS.** It renders identically and
+   * would record in the type that a translation happened when none did, which is
+   * the sort of near-miss that produces the next bug.
+   */
+  | { kind: 'as-written' }
   | { kind: 'translating'; text: string }
   | { kind: 'translated'; locale: Locale; text: string }
   | { kind: 'unavailable' };
@@ -258,6 +295,20 @@ export function ReadingView({ reading, prose, footer, onCardOpened }: ReadingVie
         aria-live={shown.kind === 'translating' ? 'polite' : 'off'}
       >
         {shown.kind === 'original' ? <p className={styles.body}>{reading.body}</p> : null}
+
+        {/*
+          V7's public mount. THE SAME TEXT AS `original`, WITH `lang` ON IT --
+          which is the only difference and is the point: this branch is only ever
+          reached when the caller has decided to show prose the viewer does not
+          read, so the attribute is what makes a screen reader pronounce it
+          correctly and what points the browser's translate offer at the right
+          language. `original` needs no `lang` because it agrees with the document.
+        */}
+        {shown.kind === 'as-written' ? (
+          <p className={styles.body} lang={reading.locale}>
+            {reading.body}
+          </p>
+        ) : null}
 
         {shown.kind === 'translated' ? (
           <p className={styles.body} lang={shown.locale}>

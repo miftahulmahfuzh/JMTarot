@@ -1,0 +1,1 @@
+ALTER TABLE "share_links" ALTER COLUMN "include_question" SET DEFAULT true;

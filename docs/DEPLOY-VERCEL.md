@@ -564,6 +564,35 @@ Expect these two, neither of which is a bug:
 - **Rotate a token the moment it is pasted anywhere shared** — a chat, an
   issue, a screenshot.
 
+### Sharing (V7)
+
+**`SHARE_BASE_URL` IS UNSET IN PRODUCTION AND IN PREVIEW.** `AUTH_URL` is already
+`https://www.jmtarot.site` and one host is the rule — the apex 308-redirects to
+`www`, and an OAuth redirect URI is a string comparison. `shareOrigin()` takes
+`AUTH_URL`'s ORIGIN, so a share URL is `https://www.jmtarot.site/s/<12 chars>`,
+39 characters, with nothing to set.
+
+Set it only if the share host ever genuinely differs from the app host. **On a
+PREVIEW deployment it is also unset**, which means preview share links point at
+whatever `AUTH_URL` says there — deliberately, because a preview minting links
+against the production host would put preview rows behind production URLs.
+
+`SHARING_ENABLED` is unset (i.e. on). Only the exact string `0` turns minting off,
+and it does not affect links that already exist — see `.env.example`.
+
+**NOTHING ELSE IS NEEDED FOR THE PUBLIC PAGE**, and two things are worth knowing
+before the first shared link goes out:
+
+- `/s/*` carries `X-Robots-Tag: noindex, nofollow, noarchive` and
+  `Referrer-Policy: no-referrer` from `next.config.ts`, and `robots.txt` disallows
+  the prefix. A 60-bit slug is unguessable but not unindexable.
+- **`UPSTASH_REDIS_REST_URL` matters more once this ships than it did before.**
+  `/s/[slug]` is the app's only unauthenticated read path and its per-IP limit is
+  what makes the slug's entropy arithmetic true; without Upstash the limiter is
+  per-instance memory, so "120 views per IP per hour" becomes 120 × warm
+  instances — and the instance count is largest under exactly the load an
+  enumeration attempt produces.
+
 ## 6. The production database: Neon
 
 **This section used to say the database was local-only and that `DATABASE_URL`

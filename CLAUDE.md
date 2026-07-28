@@ -1217,7 +1217,9 @@ tally (V3)**, **the account shell — the circle, the bottom sheet, and the firs
 sign-out control this app has ever had (V4)**, **the reader swipe deck — the bio
 and today's summary as two panels of one scroll-snap track (V5)**, **history —
 `/history` filtered by day, `/history/[id]` reconstructing a past draw
-read-only, and `ReadingView`, the one renderer V7 also mounts (V6)**, reader
+read-only, and `ReadingView`, the one renderer V7 also mounts (V6)**, **sharing —
+`/s/<slug>`, the first public URL in the app, its OG preview, and the share sheet
+that shows the querent the page before the link exists (V7)**, reader
 picker, service picker, the draw (fan, pick, flip, reduced-motion grid), the card
 detail overlay, the streaming reading endpoint, the prompt layer, and the web app
 manifest.
@@ -1237,7 +1239,7 @@ and **none of it is on the path of a byte the user is waiting for.**
 
 ```
 src/lib/analytics/
-  events.ts        the closed taxonomy: 44 names, a prop shape each, two
+  events.ts        the closed taxonomy: 60 names, a prop shape each, two
                    compile-time guards. NO IMPORTS -- it is the data dictionary
                    and it is read by people, not only by code.
   track.ts         SERVER. AsyncLocalStorage store, ONE after() per request,
@@ -1862,6 +1864,200 @@ uuid 404s.
 - **`/api/memory/{frequency,summary}` still 500 when the database is down**, which
   the section above already records. V6's routes 503 and its page scrubs; those
   two are one omission in two files and were not V6's to touch.
+
+## Sharing (V7)
+
+V7 of v0.3.0 is done. **`/s/<12 chars>` is the first URL in this project's history
+that a person with no account, no session and no relationship with us can open.**
+A stranger sees the reading exactly as the querent saw it — same cards, same
+orientations, same prose — with a *Try It Yourself* button underneath.
+
+```
+src/lib/share/slug.ts      PURE, CLIENT-IMPORTABLE, NO `process.env` EVER.
+                           Crockford base32, `byte & 0x1f`, the entity union.
+src/lib/share/types.ts     PURE. PublicReading / ResolvedShare. Client-reachable,
+                           so no `@/lib/db` specifier -- not even `import type`.
+src/lib/share/links.ts     server-only. create / resolve / revoke, sharingEnabled,
+                           shareOrigin, shareUrl. Dynamic `import` of the client.
+src/lib/db/queries/share.ts  handle-first. Every MUTATION carries `userId` in its
+                           `where`, and `revokeAllForUser` is V8's to call.
+src/app/api/share/route.ts   POST mint, DELETE revoke. Session required.
+src/app/s/[slug]/          page, not-found, adapt.ts, ShareViewed, the OG image
+src/components/ShareFooter.tsx   the control + the sheet. Mounted on the draw
+                           screen and on `/history/[id]`; V8 adds `/account`.
+src/components/TryItYourself.tsx  the stranger's CTA. An `<a>`, never a Link.
+tools/share-seed.ts + tools/share-check.py   the live checks. See below.
+```
+
+### THE QUESTION IS ON THE PUBLIC PAGE, AND THAT REVERSES VD9
+
+**Miftah's ruling, 2026-07-28.** VD9 made `readings.question` opt-in and defaulted
+it off, because it is the querent's own typed text and a shared page is public
+forever; the roadmap's risk table calls a leaked question *"the single
+highest-consequence bug in this release"*. The ruling is that **the question is
+part of the reading**: a stranger who sees three cards and four paragraphs with no
+question cannot tell what any of it is about, and a shared reading nobody can
+follow is not worth sharing.
+
+What actually changed: `share_links.include_question` defaults to `true`
+(migration `0004`), and the share sheet no longer offers a switch. **What did NOT
+change, and must not:**
+
+- **The OG preview image still carries neither the question nor the prose (VD18).**
+  This is the one place the distinction still bites, and it got MORE important
+  rather than less: a page is opened by somebody who chose to, and a preview image
+  is cached by every messenger that merely *sees* the link, before anybody clicks.
+  `page.contract.test.ts` asserts the OG route reads no `question`, no `.body` and
+  no `nickname`.
+- **`publicReadingQuery` still builds its projection conditionally**, and the
+  `.toSQL()` assertions still run. They no longer guard the default; they keep the
+  *capability* to exclude the column real, which is the mechanism if this is ever
+  revisited.
+- **The sheet still previews the real page**, and that is now the ONLY consent
+  mechanism for the question rather than one of four. The querent reads the exact
+  text before the link exists, above a line of copy saying it goes public.
+- **`include_nickname` keeps its switch.** A nickname is a name rather than
+  context, and nothing in the reading depends on it.
+
+### The four traps a future session will otherwise walk into
+
+- **RE-SHARE ROTATES THE SLUG. DO NOT "SIMPLIFY" IT TO `revoked_at = null`.**
+  `unique (user_id, entity, entity_id)` means one row per artifact forever, so
+  un-revoking is the obvious one-line version — and it **resurrects a capability
+  the querent deliberately killed**: the old URL, sitting in the group chat they
+  revoked it because of, starts working again, silently, for whoever still has it.
+  `insertOrRotateShareLink` assigns a fresh slug; the integration test that
+  catches a regression is the one asserting the OLD slug stays dead.
+
+- **`currentUser()` IS NEVER CALLED ON `/s/[slug]`, AND `curl` CANNOT SEE THE
+  FAILURE.** A client component reaching for a session context renders correct HTML
+  on the server and throws during hydration: `curl` reports 200 with the reading in
+  the body and the page is dead in a browser. Verified with loop 6 against a FRESH
+  profile — `__reactFiber$` present on `<main>`, `whoami` reporting signed OUT.
+  `page.contract.test.ts` fences `currentUser`, `requireUser`, `ViewerProvider`,
+  `useViewer`, `cookies()` and `@/lib/auth/*` across the whole subtree.
+
+- **THE HEADERS MUST STAY `SAMEORIGIN` / `frame-ancestors 'self'`.** A security
+  review of a newly-public page will say `DENY` and `'none'`. Both would kill the
+  iframe harnesses under `public/cards/` while blocking nothing SAMEORIGIN does
+  not. V7 adds a `/s/:path*` block to `next.config.ts` and **that block sits AFTER
+  the catch-all on purpose** — Next applies every matching entry and a later one
+  with the same key wins, which is what makes `referrer-policy: no-referrer`
+  override the global `strict-origin-when-cross-origin` on `/s/` and only there.
+  Reversing the two entries is a silent no-op that reads as correct;
+  `headers.test.ts` asserts the ordering. Measured on the wire: exactly one
+  `referrer-policy` value comes back, and it is `no-referrer`.
+
+- **`ImageResponse` RASTERIZES LAZILY, SO A `try`/`catch` AROUND IT CATCHES
+  NOTHING.** The plan said the OG route was "wrapped, so a fetch failure degrades
+  rather than 500s". It was not: `new ImageResponse(...)` returns immediately and
+  satori runs when something reads the body, so the throw escaped the handler and
+  Next answered 500 — **while a revoked slug answered 200, which IS the slug oracle
+  the design forbids.** `rasterize()` reads the body to completion inside the
+  `try`. Found by fetching the route, not by reading it.
+
+### Two more findings, both measured rather than reasoned
+
+- **SATORI THROWS ON `transform: undefined`.** `transform: reversed ? 'rotate(180deg)'
+  : undefined` is the natural way to write it and it takes down every UPRIGHT card,
+  which is most of them. Spread the property instead. Invisible to `npm run
+  typecheck` and to `npm run build`; the only symptom is a broken preview in
+  somebody else's chat.
+- **SATORI CANNOT DECODE WEBP, AND EVERY CARD IN `public/cards/` IS WEBP.** Its
+  allowed list, read out of the vendored bundle, is
+  `[png, apng, jpeg, gif, svg+xml]`; `image/webp` is *detected* and then thrown on.
+  `tools/normalize_cards.py` therefore emits a THIRD format,
+  `public/cards/og/<slug>.png` at 200×300, palette-quantized, 1.1MB for 22 files,
+  committed like the other two so the deploy still needs no Python. It inherits
+  `/cards/*`'s one-year `immutable` header, which is one more directory covered by
+  the existing warning about regenerating the art.
+
+### `ReadingView` gained a fifth prose state, and rule 4 is intact
+
+**`{ kind: 'as-written' }`.** Reconciliation §5.5 told V7 to pass
+`prose={{ kind: 'original' }}` and **that does not work against V6's shipped
+component**: `resolveProse` deliberately treats an explicit `original` exactly like
+an omitted prop, with a test named for it, so following the instruction literally
+would have shipped the pulsing spinner it was written to prevent — forever, for a
+stranger, with nothing failing and nothing logged. Found by reading that function,
+because the page LOOKS correct in Indonesian.
+
+`as-written` says the decision out loud: the prose stays in its own language and
+the caller has decided that. Rule 4 is untouched — an omitted `prose` still yields
+the spinner, and V6's truth table did not lose a line. **Do not use
+`{ kind: 'translated' }` for this**: it renders identically and would record in the
+type that a translation happened when none did.
+
+The honesty a viewer needs is restored by CHROME, not by prose:
+`share.public.otherLanguage` on a mismatch, plus `lang={reading.locale}` on the
+paragraph. **The public route must never generate anything** — VD8, and since V9 a
+model call is the app's scarcest resource rather than a cost.
+
+### Verifying it
+
+```sh
+npm test -- 'share|slug|adapt|gate|headers|legal'   # 1470 total, unit
+npm run test:integration -- share                   # 24: rotation, the .toSQL()
+                                                    # assertions, the orphan case
+# The live loop. `tools/share-check.py` reports 17 PASS/FAIL lines.
+npm run db:up && npm run db:seed && npx tsx tools/share-seed.ts
+SHARE_BASE_URL=http://localhost:3003 PORT=3003 npm run dev
+python3 tools/share-check.py http://localhost:3003
+curl -s -D - -o /dev/null http://localhost:3003/s/aaaaaaaaaaaa | grep -iE 'robots|referrer'
+curl -s -o /tmp/og.png http://localhost:3003/s/aaaaaaaaaaaa/opengraph-image  # THEN LOOK AT IT
+```
+
+**`SHARE_BASE_URL` MUST MATCH THE PORT THE DEV SERVER IS ON, or the OG image comes
+back with no card art and no error.** `shareOrigin()` falls back to `AUTH_URL`,
+which is `localhost:3001`, and satori logs `Can't load image … fetch failed` and
+renders the layout without the pictures — a 200, a plausible PNG, and no art. That
+is a 65KB response against 387KB for the real thing, which is the fastest way to
+tell them apart.
+
+**`tools/share-check.py` strips `<script>` before grepping, and that is not
+cosmetic.** The RSC flight payload carries the whole serialized message catalog on
+every page in this app, so a grep over raw HTML matches copy the page never drew —
+the same trap V6 recorded for `textContent`. **The 404 case is the exception and
+takes the WHOLE response:** `notFound()` from a `force-dynamic` page streams
+`not-found.tsx` in a later chunk, so slicing to `<body>` reported "the gone page
+does not render" against a page that renders perfectly. It scopes to CSS-module
+class names (`goneTitle`) instead, which only ever appear in markup the renderer
+emitted.
+
+### Still open, and none of it is V7's to close
+
+- **`share.viewed` has not been OBSERVED firing.** The code path is `track.client`'s
+  ordinary batcher and the props are asserted in `page.contract.test.ts`, but the
+  CDP recorder was started after the page had loaded and captured no
+  `POST /api/events`. Worth one deliberate check before launch.
+- **TWO `authjs.*` COOKIES REACH A THIRD PARTY, AND THE FIRST DRAFT OF `/privacy`
+  §4.4 SAID OTHERWISE.** Miftah's security amendment asked for no cookie at all on
+  `/s/`; `jmt_locale` IS excluded from middleware's write, and measuring the real
+  response then showed `authjs.csrf-token` and `authjs.callback-url` on every
+  matched path, `/terms` and `/login` included. They are @auth/core's, set by the
+  middleware wrapper before any of our code runs, and neither carries an identity —
+  so the clause now names them instead of omitting them. **Suppressing them would
+  mean bypassing the `auth()` wrapper for `/s/`, which is W2's file and a real
+  blast radius.** Recorded rather than solved.
+- **`readings.shared_at` is written on the FIRST mint and never cleared.** V6 reads
+  it for the history badge. "Was this ever public" is a different question from "is
+  it public now", and `share_links.revoked_at` answers the second.
+- **`translations` was missing from `resetDb()`'s TRUNCATE list** — V2's omission,
+  in a file V7 already had open, so it was added alongside `share_links`. The list
+  is exhaustive on purpose: a forgotten table shows up as leaked state rather than
+  as a query bug.
+- **A fifth sweep delete, for `share_links` whose `entity_id` no longer resolves.**
+  Harmless today (the resolver 404s) but they hold a
+  `unique (user_id, entity, entity_id)` slot forever and make `view_count`
+  meaningless. W7 owns the route; V2 already added a fourth.
+- **`personas` does not exist**, so `'persona'` is a live value in the union that
+  resolves to null — inert, exactly as V2 left `'persona'` in the translation
+  registry. `publicPersonaForShare` names what V8 replaces it with, and it cannot
+  be written speculatively: `to_regclass` cannot guard a relation from inside the
+  statement, because Postgres resolves relations at PARSE time.
+- **No resolve cache is shipped.** `SHARE_RESOLVE_CACHE_MS` is `0` and its comment
+  says what turning it on costs: a window in which a revoked link still resolves.
+  Somebody should decide the acceptable window *before* the night it is needed.
 
 ## Trust, safety and secrets (W7)
 

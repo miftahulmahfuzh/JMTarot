@@ -184,6 +184,38 @@ export function PrivacyEn({ effective }: { effective: string }) {
           <P>Vercel runs the app, so every request passes through them.</P>
         </SubClause>
 
+        {/* 4.4. See the Indonesian file for why it is a sub-clause here rather
+            than a new section. */}
+        <SubClause id="4-4" n="4.4" title="Anyone you send a link to">
+          <P>
+            If you create a share link for a reading, that page can be opened by anyone holding the
+            address, with no account. What they see: the cards, their orientation, the reading, the
+            reader who gave it, the date,{' '}
+            <strong>and the question you typed</strong> &mdash; the question is included so the
+            reading can be followed. Before the link exists we show you that page as it will be, so
+            you know exactly what will be readable. The detail is in{' '}
+            <Link href="/terms#18">terms clause 18</Link>.
+          </P>
+          <P>
+            A person who opens that page <strong>is recorded, without being identified</strong>. We
+            add one to the link&rsquo;s view count, and we record a <em>share.viewed</em> event with
+            no account attached &mdash; no account id, no session id.{' '}
+            <strong>We do not set the language cookie every other page sets</strong>, so there is
+            nothing on this page that could link one visit to another. What remains is two technical
+            cookies from the sign-in library, which apply site-wide: a form-security token and a
+            return address. Neither carries an identity and neither holds a session. What we get is
+            a number, not a trail.
+          </P>
+          <P>
+            The preview image a messaging app generates contains the cards and the reader&rsquo;s
+            name only &mdash; <strong>never your question and never the reading</strong>, even
+            though both are on the page. That is deliberate: a preview image is cached by every
+            messaging app that sees the link, before anybody opens it. We do not control how long
+            that app keeps the image.
+          </P>
+        </SubClause>
+
+
         <P>
           <strong>No advertisers, no data brokers, and no sale of anything, ever.</strong>{' '}We say it
           outright because most people assume the opposite.
@@ -220,6 +252,11 @@ export function PrivacyEn({ effective }: { effective: string }) {
               <strong>{RETENTION.moderationQuestionDays} days</strong>, the record itself
               indefinitely without the text.
             </>,
+            <>
+              Share links: for the life of your account.{' '}
+              <strong>A link you turned off is kept revoked</strong> rather than deleted, so that
+              address can never be issued again for something else.
+            </>,
           ]}
         />
       </Clause>
@@ -230,6 +267,10 @@ export function PrivacyEn({ effective }: { effective: string }) {
             'Skip any opening question.',
             'Clear a single answer later, without deleting your account.',
             'Change the app&rsquo;s language whenever you like.',
+            <>
+              Turn a share link off, from the same reading you made it on.{' '}
+              <strong>Turning it off does not un-send a screenshot</strong> somebody already took.
+            </>,
             'Delete your account.',
           ]}
         />

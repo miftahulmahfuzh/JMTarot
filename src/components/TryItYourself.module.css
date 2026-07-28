@@ -1,0 +1,57 @@
+/*
+ * The one thing on the public page that is asking for something.
+ *
+ * Composed entirely from `src/theme/tokens.css` -- no new hex values, no new font
+ * sizes, no new easing curve. The button borrows the gold wash the account menu's
+ * primary action uses, because a stranger meeting this app for the first time
+ * should see the same gold it uses everywhere else rather than a CTA that looks
+ * like it came from a different product.
+ */
+
+.cta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  margin-top: 26px;
+  padding-top: 24px;
+  /* The hairline is the same one the Eyebrow uses, so the page reads as one
+     frame rather than as a reading with an advert stapled underneath. */
+  border-top: 1px solid var(--gold-hairline);
+}
+
+.lead {
+  margin: 0;
+  font-family: var(--font-body), serif;
+  font-size: var(--fs-hint);
+  font-style: italic;
+  color: var(--muted);
+  text-align: center;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 48px of height at the default font size: a real touch target on glass. */
+  min-height: 48px;
+  padding: 0 28px;
+  border: 1px solid var(--gold-border);
+  border-radius: var(--radius-chip);
+  background: var(--gold-wash);
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--gold-text);
+}
+
+.button:hover {
+  background: var(--gold-wash-strong);
+  color: var(--gold-pale);
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--gold-border);
+  outline-offset: 3px;
+}

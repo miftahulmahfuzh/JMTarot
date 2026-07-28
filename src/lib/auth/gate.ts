@@ -93,6 +93,28 @@ export function isPublic(pathname: string): boolean {
      * the privacy policy's 30-day erasure promise.
      */
     pathname.startsWith('/api/cron/') ||
+    /*
+     * V7. **THE FIRST PATH IN THIS APP A STRANGER CAN OPEN.**
+     *
+     * A share link is a capability (VD9): the slug IS the authorization, so
+     * `requireUser()` must not run and the onboarding gate must not run. What
+     * replaces them is written down in `src/lib/share/slug.ts` and the sharing
+     * plan §4.4 -- 60 bits of entropy, a per-IP limit and a fleet-wide limit
+     * inside the page itself, because middleware cannot see a database.
+     *
+     * A PREFIX, AND THE ONLY PREFIX THAT IS SAFE HERE. `/s/` has exactly one route
+     * under it, `[slug]`, plus the OG image Next generates inside the same segment
+     * -- both must be public and both must be public for the same reason (a
+     * messenger crawler fetching a preview has no cookie). Anything else added
+     * under `/s/` is public too with no further edit, which is why nothing else
+     * goes there.
+     *
+     * `/api/share` is deliberately NOT matched: minting and revoking need a
+     * session, and `startsWith('/s/')` does not reach it. Nor does it reach
+     * `/settings` or any other `/s`-initial path, which is why the clause is
+     * `'/s/'` and not `'/s'` -- there is a test for exactly that.
+     */
+    pathname.startsWith('/s/') ||
     pathname.startsWith('/api/auth/')
   );
 }

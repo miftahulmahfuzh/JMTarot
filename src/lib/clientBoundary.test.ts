@@ -157,6 +157,53 @@ describe('the client boundary', () => {
       expect({ [file.path]: offending }).toEqual({ [file.path]: [] });
     }
   });
+
+  /*
+   * V7's Task 20. **`@/lib/share/links` READS `SHARE_BASE_URL`, WHICH HAS NO
+   * `NEXT_PUBLIC_` PREFIX** -- so a client component calling `shareUrl()` would
+   * build a URL against `undefined` and hand the querent a broken address for a
+   * link that is perfectly live. That is not a hypothetical shape: `resolve.ts`'s
+   * header records `localeSwitcherEnabled()` making exactly this mistake and
+   * living in `LocaleSwitch.tsx` for about ten minutes.
+   *
+   * It carries `server-only` as well, so this would be a build error rather than a
+   * silent leak -- but a named failure beats a stack trace, and the value of the
+   * fence is that it says WHY.
+   *
+   * `@/lib/share/slug` and `@/lib/share/types` are deliberately NOT matched:
+   * `slug.ts` is env-free by rule and its own header says so, and both are imported
+   * by `ShareFooter`, `TryItYourself` and the route's zod schema. Same split as
+   * `moderation/types.ts` against `blocklist.ts`.
+   */
+  it('lets no client component import the share URL builder', () => {
+    for (const file of CLIENT) {
+      const offending = importsOf(file.source).filter((spec) => spec === '@/lib/share/links');
+      expect({ [file.path]: offending }).toEqual({ [file.path]: [] });
+    }
+  });
+
+  it('keeps `@/lib/share/slug` free of process.env, so the exception stays earned', () => {
+    /*
+     * The other half of the rule above, asserted on the source rather than trusted
+     * to the filename -- exactly the shape the `sanitize` exception uses. The moment
+     * somebody moves `SHARE_BASE_URL` into `slug.ts` "so the client can build the
+     * URL", the exception becomes the bug it was written to prevent.
+     */
+    const raw = readFileSync(join(ROOT, 'lib/share/slug.ts'), 'utf8');
+    /*
+     * COMMENTS STRIPPED FIRST, and the first draft of this test did not do that and
+     * FAILED -- because `slug.ts`'s header explains at length that `SHARE_BASE_URL`
+     * must not be read there. `queries/contract.test.ts` records the same lesson
+     * after grepping for `from '../client'` and matching a sentence saying never to
+     * write it: a rule that fires on prose describing the rule is a rule people
+     * delete.
+     */
+    const code = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    expect(code.includes('process.env')).toBe(false);
+    expect(code.includes('SHARE_BASE_URL')).toBe(false);
+    // The stripper must not have eaten the code it is checking.
+    expect(code).toContain('SLUG_ALPHABET');
+  });
 });
 
 /**

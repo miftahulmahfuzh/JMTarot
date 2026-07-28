@@ -6,10 +6,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { CardDetail } from '@/components/CardDetail';
 import { Fan } from '@/components/Fan';
 import { ReadingPanel, type ReadingState } from '@/components/ReadingPanel';
+import { ShareFooter } from '@/components/ShareFooter';
 import { Slots } from '@/components/Slots';
-import { CARDS, shuffleDeck } from '@/data/deck';
+import { CARDS, effectiveYesNo, shuffleDeck } from '@/data/deck';
 import { slotLabels } from '@/data/services';
-import type { Draw as DrawnCard, Reader, Service } from '@/data/types';
+import type { Draw as DrawnCard, Reader, Service, YesNo } from '@/data/types';
 import { useT } from '@/lib/i18n/LocaleProvider';
 import { togglePick } from '@/lib/draw';
 import { LOCAL_DATE_HEADER, SESSION_HEADER } from '@/lib/analytics/localdate';
@@ -52,6 +53,33 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
   const [picks, setPicks] = useState<number[]>([]);
   const [question, setQuestion] = useState('');
   const [reading, setReading] = useState<ReadingState>({ status: 'idle' });
+  /**
+   * V7. What the share footer needs about the reading that just finished.
+   *
+   * **A REF AND NOT STATE, DELIBERATELY.** `requestReading` writes these while the
+   * stream is running, and a `setState` in that function would re-render mid-stream
+   * -- which is the whole reason `readingId` was a local variable in the first
+   * place. The footer only reads them once `reading.status === 'done'`, i.e. after
+   * the last `setReading`, so the ref's value is always current by the time
+   * anything renders it.
+   *
+   * `id` COMES OFF THE `x-reading-id` HEADER and is `'unknown'` until the headers
+   * land. The footer is only offered when it is a real id, because minting a link
+   * for `'unknown'` is a 404 the sharer caused.
+   *
+   * `atIso` and `localDate` are captured HERE rather than read during render:
+   * `new Date()` and `todayKey()` differ between the server render and the client
+   * hydration, and React cannot patch a mismatch -- the same class as
+   * `shuffleDeck()` in a `useState` initialiser, which the deck above exists to
+   * avoid.
+   */
+  const finished = useRef<{
+    id: string;
+    atIso: string;
+    localDate: string;
+    question: string | null;
+    cards: DrawnCard[];
+  } | null>(null);
   /** Index into `deck` of the card whose detail overlay is open, if any. */
   const [detail, setDetail] = useState<number | null>(null);
 
@@ -327,6 +355,26 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
           setReading({ status: 'streaming', text });
         }
         text += decoder.decode();
+
+        /*
+         * V7. CAPTURED HERE, BEFORE THE LAST `setReading`, so the footer that
+         * renders on the next paint already has everything it needs. `Date.now()`
+         * and `todayKey()` are read on this line rather than during a render, for
+         * the reason the ref's own comment gives.
+         *
+         * `chosen` rather than `picks` and `deckNow` rather than `deck`: both were
+         * snapshotted at the top of this function against exactly the hand that was
+         * SENT, which is the same discipline the `picks` body uses. Reading them off
+         * state here would be reading a render that may predate a reshuffle.
+         */
+        finished.current = {
+          id: readingId,
+          atIso: new Date().toISOString(),
+          localDate: todayKey(),
+          question: trimmed || null,
+          cards: chosen.map((i) => deckNow[i]!),
+        };
+
         setReading({ status: 'done', text });
 
         /*
@@ -429,6 +477,9 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
     attempt.current = 0;
     abortRef.current?.abort();
     setReading({ status: 'idle' });
+    // V7: the footer is gone with the reading, so the snapshot behind it goes too.
+    // Leaving it would let a mint fire for the PREVIOUS reading after a reshuffle.
+    finished.current = null;
     setPicks([]);
     // Close the overlay before the reshuffle: `detail` is an index into the
     // old deck, and after shuffleDeck() it points at some other card.
@@ -536,6 +587,55 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
         }}
       />
 
+      {/*
+        V7. THE SHARE FOOTER, AND ONLY ON A COMPLETED READING.
+        `blocked`, `error` and `aborted` are absent from this condition on purpose:
+        a refusal must not be shareable, and a `partial` body is prose that simply
+        stops -- a stranger could not tell "the stream died" from "this reader is
+        incoherent". The state machine is the first enforcement; `createShareLink`'s
+        `status = 'ok'` check is the backstop, and the resolver's `where` is the
+        third.
+
+        `finished.current.id !== 'unknown'` because `x-reading-id` may not have
+        landed -- minting for a placeholder is a 404 the sharer caused.
+
+        THE MINT MAY BEAT ITS OWN ROW INTO THE TABLE, and that is the SERVER's
+        problem rather than this component's: `readings` is written in the reading
+        response's own `after()`, so `POST /api/share` retries the artifact lookup
+        three times 250ms apart. The footer therefore renders immediately.
+      */}
+      {reading.status === 'done' && finished.current && finished.current.id !== 'unknown' ? (
+        <ShareFooter
+          entity="reading"
+          entityId={finished.current.id}
+          preview={{
+            id: finished.current.id,
+            readerId: reader.id,
+            serviceId: service.id,
+            localDate: finished.current.localDate,
+            createdAtIso: finished.current.atIso,
+            locale: t.locale,
+            status: 'ok',
+            /*
+             * DERIVED WITH THE SAME PURE FUNCTION THE SERVER USES, not guessed and
+             * not parsed out of the prose. `effectiveYesNo` is what stored
+             * `readings.verdict` at draw time, including the reversal flip, so the
+             * preview and the public page cannot disagree -- and `null` for every
+             * service that is not `yesno`, which is what the column holds.
+             */
+            verdict: verdictFor(service, finished.current.cards),
+            question: finished.current.question,
+            body: reading.text,
+            sharedAt: null,
+            cards: finished.current.cards.map((d, i) => ({
+              cardId: d.card.id,
+              reversed: d.reversed,
+              position: i,
+            })),
+          }}
+        />
+      ) : null}
+
       <div className={styles.footer}>
         <span className={styles.counter}>
           {t.plural('draw.counter', picks.length, { picked: picks.length, total: cardCount })}
@@ -546,4 +646,23 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
       </div>
     </main>
   );
+}
+
+/**
+ * The stored verdict, derived rather than guessed.
+ *
+ * **`effectiveYesNo` IS THE FUNCTION THE SERVER ALREADY USED**, including the
+ * reversal flip, so the share preview and the public page cannot disagree about the
+ * one fact that survives translation untouched. Deriving it here rather than
+ * threading it back out of the response is what makes that true: there is one
+ * implementation and it is pure.
+ *
+ * `null` for every service that is not `yesno`, which is exactly what
+ * `readings.verdict` holds -- the column is nullable for this reason and
+ * `ReadingView` renders the line only when it is set.
+ */
+function verdictFor(service: Service, cards: DrawnCard[]): YesNo | null {
+  if (service.id !== 'yesno') return null;
+  const first = cards[0];
+  return first ? effectiveYesNo(first) : null;
 }
