@@ -1045,7 +1045,9 @@ correspondence engine (V1)**, **on-demand translation and locale-tagged
 generation (V2)**, **mystical memory verdicts — the Shadow Arcana replacing the
 tally (V3)**, **the account shell — the circle, the bottom sheet, and the first
 sign-out control this app has ever had (V4)**, **the reader swipe deck — the bio
-and today's summary as two panels of one scroll-snap track (V5)**, reader
+and today's summary as two panels of one scroll-snap track (V5)**, **history —
+`/history` filtered by day, `/history/[id]` reconstructing a past draw
+read-only, and `ReadingView`, the one renderer V7 also mounts (V6)**, reader
 picker, service picker, the draw (fan, pick, flip, reduced-motion grid), the card
 detail overlay, the streaming reading endpoint, the prompt layer, and the web app
 manifest.
@@ -1504,6 +1506,193 @@ how a wrong value survives review.
 **`npm run smoke` is unaffected and was not re-run for the readings**: V5 touches
 no file under `src/lib/prompt/**`. `--summary` was run, for the real body lengths.
 
+## History (V6)
+
+V6 of v0.3.0 is done. `/history` lists the querent's own readings, filtered by
+day and defaulting to today; `/history/[id]` reconstructs the draw exactly as it
+was — same cards, same orientations, same slots, same prose — **read-only**
+(VD14). And `ReadingView`, the one renderer three surfaces mount (VD10), which
+**V7 builds against**.
+
+```
+src/components/ReadingView.tsx   'use client'. THE SHARED RENDERER. No session,
+                                 no fetch, no @/lib/db import, and it never shows
+                                 prose in a language the viewer is not reading.
+src/lib/history/dates.ts         PURE, isomorphic. isHistoryDate, dayOffset.
+src/lib/history/empty.ts         PURE. Which empty state, and which day to offer.
+src/lib/history/types.ts         HistoryItem / ReadingDetail, reachable from the
+                                 client -- which is the only reason they are not
+                                 declared in queries/history.ts.
+src/lib/db/queries/history.ts    GAINED readingsForDay, historyDays,
+                                 readingWithCards.
+src/app/history/**               the list (reads nothing) and the detail (one
+                                 awaited primary-key read).
+src/app/api/history/{route,days/route,log}.ts
+```
+
+### `ReadingView`'s four rules, and why V7 cannot ignore them
+
+Each exists because of the public mount. **Rule 4 is the one to protect:
+`ReadingView` NEVER renders `reading.body` when `reading.locale` differs from
+the viewer's and no translation was supplied — it renders the translating state
+instead.** That is the component's invariant and not the caller's discipline,
+which is exactly what stops V7 shipping the bug by forgetting a prop. The other
+three: no session, no fetch, and no `@/lib/db/**` import *even as `import type`*
+— `clientBoundary.test.ts`'s regex does not know the `type` keyword, which is
+why `ReadingStatus` moved to `@/data/types`.
+
+**The consequence V7 must act on: passing no `prose` for a foreign-locale
+reading leaves a stranger on a pulsing spinner forever.** Reconciliation §5.5
+already tells V7 to pass `prose={{ kind: 'original' }}`; that is legitimate,
+because deciding not to translate is a decision. Falling back to the original
+silently is not.
+
+### The five things a future session will otherwise undo
+
+1. **`todayKey()` IS NEVER CALLED DURING RENDER.** It reads `new Date()`, which
+   differs between the server render and the client hydration, and React cannot
+   patch a mismatch — the same class as `shuffleDeck()` in a `useState`
+   initialiser. `HistoryBrowser` starts `today` and `selected` at `null` and sets
+   them in an effect; nothing flashes because the pre-hydration render has no
+   children. **Do not "simplify" it into `useState(() => todayKey())`.**
+2. **`parseLocalDate` MUST NOT VALIDATE THE FILTER.** Its ±1-day bound answers
+   "is this plausibly the querent's TODAY"; a history filter's entire job is days
+   that are not today, so reusing it makes every date older than yesterday a 400
+   that reads like a client bug. `/api/history` uses `parseLocalDate` for the
+   header and `isHistoryDate` for the query parameter, one per parameter.
+3. **THE `blocked` FILTER IS SECURITY-ADJACENT, NOT COSMETIC.** A blocked reading
+   has no card rows (R7), so there is no draw to reconstruct — and its `question`
+   is text W7's classifier flagged, which W7 redacts from `moderation_flags` at
+   30 days. A permanently browsable copy under another column name undoes a
+   retention promise. `failed` and `aborted` ARE shown, because R7 already counts
+   them in the frequency verdict and two features disagreeing about the same past
+   is the failure the memory workstream exists to avoid.
+4. **THE LIST PAYLOAD CARRIES NO `body` AND NO `gist`**, and the integration test
+   asserts it on the returned OBJECT (`'body' in item` is false), not on a null
+   field — a query that fetched the column and dropped it has already put the
+   prose in the payload. The binding reason is VD8, not bytes: Indonesian prose
+   in an English client is forbidden whether or not anything renders it.
+5. **`/history` IS GATED AND `isPublic()` MUST NEVER LEARN IT.** V7 makes a page
+   public; this one is somebody's entire reading history, and the only reason
+   `requireUser()` is not in `page.tsx` is that middleware already ran.
+
+### Traps V6 paid for, and three places the plan was wrong
+
+- **`intlTag('en')` IS `en-GB`, SO `formatTime` IS A 24-HOUR CLOCK IN BOTH
+  LOCALES.** The plan promised `19.40 / 7:40 PM`; measured, `id-ID` gives
+  `19.40`, `en-GB` gives `19:40`, and only `en-US` gives the meridiem. Kept,
+  because it is the same decision `formatDate` records — English here is
+  day-first and spelled-month precisely so `en-GB` vs `en-US` never has to be
+  settled for a date the user reads, and a meridiem reopens it for a time they
+  read. A test asserts the absence of AM/PM at five hours in both locales.
+- **`historyDays` DOES NOT WALK AN INDEX AND STOP AT THE LIMIT.** The plan said
+  it did; **Postgres 16 has no loose (skip) index scan**, so `distinct` reads
+  every index entry in range and the `limit` prunes the sort, never the scan.
+  Measured over 200k readings across 200 users: Bitmap Index Scan on
+  `readings_user_created_idx` — the OTHER `user_id`-leading index — 2000 rows,
+  2.243ms. Left alone: the work is bounded by one person's own reading count, and
+  an index-only scan would need `status` in the index, which is write
+  amplification on the app's hottest insert path to save two milliseconds.
+  `readingsForDay` does plan as advertised: Index Scan using
+  `readings_user_local_date_idx`, 0.038ms.
+- **THE TAP LAYER IS INSIDE THE SLOT BOX, WHICH DELETED ONE OF THE PLAN'S OWN
+  TRAPS.** §3.5 specified a separate absolutely-positioned row mirroring
+  `Slots.module.css`'s 90×135 / 12px / 78×117 / 359px geometry with a negative
+  margin, and §8 then listed that duplication as a trap **with no possible
+  automated guard**. `Slots` gained an optional `onCardTap` rendering a full-bleed
+  `inset: 0` button inside `.box`, which is already `position: relative` for
+  `CardFace`. It coincides with the box *by construction*; there is one copy of
+  the numbers and nothing to drift. `boxRefs` became optional in the same change.
+- **A SPARSE ARRAY, NOT `flatMap`, FOR THE DRAWS.** `Slots` reads `picks[i]`, so
+  compacting the array on an unknown card id slides every later card one slot
+  left — third card under the second slot's label, nothing on screen looking
+  wrong. **Counting rendered images passes for the broken version**, which is how
+  the first draft of the test passed against the bug it was written for. The test
+  asserts per `data-slotbox` now, verified by negative control.
+- **`translateStream` YIELDS THE SOURCE VERBATIM ON FAILURE, AND THE ROUTE
+  RETURNS IT AS AN ORDINARY 200.** That is V2's deliberate choice, documented on
+  `TranslateResult.fellBack` — but rendered as `translated` it is a direct breach
+  of rule 4, arriving through the path that exists to prevent it.
+  `HistoryDetail` detects it exactly and for free, because it holds the source:
+  if what came back IS the source, no translation happened, and it resolves to
+  `unavailable`.
+- **`POST /api/translate` TAKES NO `targetLocale`, AND 204 IS A REAL ANSWER.**
+  V2 resolves the target from `getLocale()` and never from the client; sending
+  one is silently ignored, which is worse than omitting it. And `res.ok` is TRUE
+  for the 204 V2 returns when a translation produced nothing — checking only
+  `res.ok` leaves the screen on a spinner forever.
+- **AN UNCAUGHT THROW IN A SERVER COMPONENT IS NEXT'S TO LOG, AND
+  `logHistoryFailure` NEVER SEES IT.** Measured against a production build with
+  the database unreachable: both routes printed `{ name: 'Error' }` as intended
+  and `/history/[id]` printed postgres.js's whole error, statement and bound
+  parameters. Nothing sensitive was in it — the parameters are two uuids,
+  `'blocked'` and `1`, while `question` and `body` are columns rather than
+  parameters — so the fix is a tightening, not a leak repair. The read is wrapped
+  and a bare `Error` rethrown, so the boundary still renders. **`notFound()`
+  there would be a lie**: it would tell the querent their reading does not exist
+  because the database blinked.
+- **THE EMPTY-STATE HELPER FOUND A BUG BY BEING PURE.** The nearest-day fallback
+  was `days[0]`, which offers the SELECTED day back to itself whenever `days` is
+  `[selected]` — reachable when the list request 503s while the days request
+  succeeds. A button to the empty page you are already looking at. And `null`
+  days are deliberately not `[]`: one is the network, the other is the querent,
+  and telling somebody mid-load that they have never read would flash on every
+  visit.
+
+### Verifying it
+
+```sh
+npm test -- 'history'                 # dates, empty, cardById
+npm test -- ReadingView               # resolveProse's truth table, and rule 4
+npm run test:integration -- history.v6 # 23: the blocked filter, the id desc
+                                       # tiebreak, ownership as a predicate
+PORT=3002 BUDGET=150000 tools/dump.sh '/cards/_history.html?v=1'
+PORT=3002 tools/shot.sh '/cards/_histshot.html?state=full' 500 1150 /tmp/h.png
+```
+
+**`public/cards/_history.html` (gitignored) is the one that matters.** It diffs
+**three independent representations of one past draw** — the `alt` text on the
+detail screen, the `card_id`s in the recorded `/api/history` response, and the
+thumbnails the list row drew — because replaying the wrong hand is V6's version
+of the bug that once showed The Fool while requesting id 15: the page would look
+perfect and be lying about the querent's own past. It also checks that a chip tap
+writes `?date=` and pushes **no** history entry, that the list payload carries no
+prose, and that each tap target is concentric with its slot box.
+
+**Its first run failed twice, honestly, and both were the harness.** The tap
+geometry reported 88×133 against 90×135 — that is `.box`'s 1px border, since
+`inset: 0` positions against the padding box, so the assertion is now concentric
+and within the border rather than equal. And `body.textContent` matched
+`Kocok ulang` on a page with no reshuffle control: **`textContent` includes
+`<script>` contents, and the RSC flight payload carries the whole serialized
+message catalog on every page in this app**, because `LocaleProvider` is handed
+it as props. `innerText` is layout-based and is what to use.
+
+`public/cards/_histshot.html` (gitignored) stubs both `/api/history*` routes and
+screenshots four states at a real 390px — a full day, an empty day for someone
+who has read, an empty day for someone who never has, and the detail screen
+mid-translation. It costs nothing to run. **`&locale=en` goes through
+`POST /api/locale`, not `?lang=`** — the W6 trap: `?lang=` reaches the server
+render and not the client fetches, so it would photograph one language of chrome
+around another language of content. **`state=xlate` uses a REAL reading**, because
+the detail page is a server component doing a primary-key read and a fabricated
+uuid 404s.
+
+### Still open, and none of it is V6's to close
+
+- **`readings.shared_at` is added by V6's migration and written by V7.** V6 only
+  reads it, to render the badge without joining `share_links` per row. It stays
+  null after a revoke, deliberately: "was this ever public" is a different
+  question from "is it public now".
+- **Whether the question belongs in the list row** is V6's open question 1 and is
+  Miftah's call. It ships, clamped to one line, because it identifies a reading
+  far better than three card names do and it is the querent's own text on their
+  own screen behind their own login. The counter-argument is real: a history list
+  gets scrolled in public.
+- **`/api/memory/{frequency,summary}` still 500 when the database is down**, which
+  the section above already records. V6's routes 503 and its page scrubs; those
+  two are one omission in two files and were not V6's to touch.
+
 ## Trust, safety and secrets (W7)
 
 W7 is done. A moderation gate that refuses harm without refusing tarot, two
@@ -1908,12 +2097,14 @@ those accounts is that they do not exist there. Nothing was migrated out of
 asks for more than that anyway. It will look like data loss and it is not.
 
 Not built, deliberately deferred: birth card, the daily-card lock (`todayKey()`
-and `birthCard()` are already written), an About page, a full reading-history
-**screen** (`/jejak`), sharing, and a second LLM provider. **Onboarding left
-this list with W3, and the memory features left it with W5** — the history now
-renders back to the user as a frequency verdict on the reader picker and a
-per-day summary on the service picker. What is still missing is a page that
-lists the readings themselves.
+and `birthCard()` are already written), an About page, sharing, and a second LLM
+provider. **Onboarding left this list with W3, the memory features left it with
+W5, and the reading-history screen left it with V6** — the history renders back
+to the user as a frequency verdict on the reader picker, a per-day summary on
+the service picker, and now `/history` and `/history/[id]`. **The route is
+`/history`, not `/jejak`**, which this paragraph promised for two releases:
+`Jejak` is the word on screen and the path stays English like every other one in
+the app.
 
 **`/account` IS ON THAT LIST AND SHOULD NOT BE — it is the one real gap W7
 leaves.** W3's plan owns it and W3 did not build it, so there is no user-facing
