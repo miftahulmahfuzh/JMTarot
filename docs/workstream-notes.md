@@ -2170,3 +2170,130 @@ returns `[]` and falls through to the create flow, and a failed `POST` shows
 `share.error.generic`. **`/history/[id]` itself renders the error boundary with the
 database down** — V6's awaited primary-key read, pre-existing and unrelated — so the
 sheet is unreachable that way and the endpoints have to be exercised directly.
+
+## `/s/<slug>` goes monolingual, 2026-07-28
+
+Miftah, on Vercel, after the per-locale links shipped:
+
+> link no 1 still exists, the card reading content (llm generated) is still english,
+> but the website texts is in bahasa, it says like: bacaan yang dibagikan / bacaan
+> untuk <nickname> / kartu harian
+>
+> i am thinking, we should have known what language this llm generated content is
+> (because i think we save it during llm generation), why dont we force the full
+> website texts in the shared reading page to follow this language?
+
+The premise was exactly right — `readings.locale` is saved at generation,
+`share_links.locale` pins it, and `renderedLocale()` already computed the shown
+locale. The information was sitting one line above the chrome that ignored it.
+
+### The recommendation that was refused, and why recording it matters
+
+A narrower split was proposed and **turned down**: reading-describing chrome
+(eyebrow, `forNickname`, service name, question label, slot labels, date) follows the
+prose, while `common.disclaimer.long` and `share.public.cta` stay with the viewer, on
+the ground that a warning in a language the reader cannot read is not a warning and
+the CTA is the only thing a stranger who cannot read the prose can act on.
+
+Ruling: the whole page. **So an Indonesian visitor opening an English link now has
+nothing on the page they can read.** That is written into CLAUDE.md as an accepted
+cost rather than left to be rediscovered as a bug, because the next person to notice
+it will otherwise "fix" it and quietly reverse a product decision.
+
+Worth noting what the report did NOT complain about: all three strings named were in
+the reading-describing group. The narrower fix would have addressed every symptom.
+The ruling went further on coherence grounds, which is a legitimate call that the
+symptom list alone would not have justified.
+
+### The mechanism, and the two rules it would have broken
+
+The obvious implementation is a `locale` prop on `ReadingView`. It is wrong twice:
+
+- `LocaleProvider`'s header says, in capitals, **"NO LOCALE PROP IS DRILLED
+  ANYWHERE"**, and I9's argument is that the client ships exactly ONE catalog — the
+  resolved one, as JSON from the server — rather than importing `catalogFor` and
+  picking. An ESLint `no-restricted-imports` rule enforces the second half.
+- `ReadingView` is **the one renderer three surfaces mount** (VD10). A prop would have
+  put this page's problem in front of `/history` and the draw screen, where
+  chrome-follows-viewer is *correct*, because the reading on those pages has already
+  been translated to the viewer.
+
+**A nested `LocaleProvider` breaks neither**, and it is one expression in `page.tsx`.
+The catalog crosses as JSON exactly as the root layout's does; `useT()` reads the
+nearest provider. `ReadingView`, `TryItYourself` and `Eyebrow` were not edited at all.
+
+**The reason that is worth knowing rather than merely tidy:** `t` carries its own
+`.locale`, and `ReadingView` reads `t.locale` for the service name, the slot labels,
+`formatLocalDate`, `formatTime` and `resolveProse`'s viewer comparison. So one nested
+provider moved things nobody had enumerated. Measured on the rendered page:
+
+```
+EN-pinned, Indonesian viewer: A shared reading | A reading for miftah | Three Cards
+                              | 28 July 2026 | 9:03 | What you asked
+ID-pinned, English viewer:    Bacaan yang dibagikan | Bacaan untuk miftah | Tiga Kartu
+                              | 28 Juli 2026 | 9.03 | Pertanyaanmu
+```
+
+The date and time formats were not on anybody's list and followed anyway. That is the
+argument for moving the boundary rather than enumerating the strings.
+
+### The measurement that decided the guard
+
+A nested provider is redundant when the pin equals the viewer's locale, so it is
+mounted only on a mismatch. The cost of not guarding it:
+
+```
+matched   (id pin, id viewer)   raw 48734   gzip 11333   1 catalog
+mismatched (en pin, id viewer)  raw 63057   gzip 14686   2 catalogs
+delta                                +14323       +3353
+```
+
+**+30% on the transferred page**, on the one public route strangers open on mobile
+data. That is why the guard exists — and gzipped is the number that decided it; the
+raw figure had looked like an acceptable 7% against the total.
+
+### The invariant that had to be restated rather than loosened
+
+`page.contract.test.ts` asserted `expect(CODE).not.toMatch(/\bviewer\b/)`, with a
+comment saying the page must not branch on who is looking, citing the header's
+cache-key argument. The guard reintroduces exactly such a branch.
+
+Two things came out of resolving that honestly:
+
+1. **The old assertion would have passed vacuously anyway** — `\bviewer\b` does not
+   match `viewerLocale`, because there is no word boundary between them. A test that
+   cannot see the thing it forbids is worse than no test.
+2. **The property that actually matters is that the rendered OUTPUT does not vary by
+   viewer, and it is now MORE true than when that comment was written.** The chrome
+   used to follow `accept-language`; now two viewers of one slug get byte-identical
+   markup. The guard chooses what to SEND, and both branches render the same.
+
+So the rule is stated as: *never read the viewer's locale to choose what LANGUAGE to
+render; reading it to choose what to SEND, when both choices render the same, is the
+only exception* — and a test walks every occurrence of `viewerLocale` and requires it
+to be in the `const` or in the comparison.
+
+### Two things that correctly keep the viewer's locale
+
+- **The 429 page.** A rate-limited visitor has no reading, so there is no reading
+  language to follow. The first version of the new contract test forbade the viewer's
+  `t` outright and failed on that line — a wrong assertion caught by a legitimate use,
+  which is the good direction for that to happen in.
+- **`generateMetadata`.** It does not call `resolveShare` today, so making the OG card
+  follow the pin would double the database reads on the one uncapped public route, for
+  two generic strings that carry no reading content by VD18. Excluded on cost, and the
+  exclusion is recorded because "the full website texts" arguably includes it.
+
+### The residual, stated so it is not rediscovered as a bug
+
+- **`<html lang>` still follows the viewer.** The root layout emits `<html>` and no
+  page can override it in the App Router. `<main lang={shownLocale}>` is what assistive
+  tech and the browser's translate offer read, so this is correct rather than adequate —
+  but the outer attribute does disagree, on an element carrying no text of its own.
+- **The share sheet's preview is now approximate in one failure path.** Its chrome is
+  the sharer's UI locale, which equals the pin in every ordinary case. They diverge only
+  when the sharer reads a language the reading was not generated in, no translation row
+  exists, and the mint's `translateOrCached` fails — pin NULL, so the page falls back to
+  the source for chrome as well as prose. The prose still matches; only the chrome
+  differs. Closing it means shipping the second catalog to `/history/[id]` and the draw
+  screen permanently, for a state that only exists when a model call fails.

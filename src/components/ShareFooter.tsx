@@ -19,6 +19,26 @@
  * goes public, above a preview showing the exact text. `schema.ts`'s comment on
  * `include_question` records what that costs.
  *
+ * ── ONE WAY THE PROMISE IS NOW APPROXIMATE, AND IT IS A FAILURE PATH ────────
+ *
+ * The public page is monolingual in the READING's language since the ruling of
+ * 2026-07-28 — chrome included. This preview renders its chrome in the sharer's
+ * UI locale, and in every ordinary case those are the same thing: the mint pins
+ * the locale the sharer is reading, so page chrome === sheet chrome.
+ *
+ * They diverge in exactly one case: the sharer is reading in a language the
+ * reading was not generated in, no translation row exists, **and the mint's own
+ * `translateOrCached` fails** — so `resolvePin` pins NULL and the page falls back
+ * to the source language for its chrome as well as its prose. The PROSE still
+ * matches the preview (both as-written); only the chrome differs.
+ *
+ * **NOT FIXED, DELIBERATELY.** Closing it means shipping the second catalog to
+ * every mount of this component — `/history/[id]` and the draw screen — because a
+ * client component may not import `catalogFor` (I9, and an ESLint rule). That is a
+ * permanent ~3.3KB gzipped on two gated pages to be exact about a state that only
+ * exists when a model call fails. If it ever needs closing, the host passes the
+ * catalog as JSON; do not reach for `catalogFor` from here.
+ *
  * **THE PREVIEW IS BUILT BY THE SAME FUNCTION THE PUBLIC PAGE USES.**
  * `previewReadingView` mirrors `src/app/s/[slug]/adapt.ts` and passes
  * `{ kind: 'as-written' }` for the same reason — a preview that showed the

@@ -167,14 +167,71 @@ describe('the public share page', () => {
      * back six months later, and a test named for the deletion is the only thing in
      * the file that says the absence was chosen.
      *
-     * `viewer` is asserted absent too, because the notice was the ONLY consumer of the
-     * viewer's locale as a value here. A page that reads it again is a page that
-     * branches on who is looking, which the header's cache-key argument forbids
-     * independently of the notice.
+     * **THE `viewer` ASSERTION IS GONE AND ITS REPLACEMENT IS THE NEXT TEST.** It read
+     * `expect(CODE).not.toMatch(/\bviewer\b/)` on the ground that the notice was the
+     * only legitimate consumer of the viewer's locale. The monolingual ruling
+     * reintroduced one consumer — the provider guard — and that assertion would have
+     * passed vacuously anyway, because `\bviewer\b` does not match `viewerLocale`.
+     * A test that cannot see the thing it forbids is worse than no test, so the
+     * property is restated precisely below instead of loosened here.
      */
     expect(CODE).not.toContain('isForeignProse');
     expect(CODE).not.toContain('otherLanguage');
-    expect(CODE).not.toMatch(/\bviewer\b/);
+  });
+
+  it('RENDERS EVERY STRING IN THE READING\'S LANGUAGE, not the viewer\'s', () => {
+    /*
+     * **Miftah's ruling, 2026-07-28, and it reverses two workstreams of "chrome
+     * follows the viewer".** An English-pinned link opened with the app set to
+     * Indonesian rendered English prose under `Bacaan yang dibagikan`, `Bacaan untuk
+     * Mif` and `Kartu Harian` — a page in two languages reads as half-translated.
+     *
+     * The mechanism is a NESTED `LocaleProvider`, not a `locale` prop, and that is
+     * load-bearing twice over: `LocaleProvider`'s own header says "NO LOCALE PROP IS
+     * DRILLED ANYWHERE", and I9 says the client ships exactly ONE catalog as JSON from
+     * the server rather than importing `catalogFor` itself. A prop would also have had
+     * to go through `ReadingView`, which is the one renderer three surfaces mount
+     * (VD10) — so this page's problem would have reached `/history` and the draw
+     * screen, where chrome-follows-viewer is CORRECT because the reading there is
+     * already translated to the viewer.
+     *
+     * **ASSERTED ON `shownT`, AND DELIBERATELY NOT ON THE ABSENCE OF `t`.** The first
+     * version of this test forbade `t('share.public.eyebrow')}</Eyebrow>` and failed —
+     * correctly — because the **429 branch renders exactly that line**. A rate-limited
+     * visitor has no reading, so there is no reading language to follow and the
+     * viewer's is the only sensible choice; `generateMetadata` uses `t` for the same
+     * reason. The positives below are what protect the reading page, and they fail if
+     * anybody changes `shownT` back to `t`, which makes the negative redundant as well
+     * as wrong.
+     */
+    expect(CODE).toContain('LocaleProvider');
+    expect(CODE).toMatch(/catalogFor\(shownLocale\)/);
+    expect(CODE).toMatch(/shownT\('share\.public\.eyebrow'\)/);
+    expect(CODE).toMatch(/shownT\('share\.public\.forNickname'/);
+    expect(CODE).not.toMatch(/catalogFor\(viewerLocale\)/);
+  });
+
+  it('reads the viewer locale ONLY to decide whether to send a second catalog', () => {
+    /*
+     * The one exception to "nothing here branches on who is looking", and it is an
+     * exception about BYTES rather than about output: when the pin equals the viewer's
+     * locale the root layout's provider is already correct, and a second identical
+     * catalog costs +3.3KB gzipped — a 30% increase on the transferred page, measured
+     * 2026-07-28 on the one public route strangers open on mobile data.
+     *
+     * **BOTH BRANCHES MUST RENDER THE SAME MARKUP**, which is what keeps the page
+     * viewer-invariant and therefore cache-safe. The assertion is that `viewerLocale`
+     * appears ONLY in that comparison — if it ever reaches a `t()` call or a
+     * `catalogFor`, the page has started varying its language by who is looking, which
+     * is the bug this whole ruling removed.
+     */
+    const uses = [...CODE.matchAll(/viewerLocale/g)];
+    // The `const`, and one comparison per branch (the ternary and the early return).
+    expect(uses.length).toBeGreaterThanOrEqual(2);
+    for (const m of CODE.matchAll(/viewerLocale/g)) {
+      const line = CODE.slice(0, m.index).split('\n').pop()! + CODE.slice(m.index).split('\n')[0];
+      expect(line).toMatch(/const viewerLocale = await getLocale\(\)|shownLocale === viewerLocale/);
+    }
   });
 
   it('takes the pinned translation from the resolver and never fetches one', () => {
