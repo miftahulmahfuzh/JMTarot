@@ -54,23 +54,65 @@
  * for an outlier beats permanent dead space for everyone. THAT is why it is
  * `min-height` and not `height`.
  *
- * PROVISIONAL NUMBERS, replaced by Task 12's measurement:
+ * MEASURED 2026-07-28 by public/cards/_swipefit.html, against the six real
+ * summaries from `npm run smoke -- --summary` (191-372 chars) and the three
+ * real bios. THE PLAN'S PROVISIONAL TABLE WAS WRONG BY TWO LINES IN THE SAME
+ * DIRECTION AT EVERY WIDTH, and it is left below the measurement because the
+ * gap is the point: it guessed a 260-char summary and the model writes 372.
  *
- *   typical summary        260 chars   (from `npm run smoke -- --summary`)
- *   longest bio            261 chars   (margaret, id)
- *   shortest bio           157 chars   (thessaly, id)
- *   mean advance          ~6.7px       Cormorant Garamond Light @16px
- *   ragged-right fill     ~0.93
+ *   deck px   summary lines             bio lines (min..max over 3 readers x 2 loc)
+ *   (=vw-32)  typical(372ch) worst(414ch)
+ *   288          10             11              4 .. 7
+ *   328           8             --              4 .. 6
+ *   343           8             --              3 .. 6
+ *   358           8              9              3 .. 5
  *
- *   width  text px  chars/line  summary lines  longest bio  shortest bio
- *   320      288       40           7              7            4
- *   360      328       46           6              6            4
- *   375      343       48           6              6            4
- *   390      358       50           6              6            4
+ *   PLAN GUESSED:  6 lines at 328-358, 7 at 288.   Both two low.
  *
- * So: 6 lines, stepping to 7 below 340. Dead space under the SHORTEST bio is
- * then 2 lines (48px) at 360-390 and 3 lines (72px) at 320, and ZERO under the
- * longest bio at every width.
+ * SO THE 6-LINE RESERVE WAS INERT. 6 lines is 144px and the typical summary
+ * renders 192px, so `min-height` never bound: the panel was sized by its own
+ * content, which is EXACTLY option A above -- the deck growing on every streamed
+ * chunk, the failure this whole file exists to prevent. It would have shipped
+ * looking correct in every static screenshot.
+ *
+ * CHOSEN: 8 lines at >= 300px of deck, 10 below. The typical summary then fits
+ * the reserve exactly at 328-358, so the deck reaches its final height at the
+ * FIRST byte and never moves again; the 414-char outlier crosses it and grows
+ * once more, which is the accepted trade and the reason this is `min-height`.
+ *
+ * ---------------------------------------------------------------------------
+ * DEPARTING FROM THE PLAN'S TASK 12 STEP 3, DELIBERATELY
+ * ---------------------------------------------------------------------------
+ * That step says: if dead space under the shortest bio exceeds 3 lines at any
+ * width >= 360, drop `--summary-lines` by one. Measured, it is FIVE lines
+ * (thessaly, 3-line bio, against an 8-line reserve at 358px). The rule is not
+ * followed, because it was calibrated against the guessed 6-line summary and
+ * obeying it here would walk straight back into the inert reserve above --
+ * 7 lines still leaves 4 lines of dead space AND reintroduces the growth.
+ *
+ * What makes 5 lines acceptable is WHERE it is: the dead space is under the
+ * BIO, and the bio is not on screen at the moment the deck grows, because the
+ * deck slides to the summary in the same instant (D-V5-1, D-V5-3). It is seen
+ * only by a querent who deliberately swipes back. Per-chunk growth, by
+ * contrast, is seen by everybody, every time, as the service list reflowing
+ * under a paragraph that is still arriving. Task 13 is the judgement on whether
+ * the hole reads as breathing room; the numbers cannot make it.
+ *
+ * ---------------------------------------------------------------------------
+ * THE BREAKPOINT IS 300px OF CONTAINER, NOT 339px OF VIEWPORT
+ * ---------------------------------------------------------------------------
+ * The plan wrote `@container (max-width: 339px)`, which is a viewport number in
+ * a container query. THE DECK IS NOT THE VIEWPORT: it is `.shell`'s content
+ * box, so `viewport - 32px` (16px of padding each side), capped at 520.
+ *
+ *   viewport  320  360  375  390
+ *   deck      288  328  343  358
+ *
+ * 339 therefore catches 328 -- the 360px phone, the single most common Android
+ * width -- and hands it the narrow-width reserve it does not need. The
+ * measurement above puts the real step between 288 and 328, so 300 is the
+ * middle of the only gap there is. Anything from 289 to 327 is correct;
+ * 339 is not.
  *
  * @container AND NOT @media, because the query must follow the DECK's inline
  * size and not the viewport's -- V6 may mount a deck in a narrower column, and
@@ -91,12 +133,14 @@
 }
 
 .summaryPanel {
-  --summary-lines: 6;
+  --summary-lines: 8;
   min-height: calc(var(--summary-lines) * 16px * 1.5);
 }
 
-@container (max-width: 339px) {
+/* 300px OF DECK, not of viewport. See the header -- 339 would catch the 360px
+   phone, whose deck is 328. */
+@container (max-width: 300px) {
   .summaryPanel {
-    --summary-lines: 7;
+    --summary-lines: 10;
   }
 }
