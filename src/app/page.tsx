@@ -1,7 +1,7 @@
 import Image from 'next/image';
+import { AccountButton } from '@/components/AccountButton';
 import { Eyebrow } from '@/components/Eyebrow';
 import { FrequencyLine } from '@/components/FrequencyLine';
-import { LocaleSwitch } from '@/components/LocaleSwitch';
 import { TrackLink } from '@/components/TrackLink';
 import { READERS, readerPortrait } from '@/data/readers';
 import { localeSwitcherEnabled } from '@/lib/i18n/resolve';
@@ -20,6 +20,12 @@ export default async function Home() {
 
   return (
     <main className={styles.shell}>
+      {/* Fixed to the viewport's top-right corner; it takes no space in this
+          flex column and needs no layout from this file. `showLanguage` is
+          resolved HERE because LOCALE_SWITCHER has no NEXT_PUBLIC_ prefix and
+          would inline as `undefined` inside a client component. */}
+      <AccountButton surface="reader_picker" showLanguage={localeSwitcherEnabled()} />
+
       <Eyebrow>{t('common.majorArcana')}</Eyebrow>
       <h1 className={styles.title}>{t('app.title')}</h1>
       <p className={styles.hint}>{t('picker.reader.hint')}</p>
@@ -71,10 +77,10 @@ export default async function Home() {
         ))}
       </div>
 
+      {/* The last child. The language switcher used to sit under this line and
+          moved into the account menu in v0.3.0 R1 -- see LocaleSwitch's header
+          and `accountSurface.test.ts`, which asserts it did not come back. */}
       <p className={styles.disclaimer}>{t('common.disclaimer.short')}</p>
-      {/* Under the disclaimer, which is the calmest row on the calmest screen.
-          Not on the draw screen -- see the component. */}
-      {localeSwitcherEnabled() ? <LocaleSwitch /> : null}
     </main>
   );
 }

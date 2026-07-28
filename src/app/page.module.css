@@ -2,7 +2,11 @@
   min-height: 100dvh;
   max-width: 520px;
   margin: 0 auto;
-  padding: 28px 16px calc(40px + env(safe-area-inset-bottom));
+  /* 64, not 28: V4's account circle is fixed at the top-right, occupying roughly
+     y 10-54, and Eyebrow's hairlines run the full width of this column -- at 28
+     they pass straight under it. Measure it, do not eyeball it:
+     `public/cards/_accountshot.html` prints both rects. */
+  padding: 64px 16px calc(40px + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   gap: 20px;
