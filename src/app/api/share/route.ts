@@ -114,6 +114,16 @@ export async function POST(request: Request) {
       entityId: body.entity_id,
       includeQuestion: body.include_question,
       includeNickname: body.include_nickname,
+      /*
+       * **THE PINNED LOCALE, RESOLVED ON THE SERVER AND NEVER TAKEN FROM THE
+       * BODY.** This is what the shared page will render, so it is the language
+       * the sharer is reading right now — and `getLocale()` is the only thing that
+       * knows it, because it is the one resolution the session claim, the cookie
+       * and the dev `?lang=` override all agree on. `CreateBody` deliberately has
+       * no locale field: a client that could name it could pin a language the
+       * sharer was not looking at, and the preview would stop matching the page.
+       */
+      locale: await getLocale(),
     });
 
     if (!result.ok) {

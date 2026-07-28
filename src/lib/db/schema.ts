@@ -830,6 +830,33 @@ export const shareLinks = pgTable(
     includeQuestion: boolean('include_question').notNull().default(true),
     includeNickname: boolean('include_nickname').notNull().default(true),
     /**
+     * **THE LANGUAGE THE SHARER WAS READING WHEN THEY MINTED THE LINK.** The
+     * public page looks up `translations` for this locale and renders that prose,
+     * so a stranger sees what the sharer saw rather than what the model generated.
+     *
+     * **NULLABLE, WITH NO DEFAULT, AND `NULL` MEANS "AS-WRITTEN".** Both halves
+     * are load-bearing:
+     *
+     *   - Every link minted before this column existed is NULL, and the honest
+     *     behaviour for those is exactly what they showed yesterday — the prose
+     *     verbatim in `readings.locale`. An integration test named for the
+     *     guarantee asserts it.
+     *   - There is deliberately no `default`. The only correct default would be
+     *     `readings.locale`, which a migration cannot know without a join it has
+     *     no business doing, and any *constant* default would silently rewrite
+     *     what some historic subset of links renders.
+     *
+     * **IT IS NOT THE VIEWER'S LOCALE AND MUST NEVER BECOME IT.** Serving each
+     * stranger their own language would make the page vary by state the sharer
+     * cannot see, and the share sheet promises *"this is exactly what they will
+     * see"*. `src/app/s/[slug]/adapt.ts` carries that argument in full.
+     *
+     * A miss is ordinary, not an error: V2 never persists an unverified
+     * translation and the nightly sweep deletes orphans, so the resolver falls
+     * back to as-written and the page shows `share.public.otherLanguage`.
+     */
+    locale: text('locale').$type<Locale>(),
+    /**
      * Renders, crawlers included. A LOAD AND ABUSE SIGNAL, NOT AN AUDIENCE
      * METRIC -- `share.viewed` is the audience metric, and the pair disagreeing
      * is the diagnosis: far above means a crawler storm, far below means a broken

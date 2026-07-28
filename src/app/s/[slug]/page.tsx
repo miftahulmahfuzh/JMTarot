@@ -48,7 +48,7 @@ import { getLocale, getT } from '@/lib/i18n/t';
 import { clientIp } from '@/lib/ratelimit/clientIp';
 import { consume, hit, SHARE_VIEW_GLOBAL_MAX } from '@/lib/ratelimit';
 import { resolveShare, shareOrigin } from '@/lib/share/links';
-import { adaptSharedReading, isForeignProse, sharedNickname } from './adapt';
+import { adaptSharedReading, isForeignProse, renderedLocale, sharedNickname } from './adapt';
 import { ShareViewed } from './ShareViewed';
 import styles from './page.module.css';
 
@@ -186,10 +186,16 @@ export default async function SharePage({ params }: { params: Promise<{ slug: st
     notFound();
   }
 
-  const { reading, link } = resolved;
-  const props = adaptSharedReading(reading);
+  const { reading, link, translation } = resolved;
+  const props = adaptSharedReading(reading, translation);
   const nickname = sharedNickname(reading, link.includeNickname);
-  const reversed = isForeignProse(reading, viewer);
+  const reversed = isForeignProse(reading, viewer, translation);
+  /*
+   * THE LOCALE ON SCREEN, which is the pinned one when a translation was found and
+   * the source otherwise. `reading.locale` was right for two workstreams and is now
+   * wrong for exactly the case design A exists to serve — see `renderedLocale`.
+   */
+  const shownLocale = renderedLocale(reading, translation);
 
   return (
     <main className={styles.shell}>
@@ -226,7 +232,7 @@ export default async function SharePage({ params }: { params: Promise<{ slug: st
         declared if a future edit to that branch drops the attribute, and a nested
         identical `lang` costs nothing.
       */}
-      <div lang={reading.locale} className={styles.body}>
+      <div lang={shownLocale} className={styles.body}>
         <ReadingView
           {...props}
           footer={<TryItYourself shareId={link.id} entity={link.entity} />}

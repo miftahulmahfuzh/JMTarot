@@ -134,9 +134,46 @@ describe('the public share page', () => {
      * thing that supplies `prose` -- without it, `ReadingView`'s rule 4 leaves a
      * stranger on a pulsing spinner forever, because nothing here can translate.
      */
-    expect(CODE).toContain('lang={reading.locale}');
     expect(CODE).toContain('adaptSharedReading');
     expect(CODE).not.toMatch(/prose=\{\{/); // built by the adapter, never inline
+  });
+
+  it('tags `lang` with the RENDERED locale, never the source', () => {
+    /*
+     * **DESIGN A's ONE ACCESSIBILITY TRAP.** A pinned translation makes the source
+     * locale and the locale on screen differ exactly when the feature is working,
+     * so `lang={reading.locale}` -- correct for two workstreams -- now tells a
+     * screen reader to pronounce English prose as Indonesian.
+     *
+     * Asserted as an ABSENCE as well as a presence, because the failure is a line
+     * that still reads perfectly and was simply never updated.
+     */
+    expect(CODE).toContain('renderedLocale');
+    expect(CODE).not.toContain('lang={reading.locale}');
+    expect(CODE).toMatch(/lang=\{shownLocale\}/);
+  });
+
+  it('drives the other-language notice off the translation, not the source', () => {
+    /*
+     * `isForeignProse` takes the translation as a REQUIRED third argument
+     * precisely so this cannot regress silently -- but the page could still pass
+     * `null` and look correct, so the wiring is asserted here too. Getting it
+     * wrong shows a stranger "this is in another language" over prose in their own.
+     */
+    expect(CODE).toMatch(/isForeignProse\(reading, viewer, translation\)/);
+  });
+
+  it('takes the pinned translation from the resolver and never fetches one', () => {
+    /*
+     * The page reads `resolved.translation` and does not name the query. The read
+     * belongs to `resolveShare`, which is what lets it share the reading's
+     * `Promise.all` -- and it keeps the `getTranslation` absence asserted above
+     * true of this file, so "the page generates nothing" stays checkable by
+     * grepping one file.
+     */
+    expect(CODE).toMatch(/translation\b/);
+    expect(CODE).not.toContain('getTranslation');
+    expect(CODE).not.toContain("from '@/lib/db");
   });
 
   it('counts the view in after(), never on the render path', () => {

@@ -167,6 +167,33 @@ describe('the share route', () => {
     expect(CODE).not.toMatch(/user\.locale/);
   });
 
+  it('PINS the locale from getLocale() and never from the request body', () => {
+    /*
+     * **DESIGN A's ONE WIRE-FORMAT RULE.** The pinned locale is resolved on the
+     * server, exactly as V2 resolves `/api/translate`'s target, and for V2's
+     * reason: a client-supplied locale can disagree with the session claim and
+     * with the dev-only `?lang=` override, and the client would then appear to be
+     * choosing what language the link records.
+     *
+     * So `CreateBody` gains NO locale field. A `locale` key in the schema is the
+     * regression, and it would look like a helpful explicit API.
+     */
+    /*
+     * ASSERTED ON THE `createShareLink` ARGUMENT LIST, not on the file. The route
+     * already resolved `getLocale()` for the analytics context long before design
+     * A, so a file-wide `toContain('getLocale')` passes vacuously — it did, on the
+     * first run of this test, which is the whole reason the slice is here.
+     */
+    const call = CODE.slice(CODE.indexOf('createShareLink({'));
+    const args = call.slice(0, call.indexOf('});') + 1);
+    expect(args).toContain('createShareLink({');
+    expect(args).toMatch(/locale:/);
+    expect(args.length).toBeLessThan(400); // it really is the argument list
+
+    // And the client does not get to say. `CreateBody` gains no locale field.
+    expect(CODE).not.toMatch(/include_locale|body\.locale/);
+  });
+
   it('declares a runtime and a maxDuration', () => {
     /*
      * `POST /api/locale` was the only database-writing route declaring neither,
