@@ -48,18 +48,22 @@ describe('PublicShell', () => {
     expect(CODE).not.toMatch(/hrefLang/);
   });
 
-  it('leaves S2 a HOLE, not a placeholder anchor', () => {
+  it('mounts S2s ContentLocaleLink and writes no anchor of its own', () => {
     /*
-     * The mount point for `ContentLocaleLink` is a comment. A local `<a>` written
-     * here while S2 is unlanded would be the second definition of the
-     * other-language link -- exactly what R17 exists to prevent -- and it is the
-     * one nobody deletes, because it works.
+     * **INVERTED, NOT DELETED (v0.4.0 S2).** This assertion used to require the
+     * mount point to be a COMMENT -- `expect(CODE).not.toContain('ContentLocaleLink')`
+     * -- because while S2 was unlanded a local `<a>` written here "for now" would
+     * have been the second definition of the other-language link that R17 exists
+     * to prevent, and it is the one nobody deletes, because it works. S2 landed
+     * the component, so the hole is filled and the half of the rule that still
+     * binds is the second half: **the shell mounts, it does not implement.**
      *
-     * The two anchors that ARE here are `/terms` and `/privacy`, which are
-     * `next/link` and not locale-aware.
+     * ONE mount, so `path` reaches one place and the anchor cannot come from two.
+     * And still no bare `<a` here: the two anchors on this page are `/terms` and
+     * `/privacy` through `next/link`, neither of which is locale-aware.
      */
-    expect(SOURCE).toContain('ContentLocaleLink');
-    expect(CODE).not.toContain('ContentLocaleLink'); // still only in a comment
+    expect(CODE.match(/<ContentLocaleLink\b/g) ?? []).toHaveLength(1);
+    expect(CODE).toContain('path={path}');
     expect(CODE.match(/<a\s/g) ?? []).toHaveLength(0);
   });
 

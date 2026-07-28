@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { ContentLocaleLink } from '@/components/ContentLocaleLink';
 import { TrackLink } from '@/components/TrackLink';
 import { getT } from '@/lib/i18n/t';
 import styles from './PublicShell.module.css';
@@ -43,10 +44,13 @@ import styles from './PublicShell.module.css';
  * `<ContentLocaleLink path={path} />` itself. One function behind both the anchor
  * and the tag, one prop, one mount, zero duplicated decisions.
  *
- * **S2 HAS NOT LANDED THAT COMPONENT YET** (only its `prefix.ts` leaf has, because
- * `gate.ts` needed it). The mount point below is a marked hole rather than a
- * placeholder implementation: a local `<a>` written here "for now" is the second
- * definition R17 exists to prevent, and it would be the one nobody deletes.
+ * **S2 HAS LANDED IT AND THE HOLE IS FILLED.** This paragraph used to say the
+ * component did not exist and that the mount point below was a marked hole rather
+ * than a placeholder `<a>` -- kept, rewritten, because the reason it gave is the
+ * reason there is still exactly one anchor: a local link written "for now" is the
+ * second definition R17 exists to prevent, and it is the one nobody deletes.
+ * `<ContentLocaleLink path={path} />` reads `localePath` from the same leaf
+ * `contentAlternates()` uses, so the anchor and the `hreflang` tag cannot drift.
  *
  * ── NO LOCALE PROP (LocaleProvider's rule) ──────────────────────────────────
  *
@@ -107,9 +111,6 @@ const LINKS = [
 
 export async function PublicShell({ surface, path, children }: PublicShellProps) {
   const t = await getT();
-  // Referenced so the prop is not silently unused before S2's mount lands, and so
-  // a page passing the wrong thing is visible in the DOM rather than nowhere.
-  void path;
 
   return (
     <div className={styles.frame}>
@@ -142,13 +143,16 @@ export async function PublicShell({ surface, path, children }: PublicShellProps)
         </nav>
 
         {/*
-          S2 MOUNTS `<ContentLocaleLink path={path} />` HERE (R17), and this is a
-          hole rather than a placeholder on purpose: a local `<a>` written "for
-          now" is the second definition of the other-language link that R17 exists
-          to prevent, and it is the one nobody would delete. English stays
-          reachable by URL until then, which is what `hreflang` names to a crawler
-          regardless of what the UI offers.
+          THE OTHER-LANGUAGE LINK (R17). One mount, here, rather than three lines
+          in each of four content pages -- and it takes the same bare `path` those
+          pages pass to `contentAlternates`, so the anchor and the `hreflang` tag
+          come out of one leaf and cannot disagree.
+
+          It renders nothing when `LOCALE_SWITCHER=0`, and English stays reachable
+          by URL regardless: the switch gates the CONTROL, never the address, and
+          `hreflang` names the other tree to a crawler whatever the UI offers.
         */}
+        <ContentLocaleLink path={path} />
 
         <nav className={styles.legal} aria-label={t('common.terms')}>
           <Link href="/terms">{t('common.terms')}</Link>

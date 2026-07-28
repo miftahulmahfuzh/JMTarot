@@ -57,6 +57,16 @@ import styles from './LocaleSwitch.module.css';
  * rather than only this row; see `AccountButton.tsx`'s header and
  * `accountSurface.test.ts`.
  *
+ * ── AND NOT A PUBLIC CONTENT PAGE (v0.4.0 S2) ────────────────────────────────
+ *
+ * `/gallery`, `/arcana/<slug>`, `/blog`, `/blog/<slug>` and the signed-out `/`
+ * carry `ContentLocaleLink` instead: a server-rendered `<a href>` to the sibling
+ * URL. There is usually no session there, the sibling URL IS the other language,
+ * and a POST from a CDN-cached page is what S-D10 forbids. Do not add a `links`
+ * variant here -- this component is a state machine for a session write and that
+ * page has nothing to write. Roadmap §6.5 asked for the variant; reconciliation
+ * R12 replaced it with the separate component.
+ *
  * v0.3.0 R2 does NOT relax this. A reading becomes reachable in the other
  * language through `/history`, as a derived `translations` row (VD7), with the
  * original never overwritten. That is a different surface and a different

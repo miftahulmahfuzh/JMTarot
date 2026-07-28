@@ -195,6 +195,59 @@ describe('nothing hand-writes the prefix', () => {
   });
 });
 
+describe('the content-page language control is a server-rendered link (§4.2)', () => {
+  const link = code('components/ContentLocaleLink.tsx');
+
+  /**
+   * **`next/link` MUST NEVER CROSS THE `/en/` BOUNDARY, AND CRAWLABILITY IS NOT
+   * THE REASON** -- `next/link` renders a real `<a href>`. The reason is that a
+   * client-side navigation from `/gallery` to `/en/gallery` resolves, AFTER
+   * middleware's rewrite, to the same route under the same root layout, so Next
+   * does not re-render the layout: `<html lang>` keeps its old value and
+   * `LocaleProvider` keeps its old catalog, and the page comes out
+   * half-translated with nothing failing anywhere. A full document load is the
+   * mechanism and a plain anchor is what performs one.
+   */
+  it('renders a plain anchor and imports no router', () => {
+    expect(link).toMatch(/<a\s/);
+    expect(link).not.toContain('next/link');
+    expect(link).not.toContain('next/navigation');
+  });
+
+  /**
+   * A `'use client'` here would ship a hydration bundle to render two anchors on
+   * the pages whose TTFB a crawler measures, and `usePathname()` returns the
+   * PRE-rewrite path, so the sibling URL would come out `/en/en/gallery`.
+   */
+  it('is a server component that takes the bare path as a prop', () => {
+    expect(link).not.toMatch(/^\s*(['"])use client\1/m);
+    expect(link).not.toContain('usePathname');
+    expect(link).toMatch(/\{\s*path\s*\}:\s*\{\s*path:\s*string\s*\}/);
+    expect(link).toContain('localePath(');
+  });
+
+  /**
+   * S-D6 and §6.5's catalog row: `events.ts` and the catalogs have ONE owner in
+   * v0.4.0 and it is S1, so the cheapest seam S2 can offer is needing nothing.
+   * `locale.name.*` and `locale.switch.aria` already exist in both catalogs.
+   */
+  it('adds no catalog key', () => {
+    const keys = [...link.matchAll(/t\(`?'?(locale\.[a-z.]+)/g)].map((m) => m[1]);
+    expect(keys).toContain('locale.switch.aria');
+    // The interpolated one, `locale.name.${option}`, is asserted by the render
+    // path in `localeSwitch.test.ts`'s catalog check for the same two keys.
+    expect(link).toContain('locale.name.');
+  });
+
+  /** R17: one mount, in S1's shell, so `path` is named once per page. */
+  it('is mounted by PublicShell and by nothing else', () => {
+    const mounts = FILES.filter(
+      (f) => f.path !== 'components/ContentLocaleLink.tsx',
+    ).filter((f) => stripComments(f.source).includes('ContentLocaleLink'));
+    expect(mounts.map((f) => f.path)).toEqual(['components/PublicShell.tsx']);
+  });
+});
+
 describe('no client component computes a locale URL', () => {
   const CLIENT = FILES.filter((f) =>
     /^\s*(['"])use client\1/m.test(f.source.split('import')[0]),
