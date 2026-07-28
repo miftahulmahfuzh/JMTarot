@@ -1,0 +1,138 @@
+/*
+ * The six answer rows on `/account`.
+ *
+ * NO NEW HEX, NO NEW FONT SIZE, NO NEW CURVE. `--danger` is reused for the one
+ * failure line, which is the only place on this block where something went wrong.
+ */
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.hint,
+.note {
+  margin: 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: var(--fs-hint);
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.note {
+  color: var(--faint);
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * `flex-wrap` and a hairline per row rather than a grid, because the question
+ * titles are full sentences in both locales -- "Hal paling berat yang pernah kamu
+ * saksikan" is three lines at 320px -- and a two-column grid would put a 44px
+ * button next to a three-line label and leave the row looking broken. Wrapping
+ * lets the button drop under its own label at narrow widths.
+ */
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--gold-hairline);
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* Takes the slack, so the button keeps its intrinsic width and the label wraps
+     rather than the button shrinking below its tap target. */
+  flex: 1 1 60%;
+  min-width: 0;
+}
+
+.question {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-hint);
+  color: var(--text-warm);
+  overflow-wrap: anywhere;
+}
+
+/*
+ * "Saved" / "Cleared" / "Not answered", in the slot-label treatment -- the same
+ * Cinzel micro-caps the draw screen uses under each card position. It is metadata
+ * about the row above it, and setting it in the body face would make it read as a
+ * second sentence.
+ */
+.state {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-slot-label);
+  letter-spacing: var(--ls-slot-label);
+  text-transform: uppercase;
+  color: var(--label);
+}
+
+/*
+ * QUIET, AND NOT IN `--danger`. Clearing one answer is a right the querent is
+ * exercising, not a destructive action they need warning about -- `/privacy`
+ * describes it as an ordinary choice. The one control on this page that gets the
+ * warning colour is the one that deletes the account.
+ */
+.clear {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 10px;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-chip);
+  cursor: pointer;
+}
+
+.clear:hover:not(:disabled),
+.clear:focus-visible:not(:disabled) {
+  color: var(--text-warm);
+  border-color: var(--gold-border);
+  outline: none;
+}
+
+.clear:focus-visible {
+  box-shadow: 0 0 0 1px var(--gold-border);
+}
+
+.clear:disabled {
+  /* One clear at a time: the route regenerates the Lotus block AND the persona in
+     its `after()`, and two concurrent clears would race those two regenerations. */
+  cursor: default;
+  color: var(--faint);
+}
+
+.failed {
+  /* Full width, below both, so it does not squeeze the row it belongs to. */
+  flex: 1 1 100%;
+  margin: 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: var(--fs-hint);
+  color: var(--danger);
+}

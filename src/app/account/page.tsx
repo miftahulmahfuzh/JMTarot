@@ -25,6 +25,7 @@ import Image from 'next/image';
 import { redirect } from 'next/navigation';
 
 import { AccountButton } from '@/components/AccountButton';
+import { AccountAnswers } from '@/components/AccountAnswers';
 import { AccountFacts } from '@/components/AccountFacts';
 import { DeleteAccount } from '@/components/DeleteAccount';
 import { Eyebrow } from '@/components/Eyebrow';
@@ -39,6 +40,7 @@ import {
   topCardAllTime,
   topReaderAllTime,
 } from '@/lib/db/queries/allTime';
+import { answerPresence } from '@/lib/db/queries/onboarding';
 import { getProfile } from '@/lib/db/queries/profile';
 import { localeSwitcherEnabled } from '@/lib/i18n/resolve';
 import { getLocale, getT } from '@/lib/i18n/t';
@@ -54,16 +56,20 @@ export default async function AccountPage() {
   const locale = await getLocale();
 
   /*
-   * ONE `Promise.all`, four reads, and the profile is the one that decides whether
+   * ONE `Promise.all`, five reads, and the profile is the one that decides whether
    * the page can exist at all. `readingCountAllTime` is separate from the other two
    * rather than derived from them, because both gates count READINGS and both of
    * those queries count something else — cards and readers.
    */
-  const [profile, topCard, topReader, readingCount] = await Promise.all([
+  const [profile, topCard, topReader, readingCount, answers] = await Promise.all([
     getProfile(db, user.id),
     topCardAllTime(db, user.id),
     topReaderAllTime(db, user.id),
     readingCountAllTime(db, user.id),
+    /* DECRYPTS NOTHING. `answerPresence` reads `answer_text IS NOT NULL`, so the
+       plaintext of `worst_thing` never leaves the database on this page's account
+       -- see its header and `AccountAnswers`'. */
+    answerPresence(db, user.id),
   ]);
 
   /*
@@ -199,6 +205,19 @@ export default async function AccountPage() {
         {/* NEVER EMPTY (A9). The endpoint always returns a body, because the
             fallback is a real block. */}
         <PersonaBlockClient />
+      </section>
+
+      {/*
+        PER-ANSWER CLEARING (reconciliation §7.3), BELOW the persona rather than
+        beside the facts. `/privacy` promises it twice in both locales and nobody
+        could perform it, which is the mistake this page exists to end — but L13's
+        warning that six rows "turn the rite into a settings page" is about EDITING
+        them, and the placement is what protects the rite: labelled by question,
+        blank by content, and nowhere near the top of the page.
+      */}
+      <section className={styles.section}>
+        <h2 className={styles.sectionLabel}>{t('account.answers.heading')}</h2>
+        <AccountAnswers initial={answers} />
       </section>
 
       <p className={styles.disclaimer}>{t('common.disclaimer.short')}</p>

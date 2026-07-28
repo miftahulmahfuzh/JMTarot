@@ -432,6 +432,21 @@ const en: Catalog = {
 
   'account.draw.cta': 'Draw a card',
 
+  // Per-answer clearing (reconciliation §7.3). See id.ts for why it ships and why
+  // a cleared answer says "Cleared" rather than reverting to "Not answered".
+  'account.answers.heading': 'Your answers',
+  'account.answers.hint':
+    'The six questions you were asked. What you wrote is not shown here, and you can clear any of them one at a time without deleting your account.',
+  'account.answers.answered': 'Saved',
+  'account.answers.empty': 'Not answered',
+  'account.answers.cleared': 'Cleared',
+  'account.answers.clear': 'Clear',
+  'account.answers.clearing': 'Clearing…',
+  'account.answers.clearAria': 'Clear the answer to: {question}',
+  'account.answers.failed': 'That did not clear. Try again in a moment.',
+  'account.answers.note':
+    'Clearing an answer also rewrites your Inner Lotus without it.',
+
   // V8 — account deletion (VD13). See id.ts for why there are three body
   // strings and why `{days}` is interpolated.
   'account.delete.trigger': 'Delete account',

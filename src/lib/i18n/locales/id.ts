@@ -670,6 +670,35 @@ const id = {
 
   'account.draw.cta': 'Tarik kartu',
 
+  // ── Per-answer clearing (reconciliation §7.3) ─────────────────────────────
+  //
+  // IT SHIPS BECAUSE `/privacy` ALREADY PROMISES IT, TWICE, IN BOTH LOCALES —
+  // clause 3 ("Bisa kamu hapus kapan saja, satu per satu, tanpa menghapus akun")
+  // and clause 7. That made it a published promise of a control nobody could
+  // perform, which is the exact mistake `/account` itself made for a release.
+  //
+  // THE PAGE SAYS WHICH ANSWERS EXIST AND NEVER WHAT IS IN THEM. There is no
+  // reveal control at all, so the plaintext never leaves the server — `worst_thing`
+  // is the most sensitive string in the product and this page is the one that lets
+  // somebody delete it, not read it back.
+  //
+  // "Terhapus" AND NOT "Dilewati" for a cleared answer, even though the column
+  // ends up in the same state as a skip: the querent needs to see that their
+  // deletion happened, and a row that reverts to "not answered" reads as if the
+  // button did nothing.
+  'account.answers.heading': 'Jawabanmu',
+  'account.answers.hint':
+    'Enam pertanyaan yang pernah kamu jawab. Isinya tidak ditampilkan di sini, dan bisa kamu hapus satu per satu tanpa menghapus akun.',
+  'account.answers.answered': 'Tersimpan',
+  'account.answers.empty': 'Tidak dijawab',
+  'account.answers.cleared': 'Terhapus',
+  'account.answers.clear': 'Hapus',
+  'account.answers.clearing': 'Menghapus…',
+  'account.answers.clearAria': 'Hapus jawaban untuk: {question}',
+  'account.answers.failed': 'Belum terhapus. Coba lagi sebentar lagi.',
+  'account.answers.note':
+    'Menghapus satu jawaban juga menulis ulang Teratai Batinmu tanpa jawaban itu.',
+
   // ==========================================================================
   // V8 — account deletion (VD13). The copy for a control `/privacy` §8 has
   // described for an entire release and nobody could perform.
