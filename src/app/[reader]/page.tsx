@@ -2,8 +2,8 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { AccountButton } from '@/components/AccountButton';
-import { DaySummary } from '@/components/DaySummary';
 import { Eyebrow } from '@/components/Eyebrow';
+import { ReaderDeck } from '@/components/ReaderDeck';
 import { ReaderViewed } from '@/components/ReaderViewed';
 import { TrackLink } from '@/components/TrackLink';
 import { READERS, readerById, readerPortrait } from '@/data/readers';
@@ -70,26 +70,20 @@ export default async function ServicePicker({
         </div>
       </div>
 
-      <p className={styles.bio}>{reader.bio[t.locale]}</p>
+      {/* The reader's bio and, when there is one, what this reader remembers
+          about today -- two panels of one swipe deck (V5, roadmap §1.5).
 
-      {/* What this reader remembers about today. Renders nothing until the
-          first byte, and nothing at all for a querent who has not read today
-          (M14) -- which is the common case and must stay the cheapest.
+          IT RENDERS ONE PANEL FOR A QUERENT WHO HAS NOT READ TODAY, which is
+          the common case and must stay the cheapest: no dots, no affordance,
+          and a deck exactly as tall as the bio. There is no empty second panel,
+          ever (M14).
 
-          STILL A CLIENT COMPONENT, BUT THE REASON CHANGED WITH W6. This used to
-          say "so this page stays static", and `npm run build` listing
-          /thessaly, /margaret and /adrian as prerendered was the canary. That
-          canary is gone: the root layout awaits `getLocale()` for `<html lang>`,
-          which opts the whole tree into dynamic rendering, and the build now
-          lists every route as ƒ. Plan §8 says to expect exactly that.
-
-          What survives is the reason that actually mattered: an awaited DB read
-          plus a possible model call HERE blocks the first byte of the page, and
-          roadmap §6 forbids that whether or not the page was static. So it still
-          mounts empty and fills in -- and the check is no longer a line in the
-          build output but the requirement itself, which is that the three
-          readers and their services render before any memory feature resolves. */}
-      <DaySummary readerId={reader.id} readerName={reader.name} />
+          STILL A CLIENT COMPONENT, and the reason is the one that outlived W6's
+          prerendering canary: an awaited DB read plus a possible model call
+          HERE blocks the first byte of the page, and roadmap §6 forbids that
+          whether or not the route is static. The three readers and their
+          services must render before any memory feature resolves. */}
+      <ReaderDeck readerId={reader.id} readerName={reader.name} bio={reader.bio[t.locale]} />
 
       <Eyebrow>{t('picker.service.eyebrow')}</Eyebrow>
 

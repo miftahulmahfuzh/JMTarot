@@ -1,24 +1,27 @@
 /*
- * The per-day reader summary on the service picker (W5 §5.4).
+ * The per-day reader summary, inside the reader swipe deck (W5 §5.4, reworked
+ * by V5).
  *
- * NO NEW VALUES. This is the `.bio` register in
- * `src/app/[reader]/page.module.css` -- same family, same size, same line
- * height -- with one existing token swapped for the accent and a hairline
- * borrowed from the eyebrow treatment. The reader is still speaking at this
- * point in the page, and the summary is the same voice as the bio above it, so
- * matching that register rather than inventing one is the whole design.
+ * NO NEW VALUES. This is the `.bio` register in `ReaderDeck.module.css` -- same
+ * family, same size, same line height -- with `--gold-pale` for the ink. The
+ * reader is still speaking at this point in the page and the summary is the
+ * same voice as the bio, so matching that register rather than inventing one is
+ * the whole design.
  *
- * THE LEFT RULE IS WHAT DISTINGUISHES IT from the bio, and it is doing real
- * work: the bio is standing copy about the reader, and this is the reader
- * saying something about YOU, today. Without a mark they read as one paragraph
- * that changed its mind halfway through. `--gold-border` is the same hairline
- * the chips and banners already use.
+ * THE LEFT RULE IS GONE, AND THAT IS THE POINT OF THE DECK. It existed to stop
+ * the summary reading as a continuation of the bio when the two were stacked
+ * paragraphs -- "without a mark they read as one paragraph that changed its
+ * mind halfway through". They are no longer stacked and are never on screen
+ * together, so the mark is separating things that cannot touch. Removing it also
+ * makes both panels exactly the same text width, which is what lets the height
+ * reserve in ReaderDeck.module.css be derived once instead of twice. The ink
+ * still differs, which is enough to say "this is about you, today".
  *
- * NO EMPTY STATE AND NO RESERVED HEIGHT (M14). The component returns null until
- * the first byte, so this rule set never applies to an empty element and the
- * service list does not move while the request is in flight. It DOES move once
- * text arrives, which is the same accepted trade as `FrequencyLine` -- §5.4
- * forbids reserving the space.
+ * NO EMPTY STATE AND NO RESERVED HEIGHT FOR AN ABSENT SUMMARY (M14). The panel
+ * is not built until there is text, so this rule set never applies to an empty
+ * element. The height reserve that keeps the deck from growing per chunk lives
+ * on the PANEL, in ReaderDeck.module.css, and only exists once there is a
+ * summary to reserve for.
  */
 .summary {
   font-family: var(--font-body), Georgia, serif;
@@ -26,6 +29,4 @@
   line-height: 1.5;
   color: var(--gold-pale);
   margin: 0;
-  padding-left: 12px;
-  border-left: 1px solid var(--gold-border);
 }
