@@ -154,3 +154,95 @@ describe('a locale switch reaches the generated prose, not only the chrome', () 
     });
   }
 });
+
+describe('a timed-out switch is retried once, not silently abandoned', () => {
+  /**
+   * ── THE BUG ──────────────────────────────────────────────────────────────
+   *
+   * Reported from a real iPhone as "changing language does nothing", then
+   * refined by the reporter to "it only takes effect after changing page" --
+   * which was exactly right, and which the desktop measurement could not see.
+   *
+   * `POST /api/locale` is 1348ms warm from WSL. On iPhone Safari against a cold
+   * lambda and a suspended Neon compute it exceeds `SWITCH_DEADLINE_MS`, so
+   * `AbortSignal.timeout` fired, the catch reverted the marker and deliberately
+   * did NOT refresh. The lambda meanwhile ran to its own `maxDuration = 30` and
+   * the write landed -- so the querent saw the toggle flick back, and then found
+   * the new language on their next navigation.
+   *
+   * A timeout is the only outcome that means UNKNOWN, so it is the only one
+   * retried. `!response.ok` and offline are answers.
+   */
+  const src = () => code('components/LocaleSwitch.tsx');
+
+  it('separates a timeout from a refusal and from offline', () => {
+    // Three distinguishable outcomes, not one bare `catch`. Without the
+    // TimeoutError test every failure is indistinguishable and nothing can be
+    // retried selectively.
+    expect(src()).toMatch(/TimeoutError/);
+    expect(src()).toMatch(/'timeout'/);
+    expect(src()).toMatch(/response\.ok\s*\?\s*'ok'\s*:\s*'refused'/);
+  });
+
+  it('retries ONLY a timeout, and only once', () => {
+    const s = src();
+    // The retry is gated on the timeout classification...
+    expect(s).toMatch(/first\s*!==\s*'timeout'/);
+    // ...and there is exactly one retry deadline, used exactly once. A backoff
+    // loop here would leave the querent watching an unresolved control.
+    expect(s).toMatch(/SWITCH_RETRY_DEADLINE_MS/);
+    expect(s.match(/SWITCH_RETRY_DEADLINE_MS/g)).toHaveLength(2); // decl + use
+    expect(s).not.toMatch(/for\s*\(|while\s*\(/);
+  });
+
+  it('KEEPS the marker across the retry and reverts only on final failure', () => {
+    const s = src();
+    const retryOnward = s.slice(s.indexOf('const second = await attempt'));
+    // After the retry, exactly one revert, and it is in the failure branch.
+    expect(retryOnward).toMatch(/second === 'ok'\)\s*landed\(next\);\s*else setChosen\(null\)/);
+    // The timeout branch must NOT revert before retrying -- that revert is the
+    // whole visible bug.
+    const beforeRetry = s.slice(
+      s.indexOf("if (first !== 'timeout')"),
+      s.indexOf('const second = await attempt'),
+    );
+    expect(beforeRetry.match(/setChosen\(null\)/g)).toHaveLength(1); // the non-timeout one only
+  });
+
+  it('re-arms the control at the FIRST deadline, before the retry', () => {
+    /*
+     * The retry must not re-disable the toggle. Six seconds is the longest it is
+     * honest to leave somebody holding a dead control, and that bound is
+     * independent of how long the write takes -- the same asymmetry the route's
+     * header describes.
+     */
+    const s = src();
+    const firstDeadlineAt = s.indexOf('await attempt(next, SWITCH_DEADLINE_MS)');
+    const rearmAt = s.indexOf('setPosting(false)');
+    const retryAt = s.indexOf('await attempt(next, SWITCH_RETRY_DEADLINE_MS)');
+    expect(firstDeadlineAt).toBeGreaterThan(-1);
+    expect(rearmAt).toBeGreaterThan(firstDeadlineAt);
+    expect(retryAt).toBeGreaterThan(rearmAt);
+  });
+
+  it('fires locale.changed exactly once, from one place', () => {
+    // A retry that succeeds must produce ONE analytics row, not two. Hoisting the
+    // event into `landed()` is what guarantees that structurally.
+    const s = src();
+    expect(s.match(/track\('locale\.changed'/g)).toHaveLength(1);
+    expect(s).toMatch(/function landed\(/);
+  });
+
+  it('guards every post-await branch against a newer tap and an unmount', () => {
+    /*
+     * The control re-arms before the retry finishes, so a second tap can race
+     * attempt two of the first. Without `intentRef` the loser writes its outcome
+     * over the winner's and the row settles on a language nobody asked for last.
+     * `aliveRef` covers the account sheet closing mid-retry.
+     */
+    const s = src();
+    expect(s).toMatch(/intentRef/);
+    expect(s).toMatch(/aliveRef/);
+    expect(s.match(/intentRef\.current !== next/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+  });
+});

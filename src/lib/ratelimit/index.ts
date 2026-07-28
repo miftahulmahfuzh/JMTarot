@@ -133,9 +133,60 @@ function num(name: string, fallback: number): number {
  * the paragraph above argues for. The bare form is kept in case a caller ever
  * reaches `peek('events:...')`, which takes no prefix.
  */
+/**
+ * ── `session-update:` JOINS `events:` ON MEMORY, AND IT IS A LATENCY FIX ─────
+ *
+ * `auth.ts`'s jwt `trigger === 'update'` branch spends one `hit()` before it
+ * re-reads the row. Every caller of `refreshSession()` pays it, and one of them
+ * is `POST /api/locale` -- **on the request path of a language switch, from
+ * `sin1` to Upstash's nearest region, which is TOKYO.** There is no Singapore
+ * region (verified 2026-07-27), so that is a cross-region round trip inserted
+ * between a database write and a database read, both of which are already
+ * sequential and one of which may be waking a suspended Neon compute.
+ *
+ * The measured symptom: the switch appears to do nothing on iPhone Safari. The
+ * client abandons at `SWITCH_DEADLINE_MS` (6s) and deliberately does not
+ * refresh, so a slow round trip is indistinguishable from a dead control. Warm
+ * from WSL the whole POST is 1348ms; this hop is a real slice of it and is the
+ * only slice that leaves the continent.
+ *
+ * **THE BUDGET LOSES NOTHING THAT MATTERS BY BEING PER-INSTANCE.** It exists so
+ * an authenticated user cannot spin database reads by spamming
+ * `POST /api/auth/session`; that is one user against one budget, and one user's
+ * requests land mostly on one warm instance. Compare the fleet-wide budgets it
+ * is NOT joining: `global` bounds a crowd of throwaway accounts and `llm:window`
+ * mirrors a provider quota, and both are meaningless per-instance. This one is
+ * not.
+ *
+ * It is also strictly better than the status quo under failure: when Upstash is
+ * unreachable this key already falls back to `memory.ts`, so choosing memory
+ * deliberately picks the path an outage picks anyway -- minus the second spent
+ * discovering it.
+ *
+ * ── EACH BUDGET GETS ITS OWN SWITCH, WHICH THE OLD SHAPE COULD NOT DO ────────
+ *
+ * The previous body tested `RATELIMIT_EVENTS_BACKEND` FIRST and returned early,
+ * so that one variable governed every memory-only budget. Adding a second key
+ * under it would have meant `RATELIMIT_EVENTS_BACKEND=redis` silently moving the
+ * session budget too -- one variable named after `events` deciding something
+ * else. Dispatch on the key first, then consult that key's own variable.
+ *
+ * Only the exact string `redis` moves either, the same rule as
+ * `RATELIMIT_BACKEND=memory`: a typo must not silently relocate a budget.
+ *
+ * Both key forms are matched for the reason the `events:` comment gives -- `hit()`
+ * applies `read:` before `backendFor()` sees the key, so the string arriving here
+ * is `read:session-update:<uid>`; the bare form is kept in case a caller ever
+ * reaches `peek()`, which takes no prefix.
+ */
 function memoryOnly(key: string): boolean {
-  if (process.env.RATELIMIT_EVENTS_BACKEND === 'redis') return false;
-  return key.startsWith('events:') || key.startsWith('read:events:');
+  if (key.startsWith('events:') || key.startsWith('read:events:')) {
+    return process.env.RATELIMIT_EVENTS_BACKEND !== 'redis';
+  }
+  if (key.startsWith('session-update:') || key.startsWith('read:session-update:')) {
+    return process.env.RATELIMIT_SESSION_BACKEND !== 'redis';
+  }
+  return false;
 }
 
 /**

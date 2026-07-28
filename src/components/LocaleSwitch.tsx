@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { Fragment, useState, useTransition } from 'react';
+import { Fragment, useEffect, useRef, useState, useTransition } from 'react';
 
 import { track } from '@/lib/analytics/track.client';
 import { useLocale, useT } from '@/lib/i18n/LocaleProvider';
@@ -81,6 +81,54 @@ import styles from './LocaleSwitch.module.css';
  */
 const SWITCH_DEADLINE_MS = 6_000;
 
+/**
+ * The deadline on the ONE automatic retry, and why there is a retry at all.
+ *
+ * ── THE BUG THIS FIXES, REPORTED FROM A REAL iPHONE ──────────────────────────
+ *
+ * "Changing language does nothing." Measured warm from WSL the POST is 1348ms and
+ * the switch is visibly instant, which is why it looked fine on a desktop for
+ * days. On iPhone Safari against a cold path it exceeds `SWITCH_DEADLINE_MS`,
+ * `AbortSignal.timeout` fires, and the catch below used to revert the marker and
+ * deliberately not refresh -- so the querent saw the toggle flick back and
+ * nothing else happen. The write had usually LANDED, because the lambda runs to
+ * its own `maxDuration = 30`, so the new language appeared on their next
+ * navigation. Reported, correctly, as "it only takes effect after changing page".
+ *
+ * ── WHY A RETRY AND NOT A LONGER FIRST DEADLINE ──────────────────────────────
+ *
+ * Six seconds is already long to show two greyed-out words with no spinner, and
+ * this component's own header argues that. Raising it trades one honest failure
+ * for a worse one: a control that is dead for twelve seconds.
+ *
+ * A retry is better than a longer wait because THE SECOND ATTEMPT IS CHEAP. What
+ * made the first one slow is a cold lambda and a suspended Neon compute; both are
+ * warm by the time it returns, so the retry is the ~100ms case, not the 6s case.
+ * The route is idempotent -- `setUserLocale` writes a value rather than
+ * incrementing one, and the jwt update branch re-reads the row -- so issuing it
+ * twice is safe by construction and not by luck.
+ *
+ * ── WHAT A TIMEOUT MEANS, AND WHY ONLY IT IS RETRIED ─────────────────────────
+ *
+ * A timeout is the one outcome that means UNKNOWN. `!response.ok` means the
+ * server refused and `TypeError` means offline; both are answers, and both still
+ * revert the marker and stay put. Retrying a refusal would be a loop.
+ *
+ * The marker is KEPT across the retry, which is the visible half of the fix: the
+ * row goes on showing the language the querent asked for while the second attempt
+ * runs, and only reverts if that one fails too. Combined with
+ * `RATELIMIT_SESSION_BACKEND`'s move to memory (which deletes a Singapore→Tokyo
+ * hop from this exact path), the first attempt should now usually be the only one.
+ *
+ * EXACTLY ONE RETRY. Not a backoff loop: if two attempts spanning ~18s both fail,
+ * something is wrong that a third request will not fix, and the querent has been
+ * looking at an unresolved control for long enough.
+ */
+const SWITCH_RETRY_DEADLINE_MS = 12_000;
+
+/** What one POST to `/api/locale` came back as. Only `timeout` is retryable. */
+type Attempt = 'ok' | 'refused' | 'timeout' | 'error';
+
 export function LocaleSwitch({ variant }: { variant: 'names' | 'codes' }) {
   const t = useT();
   const active = useLocale();
@@ -107,10 +155,38 @@ export function LocaleSwitch({ variant }: { variant: 'names' | 'codes' }) {
   /** What the row PAINTS as selected. `active` is what the server believes. */
   const shown = chosen ?? active;
 
-  async function choose(next: Locale) {
-    if (next === active || busy) return;
-    setPosting(true);
-    setChosen(next);
+  /**
+   * Which locale the querent most recently asked for.
+   *
+   * NEEDED BECAUSE THE CONTROL RE-ARMS BEFORE THE RETRY FINISHES. `posting`
+   * clears at the first deadline so the row is tappable again -- that is the
+   * honesty rule this component is built on -- which means a second tap can be
+   * in flight while attempt two of the first tap is still running. Without this,
+   * the loser of that race would write its own outcome over the winner's and the
+   * row could settle on a language nobody asked for last. Every branch after an
+   * `await` checks it and bails if the intent has moved on.
+   */
+  const intentRef = useRef<Locale | null>(null);
+
+  /** Whether this component is still mounted. The account sheet can close mid-retry. */
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
+
+  /**
+   * One POST, classified. See `SWITCH_RETRY_DEADLINE_MS` for why `timeout` is
+   * separated from `error` -- it is the only outcome that means UNKNOWN.
+   *
+   * `AbortSignal.timeout` rejects with a `DOMException` whose `name` is
+   * `TimeoutError`; offline rejects with a `TypeError`. Reading `name` rather
+   * than `instanceof DOMException` because the latter is not reliably present in
+   * every runtime this bundle can end up in.
+   */
+  async function attempt(next: Locale, deadlineMs: number): Promise<Attempt> {
     try {
       const response = await fetch('/api/locale', {
         method: 'POST',
@@ -119,55 +195,76 @@ export function LocaleSwitch({ variant }: { variant: 'names' | 'codes' }) {
         /*
          * THE BOUND THAT MAKES THE HANG UNREACHABLE. Without a signal this
          * `await` is as long as the network cares to make it, and `posting` only
-         * clears in the `finally` -- so an unresponsive cold start held both
-         * options disabled indefinitely. Verified by negative control: with the
-         * stub in `_localehang.html?hang=1`, removing this line leaves the row
-         * disabled at t=8000; with it, the row re-arms at t=6500.
+         * clears afterwards -- so an unresponsive cold start held both options
+         * disabled indefinitely. Verified by negative control: with the stub in
+         * `_localehang.html?hang=1`, removing this line leaves the row disabled
+         * at t=8000; with it, the row re-arms at t=6500.
          */
-        signal: AbortSignal.timeout(SWITCH_DEADLINE_MS),
+        signal: AbortSignal.timeout(deadlineMs),
       });
-      /*
-       * NO ERROR COPY, and it is the same call M14 made for the memory features:
-       * a failed language switch leaves the page in the language it was already
-       * in, which is a visible, self-explanatory outcome. A red sentence saying
-       * "could not change language" adds nothing the screen has not already said,
-       * and it would need two more catalog keys to say it in.
-       */
-      if (!response.ok) {
-        // Put the marker back. The language really did not change.
-        setChosen(null);
-        return;
-      }
-      /*
-       * `locale.changed` HAS BEEN IN THE TAXONOMY SINCE W6 AND HAS NEVER BEEN
-       * FIRED. It is fired here, after the write succeeded, so the row means
-       * "the language actually changed" and not "somebody tapped". `surface` is
-       * `'settings'` from both call sites -- see the plan's `## Open questions`;
-       * the login footer is arguably not settings and widening a union in W4's
-       * file for one call site is not a change V4 makes unilaterally.
-       */
-      track('locale.changed', { from: active, to: next, surface: 'settings' });
-      startTransition(() => router.refresh());
-    } catch {
-      /*
-       * Offline, OR the deadline above fired. For the offline case the reasoning
-       * is the `!ok` branch's: the page is unchanged and says so by being
-       * unchanged.
-       *
-       * THE TIMEOUT CASE IS DELIBERATELY TREATED THE SAME WAY, AND THE
-       * ALTERNATIVE IS WORSE. We do not know what happened -- the lambda may be
-       * mid-write and about to succeed against its own larger budget, or it may
-       * be gone. So the refresh is NOT fired: refreshing on a request whose
-       * cookie may never have been set would re-render the page in the OLD locale
-       * and stamp the failure as final. Reverting the marker and re-arming the
-       * control leaves the querent able to tap again -- and if the write did
-       * land, their next navigation is already in the new language, which is the
-       * documented degradation this route was always designed around.
-       */
-      setChosen(null);
-    } finally {
-      setPosting(false);
+      return response.ok ? 'ok' : 'refused';
+    } catch (err) {
+      return (err as { name?: string } | null)?.name === 'TimeoutError' ? 'timeout' : 'error';
     }
+  }
+
+  /**
+   * The switch landed. Fire the event once, then re-render on the server.
+   *
+   * `locale.changed` HAS BEEN IN THE TAXONOMY SINCE W6 AND HAD NEVER BEEN FIRED
+   * before V4. It is fired here, after the write succeeded, so the row means "the
+   * language actually changed" and not "somebody tapped" -- which is also why it
+   * lives in this one function rather than at both call sites: a retry that
+   * succeeds must produce exactly one event, not two.
+   */
+  function landed(next: Locale) {
+    track('locale.changed', { from: active, to: next, surface: 'settings' });
+    startTransition(() => router.refresh());
+  }
+
+  async function choose(next: Locale) {
+    if (next === active || busy) return;
+    intentRef.current = next;
+    setPosting(true);
+    setChosen(next);
+
+    const first = await attempt(next, SWITCH_DEADLINE_MS);
+
+    // Re-arm the control at the first deadline regardless of outcome. Six seconds
+    // is the longest it is honest to leave somebody holding a dead toggle.
+    if (aliveRef.current) setPosting(false);
+    if (intentRef.current !== next) return;
+
+    if (first === 'ok') {
+      landed(next);
+      return;
+    }
+
+    /*
+     * NO ERROR COPY, and it is the same call M14 made for the memory features: a
+     * failed language switch leaves the page in the language it was already in,
+     * which is a visible, self-explanatory outcome. A red sentence saying "could
+     * not change language" adds nothing the screen has not already said, and it
+     * would need two more catalog keys to say it in.
+     *
+     * `refused` and `error` are ANSWERS -- the server said no, or there is no
+     * network -- so the marker goes back and nothing is retried.
+     */
+    if (first !== 'timeout') {
+      setChosen(null);
+      return;
+    }
+
+    /*
+     * TIMEOUT: unknown, so try once more and KEEP THE MARKER while doing it. The
+     * cold lambda and the suspended compute that caused the first timeout are
+     * warm now, so this is the fast case. Read the constant's comment.
+     */
+    const second = await attempt(next, SWITCH_RETRY_DEADLINE_MS);
+    if (!aliveRef.current || intentRef.current !== next) return;
+
+    if (second === 'ok') landed(next);
+    else setChosen(null);
   }
 
   const label = (locale: Locale) =>
