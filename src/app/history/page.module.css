@@ -8,6 +8,42 @@
   gap: 16px;
 }
 
+/*
+ * The route home. COPIED FROM `history/[id]/page.module.css`'s `.back` rather than
+ * shared, because these are two CSS modules and the alternative is a third file for
+ * nine declarations. If a third screen needs it, extract then.
+ *
+ * `align-self: flex-start` matters: `.shell` is a flex column, so without it the
+ * link stretches the full width and its 12px tap padding becomes a 520px-wide
+ * target sitting above the title.
+ *
+ * `margin-top: -8px` pulls it up against `.shell`'s 16px gap -- the account circle
+ * is already at the top and two stacked rows of chrome push the title off a short
+ * screen.
+ */
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  margin-top: -8px;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 12px 10px 12px 0;
+}
+
+.back:hover {
+  color: var(--gold-lift);
+}
+
+.back:focus-visible {
+  outline: 2px solid var(--gold-border);
+  outline-offset: 2px;
+}
+
 .title {
   font-family: var(--font-display), serif;
   font-weight: 500;

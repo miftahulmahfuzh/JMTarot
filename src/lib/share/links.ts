@@ -32,9 +32,11 @@ import {
   shareLinkById,
   shareLinkBySlug,
 } from '@/lib/db/queries/share';
+import { getTranslation } from '@/lib/db/queries/translations';
+import type { Locale } from '@/data/types';
 import type { DbOrTx } from '@/lib/db/types';
 import { isShareEntity, isValidSlug, newSlug, normalizeSlug, type ShareEntity } from './slug';
-import type { ResolvedShare, ShareLinkPublic } from './types';
+import type { ResolvedShare, SharedTranslation, ShareLinkPublic } from './types';
 
 export type { ResolvedShare, ShareLinkPublic } from './types';
 
@@ -166,6 +168,14 @@ export async function createShareLink(args: {
   entityId: string;
   includeQuestion: boolean;
   includeNickname: boolean;
+  /**
+   * The language the sharer is reading, which the public page will render.
+   *
+   * REQUIRED, not optional. The route resolves it from `getLocale()`; making it
+   * optional would let a future caller mint an unpinned link by omission and get
+   * pre-design-A behaviour with nothing red — see `schema.ts` on the column.
+   */
+  locale: Locale;
 }): Promise<CreateShareResult> {
   const db = await handle();
 
@@ -190,6 +200,8 @@ export async function createShareLink(args: {
         entityId: args.entityId,
         includeQuestion: args.includeQuestion,
         includeNickname: args.includeNickname,
+        // RE-PINNED on a rotation too; see `insertOrRotateShareLink`'s set clause.
+        locale: args.locale,
       });
 
       /*
@@ -309,14 +321,55 @@ export async function resolveShare(rawSlug: unknown): Promise<ResolvedShare | nu
     return { entity: 'persona', link: publicLink, persona };
   }
 
-  const reading = await publicReadingForShare(
-    db,
-    link.entityId,
-    link.includeQuestion,
-    link.includeNickname,
-  );
+  /*
+   * ── THE TWO READS ARE ONE FAN-OUT, AND THE MEASURED COST OF DESIGN A IS ZERO ──
+   *
+   * Both are keyed off `link.entityId` and neither needs the other's result, so
+   * the pinned translation costs no wall clock: it is served by
+   * `translations_entity_lookup_idx` on `(entity, entity_id, field, locale)`,
+   * on the connection the link read already opened, and the Neon compute is
+   * already awake by this point because `shareLinkBySlug` woke it.
+   *
+   * **THE LOOKUP IS SKIPPED ONLY WHEN NOTHING WAS PINNED**, never on a comparison
+   * against `reading.locale` — that would need the reading first, which serialises
+   * two reads to save one round trip on an open connection. Wrong trade. A pin
+   * equal to the source finds no row (nothing translates `id` into `id`) and falls
+   * through to as-written, which is the same answer by a cheaper route.
+   *
+   * `getTranslation` IS CALLED HERE AND NEVER FROM THE PAGE. That is what keeps
+   * `page.contract.test.ts`'s "never generates anything" assertion greppable
+   * against one file, and it is why the page names no `@/lib/db` specifier.
+   */
+  const [reading, translation] = await Promise.all([
+    publicReadingForShare(db, link.entityId, link.includeQuestion, link.includeNickname),
+    link.locale
+      ? getTranslation(db, {
+          entity: 'reading',
+          entityId: link.entityId,
+          field: 'body',
+          locale: link.locale,
+        })
+      : null,
+  ]);
   if (!reading) return null;
-  return { entity: 'reading', link: publicLink, reading };
+
+  /*
+   * NO STALENESS CHECK, DELIBERATELY. V2's rule is
+   * `translations.updated_at < source.updated_at`, but VD7 makes `readings.body`
+   * immutable and the comparand for a reading is `created_at` — so a reading's
+   * translation cannot go stale. A branch that can never fire is a branch nobody
+   * can trust, and adding one here would imply the source can change.
+   *
+   * An EMPTY body is treated as a miss rather than rendered: `resolveProse` maps
+   * empty prose to `unavailable`, and a stranger deserves the original over a
+   * blank page.
+   */
+  const pinned: SharedTranslation =
+    translation && translation.body.trim() !== ''
+      ? { body: translation.body, locale: translation.locale }
+      : null;
+
+  return { entity: 'reading', link: publicLink, reading, translation: pinned };
 }
 
 /**

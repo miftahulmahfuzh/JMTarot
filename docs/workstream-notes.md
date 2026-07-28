@@ -1186,15 +1186,73 @@ table did not lose a line. **Do not use `{ kind: 'translated' }` for this**: it 
 identically and would record in the type that a translation happened when none did.
 
 The honesty a viewer needs is restored by CHROME, not by prose: `share.public.otherLanguage` on a
-mismatch, plus `lang={reading.locale}` on the paragraph. **The public route must never generate
-anything** — VD8, and since V9 a model call is the app's scarcest resource rather than a cost.
+mismatch, plus `lang=` on the paragraph. **The public route must never generate anything** — VD8,
+and since V9 a model call is the app's scarcest resource rather than a cost.
+
+### Design A: the link carries the language it was shared in (2026-07-28)
+
+**The paragraph above used to end `lang={reading.locale}` and the section used to say the body is
+NEVER translated.** `share_links.locale` now pins the locale the sharer was reading and the
+resolver READS that `translations` row. Full argument in
+`docs/plans/2026-07-28-share-live-locale-design.md`. Four things cost something to learn:
+
+- **THE MEASURED LATENCY COST IS ZERO, AND THAT IS AN ORDERING FACT RATHER THAN LUCK.** `/s/` was
+  already three sequential DB round trips. The translation read joins `publicReadingForShare`'s
+  `Promise.all` — both keyed off `link.entityId`, neither needing the other — and
+  `shareLinkBySlug` has already woken the Neon compute. **The lookup is skipped only when nothing
+  was pinned, never on a comparison against `reading.locale`:** that comparison needs the reading
+  first, which serialises two reads to save one round trip on an open connection. A pin equal to
+  the source finds no row and falls through, which is the same answer more cheaply.
+- **THE ARGUMENT `adapt.ts` GAVE AGAINST THIS WAS HALF RIGHT, AND THE HALF THAT BINDS IS A CLIENT
+  CHANGE.** "Reading an existing `translations` row would make the sheet's *exactly what they will
+  see* a lie" holds against a *viewer-adaptive* page, and holds against design A too **until
+  `ShareFooter` previews the host's prose.** It did not: `HistoryDetail` passed `preview={reading}`
+  and `previewReadingView` hardcoded `as-written`, so `reading.body` — the ORIGINAL — was the
+  preview. Ship the server half alone and the sheet shows Indonesian under a link that shows
+  English. `previewReadingView` maps the five states rather than passing them through, because
+  `translating` and `unavailable` will have no row for the resolver to find.
+- **A CONTRACT TEST THAT PASSED ON ITS FIRST RUN.** The assertion that the mint resolves the pin
+  from `getLocale()` was written file-wide and went green immediately — the route had resolved
+  `getLocale()` for the analytics context since W4. It now slices `createShareLink`'s argument
+  list. **A source-level contract test over a large file is the easiest place in this repo to
+  write a vacuous assertion**, which is why `page.contract.test.ts` opens with a
+  "nothing below passes vacuously" case.
+- **THE FIXTURE PROVED NOTHING ON THE FIRST RUN, AND THE PAGE LOOKED RIGHT WHILE IT DID.**
+  `share-seed.ts` takes the most recent shareable reading; `db:seed` writes both locales, so the
+  first fixture pinned `en` onto an `en` source — a translation of English into English, a row
+  that cannot exist in production. The page rendered the sentinel and the notice behaved, for the
+  wrong reason. Found by querying the seeded row's `locale` **after** reading the output. The
+  script now forces `locale = 'id'` as part of the fixture.
+
+Observed live at 390px, all four cases — row 3 is the guarantee that a link minted before this
+shipped renders exactly what it rendered yesterday:
+
+```
+pinned  viewer  prose        body lang  notice
+en      en      translation  en         no
+en      id      translation  en         YES     <- the case design A does NOT fix
+NULL    en      source       id         YES     <- pre-existing links, unchanged
+NULL    id      source       id         no
+```
+
+**The nickname was a consent gap, not a cosmetic defect.** `Draw.tsx` mounted `ShareFooter` with
+no `nickname` prop for two workstreams, so the toggle read `disabled={... || !nickname}` and was
+dead — while its state stayed `true`, so the mint posted `include_nickname: true`, the resolver
+projected the column, and the public page rendered a nickname the sharer could not switch off and
+that `nicknameLine` (`includeNickname && nickname`) had left out of the preview entirely. **Fixed
+in both halves, because either alone still lets the wire claim a consent that never happened:**
+the draw page fetches the nickname (one indexed read — the build output confirms every route was
+already `ƒ`, so nothing became dynamic), and `effectiveIncludeNickname` sends `false` for a
+nickname nobody was shown. **The generalisation: a disabled control keeps its state, so any
+`disabled` on a form that posts must be paired with the value the post actually sends.**
 
 ### Verifying it
 
 ```sh
-npm test -- 'share|slug|adapt|gate|headers|legal'   # 1470 total, unit
-npm run test:integration -- share                   # 24: rotation, the .toSQL()
-                                                    # assertions, the orphan case
+npm test -- 'share|slug|adapt|gate|headers|legal'   # 1489 total, unit
+npm run test:integration -- share                   # 27: rotation, the .toSQL()
+                                                    # assertions, the orphan case,
+                                                    # and the three locale-pin cases
 # The live loop. `tools/share-check.py` reports 17 PASS/FAIL lines.
 npm run db:up && npm run db:seed && npx tsx tools/share-seed.ts
 SHARE_BASE_URL=http://localhost:3003 PORT=3003 npm run dev

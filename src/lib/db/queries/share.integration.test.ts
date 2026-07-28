@@ -181,6 +181,68 @@ describe('insertOrRotateShareLink', () => {
     });
   });
 
+  it('pins the locale the sharer was reading', async () => {
+    /*
+     * DESIGN A. The reading is `id`; the sharer was reading it in English, so the
+     * link records `en` and the public page will look up that translation.
+     */
+    await withRollback(async (tx) => {
+      const user = await makeUser(tx, 'dev:v7-locale-pin');
+      const r = await reading(tx, user);
+      const row = await insertOrRotateShareLink(tx, {
+        slug: A,
+        userId: user,
+        entity: 'reading',
+        entityId: r,
+        locale: 'en',
+      });
+      expect(row.locale).toBe('en');
+    });
+  });
+
+  it('leaves the pinned locale NULL when the mint does not name one', async () => {
+    /*
+     * **THE PRE-EXISTING-LINKS GUARANTEE, AND THE MOST IMPORTANT ASSERTION IN THIS
+     * BLOCK.** Every link minted before `share_links.locale` existed has NULL here,
+     * and NULL must mean "render as-written" -- i.e. exactly what that link showed
+     * yesterday. A `default` on the column would have broken that silently for
+     * every historic row, which is why there is none.
+     */
+    await withRollback(async (tx) => {
+      const user = await makeUser(tx, 'dev:v7-locale-null');
+      const r = await reading(tx, user);
+      const row = await insertOrRotateShareLink(tx, {
+        slug: A,
+        userId: user,
+        entity: 'reading',
+        entityId: r,
+      });
+      expect(row.locale).toBeNull();
+    });
+  });
+
+  it('RE-PINS the locale on re-share, rather than keeping the first one', async () => {
+    /*
+     * Re-sharing is how a querent fixes a link they minted in the wrong language:
+     * switch language, share again, get a new address showing the new language.
+     * Leaving `locale` out of the `set` clause would rotate the slug and keep the
+     * stale pin -- the control would look like it worked and change nothing, which
+     * is the shape of the language-switch bug of 2026-07-28.
+     */
+    await withRollback(async (tx) => {
+      const user = await makeUser(tx, 'dev:v7-locale-repin');
+      const r = await reading(tx, user);
+      const base = { userId: user, entity: 'reading', entityId: r };
+
+      const first = await insertOrRotateShareLink(tx, { ...base, slug: A, locale: 'en' });
+      expect(first.locale).toBe('en');
+
+      const second = await insertOrRotateShareLink(tx, { ...base, slug: B, locale: 'id' });
+      expect(second.id).toBe(first.id);
+      expect(second.locale).toBe('id');
+    });
+  });
+
   it('sets updated_at by hand, because $onUpdate does not fire in onConflictDoUpdate', async () => {
     await withRollback(async (tx) => {
       const user = await makeUser(tx, 'dev:v7-updated');

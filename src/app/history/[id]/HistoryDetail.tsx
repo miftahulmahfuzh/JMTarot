@@ -132,6 +132,17 @@ export function HistoryDetail({
             entity="reading"
             entityId={reading.id}
             preview={reading}
+            /*
+             * **THE SAME `prose` THIS COMPONENT IS RENDERING, and it is what makes
+             * the sheet's "exactly what they will see" true rather than nearly
+             * true.** Since design A the link pins the locale being read and the
+             * public page renders that translation, so a sheet given only
+             * `preview` would show `reading.body` -- the Indonesian source --
+             * under a link that will show English. `previewReadingView` maps the
+             * five states; this mount just has to be honest about which one it is
+             * in.
+             */
+            prose={prose}
             nickname={nickname}
           />
         ) : null

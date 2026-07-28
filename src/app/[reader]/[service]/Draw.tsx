@@ -21,7 +21,25 @@ import { MAX_QUESTION_LENGTH } from '@/lib/prompt/sanitize';
 import { motion } from '@/theme/tokens';
 import styles from './page.module.css';
 
-export function Draw({ reader, service }: { reader: Reader; service: Service }) {
+export function Draw({
+  reader,
+  service,
+  nickname,
+}: {
+  reader: Reader;
+  service: Service;
+  /**
+   * `profiles.nickname`, for the share sheet's toggle and its preview line.
+   *
+   * **THIS PROP IS A BUG FIX, NOT A FEATURE.** Without it the sheet's
+   * "Include my nickname" switch is permanently disabled on this screen while its
+   * state stays `true`, so the mint claims a consent the querent was never asked
+   * for. The page's comment has the full account. Null is legitimate — a querent
+   * who set no nickname — and disables the toggle honestly, because
+   * `effectiveIncludeNickname` makes the wire agree with the dead control.
+   */
+  nickname: string | null;
+}) {
   const t = useT();
   const router = useRouter();
   const cardCount = service.cardCount;
@@ -633,6 +651,15 @@ export function Draw({ reader, service }: { reader: Reader; service: Service }) 
               position: i,
             })),
           }}
+          /*
+           * `{ kind: 'original' }` AND NOT A GUESS. A reading generated on this
+           * screen came out in `t.locale` -- the language the querent is reading
+           * right now -- so the pin will equal the source, there is nothing to
+           * translate and nothing to look up. `previewReadingView` maps this to
+           * `as-written`, which is exactly what the public page will render.
+           */
+          prose={{ kind: 'original' }}
+          nickname={nickname}
         />
       ) : null}
 

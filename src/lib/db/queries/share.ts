@@ -76,6 +76,19 @@ export async function insertOrRotateShareLink(
         // TRUE, matching the column default -- see `schema.ts` for the ruling.
         includeQuestion: values.includeQuestion ?? true,
         includeNickname: values.includeNickname ?? true,
+        /*
+         * **RE-PINNED, NOT PRESERVED.** Re-sharing is how a querent fixes a link
+         * they minted in the wrong language: switch language, share again, get a
+         * new address showing the new language. Omitting this line rotates the
+         * slug and keeps the stale pin, so the control appears to work and
+         * changes nothing -- the shape of the language-switch bug of 2026-07-28.
+         *
+         * `?? null` rather than a bare `values.locale`: `NewShareLink.locale` is
+         * optional, and `undefined` in a drizzle `set` clause is dropped from the
+         * statement, which would silently mean "keep the old pin" for exactly the
+         * caller that had decided not to pin one.
+         */
+        locale: values.locale ?? null,
         revokedAt: null,
         // BY HAND. $onUpdate() does not fire inside onConflictDoUpdate.
         updatedAt: new Date(),

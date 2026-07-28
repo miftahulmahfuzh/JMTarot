@@ -105,9 +105,41 @@ export type PublicPersona = {
 };
 
 /**
+ * The translation the SHARER was reading when they minted the link, or null.
+ *
+ * **`null` IS THE ORDINARY CASE, NOT AN ERROR**, and three separate things produce
+ * it: a link minted before `share_links.locale` existed (the column is nullable and
+ * NULL means as-written), a pin equal to the source locale so there is no such row
+ * to find, and a genuine cache miss — V2 never persists an unverified translation
+ * (`REPAIR, DO NOT BUFFER`) and the nightly sweep deletes orphans. All three render
+ * the same way, which is why the fallback is a branch rather than a failure.
+ *
+ * `locale` is the locale translated INTO, i.e. what the sharer was reading. It is
+ * NOT the viewer's locale and must never become it — see `share_links.locale` in
+ * `schema.ts` and `adapt.ts`'s header for why serving each stranger their own
+ * language was rejected.
+ *
+ * Declared HERE rather than in `adapt.ts` because `resolveShare` produces it and
+ * the adapter consumes it, and this file is the one both may import: it is
+ * client-reachable and names no `@/lib/db` specifier.
+ */
+export type SharedTranslation = { body: string; locale: Locale } | null;
+
+/**
  * What `resolveShare` hands the page. One shape per entity, so the page's own
  * narrowing decides which renderer runs.
+ *
+ * **`translation` IS A REQUIRED KEY ON THE READING ARM, AND NULLABLE RATHER THAN
+ * OPTIONAL.** An optional key would let the resolver stop looking one refactor
+ * later while every consumer kept typechecking — the page would silently revert to
+ * pre-design-A behaviour with nothing red. `null` is a decision; absent is an
+ * accident.
  */
 export type ResolvedShare =
-  | { entity: 'reading'; link: ShareLinkPublic; reading: PublicReading }
+  | {
+      entity: 'reading';
+      link: ShareLinkPublic;
+      reading: PublicReading;
+      translation: SharedTranslation;
+    }
   | { entity: 'persona'; link: ShareLinkPublic; persona: PublicPersona };

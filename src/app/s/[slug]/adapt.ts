@@ -51,13 +51,20 @@
  */
 import type { ReadingProse, ReadingViewData } from '@/components/ReadingView';
 import type { Locale } from '@/data/types';
-import type { PublicReading } from '@/lib/share/types';
+import type { PublicReading, SharedTranslation } from '@/lib/share/types';
 
 /** Exactly the props `page.tsx` hands `ReadingView`, minus the footer. */
 export type SharedReadingViewProps = {
   reading: ReadingViewData;
   prose: ReadingProse;
 };
+
+/**
+ * Re-exported so the adapter's own tests and callers need one import, while the
+ * definition stays in `@/lib/share/types` — the file `resolveShare` (which
+ * produces the value) and this adapter (which consumes it) can both reach.
+ */
+export type { SharedTranslation };
 
 /**
  * Build the props. **`prose` IS ALWAYS `{ kind: 'as-written' }`** — see the header.
@@ -72,7 +79,10 @@ export type SharedReadingViewProps = {
  * variants have no KEY at all (see `@/lib/share/types`), and `undefined` is not
  * what `ReadingDetail` accepts — it wants `string | null`.
  */
-export function adaptSharedReading(reading: PublicReading): SharedReadingViewProps {
+export function adaptSharedReading(
+  reading: PublicReading,
+  translation: SharedTranslation,
+): SharedReadingViewProps {
   return {
     reading: {
       id: reading.id,
@@ -96,20 +106,68 @@ export function adaptSharedReading(reading: PublicReading): SharedReadingViewPro
       sharedAt: null,
       cards: reading.cards,
     },
-    prose: { kind: 'as-written' },
+    /*
+     * `'translated'` WHEN A PINNED ROW CAME BACK, `'as-written'` OTHERWISE.
+     *
+     * `'translated'` is correct rather than a convenient near-miss: a translation
+     * genuinely happened and is a row in `translations`. `ReadingProse`'s comment
+     * warns in capitals against the OPPOSITE mistake -- naming `translated` when
+     * nothing was translated -- and that warning is why the two states exist.
+     *
+     * **THE SOURCE IS NEVER OVERWRITTEN.** `reading.body` and `reading.locale` stay
+     * as the row holds them, above, so `resolveProse` can still evaluate rule 4
+     * against the real source locale and VD7's immutability is not contradicted
+     * even locally.
+     */
+    prose: translation
+      ? { kind: 'translated', locale: translation.locale, text: translation.body }
+      : { kind: 'as-written' },
   };
 }
 
 /**
- * Does the viewer read a different language than the prose was written in?
+ * The locale the viewer's eyes actually land on.
+ *
+ * **THIS, NOT `reading.locale`, IS WHAT THE CHROME AND THE `lang` ATTRIBUTE MUST
+ * AGREE WITH.** Before design A the two were always the same and the distinction
+ * did not exist; now a pinned translation makes them differ exactly when the
+ * feature is doing its job, so anything answering "what language is on screen"
+ * has to come through here.
+ */
+export function renderedLocale(reading: PublicReading, translation: SharedTranslation): Locale {
+  return translation ? translation.locale : reading.locale;
+}
+
+/**
+ * Does the viewer read a different language than the prose ON SCREEN?
  *
  * One line, and it is here rather than inline in the page so that the page and
  * the test agree about what "disagree" means. `ReadingView` asks the same question
  * internally in `resolveProse`; this is the CHROME's copy of it, which is the one
  * that decides whether `share.public.otherLanguage` is shown.
+ *
+ * **IT ASKS ABOUT THE RENDERED LOCALE, WHICH IS THE WHOLE OF DESIGN A's EFFECT ON
+ * THE CHROME.** Against `reading.locale` an English viewer opening an English-pinned
+ * link would be told the prose is in another language while looking at English — the
+ * notice firing on a page it does not describe, which is worse than no notice.
+ *
+ * **`translation` IS REQUIRED RATHER THAN OPTIONAL, DELIBERATELY.** An optional third
+ * argument would let the page keep the pre-design-A behaviour by simply not passing
+ * it, silently and with nothing red — the same class of failure the locale facades
+ * avoid by making a missing locale a compile error. A caller who has not decided
+ * cannot call this.
+ *
+ * **AND IT STILL RETURNS TRUE SOMETIMES.** An English-pinned link opened by an
+ * Indonesian reader is a genuine mismatch. Only design C — generating both locales
+ * at mint time — would let this notice be deleted; `adapt.test.ts` asserts that case
+ * so nobody removes it believing it is unreachable.
  */
-export function isForeignProse(reading: PublicReading, viewer: Locale): boolean {
-  return reading.locale !== viewer;
+export function isForeignProse(
+  reading: PublicReading,
+  viewer: Locale,
+  translation: SharedTranslation,
+): boolean {
+  return renderedLocale(reading, translation) !== viewer;
 }
 
 /**

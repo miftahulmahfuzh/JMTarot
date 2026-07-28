@@ -33,9 +33,18 @@
  * public route that can spend a model call is a provider quota with no gate in
  * front of it — which since V9 is the app's primary abuse control.
  *
- * **THE BODY IS RENDERED VERBATIM IN `readings.locale` AND NEVER TRANSLATED.**
- * Chrome from the viewer, prose from the sharer — see `adapt.ts`, which carries
- * the three reasons and the mechanism.
+ * **THE BODY IS RENDERED IN THE LANGUAGE THE SHARER WAS READING, AND NOTHING HERE
+ * EVER GENERATES IT.** This header used to say "verbatim in `readings.locale` and
+ * NEVER translated"; design A (2026-07-28) replaced that with a pinned
+ * `share_links.locale` and a READ of the `translations` row the sharer's own
+ * viewing had already produced. `adapt.ts` carries the mechanism, and the reason
+ * that survived unchanged is the one above: reading is free, generating is a quota
+ * with no gate on it.
+ *
+ * **THE CHROME IS THE VIEWER'S AND THE `lang` ATTRIBUTE IS THE PROSE'S**, which is
+ * `renderedLocale(reading, translation)` and never `reading.locale` — see
+ * `isForeignProse`. A NULL pin, i.e. every link minted before design A, still
+ * renders as-written.
  */
 import { after } from 'next/server';
 import { notFound } from 'next/navigation';
@@ -48,7 +57,7 @@ import { getLocale, getT } from '@/lib/i18n/t';
 import { clientIp } from '@/lib/ratelimit/clientIp';
 import { consume, hit, SHARE_VIEW_GLOBAL_MAX } from '@/lib/ratelimit';
 import { resolveShare, shareOrigin } from '@/lib/share/links';
-import { adaptSharedReading, isForeignProse, sharedNickname } from './adapt';
+import { adaptSharedReading, isForeignProse, renderedLocale, sharedNickname } from './adapt';
 import { ShareViewed } from './ShareViewed';
 import styles from './page.module.css';
 
@@ -186,10 +195,16 @@ export default async function SharePage({ params }: { params: Promise<{ slug: st
     notFound();
   }
 
-  const { reading, link } = resolved;
-  const props = adaptSharedReading(reading);
+  const { reading, link, translation } = resolved;
+  const props = adaptSharedReading(reading, translation);
   const nickname = sharedNickname(reading, link.includeNickname);
-  const reversed = isForeignProse(reading, viewer);
+  const reversed = isForeignProse(reading, viewer, translation);
+  /*
+   * THE LOCALE ON SCREEN, which is the pinned one when a translation was found and
+   * the source otherwise. `reading.locale` was right for two workstreams and is now
+   * wrong for exactly the case design A exists to serve — see `renderedLocale`.
+   */
+  const shownLocale = renderedLocale(reading, translation);
 
   return (
     <main className={styles.shell}>
@@ -226,7 +241,7 @@ export default async function SharePage({ params }: { params: Promise<{ slug: st
         declared if a future edit to that branch drops the attribute, and a nested
         identical `lang` costs nothing.
       */}
-      <div lang={reading.locale} className={styles.body}>
+      <div lang={shownLocale} className={styles.body}>
         <ReadingView
           {...props}
           footer={<TryItYourself shareId={link.id} entity={link.entity} />}

@@ -327,6 +327,7 @@ const en: Catalog = {
   // ==========================================================================
   'history.title': 'History',
   'history.hint': 'Every reading you have taken.',
+  'history.home': '← Home',
 
   'history.filter.aria': 'Choose a day',
   'history.filter.label': 'Date',

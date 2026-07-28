@@ -505,6 +505,18 @@ const id = {
   // ==========================================================================
   'history.title': 'Jejak',
   'history.hint': 'Bacaan yang pernah kamu ambil.',
+  /*
+   * THE WAY OUT, and it did not exist until now. `/history` mounted the account
+   * circle and a title, and the only `href="/"` on the page was inside the EMPTY
+   * state -- so a querent with readings had no route home but the browser's back
+   * button. `/history/[id]` already had the affordance (`history.detail.back`), so
+   * this is that one pattern across both history screens rather than two.
+   *
+   * `Beranda` rather than reusing `nav.back.readers` ("Pembaca lain"): from a list
+   * of your own readings you were not looking at a reader, so "other readers" names
+   * a place you have not been.
+   */
+  'history.home': '← Beranda',
 
   'history.filter.aria': 'Pilih hari',
   'history.filter.label': 'Tanggal',
