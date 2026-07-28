@@ -6,8 +6,11 @@ import { FrequencyLine } from '@/components/FrequencyLine';
 import { TrackLink } from '@/components/TrackLink';
 import { READERS, readerPortrait } from '@/data/readers';
 import { currentUser } from '@/lib/auth/server';
+import { LOCALES } from '@/lib/i18n/locale';
 import { localeSwitcherEnabled } from '@/lib/i18n/resolve';
-import { getT } from '@/lib/i18n/t';
+import { getLocale, getT } from '@/lib/i18n/t';
+import { contentAlternates } from '@/lib/seo/alternates';
+import { siteOrigin } from '@/lib/seo/origin';
 import { Landing } from './Landing';
 import styles from './page.module.css';
 
@@ -50,7 +53,7 @@ import styles from './page.module.css';
  */
 
 export async function generateMetadata(): Promise<Metadata> {
-  const t = await getT();
+  const [t, locale] = await Promise.all([getT(), getLocale()]);
   return {
     /*
      * SESSION-INVARIANT ON PURPOSE. The title, the description and the canonical
@@ -61,11 +64,30 @@ export async function generateMetadata(): Promise<Metadata> {
      * `title` is absent: the root layout already sets `t('app.title')` and a
      * duplicate here would be the same string twice in a diff.
      *
-     * RELATIVE, resolved by `metadataBase`. **S2 REPLACES THIS WITH S-D15's
-     * `contentAlternates('/')`**, which adds the reciprocal `id`/`en`/`x-default`
-     * set. One line, in this file, and it is the only line S2 owns here.
+     * ── S2 FILLED THE LINE S1 LEFT HERE, AND IT WAS A LIVE DEFECT ────────────
+     *
+     * This was `{ canonical: '/' }` with a comment saying S2 replaces it. It had
+     * to be replaced rather than merely improved: **measured on the wire, `/en`
+     * emitted `<link rel="canonical" href="http://localhost:3001">` -- the same
+     * canonical as `/`.** A canonical naming another URL is an instruction to
+     * drop this one, so the English landing page would have been de-indexed in
+     * favour of the Indonesian one, silently, in the release whose whole purpose
+     * is being indexed. The sitemap already claimed `/` and `/en` were a
+     * reciprocal pair, so the two were contradicting each other.
+     *
+     * `locales: LOCALES` is honest here and is not the R2 trap: both addresses of
+     * `/` exist by construction -- middleware rewrites `/en` to this same route --
+     * so neither alternate can name a 404. A path whose English document might not
+     * be written (the 22 cards) passes the set it actually has.
+     *
+     * **THE ONE ASYMMETRY, STATED SO IT IS NOT READ AS A BUG:** `locale` is the
+     * PINNED locale for a signed-out visitor and the D6 chain for a signed-in one
+     * (S-D5, `contentRewrite('/', true)` is `passthrough`), so a signed-in English
+     * querent standing on `/` emits `…/en` as their canonical. A crawler carries
+     * no cookie and is therefore never that person; the alternative is reading the
+     * session here, which is exactly what `page.contract.test.ts` forbids.
      */
-    alternates: { canonical: '/' },
+    alternates: contentAlternates({ origin: siteOrigin(), path: '/', locale, locales: LOCALES }),
     description: t('meta.description'),
   };
 }

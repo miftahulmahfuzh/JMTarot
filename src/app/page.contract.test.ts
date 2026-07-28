@@ -37,10 +37,23 @@ describe('/ dual render (S-D5)', () => {
     expect(body).not.toContain('currentUser');
   });
 
-  it('sets a self-referential canonical', () => {
-    // Relative, resolved by `metadataBase`. S2 replaces it with S-D15's helper,
-    // which adds the hreflang pair -- one line, in this file.
-    expect(CODE).toContain('canonical');
+  it('gets its canonical and its hreflang set from S2s one helper (S-D15)', () => {
+    /*
+     * **THIS USED TO ASSERT ONLY `toContain('canonical')`**, against a literal
+     * `{ canonical: '/' }` with a comment saying S2 would replace it. S2 did, and
+     * the replacement was not cosmetic: measured on the wire, `/en` emitted the
+     * canonical of `/`, which is an instruction to de-index the English landing
+     * page in the release built to get it indexed.
+     *
+     * Asserted as the ABSENCE of a hand-written literal as well, because forty-four
+     * pages hand-writing three alternate tags is forty-four chances at a
+     * non-reciprocal set -- and Google discards a non-reciprocal set silently, the
+     * whole set, with nothing reporting it.
+     */
+    expect(CODE).toContain('contentAlternates(');
+    expect(CODE).toContain("path: '/'");
+    expect(CODE).not.toMatch(/canonical:\s*['"]/);
+    expect(CODE).not.toMatch(/languages:/);
   });
 
   it('keeps the picker arm intact', () => {
