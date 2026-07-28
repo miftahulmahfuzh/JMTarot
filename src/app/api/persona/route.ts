@@ -2,7 +2,8 @@
  * `GET /api/persona` — the Inner Heavenly Lotus, read or written (VD15/VD16).
  *
  *   GET
- *     -> 200 { body, locale, cached, fallback, facts, updatedAt }
+ *     -> 200 { body, locale, cached, fallback, facts, updatedAt,
+ *              entityId, translation }
  *     -> 401 no session
  *     -> 403 onboarding not finished
  *     -> 429 rate limited
@@ -46,6 +47,7 @@ import { track, withAnalytics, type AnalyticsContext } from '@/lib/analytics/tra
 import { requireUser } from '@/lib/auth/server';
 import { db } from '@/lib/db/client';
 import { getPersona } from '@/lib/db/queries/persona';
+import { getTranslation } from '@/lib/db/queries/translations';
 import { getLocale } from '@/lib/i18n/t';
 import {
   generatePersona,
@@ -126,14 +128,14 @@ export async function GET(request: Request) {
      * difference matters: a foreign-locale body is not STALE, it is UNTRANSLATED.
      * Regenerating it would overwrite the original that V2's translation is derived
      * from, and `personas.locale` would then record a language the querent never
-     * chose as an intentional fact.
+     * chose as an intentional fact. **THAT DISTINCTION IS WHY THE FIX FOR AN
+     * UNTRANSLATED PERSONA IS A TRANSLATION AND NEVER A REGENERATION**, and it is
+     * the whole reason `personaInputHash` carries no locale.
      *
-     * V8 serves the stored body with its own `locale` and lets the CLIENT decide.
-     * `PersonaBlock` renders `lang={locale}` so a screen reader is told the truth,
-     * and V2's translator is the next step whoever wires it takes. Until then a
-     * viewer who switched language sees the persona in the language it was written
-     * in, labelled — which is `ReadingView`'s `{ kind: 'as-written' }` decision,
-     * made for the same reason.
+     * The route serves the stored body with its own `locale` and lets the CLIENT
+     * translate — `PersonaBlockClient` posts to `/api/translate`, exactly as
+     * `HistoryDetail` does for a reading. This route hands it the two things that
+     * save a round trip: `entityId`, and any translation already in the table.
      */
     const stale =
       row === null || isPersonaStale(row, material.inputHash, personaMinAgeSeconds());
@@ -145,7 +147,7 @@ export async function GET(request: Request) {
         fallback: row.model === 'fallback',
         chars: row.body.length,
       });
-      return json(row, true);
+      return json(row, true, user.id, locale);
     }
 
     if (row) {
@@ -167,7 +169,7 @@ export async function GET(request: Request) {
         fallback: row.model === 'fallback',
         chars: row.body.length,
       });
-      return json(row, true);
+      return json(row, true, user.id, locale);
     }
 
     /*
@@ -196,7 +198,7 @@ export async function GET(request: Request) {
       fallback: written.model === 'fallback',
       chars: written.body.length,
     });
-    return json(written, false);
+    return json(written, false, user.id, locale);
   });
 }
 
@@ -233,11 +235,27 @@ function trackGenerated(outcome: {
  * second failure mode.
  *
  * `private, no-store`. It is per-user and it moves.
+ *
+ * ── THE TWO FIELDS V2's WIRING ADDED ────────────────────────────────────────
+ *
+ * **`entityId` IS THE QUERENT'S OWN `users.id`, AND THAT IS NOT A LEAK.**
+ * `personas.user_id` is the primary key, so the persona's entity id *is* the user
+ * id — that is what `resolveTranslatable`'s persona arm matches on. The client needs
+ * it to post `{ entity: 'persona', entityId, field: 'body' }`, and `/api/translate`
+ * independently requires `p.user_id = <session user>`, so holding your own id grants
+ * nothing you did not already have. The alternative was mounting `ViewerProvider` on
+ * `/account` for one string, which `viewer.tsx`'s header argues against.
+ *
+ * **`translation` SAVES THE SECOND VIEW ITS SPINNER**, which is `/history/[id]`'s
+ * `cachedTranslation` prop doing the same job. Null when there is nothing cached, or
+ * when what is cached is stale.
  */
-function json(
+async function json(
   row: { body: string; locale: string; facts: unknown; model: string; updatedAt: Date },
   cached: boolean,
-): NextResponse {
+  userId: string,
+  viewerLocale: 'id' | 'en',
+): Promise<NextResponse> {
   return NextResponse.json(
     {
       body: row.body,
@@ -246,9 +264,50 @@ function json(
       fallback: row.model === 'fallback',
       facts: row.facts,
       updatedAt: row.updatedAt.toISOString(),
+      entityId: userId,
+      translation: await freshTranslation(row, userId, viewerLocale),
     },
     { headers: { 'cache-control': 'private, no-store' } },
   );
+}
+
+/**
+ * A cached translation of this persona into the viewer's language, or null.
+ *
+ * **STALENESS IS CHECKED HERE AND `/history/[id]` DELIBERATELY DOES NOT CHECK IT.**
+ * That is not an inconsistency, it is the difference between the two artifacts:
+ * `readings.body` is IMMUTABLE (VD7), so `translations.updated_at <
+ * readings.created_at` can never become true and the comparison would be dead code.
+ * **A persona is regenerated every time the querent draws** — `input_hash` covers the
+ * last ten reading ids — so its translation goes stale routinely, and serving one
+ * without this check would show English prose describing a person the Indonesian
+ * original has since stopped describing. `translations.updated_at` is the entire
+ * mechanism and `putTranslation` maintains it by hand for exactly this.
+ *
+ * **A FAILED READ IS A CACHE MISS, NEVER AN ERROR** (V2's rule, and the reason its
+ * database-down check is "open a translated reading"). Returning null costs the
+ * querent a model call they were going to be offered anyway; propagating would cost
+ * them the page.
+ */
+async function freshTranslation(
+  row: { locale: string; updatedAt: Date },
+  userId: string,
+  viewerLocale: 'id' | 'en',
+): Promise<string | null> {
+  if (row.locale === viewerLocale) return null;
+  try {
+    const cached = await getTranslation(db, {
+      entity: 'persona',
+      entityId: userId,
+      field: 'body',
+      locale: viewerLocale,
+    });
+    if (!cached) return null;
+    return cached.updatedAt < row.updatedAt ? null : cached.body;
+  } catch (err) {
+    logFailure(err);
+    return null;
+  }
 }
 
 /**

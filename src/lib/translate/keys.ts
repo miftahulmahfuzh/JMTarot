@@ -65,8 +65,14 @@ export type FieldSpec = {
    * reader's block would make it a fourth reading.
    */
   voiced: boolean;
-  /** Which ceiling applies. Resolved by `ceilingFor` in `contract.ts`. */
-  budget: 'service' | 'summary' | 'gist';
+  /**
+   * Which ceiling applies. Resolved by `ceilingFor` in `contract.ts`.
+   *
+   * **A TAG AND NOT A NUMBER**, because this module is deliberately dependency-free —
+   * the real ceilings live in `@/lib/prompt/budget` and `@/lib/persona/prompt`, both of
+   * which carry prompt prose, and `queries/translations.ts` imports this file.
+   */
+  budget: 'service' | 'summary' | 'gist' | 'persona';
 };
 
 /**
@@ -93,7 +99,25 @@ export const TRANSLATABLE = {
    * because nobody sees it at all.
    */
   'reading.gist': { stream: false, voiced: false, budget: 'gist' },
-  'persona.body': { stream: true, voiced: false, budget: 'summary' },
+  /*
+   * **`budget: 'persona'` AND NOT `'summary'`, AND THE `'summary'` HERE WAS A LATENT
+   * BUG THAT MADE EVERY PERSONA TRANSLATION FAIL** (found live 2026-07-28, the day
+   * `PersonaBlockClient` became the first caller).
+   *
+   * `'summary'` resolves to `SUMMARY_MAX_WORDS`, which is **50** — the day-summary
+   * ceiling. A persona is `PERSONA_MAX_WORDS`, which is **95**. `ceilingFor` feeds
+   * BOTH the prompt and `verifyTranslation`, so the model was told to translate a
+   * 95-word paragraph into at most 50 words and then judged against 50: it cannot be
+   * faithful and compliant at once. Measured on a real persona — a correct English
+   * translation came back at 88 words and was rejected `kind: 'budget'`, so nothing
+   * was ever persisted and every single page view paid a fresh model call.
+   *
+   * **IT WAS INVISIBLE BECAUSE NOTHING TRANSLATED A PERSONA FOR TWO RELEASES.** The
+   * registry entry, the resolver arm and the sweep arm were all written by V2 against
+   * a table V8 had not built yet, and a registry line that is never resolved is a
+   * guess nobody checks. `contract.test.ts` now asserts the resolved number.
+   */
+  'persona.body': { stream: true, voiced: false, budget: 'persona' },
 } as const satisfies Record<string, FieldSpec>;
 
 export type TranslatableKey = keyof typeof TRANSLATABLE;

@@ -7,9 +7,11 @@
  *   1. THE UPSERT MOVES `updated_at`. `$onUpdate()` does not fire inside
  *      `onConflictDoUpdate`, and for THIS table that column is the entire
  *      staleness mechanism — a frozen one serves the first translation forever.
- *   2. THE ORPHAN SWEEP'S `to_regclass` GUARD leaves `persona` rows alone while
- *      V8's table does not exist. Without it the unknown-entity arm would delete
- *      every persona translation the day V8 ships one.
+ *   2. THE ORPHAN SWEEP REAPS A PERSONA TRANSLATION WHOSE PERSONA IS GONE and
+ *      spares a live one. This used to read "the `to_regclass` guard leaves persona
+ *      rows alone while V8's table does not exist" — V8 shipped, and the test written
+ *      for that premise had an `if (exists) return;` escape hatch that made it
+ *      vacuous for two releases. It asserts the live arm now.
  *   3. `resolveTranslatable` RETURNS NULL FOR SOMEBODY ELSE'S UUID. This is the
  *      security-relevant test in the workstream: without it `/api/translate` is
  *      an oracle that hands you another user's reading in your language.
@@ -17,7 +19,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
 
-import { translations, users } from '@/lib/db/schema';
+import { personas, translations, users } from '@/lib/db/schema';
 import { closeTestDb, withRollback } from '@/lib/db/testing/harness';
 import type { Tx } from '@/lib/db/types';
 import { insertReading } from './history';
@@ -241,39 +243,54 @@ describe('deleteOrphanTranslations', () => {
     });
   });
 
-  /*
-   * THE ASSERTION THAT STOPS V8 LOSING DATA.
+  /**
+   * ── THIS TEST WAS VACUOUS AND HAD TO BE REWRITTEN ────────────────────────────
    *
-   * `personas` does not exist yet. A `persona` row must be left ALONE rather than
-   * swept as an unknown entity — the entity is in the registry from day one, its
-   * orphan arm is written from day one, and `to_regclass` makes it do nothing until
-   * the table lands. If V8 ships `personas` and this test starts failing, the guard
-   * has begun working rather than stopped.
+   * It was called *"leaves persona rows untouched while V8's table does not exist"*
+   * and it ended with `if (exists) return;` — a deliberate escape hatch for the day
+   * V8 shipped, which said in its own comment *"this test's premise is gone"*.
+   * **V8 shipped, so the test has been returning before its first assertion ever
+   * since**, and green. That was tolerable while nothing translated a persona; it
+   * stopped being tolerable on 2026-07-28, when `PersonaBlockClient` started writing
+   * rows into this table for real.
+   *
+   * So it now asserts the arm LIVE, which is the assertion that always mattered: a
+   * persona translation whose persona is gone must be reaped, and one whose persona
+   * exists must be spared. Both halves, because a sweep that deletes everything and a
+   * sweep that deletes nothing both pass a one-sided version of this.
    */
-  it('leaves persona rows untouched while V8’s table does not exist', async () => {
+  it('reaps a persona translation whose persona is gone, and spares a live one', async () => {
     await withRollback(async (tx) => {
-      const [{ exists }] = (await tx.execute(
-        sql`select to_regclass('public.personas') is not null as exists`,
-      )) as unknown as Array<{ exists: boolean }>;
+      const live = await makeUser(tx, 'dev:t-persona-live');
+      const gone = await makeUser(tx, 'dev:t-persona-gone');
 
-      const uid = await makeUser(tx, 'dev:t-persona');
-      await tx.insert(translations).values({
-        ...input(uid, 'persona en'),
-        entity: 'persona',
-        // The persona is keyed on users.user_id, so the entity id IS the user id.
-        entityId: uid,
+      /* Only `live` gets a persona. `gone` has a translation of a persona that was
+         never written -- which is exactly the state a deleted account leaves behind,
+         since `translations` has no FK and the `users` cascade does not reach it. */
+      await tx.insert(personas).values({
+        userId: live,
+        body: 'Wujud angka jalan hidupmu adalah The Hermit.',
+        locale: 'id',
+        facts: {},
+        inputHash: 'hash-live',
+        sourceVersion: 1,
+        model: 'glm-4.6',
+        promptVersion: 'persona-v1',
       });
 
-      const reaped = await deleteOrphanTranslations(tx);
+      // The persona's entity id IS the user id -- `personas.user_id` is the PK.
+      await tx
+        .insert(translations)
+        .values({ ...input(live, 'live persona en'), entity: 'persona', entityId: live });
+      await tx
+        .insert(translations)
+        .values({ ...input(gone, 'orphan persona en'), entity: 'persona', entityId: gone });
 
-      if (exists) {
-        // V8 has landed. A real persona row exists for this user or it does not;
-        // either way the arm is now live and this test's premise is gone.
-        return;
-      }
-      expect(reaped).toBe(0);
-      const [row] = await tx.select().from(translations);
-      expect(row?.entity).toBe('persona');
+      expect(await deleteOrphanTranslations(tx)).toBe(1);
+
+      const rows = await tx.select().from(translations);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.entityId).toBe(live);
     });
   });
 });
@@ -380,21 +397,81 @@ describe('resolveTranslatable', () => {
     });
   });
 
-  /*
-   * The persona arm is guarded by `to_regclass` too, for the same reason the sweep's
-   * is: it must not raise on a table V8 has not built.
+  /**
+   * ── THE PERSONA ARM, WHICH USED TO BE TESTED FOR THE WRONG REASON ───────────
+   *
+   * This block replaced a single test named *"answers null for a persona while V8's
+   * table does not exist, rather than raising"*. **V8 built the table, so that test
+   * passed because the user had no persona ROW — not because of the guard it was
+   * named for**, and it would have gone on passing if the arm had been deleted
+   * outright. It was the only coverage the arm had, and 2026-07-28 made it live:
+   * `PersonaBlockClient` posts here on a language switch.
    */
-  it('answers null for a persona while V8’s table does not exist, rather than raising', async () => {
+  it('resolves a persona by the OWNER’s user id, with no reader and no service', async () => {
     await withRollback(async (tx) => {
       const uid = await makeUser(tx, 'dev:t-persona-resolve');
-      await expect(
-        resolveTranslatable(tx, {
+      const args = { entity: 'persona', entityId: uid, field: 'body', userId: uid } as const;
+
+      // No row yet: null, and it must not raise.
+      expect(await resolveTranslatable(tx, args)).toBeNull();
+
+      /* THE TYPED BUILDER, NOT RAW SQL. `source_version` is an INTEGER and
+         `prompt_version` is NOT NULL -- a hand-written insert got both wrong and the
+         typecheck could not see it, because `tx.execute(sql\`...\`)` takes a string. */
+      await tx.insert(personas).values({
+        userId: uid,
+        body: 'Wujud angka jalan hidupmu adalah The Hermit.',
+        locale: 'id',
+        facts: {},
+        inputHash: 'hash-1',
+        sourceVersion: 1,
+        model: 'glm-4.6',
+        promptVersion: 'persona-v1',
+      });
+
+      const got = await resolveTranslatable(tx, args);
+      expect(got?.body).toBe('Wujud angka jalan hidupmu adalah The Hermit.');
+      expect(got?.sourceLocale).toBe('id');
+      /* VD16: the persona is house voice. A reader's block would make it a fourth
+         reading, and `ceilingFor` picks the summary budget off exactly this. */
+      expect(got?.readerId).toBeNull();
+      expect(got?.serviceId).toBeNull();
+      /* The column `/api/persona` compares a cached translation against. */
+      expect(got?.sourceUpdatedAt).toBeInstanceOf(Date);
+    });
+  });
+
+  it('refuses somebody else’s persona with null, not with their prose (T9)', async () => {
+    /*
+     * **THE TAUTOLOGOUS-LOOKING `where` IS THIS TEST.** `resolvePersona` compares
+     * `personas.user_id` to BOTH `entityId` and `userId`, which reads like a mistake
+     * until you ask what happens when they differ: without the second clause,
+     * `POST /api/translate` with a stranger's uuid returns that stranger's persona
+     * translated into your language. Same oracle V7 closes on share slugs.
+     */
+    await withRollback(async (tx) => {
+      const mine = await makeUser(tx, 'dev:t-persona-mine');
+      const theirs = await makeUser(tx, 'dev:t-persona-theirs');
+
+      await tx.insert(personas).values({
+        userId: theirs,
+        body: 'Somebody else entirely.',
+        locale: 'id',
+        facts: {},
+        inputHash: 'hash-2',
+        sourceVersion: 1,
+        model: 'glm-4.6',
+        promptVersion: 'persona-v1',
+      });
+
+      expect(
+        await resolveTranslatable(tx, {
           entity: 'persona',
-          entityId: uid,
+          entityId: theirs,
           field: 'body',
-          userId: uid,
+          userId: mine,
         }),
-      ).resolves.toBeNull();
+      ).toBeNull();
     });
   });
 });

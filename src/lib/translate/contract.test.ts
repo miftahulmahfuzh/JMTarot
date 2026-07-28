@@ -11,6 +11,8 @@ import { describe, expect, it } from 'vitest';
 import { CARDS } from '@/data/deck';
 import { MALAY, THERAPY_EN, THERAPY_ID, EN_TICS } from '@/lib/copy/vocab';
 import { budgetFor } from '@/lib/prompt/budget';
+import { SUMMARY_MAX_WORDS } from '@/lib/prompt/summary';
+import { PERSONA_MAX_WORDS } from '@/lib/persona/prompt';
 import { stripUntrusted } from '@/lib/prompt/sanitize';
 import {
   TRANSLATABLE,
@@ -91,6 +93,55 @@ describe('the registry', () => {
   /* Hand-bumped, not hashed — the column decides whether a CACHED row is stale. */
   it('names a hand-bumped prompt version', () => {
     expect(TRANSLATION_PROMPT_VERSION).toMatch(/^translate-v\d+$/);
+  });
+
+  /**
+   * ── THE BUG THIS TEST EXISTS FOR ────────────────────────────────────────────
+   *
+   * **`'persona.body'` CARRIED `budget: 'summary'` FOR TWO RELEASES AND IT MADE EVERY
+   * PERSONA TRANSLATION FAIL.** `'summary'` resolves to `SUMMARY_MAX_WORDS` (50), the
+   * day-summary ceiling; a persona is `PERSONA_MAX_WORDS` (95). `ceilingFor` feeds the
+   * PROMPT and `verifyTranslation` from the same value, so the model was asked to
+   * squeeze a 95-word paragraph into 50 words and then judged against 50 — it cannot
+   * satisfy both. Found live on 2026-07-28, the day `PersonaBlockClient` became the
+   * first caller: a faithful 88-word English translation was rejected `kind: 'budget'`,
+   * so nothing was ever cached and every page view paid a fresh model call.
+   *
+   * **THE TAG WAS NEVER WRONG-LOOKING, WHICH IS WHY ONLY A RESOLVED NUMBER CATCHES
+   * IT.** `budget: 'summary'` on a short house-voice paragraph reads perfectly
+   * sensible. So this asserts what the tag RESOLVES TO, through the real
+   * `verifyTranslation`, rather than asserting the tag's spelling — a rename would
+   * keep the spelling test green and the ceiling wrong.
+   */
+  it('resolves the persona to its OWN ceiling, not the summary’s', () => {
+    const ok = `The Hermit ${'word '.repeat(PERSONA_MAX_WORDS - 2)}`.trim();
+    const tooLong = `The Hermit ${'word '.repeat(PERSONA_MAX_WORDS + 5)}`.trim();
+    const args = {
+      source: `The Hermit ${'kata '.repeat(PERSONA_MAX_WORDS - 2)}`.trim(),
+      spec: TRANSLATABLE['persona.body'],
+      target: 'en' as const,
+      /* VD16: house voice, so both are null — which is also what makes the
+         `'service'` fallback in `ceilingFor` unreachable for this key. */
+      readerId: null,
+      serviceId: null,
+    };
+
+    /* `kinds` is scoped to the `verifyTranslation` block below, so this maps inline
+       rather than hoisting a helper two describes up for three call sites. */
+    const kindsOf = (vs: ReturnType<typeof verifyTranslation>) => vs.map((v) => v.kind);
+
+    expect(kindsOf(verifyTranslation({ ...args, output: ok }))).not.toContain('budget');
+    expect(kindsOf(verifyTranslation({ ...args, output: tooLong }))).toContain('budget');
+
+    /*
+     * THE NEGATIVE CONTROL, AND IT IS THE WHOLE TEST. A persona-length paragraph must
+     * be over the summary ceiling — otherwise the two numbers are close enough that
+     * the assertions above would pass with the old tag still in place.
+     */
+    expect(PERSONA_MAX_WORDS).toBeGreaterThan(SUMMARY_MAX_WORDS);
+    expect(
+      kindsOf(verifyTranslation({ ...args, output: ok, spec: spec({ budget: 'summary' }) })),
+    ).toContain('budget');
   });
 });
 

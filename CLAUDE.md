@@ -1433,12 +1433,45 @@ PHONE, AND FOUR OF THEM REVERSE A DECISION THIS FILE OR THAT CODE ARGUED FOR.**
   `worst_thing`'s plaintext never leaves the server. The six are deletable and **not** editable
   (L13); the three facts are the other way round.
 
+**V2's TRANSLATOR IS WIRED TO THE PERSONA SINCE 2026-07-28, AND FIXING IT EXPOSED A LATENT
+BUG THAT MADE EVERY PERSONA TRANSLATION FAIL.** `/account` no longer shows Indonesian prose
+inside an English page: `PersonaBlockClient` posts `{ entity: 'persona', entityId, field:
+'body' }` to `/api/translate` and streams the result, exactly as `HistoryDetail` does for a
+reading. Four things to know before touching it:
+
+- **THE FIX FOR AN UNTRANSLATED PERSONA IS A TRANSLATION, NEVER A REGENERATION.** A
+  foreign-locale body is not stale, it is untranslated — regenerating would overwrite the
+  original the translation derives from and make `personas.locale` record a language the
+  querent never chose. That is the whole reason `personaInputHash` carries no locale.
+- **`TRANSLATABLE['persona.body'].budget` WAS `'summary'` AND IS NOW `'persona'`.**
+  `'summary'` resolves to `SUMMARY_MAX_WORDS` (50); a persona is `PERSONA_MAX_WORDS` (95).
+  `ceilingFor` feeds the PROMPT *and* `verifyTranslation`, so the model was told to squeeze a
+  95-word paragraph into 50 words and then judged against 50. Measured live: a correct 88-word
+  English translation, rejected `kind: 'budget'`, never persisted, **a fresh model call on
+  every single page view.** Invisible for two releases because nothing translated a persona.
+  `contract.test.ts` now asserts the RESOLVED number, not the tag's spelling.
+- **`/api/persona` RETURNS `entityId` AND `translation`.** `entityId` is the querent's own
+  `users.id` — `personas.user_id` is the primary key, so it *is* the entity id — and holding
+  your own id grants nothing, because `/api/translate` independently matches the session user.
+  `translation` is a server-side cached read, **staleness-checked against
+  `personas.updated_at`**, which `/history/[id]`'s equivalent deliberately does not do because
+  a reading's body is immutable and a persona's is regenerated after every draw.
+- **`account.persona.otherLanguage` SURVIVES AS THE FAILURE STATE**, not the normal one: V7's
+  session-less share mount, and a translation that 204'd, errored or fell back. It is gated on
+  `prose.kind === 'as-written'` as well as on the locale mismatch — without the first half a
+  successfully translated persona would still carry "written in another language", which is the
+  bug that got the `/s/` reading notice deleted.
+
 **Still open:** `GET /api/persona` 500s when the database is down rather than 204 — the same
-omission `/api/memory/{frequency,summary}` carry, and all three should be fixed together; V2's
-translator is not wired, so a foreign-locale persona is served as-written and labelled in chrome
-(`ReadingView`'s `{ kind: 'as-written' }` decision); V7 does not mount the persona on `/s/`;
-`PERSONA_MIN_AGE_SECONDS=3600` is a guess; `account.details_viewed` always reports
-`from: 'direct'`.
+omission `/api/memory/{frequency,summary}` carry, and all three should be fixed together; V7
+does not mount the persona on `/s/`; `PERSONA_MIN_AGE_SECONDS=3600` is a guess;
+`account.details_viewed` always reports `from: 'direct'`. **AND ONE FOUND WHILE WIRING THE
+PERSONA, WHICH IS V2's AND AFFECTS READINGS TOO: `settle()` RUNS INSIDE THE STREAM'S `pull()`,
+OUTSIDE THE REQUEST SCOPE**, so for every *streamed* translation `track('translation.generated')`
+and the `defer()`ed repair pass both die with `` `after` was called outside a request scope ``.
+Consequence: no analytics for streamed translations, and **an invalid one is never repaired** —
+the viewer sees it once and the next view regenerates from scratch. The valid path is unaffected
+(`persist()` is awaited directly). Read out of the dev log while diagnosing the budget bug.
 
 ## Trust, safety and secrets (W7)
 

@@ -15,14 +15,23 @@
  *   directory. `TRANSLATABLE`, the invariant checker and the prompt are all in
  *   `@/lib/translate/contract`.
  *
- * ── WHY `to_regclass` GUARDS THE PERSONA ARMS ────────────────────────────────
+ * ── WHY `to_regclass` GUARDED THE PERSONA ARMS, AND WHICH ONE STILL NEEDS IT ──
  *
- * `personas` is V8's table and V2 lands first. Without the guard there were two bad
+ * `personas` was V8's table and V2 landed first. Without the guard there were two bad
  * options: leave `persona` out of the registry, in which case the unknown-entity arm
  * of `deleteOrphanTranslations` deletes every persona translation the moment V8
  * ships one; or leave it in with no orphan check, in which case V8 has to remember
- * to come back. The guard means the entity is in the registry from day one, its arms
- * are written from day one, and they simply do nothing until the table exists.
+ * to come back. The guard meant the entity was in the registry from day one, its arms
+ * were written from day one, and they simply did nothing until the table existed.
+ *
+ * **V8 SHIPPED THE TABLE, SO ONE OF THE TWO GUARDS IS GONE.** `resolvePersona` is an
+ * ordinary query-builder select now, because 2026-07-28 put it on the request path of
+ * a language switch (`PersonaBlockClient` translates the persona) and a probe round
+ * trip there costs a querent latency to insure against a migration that has run.
+ * **`deleteOrphanTranslations` KEEPS ITS GUARD, and for a different reason** — its is
+ * about Postgres resolving relations at parse time inside one statement, which was
+ * never about whether V8 shipped. Its header has the detail. Do not "finish the job"
+ * by deleting that one too.
  */
 import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 
@@ -44,7 +53,7 @@ import {
   type TranslatableField,
 } from '@/lib/translate/keys';
 import type { DbOrTx } from '../types';
-import { readings, translations, type NewTranslation, type Translation } from '../schema';
+import { personas, readings, translations, type NewTranslation, type Translation } from '../schema';
 
 export type TranslationKey = {
   entity: TranslatableEntity;
@@ -191,6 +200,7 @@ export async function deleteOrphanTranslations(db: DbOrTx): Promise<number> {
     deleted += countOf(rows);
   }
 
+
   /*
    * The final arm. An entity that is not in the registry can never be resolved by
    * anything, so the row is dead weight with a body in it.
@@ -206,6 +216,23 @@ export async function deleteOrphanTranslations(db: DbOrTx): Promise<number> {
 /** `db.execute` reports affected rows on a driver-specific shape. */
 function countOf(rows: unknown): number {
   return (rows as { count?: number }).count ?? 0;
+}
+
+/**
+ * Does a relation exist? **`deleteOrphanTranslations` IS NOW THE ONLY CALLER**, which
+ * is why this sits beside it rather than at the bottom of the file.
+ *
+ * `resolvePersona` used to call it too and no longer does: V8 built `personas`, and
+ * that function is now on the request path of a language switch, so a probe round trip
+ * there was cost with nothing left to buy. The sweep keeps it for a reason that is
+ * about SQL rather than about V8 — see `deleteOrphanTranslations`'s header — so
+ * deleting it along with the other call site would have broken the nightly job.
+ */
+async function tableExists(db: DbOrTx, table: string): Promise<boolean> {
+  const rows = (await db.execute(
+    sql`select to_regclass(${`public.${table}`}) is not null as present`,
+  )) as unknown as Array<{ present: boolean }>;
+  return rows[0]?.present === true;
 }
 
 export type ResolvedTranslatable = {
@@ -274,17 +301,27 @@ export async function resolveTranslatable(
 }
 
 /**
- * The persona arm, GUARDED so it cannot raise before V8 lands.
+ * The persona arm.
  *
- * Raw SQL rather than the query builder for one reason: `schema.ts` has no
- * `personas` table yet, so there is nothing to build against. When V8 adds it this
- * becomes an ordinary select and the guard can go — but not before, and a route that
- * 500s on `relation "personas" does not exist` would be a 500 in the one code path
- * nobody exercises.
+ * **THE `to_regclass` GUARD AND THE RAW SQL ARE BOTH GONE, AND THIS FILE TOLD THE
+ * NEXT PERSON TO DELETE THEM.** It said: *"Raw SQL rather than the query builder for
+ * one reason: `schema.ts` has no `personas` table yet … When V8 adds it this becomes
+ * an ordinary select and the guard can go — but not before."* V8 added the table, and
+ * 2026-07-28 put this function on a live path for the first time — `PersonaBlockClient`
+ * now posts here on a language switch — so the guard had stopped being free insurance
+ * and become a wasted round trip on something a querent is waiting for.
  *
- * THE GUARD IS A SEPARATE ROUND TRIP, for the reason in
- * `deleteOrphanTranslations`'s header: a `to_regclass` predicate inside the
- * statement is evaluated after the relation has already failed to resolve.
+ * `deleteOrphanTranslations`'s `to_regclass` guards STAY. That is not an
+ * inconsistency: the guard there is inside one statement over several tables and its
+ * header records a real SQL evaluation-order reason, which has nothing to do with
+ * whether V8 shipped.
+ *
+ * **`entityId` IS A `users.id`, NOT AN ARTIFACT ID**, because `personas.user_id` is
+ * the primary key — one persona per person. That is why the `where` reads as a
+ * tautology: `entityId` is what the caller asked for and `userId` is who is asking,
+ * and they are compared to the same column precisely so a request for somebody
+ * else's persona resolves to null instead of to their prose (T9). Do not "simplify"
+ * either half away.
  *
  * `field` is not read: the persona has exactly one translatable field, `body`, and
  * the registry is what enforces that. A `persona.gist` is not a key.
@@ -293,37 +330,25 @@ async function resolvePersona(
   db: DbOrTx,
   args: { entityId: string; userId: string },
 ): Promise<ResolvedTranslatable | null> {
-  if (!(await tableExists(db, 'personas'))) return null;
+  const [row] = await db
+    .select({
+      body: personas.body,
+      sourceLocale: personas.locale,
+      sourceUpdatedAt: personas.updatedAt,
+    })
+    .from(personas)
+    .where(and(eq(personas.userId, args.entityId), eq(personas.userId, args.userId)))
+    .limit(1);
 
-  const rows = (await db.execute(sql`
-    select p.body, p.locale as source_locale, p.updated_at as source_updated_at
-      from public.personas p
-     where p.user_id = ${args.entityId}
-       and p.user_id = ${args.userId}
-     limit 1
-  `)) as unknown as Array<{
-    body: string;
-    source_locale: Locale;
-    source_updated_at: Date;
-  }>;
-
-  const row = rows?.[0];
   if (!row?.body) return null;
   return {
     body: row.body,
-    sourceLocale: row.source_locale,
-    sourceUpdatedAt: row.source_updated_at,
+    sourceLocale: row.sourceLocale,
+    sourceUpdatedAt: row.sourceUpdatedAt,
     /* VD16: house voice. There is no reader and no service. */
     readerId: null,
     serviceId: null,
   };
-}
-
-async function tableExists(db: DbOrTx, table: string): Promise<boolean> {
-  const rows = (await db.execute(
-    sql`select to_regclass(${`public.${table}`}) is not null as present`,
-  )) as unknown as Array<{ present: boolean }>;
-  return rows[0]?.present === true;
 }
 
 /**

@@ -42,6 +42,9 @@ import { EN_TICS, MALAY, THERAPY_EN, THERAPY_ID } from '@/lib/copy/vocab';
 import { FORMAT_RULES } from '@/lib/prompt/base';
 import { budgetFor, type LengthBudget } from '@/lib/prompt/budget';
 import { MEMORY_GIST_MAX_WORDS } from '@/lib/prompt/memory';
+/* `PERSONA_MAX_WORDS` only. `@/lib/persona/prompt` is `server-only`, which this
+   module already is — it carries the translation contract's prose. */
+import { PERSONA_MAX_WORDS } from '@/lib/persona/prompt';
 import { readerPrompt } from '@/lib/prompt/readers';
 import { stripUntrusted } from '@/lib/prompt/sanitize';
 import { SUMMARY_MAX_WORDS } from '@/lib/prompt/summary';
@@ -214,6 +217,19 @@ function ceilingFor(
   }
   if (spec.budget === 'summary') {
     return { maxParagraphWords: SUMMARY_MAX_WORDS, minTotalWords: 1, maxTotalWords: SUMMARY_MAX_WORDS };
+  }
+  /*
+   * **THE PERSONA HAS ITS OWN CEILING AND IT IS NEARLY DOUBLE THE SUMMARY'S.**
+   * `PERSONA_MAX_WORDS` is 95 against `SUMMARY_MAX_WORDS`'s 50; the registry used to
+   * say `'summary'` here, which told the model to compress a 95-word paragraph to 50
+   * and then rejected the faithful answer for being 88. See `keys.ts` for the live
+   * measurement. NO HEADROOM IS ADDED on top of 95: the same number bounds the
+   * generator in both locales, so a faithful translation of a compliant source lands
+   * near it, and a `+15%` fudge here would be a second, softer ceiling nobody could
+   * find from the prompt.
+   */
+  if (spec.budget === 'persona') {
+    return { maxParagraphWords: PERSONA_MAX_WORDS, minTotalWords: 1, maxTotalWords: PERSONA_MAX_WORDS };
   }
   /*
    * A `service` budget with no reader or service is not a shape the registry can

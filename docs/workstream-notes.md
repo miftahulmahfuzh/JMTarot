@@ -1736,3 +1736,136 @@ at that x/y with no `scrollIntoView` first, so after `window.scrollTo(0, 620)` t
 assert the effect (`document.querySelectorAll('[role=dialog]').length`) rather than
 trusting the verb's own success line** — which is the same lesson its `substring` warning
 already records for a different reason.
+
+---
+
+## Wiring V2's translator to the persona, 2026-07-28
+
+*"In the About You page, please translate the untranslated prose as well. Make it
+consistent with the selected language."* — Miftah. This was the last item on V8's
+still-open list, and everything needed already existed: `'persona.body'` had been in V2's
+registry since V2, `resolveTranslatable` had a persona arm, and the sweep had a persona
+arm. **None of it had ever run.** Wiring it took one client component and one route field;
+finding out that the registry entry was wrong took a live model call.
+
+### THE BUG THAT ONLY A LIVE CALL COULD FIND
+
+`TRANSLATABLE['persona.body'].budget` was `'summary'`. `ceilingFor` resolves that to
+`SUMMARY_MAX_WORDS`, which is **50** — the day-summary ceiling. A persona is
+`PERSONA_MAX_WORDS`, which is **95**.
+
+`ceilingFor` feeds **both** `buildTranslationPrompt` (the `LENGTH:` block the model reads)
+and `verifyTranslation` (the check that decides whether the row is persisted). So the model
+was instructed to render a 95-word paragraph in at most 50 words, and then judged against
+50. **It cannot be faithful and compliant at the same time.** Measured on the real thing:
+
+```
+source (id):  95-word persona, one paragraph
+output (en):  88 words, a correct and complete translation
+verdict:      violations = [{ kind: 'budget', detail: 'paragraph 1 is 88 words, ceiling 50' }]
+persisted:    NO
+```
+
+**The consequence was not a visible failure, which is why it would have survived review.**
+`settle()` does not persist an invalid translation, so `translations` stayed empty; the
+viewer saw correct English every time, because the stream is yielded before verification
+(V2's "repair, do not buffer"). The only symptom was **a fresh model call on every single
+page view, forever** — the exact quota problem `LLM_WINDOW_CALL_CEILING` exists to bound,
+arriving through the one path nobody had exercised.
+
+Fixed by giving the persona its own budget tag: `keys.ts` gains `'persona'` to the tag
+union, `ceilingFor` resolves it to `PERSONA_MAX_WORDS`. **No headroom added on top of 95** —
+the same constant bounds the generator in both locales, so a faithful translation of a
+compliant source lands near it, and a `+15%` fudge would be a second softer ceiling nobody
+could find from the prompt.
+
+**THE LESSON IS ABOUT REGISTRY ENTRIES WRITTEN AHEAD OF THEIR CONSUMER.** V2 wrote three
+`persona` arms against a table V8 had not built. Two were guarded so they could not raise;
+all three were unreachable, and **an unreachable registry line is a guess that reads like a
+decision.** `budget: 'summary'` on a short house-voice paragraph looks perfectly sensible.
+The test that now guards it asserts what the tag RESOLVES TO, through the real
+`verifyTranslation`, because a test on the tag's spelling would stay green through a rename
+and miss the number entirely.
+
+### Two more things the same investigation turned up
+
+**`settle()` RUNS INSIDE THE STREAM'S `pull()`, WHICH IS OUTSIDE THE REQUEST SCOPE — AND
+THIS IS V2's, NOT THE PERSONA'S.** Read straight out of the dev log:
+
+```
+[analytics] unbatched track() outside withAnalytics: translation.generated
+[analytics] track failed  Error: `after` was called outside a request scope
+    at report (src/lib/translate/translate.ts:540:8)
+    at settle (src/lib/translate/translate.ts:429:3)
+    at iterate (src/lib/translate/translate.ts:252:19)
+    at async Object.pull (src/app/api/translate/route.ts:191:24)
+[analytics] defer failed   Error: `after` was called outside a request scope
+    at defer (src/lib/analytics/track.ts:251:10)
+    at settle (src/lib/translate/translate.ts:444:8)
+```
+
+So for **every streamed translation, including `reading.body`**: no `translation.generated`
+event, and **the `defer()`ed repair pass never runs.** The valid path is unaffected because
+`persist()` is awaited inline rather than deferred. Left open deliberately — it is V2's file
+and V2's fix, and it is now written down with the stack rather than rediscovered. The
+practical effect is that V2's own instruction *"if the measured `invalid` rate exceeds ~2%,
+fix the prompt"* cannot be followed, because the measurement is not being recorded.
+
+**TWO TESTS IN THE TRANSLATION SUITE WERE VACUOUS AND BOTH SAID SO IN THEIR OWN COMMENTS.**
+Both were written for "V8 has not shipped yet" and V8 shipped:
+
+- `translations.integration.test.ts`'s *"leaves persona rows untouched while V8's table does
+  not exist"* ended with `if (exists) return;` — an escape hatch whose own comment said
+  *"this test's premise is gone"*. **It had been returning before its first assertion for two
+  releases, and green.** Rewritten to assert the live arm both ways: an orphan persona
+  translation is reaped, a live one is spared.
+- *"answers null for a persona while V8's table does not exist, rather than raising"* passed
+  because the test user had no persona ROW, not because of the guard it was named for. It was
+  the persona arm's only coverage. Replaced with two real tests, including the T9 ownership
+  one — `resolvePersona`'s `where` compares `personas.user_id` to **both** `entityId` and
+  `userId`, which reads like a tautology until you ask what happens when they differ:
+  without the second clause, `POST /api/translate` with a stranger's uuid returns that
+  stranger's persona in your language.
+
+`resolvePersona`'s own `to_regclass` guard is deleted with them — V8 built the table, and
+2026-07-28 put that function on the request path of a language switch, so a probe round trip
+was latency insuring against a migration that has run. **`deleteOrphanTranslations` KEEPS
+its guard**, for a reason that was never about V8: Postgres resolves relations at parse
+time, so a `to_regclass` predicate inside the statement is evaluated after the relation has
+already failed to resolve.
+
+### `?lang=en` CANNOT VERIFY A CROSS-LOCALE TRANSLATION, AND THE FIRST ATTEMPT PROVED IT
+
+The obvious check — load `/account?lang=en` against an Indonesian persona — showed the
+Indonesian body with no translating state at all, which looks exactly like the feature not
+working. It is W6's documented trap arriving somewhere new: **`?lang=` reaches only the
+request that carries it.** The page rendered as `en`, so `useLocale()` gave the client `en`
+and it correctly asked for a translation — but the client's `fetch('/api/persona')` and
+`fetch('/api/translate')` carry no query string, so `getLocale()` answered `id` on both, the
+source was already in the target language, and `/api/translate` returned a perfectly correct
+**204**.
+
+**Switch the locale the way the app does — `POST /api/locale`** — and everything works. Use
+`?lang=` for looking at chrome; never for anything whose behaviour depends on a client fetch
+agreeing with the page about the locale.
+
+### Verified live, all three states
+
+Dev server, loop 5 at a true 390px, a real `POST /api/auth/dev-session` session, real z.ai
+calls (no `PERSONA_STUB`, no `LOTUS_STUB`):
+
+```
+id viewer,  id persona           -> lang=id, source prose, notice=false, no model call
+en viewer,  id persona, no cache -> "Translating…" -> English streams in
+                                    translations row written: 80 words, source_locale=id
+                                    personas row UNCHANGED and still locale=id
+en viewer,  cached               -> instant English, notice=false, ZERO /api/translate calls
+back to id                       -> lang=id, source prose, notice=false
+```
+
+The `personas` row staying Indonesian is the assertion that matters most: it proves the fix
+translated rather than regenerated, which is what keeps `personas.locale` honest and what
+makes the cached translation reusable at all.
+
+`npm test` 1609 (+1), `npm run test:integration` 230 (+1), `npm run typecheck` and
+`npm run build` clean including `audit:secrets`.
