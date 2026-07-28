@@ -53,6 +53,23 @@ export const LOCALE_QUERY = 'lang';
  * helper; passing the claim that is already in hand is the same thing without a
  * redundant JWE decrypt on every request.
  */
+/**
+ * ── THE PREFIX HELPERS ARE NOT IN THIS FILE (v0.4.0 S2) ─────────────────────
+ *
+ * Roadmap §6.5 puts `stripLocalePrefix` / `localePath` here. They are in
+ * `./prefix` instead, and the reason is `src/lib/auth/gate.ts`: it imports them
+ * (contract G2) and its header says there is not a `NextRequest` or a
+ * `NextResponse` anywhere in it, while this module opens with
+ * `import type { NextRequest }`. This module also reads `process.env`, which is
+ * the trap `localeSwitcherEnabled` below records.
+ *
+ * There is deliberately NO re-export: two import paths for one function is how
+ * the two copies drift.
+ *
+ * **AND THE CHAIN BELOW IS NOT CONSULTED ON A CONTENT ROUTE.** §4.1: the URL
+ * wins and is the only input there. `contentRewrite` decides that before
+ * `middleware.ts` reaches this function.
+ */
 export function resolveForMiddleware(
   req: NextRequest,
   sessionLocale: Locale | null,
