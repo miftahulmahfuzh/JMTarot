@@ -1,0 +1,109 @@
+/*
+ * The signed-out homepage. Existing tokens only -- `## Styling` requires
+ * `tokens.ts` to change first and there was no reason to change it.
+ *
+ * `PublicShell` owns the outer frame (`max-width`, the padding, the safe-area
+ * inset and the flex column), so this file styles only what sits inside it.
+ */
+
+.title {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-title);
+  letter-spacing: var(--ls-title);
+  color: var(--gold-text);
+  text-align: center;
+  margin: 0;
+}
+
+.tagline {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-hint);
+  color: var(--text-warm);
+  text-align: center;
+  margin: 0;
+}
+
+/*
+ * `max-width` and `aspect-ratio: 2 / 3` -- the deck's true ratio, per
+ * `CARD_RATIO`. **`max-width: 100%` on the image is load-bearing**: the element
+ * is declared at `width={800}`, so without it the hero is the one thing on this
+ * page that overflows a 320px screen. `tools/seo/fit.sh` looks for exactly that.
+ */
+.hero {
+  align-self: center;
+  width: 100%;
+  max-width: 240px;
+}
+
+.hero img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  aspect-ratio: 2 / 3;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--card-edge);
+}
+
+.lede {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-reading);
+  line-height: var(--lh-reading);
+  color: var(--text);
+  text-align: center;
+  margin: 0;
+}
+
+.cta {
+  align-self: center;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--button-text);
+  background: var(--gold-wash-strong);
+  border: 1px solid var(--gold-border);
+  border-radius: var(--radius-chip);
+  padding: 14px 24px;
+  text-decoration: none;
+}
+
+.cta:hover {
+  color: var(--gold-text);
+}
+
+.block {
+  border-top: 1px solid var(--gold-hairline);
+  padding-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.block h2 {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-card-title);
+  letter-spacing: var(--ls-card-title);
+  color: var(--gold-text);
+  margin: 0;
+}
+
+.block p {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-hint);
+  color: var(--muted);
+  margin: 0;
+}
+
+.block a {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--gold-pale);
+  text-decoration: none;
+}
+
+.block a:hover {
+  color: var(--gold-text);
+}

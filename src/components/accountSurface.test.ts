@@ -64,6 +64,10 @@ describe('the account button', () => {
       'app/privacy/',
       'app/onboarding/',
       'app/s/', // V7's public share page. Named before it exists.
+      // S1's signed-out homepage. No session BY CONSTRUCTION: `page.tsx` renders
+      // it only when `currentUser()` is null, so an account circle here would be
+      // a control with nothing behind it.
+      'app/Landing.tsx',
       'app/layout.tsx', // the mount seam is the owning page, never the root layout
     ];
     for (const prefix of FORBIDDEN) {
