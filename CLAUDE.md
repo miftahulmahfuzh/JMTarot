@@ -2042,22 +2042,28 @@ ship and which **reconciliation §7 records as already settled the other way**
 `docs/workstream-notes.md`, because a reconciliation stating a property the code does
 not have is worse than an open item — nobody goes looking for it.
 
-**AND THE ONE FINDING THAT IS BIGGER THAN THIS WORKSTREAM: EVERY `/en/` CONTENT ROUTE
-LOSES ITS `Cache-Control`, MEASURED ON A REAL `npx next start`.** `/blog`,
-`/blog/<slug>`, `/gallery` and `/arcana/<slug>` all answer
-`public, s-maxage=3600, stale-while-revalidate=86400`; **`/en/blog`, `/en/blog/<slug>`,
-`/en/gallery` and `/en/arcana/<slug>` all answer `no-cache, must-revalidate`.** Four of
-the eight content entries in `next.config.ts` are inert and the four are exactly the
-English tree — twenty-five indexable pages. The config's `headers()` does run there (the
-catch-all's `x-frame-options` arrives); it is `cache-control` that loses to the rewritten
-render, and `headers.test.ts` asserts the entries EXIST, which they do. **R21 said this
-was "measured locally but not against a CDN"; the truth is that locally half of it never
-reaches the wire.** Diagnosis, the candidate fix and why S6 left it alone are in
-`docs/workstream-notes.md` — it is S1's `next.config.ts` and S2's rewrite, and a
-config-level test structurally cannot see it.
+**AND THE FINDING THAT IS BIGGER THAN THIS WORKSTREAM: NO PUBLIC CONTENT ROUTE IS CACHED
+IN PRODUCTION, AND R21 IS CLOSED WITH THE ANSWER "NONE OF IT".** Measured on the real
+Vercel CDN, 2026-07-29: `/blog`, `/en/blog`, both articles in both trees, `/gallery`,
+`/en/gallery` and `/arcana/<slug>` in both trees **all** answer
+`private, no-cache, no-store, max-age=0, must-revalidate` with `x-vercel-cache: MISS` on
+two consecutive fetches. **All eight content entries in `next.config.ts` are inert — 54
+indexable pages** — and S-D10's whole argument for `s-maxage` over multiple root layouts
+buys nothing today.
 
-**Still open:** the `s-maxage` on the BARE paths is measured on `next start` and never
-against a Vercel CDN (R21) — the residual gap `/gallery` and the lore pages carry. No RSS (S6 F10,
+**THE DISCRIMINATOR IS THE MIDDLEWARE MATCHER, and the contrast is clean:**
+`/wallpapers/*` and `/cards/*`, which the matcher EXCLUDES, get their configured headers
+verbatim (`max-age=86400`, `immutable`), and `/robots.txt` and `/sitemap.xml` come back
+`x-vercel-cache: HIT`. On a matched path every OTHER config header arrives — CSP,
+`referrer-policy`, `x-frame-options` — so `headers()` runs and `cache-control` alone loses
+to the rendered response. **`headers.test.ts` asserts the eight entries EXIST, which they
+do, and no config-level test can see this**; `curl -D -` against a deployed URL is the
+only instrument. **An intermediate `npx next start` measurement said only the `/en/` half
+was broken — that was a local artifact and `next start` is not Vercel.** The diagnosis, the
+one-line candidate fix in `src/middleware.ts`'s existing content-response block, and why
+S6 left it to S1/S2 are in `docs/workstream-notes.md`.
+
+**Still open:** No RSS (S6 F10,
 out of scope and the only excluded feature that costs nothing to maintain). And nobody
 has read either article on a phone — reconciliation §8's *"no lint can tell whether a
 page is worth reading"* binds these two documents exactly as it binds the 22 lore

@@ -3889,52 +3889,81 @@ node, an `ImageObject` at `#hero`, and a three-rung breadcrumb `/` → `/blog` �
 **No `&amp;` anywhere in it**, which is the failure `JsonLd.tsx`'s pre-escape exists to
 make impossible and which no validator flags.
 
-### EVERY `/en/` CONTENT ROUTE LOSES ITS CACHE HEADER, AND THAT IS NOT S6's TO FIX
+### NO CONTENT ROUTE IS CACHED IN PRODUCTION. R21 IS CLOSED, AND THE ANSWER IS "NONE OF IT"
 
-**Measured against a real `npx next start`, 2026-07-29.** This is R21's open item — *"the
-cache-header question has ONE owner and it is a blocker on the S-D10 claim"* — closed
-in the direction nobody expected. R21 and three workstream sections say the `s-maxage` is
-*"measured locally but not against a Vercel CDN"*. The truth is worse: **measured locally,
-half of it never reaches the wire at all.**
+**MEASURED AGAINST THE REAL VERCEL CDN, 2026-07-29, on the v0.4.0 production deploy.**
+R21 — *"the cache-header question has ONE owner and it is a blocker on the S-D10 claim"* —
+is now answered, and the answer is worse than any of the four plans that flagged it
+guessed.
+
+**EVERY** content route, in **both** trees, answers Next's dynamic default and never
+caches:
 
 ```
-/blog                     public, s-maxage=3600, stale-while-revalidate=86400
-/en/blog                  no-cache, must-revalidate
-/blog/what-tarot-is       public, s-maxage=3600, stale-while-revalidate=86400
-/en/blog/what-tarot-is    no-cache, must-revalidate
-/arcana/the-moon          public, s-maxage=3600, stale-while-revalidate=86400
-/en/arcana/the-moon       no-cache, must-revalidate
-/gallery                  public, s-maxage=3600, stale-while-revalidate=86400
-/en/gallery               no-cache, must-revalidate
+/blog                   private, no-cache, no-store, max-age=0, must-revalidate   MISS
+/en/blog                private, no-cache, no-store, max-age=0, must-revalidate   MISS
+/blog/what-tarot-is     private, no-cache, no-store, max-age=0, must-revalidate   MISS
+/en/blog/what-tarot-is  private, no-cache, no-store, max-age=0, must-revalidate   MISS
+/gallery                private, no-cache, no-store, max-age=0, must-revalidate   MISS
+/en/gallery             private, no-cache, no-store, max-age=0, must-revalidate   MISS
+/arcana/the-moon        private, no-cache, no-store, max-age=0, must-revalidate   MISS
+/en/arcana/the-moon     private, no-cache, no-store, max-age=0, must-revalidate   MISS
+
+x-vercel-cache: MISS on two consecutive fetches of the same URL. Nothing warms.
 ```
 
-**IT IS NOT BLOG-SPECIFIC. Four of the eight content entries in `next.config.ts` are
-inert, and the four inert ones are exactly the English tree** — `/en/gallery`, the
-twenty-two `/en/arcana/<slug>`, `/en/blog` and both `/en/blog/<slug>`. Twenty-five
-indexable English pages, uncacheable at the edge, on a release whose entire argument for
-`s-maxage` over multiple root layouts is TTFB for a crawler (S-D10).
+**ALL EIGHT `next.config.ts` CONTENT ENTRIES ARE INERT — 54 indexable pages** (`/`, `/en`,
+`/gallery` ×2, 22 lore pages ×2, `/blog` ×2, two articles ×2). The entire argument S-D10
+made for `s-maxage` over multiple root layouts — TTFB for a crawler — buys nothing today.
 
-**The diagnosis, because a shrug is not a record.** The config's `headers()` DOES run on a
-prefixed path — the catch-all's `x-frame-options: SAMEORIGIN` and
-`x-content-type-options: nosniff` both arrive on `/en/blog`. What does not survive is
-`cache-control` specifically, and the response carries `x-middleware-rewrite:
-http://localhost:3001/blog`. So the rewritten render's own `Cache-Control` wins over the
-matched config entry, while on the bare path — same route file, no rewrite — the config
-entry wins. **`headers.test.ts`'s comment is the thing that made this invisible**: it says
-*"Next's `headers()` matches the INCOMING request path, before middleware's rewrite… so
-`/en/gallery` never matches the `/gallery` entry"*, which is true about MATCHING and says
-nothing about which value survives a rewrite. The test asserts the config CONTAINS the
-four `/en/` entries. It does, and they do nothing.
+#### An intermediate measurement said something different, and it was a local artifact
 
-**S6 did not fix it, deliberately.** `next.config.ts` is S1's file and the rewrite is S2's
-(roadmap §6.4, §6.2), the fix is a cross-workstream design decision rather than a missed
-delta, and getting it wrong on the response that carries a session is the one mistake on
-this seam that is worse than the bug. The candidate fix is to set `Cache-Control` inside
-middleware on the rewrite branch — the one place that already knows a response is a
-content response, already manipulates headers on exactly those responses, and is already
-fenced by `content.kind !== 'passthrough'` so a signed-in `/` cannot be caught by it.
-**A config-level test cannot catch this class of bug and a `curl` against `next start`
-can, which is the loop this belongs in.**
+**This section first recorded "four of eight entries are inert and the four are exactly the
+English tree", from `npx next start -p 3002`.** On that local production server the bare
+paths *did* answer `public, s-maxage=3600, stale-while-revalidate=86400` and only the
+`/en/` twins fell back. **On Vercel neither half survives.** Kept rather than corrected
+away, because the lesson is CLAUDE.md's own and this is the fourth time it has been paid
+for: **`next start` is not Vercel, and a header measured on it is a hint rather than a
+fact.** Anybody re-measuring this locally will see the asymmetry again and conclude the
+bare tree is fine. It is not.
+
+#### The diagnosis, which is exact
+
+**The middleware matcher is the discriminator, and the contrast is clean.** Paths the
+matcher EXCLUDES get their configured header verbatim on the CDN:
+
+```
+/wallpapers/the-moon-phone.jpg   public, max-age=86400, stale-while-revalidate=604800  ✓ S5's
+/cards/18_moon.webp              public, max-age=31536000, immutable                   ✓ S1's
+/robots.txt                      public, max-age=0, must-revalidate            HIT (cached)
+/sitemap.xml                     public, max-age=0, must-revalidate            HIT (cached)
+```
+
+Paths the matcher MATCHES lose `cache-control` and keep everything else. On `/blog`, the
+catch-all's `content-security-policy`, `content-security-policy-report-only`,
+`referrer-policy`, `x-frame-options` and `x-content-type-options` **all arrive**. So
+`headers()` runs; it is `cache-control` alone that the rendered response replaces.
+
+**`headers.test.ts` CANNOT SEE THIS AND NO CONFIG-LEVEL TEST CAN.** It asserts the eight
+entries exist. They do. They are also inert, and the only instrument that reports it is
+`curl -D -` against a deployed URL — which is why this belongs in the release checklist
+next to `crawl.sh` rather than in the suite.
+
+#### The candidate fix, and why S6 did not apply it
+
+`src/middleware.ts` already discriminates a content response exactly — the outer wrapper
+marks it with an internal header, strips every `Set-Cookie` from it, and is fenced by
+`content.kind !== 'passthrough'` so a signed-in `/`, `/login` and `/api/auth/*` are
+untouched. **Setting `Cache-Control` in that same block is one line in the one place that
+provably knows the answer**, and it needs no `next.config.ts` entry at all — which would
+then make all eight of those entries deletable rather than merely inert.
+
+Not applied here because **`src/middleware.ts` is S2's file and `next.config.ts` is S1's**
+(roadmap §6.2, §6.4), this is a cross-workstream design decision rather than a missed
+delta, and the failure mode of getting it wrong — caching a response that carries a
+session — is worse than the bug being fixed. It wants the owner, one `curl` per content
+route afterwards, and a `crawl.sh` clause asserting `x-vercel-cache: HIT` on a second
+fetch so the next person cannot ship this state again silently.
 
 ### Still open
 
@@ -3944,9 +3973,10 @@ can, which is the loop this belongs in.**
 - **Nobody has read either article on a phone.** Reconciliation §8: *"no lint can tell
   whether a page is worth reading"*, and every mechanical check passes on atmospheric
   nothing. The acceptance test is Miftah reading both, in both languages, on glass.
-- **The `s-maxage` on the BARE paths is measured on `next start` and never against a
-  Vercel CDN** (R21) — the same residual gap `/gallery` and the 22 lore pages carry. The
-  `/en/` half is a different and larger problem; see the section above.
+- **No content route caches in production and all eight config entries are inert**, the
+  section above. **R21 is measured and closed; the FIX is open**, and it is S1's
+  `next.config.ts` and S2's `middleware.ts`. This is the release's most consequential open
+  item — every other one is cosmetic beside it.
 - **`PublicShare`'s 36px button and its dead no-JS state**, above. S1's file, 23 pages.
 - **No RSS** (S6 F10). Out of scope, ~30 lines, no dependency, and the only excluded
   feature that costs nothing to maintain.
