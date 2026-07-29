@@ -88,6 +88,7 @@ const en: Catalog = {
   'draw.card.aria.take': 'Take a card',
 
   // --- Card detail ----------------------------------------------------------
+  'card.upright': 'Upright',
   'card.reversed': 'Reversed',
   /*
    * `Put it back`, not `Put it back in the deck`. The longer version was 23 characters
@@ -316,6 +317,10 @@ const en: Catalog = {
   'account.menu.details': 'About you',
   'account.menu.language': 'Language',
   'account.menu.history': 'Reading history',
+  /* Written, not translated: `Galeri kartu` is "the card gallery" and this is the
+     phrase an English reader expects for the same destination. */
+  'account.menu.gallery': 'Card gallery',
+  'account.menu.blog': 'Writing',
   'account.menu.signOut': 'Sign out',
 
   'locale.code.id': 'ID',
@@ -517,6 +522,154 @@ const en: Catalog = {
   'reading.verdict.yes': 'Yes',
   'reading.verdict.no': 'No',
   'reading.verdict.maybe': 'Not yet clear',
+
+  // --- The public surface (v0.4.0 / S1) -------------------------------------
+  //
+  // REWRITTEN, NOT TRANSLATED (§8.2, and `## Localization` rule 3). The
+  // enforcement is that a reviewer can see a translation in five seconds, so the
+  // English lede leads with a different fact than the Indonesian one does and the
+  // gallery heading is a different sentence rather than the same sentence in
+  // English.
+
+  'landing.tagline': 'The twenty-two Major Arcana, read aloud by three readers.',
+  'landing.lede':
+    'Pick your cards, ask what you came to ask, and read one interpretation written for that draw and no other — in English or Indonesian.',
+  'landing.signIn': 'Sign in to read',
+  'landing.hero.alt': 'The {name} card',
+
+  'landing.gallery.title': 'See all twenty-two',
+  'landing.gallery.body':
+    'Every Major Arcana, drawn for this app. Tap any card to see it full size.',
+  'landing.gallery.link': 'Open the gallery',
+  'landing.arcana.title': 'What each card means',
+  'landing.arcana.body':
+    'One page per card: the numeral, the element, the glyph, upright and reversed, and where the card sits in the sequence.',
+  'landing.arcana.link': 'Start with The Moon',
+  'landing.readers.title': 'Three readers, three voices',
+  'landing.readers.body':
+    'Thessaly, Margaret and Adrian read the same three cards and do not say the same thing.',
+  'landing.blog.title': 'Writing',
+  'landing.blog.body': 'How to read tarot, explained without the vocabulary.',
+  'landing.blog.link': 'Read it',
+
+  'public.footer.gallery': 'Gallery',
+  'public.footer.arcana': 'Card meanings',
+  'public.footer.blog': 'Writing',
+  'public.footer.app': 'Open the app',
+  'public.footer.brandLine': 'JMTarot — Major Arcana readings.',
+
+  'public.share.button': 'Share this page',
+  'public.share.copied': 'Link copied.',
+  'public.share.failed': "Couldn't copy. Take it from the address bar.",
+
+  'public.crumb.home': 'JMTarot',
+  'public.crumb.gallery': 'Gallery',
+  'public.crumb.blog': 'Writing',
+
+  // ── S4: /arcana/<slug> ─────────────────────────────────────────────────────
+  /*
+   * S3, `/gallery`. **THE ENGLISH IS WRITTEN, NOT TRANSLATED** (§8.2). "Read the
+   * lore" is not a rendering of "Baca maknanya", and "the original artwork" is not
+   * one of "gambar aslinya" in the other direction either.
+   *
+   * `gallery.card.alt` KEEPS THE WORD ORDER ENGLISH SEARCH USES: "{name} tarot
+   * card", because `the moon tarot card` is what somebody types, where the
+   * Indonesian phrase is `kartu tarot the moon`. The card NAME and the NUMERAL stay
+   * English in both locales (`## Card data`); only the frame and the keywords are
+   * translated, which is why the two locales differ on every one of the 22 and why
+   * `alt.test.ts` asserts they do.
+   */
+  'gallery.meta.title': 'Major Arcana Gallery — All 22 Tarot Cards | JMTarot',
+  'gallery.meta.description':
+    'See all 22 Major Arcana cards: the original artwork, the upright and reversed meanings, and the keywords for each.',
+  'gallery.eyebrow': 'Gallery',
+  'gallery.title': 'The 22 Major Arcana Cards',
+  'gallery.hint': 'Tap a card to see it larger.',
+  'gallery.card.alt': '{name} tarot card, Major Arcana {numeral}: {keywords}',
+  'gallery.card.zoomAria': 'See {name} larger',
+  'gallery.card.lore': 'Read the lore',
+
+  'arcana.verdict': 'Yes or no',
+  'arcana.lore': 'Where the card comes from',
+  'arcana.inSpread': 'In a reading',
+  'arcana.questions': 'Common questions',
+  'arcana.neighbours': 'Before and after',
+  'arcana.related': 'Cards nearby',
+  'arcana.related.root': 'its root number',
+  'arcana.related.element': 'same element',
+  'arcana.related.stage': 'same stage',
+  'arcana.gallery': 'See all 22 cards',
+
+  'arcana.facts.numeral': 'Numeral',
+  'arcana.facts.element': 'Element',
+  'arcana.facts.stage': 'Stage',
+  'arcana.facts.polarity': 'Charge',
+  'arcana.facts.attribution': 'Sign',
+  'arcana.facts.modality': 'Mode',
+  'arcana.facts.keywords': 'Keywords',
+
+  'arcana.element.fire': 'Fire',
+  'arcana.element.earth': 'Earth',
+  'arcana.element.air': 'Air',
+  'arcana.element.water': 'Water',
+  'arcana.stage.beginning': 'Beginning',
+  'arcana.stage.trial': 'Trial',
+  'arcana.stage.reckoning': 'Reckoning',
+  'arcana.polarity.light': 'Light',
+  'arcana.polarity.shadow': 'Shadow',
+  'arcana.polarity.neutral': 'Neutral',
+  'arcana.modality.cardinal': 'Cardinal',
+  'arcana.modality.fixed': 'Fixed',
+  'arcana.modality.mutable': 'Mutable',
+
+  /*
+   * S5. REWRITTEN, not translated (§8.2 / `## Localization` rule 3).
+   *
+   * `Take the artwork with you` rather than a translated `Download the image`,
+   * because a heading is the cheapest place to prove the rule — and it is what a
+   * person is actually doing. The Indonesian `Unduh gambarnya` is the plain verb,
+   * which is what that register wants.
+   */
+  'wallpaper.heading': 'Take the artwork with you',
+  'wallpaper.card': 'The card image',
+  'wallpaper.phone': 'Phone wallpaper',
+  'wallpaper.cardAria': 'Download the {card} card image, 1024 by 1536 pixels',
+  'wallpaper.phoneAria': 'Download the {card} phone wallpaper, 1440 by 3120 pixels',
+  'wallpaper.saveHint': 'On iPhone: open the image, press and hold, then choose Add to Photos.',
+  'wallpaper.licence':
+    'This artwork belongs to JMTarot. You may keep it and set it as your own wallpaper. ' +
+    'Not for resale, not on merchandise, and not for commercial use.',
+  'wallpaper.licenceLink': 'Terms & Conditions, clause 9',
+
+  /*
+   * ── The blog (S6, v0.4.0) ──────────────────────────────────────────────────
+   *
+   * WRITTEN, NOT TRANSLATED. `blog.index.title` is `Writing` rather than `Articles`:
+   * `Tulisan` is what the landing page and the account menu already say in
+   * Indonesian, and `Writing` is the register that matches — a place somebody writes
+   * rather than a container of items.
+   *
+   * `blog.readingTime` REALLY DOES NEED TWO FORMS HERE, unlike the Indonesian pair,
+   * which is identical because CLDR gives `id` only `other` (I5).
+   */
+  'blog.index.title': 'Writing',
+  'blog.index.description':
+    'Long-form writing about tarot: how to read it, what the myths get wrong, and what a deck of pictures is actually good for.',
+  'blog.index.lede': 'Long reads about tarot, for before or after you draw.',
+  'blog.readMore': 'Read the article',
+  'blog.published': 'Published {date}',
+  'blog.updated': 'Updated {date}',
+  'blog.readingTime.one': 'about {count} minute',
+  'blog.readingTime.other': 'about {count} minutes',
+  'blog.inThisArticle': 'In this article',
+  'blog.backToIndex': 'All writing',
+  'blog.notFound.title': 'No such article',
+  'blog.notFound.body':
+    'The address may be wrong, or this piece may not exist in the language you are reading.',
+  'blog.orient.title': 'New to this?',
+  'blog.orient.gallery': 'See all 22 Major Arcana',
+  'blog.orient.firstCard': 'Start at The Fool',
+  'blog.orient.feared': 'Death, and why it is not what you think',
 };
 
 export default en;

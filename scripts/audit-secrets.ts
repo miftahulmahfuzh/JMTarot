@@ -308,13 +308,43 @@ const SHAPES: { name: string; re: RegExp; warn?: true; credential?: true }[] = [
 // ---------------------------------------------------------------------------
 
 /**
- * **JMTarot HAS NO `NEXT_PUBLIC_` VARIABLES.** Anything so prefixed is inlined
- * into the client bundle by Next at build time -- that is its entire purpose,
- * and it is the single easiest way to leak a key.
+ * **JMTarot DECLARES EXACTLY ONE `NEXT_PUBLIC_` VARIABLE, AND IT IS READ IN
+ * EXACTLY ONE FILE.** Anything so prefixed is inlined into the client bundle by
+ * Next at build time -- that is its entire purpose, and it is the single easiest
+ * way to leak a key.
  *
- * The allowlist is empty and adding to it requires a comment saying why.
+ * **THIS LIST WAS EMPTY UNTIL v0.4.0 AND THE SENTENCE ABOVE IT SAID "HAS NO".**
+ * S-D11 introduced `NEXT_PUBLIC_SITE_ORIGIN`, and reconciliation R10 both
+ * confirmed the name and explained why it is misleading: the other three rungs of
+ * `siteOrigin()`'s chain -- `AUTH_URL`, `VERCEL_PROJECT_PRODUCTION_URL`,
+ * `VERCEL_URL` -- carry no prefix, so the function is server-only IN PRACTICE
+ * despite the variable it is named after. Renaming across a doc, `.env.example`
+ * and the Vercel dashboard buys nothing; R10 says so and keeps the name.
+ *
+ * **SO THIS IS NOT A SUPPRESSION, AND THE TWO THINGS THAT MAKE IT NOT ONE ARE
+ * BOTH BELOW.** The value is a public origin -- it is in the manifest, in both
+ * legal pages and in every canonical tag by design, which is the same argument
+ * this file already makes for `NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL`. And
+ * the fence R10 actually asks for is a CLIENT-BOUNDARY fence, not an
+ * environment one: `lib/seo/origin.ts` is in `FORBIDDEN` below, so the
+ * transitive walk fails the build if any client component ever reaches it.
  */
-const NEXT_PUBLIC_ALLOWLIST: string[] = [];
+const NEXT_PUBLIC_ALLOWLIST: string[] = ['NEXT_PUBLIC_SITE_ORIGIN'];
+
+/**
+ * Which file may READ each allowlisted variable. **A VARIABLE, A FILE, AND
+ * NOTHING WIDER.**
+ *
+ * A bare name-allowlist would let any of forty-odd modules read
+ * `NEXT_PUBLIC_SITE_ORIGIN` directly, which is precisely the second-function-
+ * decides-the-origin failure S-D11 exists to prevent -- and it would land here as
+ * a green build. Pairing the name with its one legitimate reader keeps the check
+ * strictly stronger than "no NEXT_PUBLIC_ reads" was for every other variable,
+ * and it is the mechanical form of `origin.ts`'s own "there is one chain, here".
+ */
+const NEXT_PUBLIC_READERS: Record<string, string> = {
+  NEXT_PUBLIC_SITE_ORIGIN: 'lib/seo/origin.ts',
+};
 
 /**
  * **THE PLATFORM'S OWN NAMESPACE, AND IT IS NOT OURS TO EMPTY.** Broke the first
@@ -374,12 +404,31 @@ function checkNextPublic() {
    * checks for is the definition of one people delete.
    *
    * What is actually dangerous is a READ, because that is what Next inlines.
+   *
+   * **TEST FILES ARE SKIPPED (v0.4.0), FOR THE REASON THE PARAGRAPH ABOVE
+   * GIVES.** Nothing imports a `*.test.ts` from a route, so Next never compiles
+   * one and there is nothing to inline. Three of them set or assert
+   * `NEXT_PUBLIC_SITE_ORIGIN` -- and `layout.contract.test.ts`'s read is inside a
+   * `.not.toContain(...)`, i.e. a test asserting the layout must NOT read it.
+   * Firing on that is the same shape as firing on `resolve.ts`'s comment: a
+   * tripwire that reports the fence as the breach. `checkClientBoundary` below is
+   * what actually decides whether a value can reach a browser, and it already
+   * excludes tests for the same reason.
+   *
+   * **AN ALLOWLISTED VARIABLE IS STILL A FINDING OUTSIDE ITS ONE READER.** The
+   * pair, not the name, is what is permitted -- see `NEXT_PUBLIC_READERS`.
    */
   for (const file of walk(join(ROOT, 'src'))) {
-    if (!/\.tsx?$/.test(file)) continue;
+    if (!/\.tsx?$/.test(file) || /\.test\.tsx?$/.test(file)) continue;
+    const rel = relative(ROOT, file).replace(/^src\//, '');
     const source = readFileSync(file, 'utf8');
-    const m = /process\.env\.NEXT_PUBLIC_|process\.env\[['\`"]NEXT_PUBLIC_/.exec(source);
-    if (m) fail('NEXT_PUBLIC_', 'a NEXT_PUBLIC_ read in source', relative(ROOT, file), m.index);
+    for (const m of source.matchAll(
+      /process\.env\.(NEXT_PUBLIC_[A-Z0-9_]+)|process\.env\[['`"](NEXT_PUBLIC_[A-Z0-9_]+)/g,
+    )) {
+      const name = m[1] ?? m[2];
+      if (NEXT_PUBLIC_READERS[name] === rel) continue;
+      fail('NEXT_PUBLIC_', `a NEXT_PUBLIC_ read in source (${name})`, relative(ROOT, file), m.index);
+    }
   }
 }
 
@@ -414,6 +463,29 @@ const FORBIDDEN: { prefix: string; allow: string[] }[] = [
   // `viewer.tsx` IS the client context, and `gate.ts`/`token.ts` are pure
   // decision functions with no credential in them.
   { prefix: 'lib/auth/', allow: ['lib/auth/viewer.tsx', 'lib/auth/gate.ts', 'lib/auth/token.ts'] },
+  /*
+   * **v0.4.0 / S-D11. THE FENCE RECONCILIATION R10 ASKS FOR, AND THE REASON IT
+   * HAS TO BE HERE RATHER THAN ONLY IN `clientBoundary.test.ts`.**
+   *
+   * `siteOrigin()`'s chain reads `AUTH_URL`, `VERCEL_PROJECT_PRODUCTION_URL` and
+   * `VERCEL_URL`, none of which carries a `NEXT_PUBLIC_` prefix -- so in a
+   * browser bundle all three inline as `undefined` and the chain collapses
+   * SILENTLY to `http://localhost:3001`. A client component that called it would
+   * hand a visitor a canonical, a share URL or an `hreflang` pointing at their
+   * own machine, and nothing would look wrong. `resolve.ts`'s header records
+   * `localeSwitcherEnabled()` making exactly this mistake and living in
+   * `LocaleSwitch.tsx` for about ten minutes.
+   *
+   * `clientBoundary.test.ts` fences the DIRECT import; this walk is TRANSITIVE,
+   * which is the half that matters once S3, S4 and S6 start mounting client
+   * components inside content pages. A client component takes a finished URL as
+   * a prop -- `PublicShare` is the worked example.
+   *
+   * The prefix is the FILE, not `lib/seo/`: `jsonld.ts` is pure, takes the origin
+   * as an argument and reads no environment, so a client component importing it
+   * is harmless. Same split as `moderation/types.ts` against `blocklist.ts`.
+   */
+  { prefix: 'lib/seo/origin.ts', allow: [] },
 ];
 
 /** Resolve an import specifier to a file under src/, or null if it leaves the tree. */

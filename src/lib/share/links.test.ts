@@ -9,10 +9,26 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { siteOrigin } from '@/lib/seo/origin';
+
 import { resolveShare, shareOrigin, sharingEnabled, shareUrl, SHARE_RESOLVE_CACHE_MS } from './links';
 import { newSlug } from './slug';
 
-const KEYS = ['SHARE_BASE_URL', 'AUTH_URL', 'SHARING_ENABLED'] as const;
+/*
+ * v0.4.0 / S1: the last three are `siteOrigin()`'s, which `shareOrigin()` now
+ * delegates to (S-D11). They are cleared here for the same reason the first two
+ * are — "falls back to the dev origin" is a claim about an EMPTY environment, and
+ * a `NEXT_PUBLIC_SITE_ORIGIN` inherited from a shell would make it pass or fail
+ * depending on who ran it.
+ */
+const KEYS = [
+  'SHARE_BASE_URL',
+  'AUTH_URL',
+  'SHARING_ENABLED',
+  'NEXT_PUBLIC_SITE_ORIGIN',
+  'VERCEL_PROJECT_PRODUCTION_URL',
+  'VERCEL_URL',
+] as const;
 const saved: Record<string, string | undefined> = {};
 
 beforeEach(() => {
@@ -67,6 +83,20 @@ describe('shareOrigin', () => {
   it('does not throw on an unparseable value', () => {
     process.env.SHARE_BASE_URL = 'not a url/';
     expect(shareOrigin()).toBe('not a url');
+  });
+
+  it('falls through to siteOrigin(), so the two never disagree (S-D11)', () => {
+    process.env.NEXT_PUBLIC_SITE_ORIGIN = 'https://www.jmtarot.site';
+    // Before delegation this returned the hardcoded `http://localhost:3001`: the
+    // canonical tag and the share URL would have named two different hosts.
+    expect(shareOrigin()).toBe('https://www.jmtarot.site');
+    expect(shareOrigin()).toBe(siteOrigin());
+  });
+
+  it('still lets SHARE_BASE_URL override, because the share host may differ', () => {
+    process.env.NEXT_PUBLIC_SITE_ORIGIN = 'https://www.jmtarot.site';
+    process.env.SHARE_BASE_URL = 'https://s.example';
+    expect(shareOrigin()).toBe('https://s.example');
   });
 });
 

@@ -6,6 +6,7 @@ import { Backdrop } from '@/components/Backdrop';
 import { StillMode } from '@/components/StillMode';
 import { LocaleProvider } from '@/lib/i18n/LocaleProvider';
 import { getLocaleBundle, getT } from '@/lib/i18n/t';
+import { siteOrigin } from '@/lib/seo/origin';
 import './globals.css';
 
 /*
@@ -47,6 +48,29 @@ const cormorant = Cormorant_Garamond({
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getT();
   return {
+    /*
+     * v0.4.0 / S1 (S-D11). **EVERY CANONICAL, EVERY `og:image` AND EVERY
+     * `hreflang` IN THE APP RESOLVES AGAINST THIS**, so a relative
+     * `alternates.canonical` in a page's `generateMetadata` becomes an absolute
+     * URL at the right host — which is what makes S-D15's one helper possible at
+     * all.
+     *
+     * WITHOUT IT, NEXT WARNS AND GUESSES. The guess is `VERCEL_URL` (the
+     * immutable per-deployment host) or `http://localhost:3000`, and a canonical
+     * at either de-indexes the real page. Nothing reports it.
+     *
+     * `new URL()` and not a string: that is the type Next wants, and
+     * `siteOrigin()` is total by construction precisely so this line cannot
+     * throw — a throw here is a 500 on every page in the app. `origin.test.ts`
+     * asserts it.
+     *
+     * THIS ALSO REACHES `/s/`, which the v0.4.0 route table calls unchanged, and
+     * the change there is strictly an improvement rather than an exception: its
+     * `opengraph-image` stops resolving against Next's guess and starts
+     * resolving against the real host. VD18 is untouched — the image still draws
+     * only `MAJOR ARCANA` and carries neither the question nor the prose.
+     */
+    metadataBase: new URL(siteOrigin()),
     title: t('app.title'),
     description: t('meta.description'),
     /*

@@ -232,6 +232,13 @@ export function TermsEn({ effective }: { effective: string }) {
           personalise the Service &mdash; and for nothing else.
         </P>
         <P>Readings are for your own personal, non-commercial use.</P>
+        {/* S5's licence. See the Indonesian document for the full reasoning: appended
+            inside clause 9 with no renumbering, and worded to match
+            `wallpaper.licence` rather than to paraphrase it. */}
+        <P>
+          You may download the card artwork and use it as your own wallpaper. Not for resale, not on
+          merchandise, and not for commercial use.
+        </P>
       </Clause>
 
       <Clause id="10" n="10." title="No warranty">

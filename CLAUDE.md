@@ -162,6 +162,15 @@ LOCALE_SWITCHER=1           # W6. Render the language toggle. V4 MOVED IT (v0.3.
                             # client component. RENDERING ONLY -- English stays
                             # reachable by Accept-Language and cookie with it off.
                             # ONLY '0' disables, same rule as below.
+                            # v0.4.0: THE SCOPE GREW AND THE VARIABLE DID NOT. It still
+                            # decides only whether the CONTROL renders -- a third place
+                            # now, `ContentLocaleLink` in the public footer. On a public
+                            # content route English lives at `/en/...` regardless, and
+                            # the `hreflang` set NAMES that URL to a crawler whatever
+                            # the UI offers, so `LOCALE_SWITCHER=0` no longer hides
+                            # English from anybody except a person looking for a button.
+                            # That is the intended reading of "RENDERING ONLY", now
+                            # load-bearing.
 
 ANALYTICS_ENABLED=1         # ONLY '0' disables writes, so a typo collects data rather
                             # than silently collecting none.
@@ -171,7 +180,14 @@ ANALYTICS_RETRY_BUDGET_MS=5000
 
 UPSTASH_REDIS_REST_URL=       # V9. Both or neither. WITHOUT THEM THE LIMITER SILENTLY
 UPSTASH_REDIS_REST_TOKEN=     # REVERTS to per-instance memory -- fine locally, not
-                              # fine in prod. No Singapore region; use Tokyo.
+                              # fine in prod. **UPSTASH HAS A SINGAPORE REGION AND THIS
+                              # LINE SAID IT DOES NOT** -- it read "No Singapore region;
+                              # use Tokyo", "verified 2026-07-27", and it was WRONG.
+                              # Production's database is `ap-southeast-1` Singapore,
+                              # Global tier (read from the Upstash console 2026-07-29).
+                              # Use Singapore: it is the SAME region as the functions
+                              # (`sin1`) and as Neon, so the hop is intra-region. Four
+                              # other places repeated the false claim; all corrected.
 RATELIMIT_BACKEND=            # `memory` forces local. The 2am kill switch. ONLY that
                               # exact string does anything -- the OPPOSITE defaulting
                               # rule to ANALYTICS_ENABLED, on purpose: a typo must not
@@ -182,9 +198,18 @@ RATELIMIT_EVENTS_BACKEND=     # `redis` moves /api/events off memory.
 RATELIMIT_SESSION_BACKEND=    # `redis` moves the SESSION-UPDATE budget onto Upstash.
                               # LEAVE IT UNSET: memory for LATENCY, not cost --
                               # `refreshSession()` spends one hit() and POST /api/locale
-                              # pays it on the request path of a language switch, and
-                              # with no Upstash Singapore region that is a sin1->Tokyo
-                              # hop between a DB write and a DB read. Its OWN variable,
+                              # pays it on the request path of a language switch.
+                              # **THE SECOND HALF OF THIS ARGUMENT HAS EXPIRED AND IS
+                              # KEPT INVERTED:** it said "with no Upstash Singapore
+                              # region that is a sin1->Tokyo hop between a DB write and
+                              # a DB read". Upstash IS in Singapore, same region as the
+                              # functions, so the hop is intra-region and small. The
+                              # DECISION still stands on the first half -- a per-user
+                              # budget lands mostly on one warm instance, so memory
+                              # costs nothing real -- but it is now a smaller win than
+                              # this comment claimed, and anybody who wants the session
+                              # budget fleet-wide should MEASURE rather than read this.
+                              # Its OWN variable,
                               # not the one above: `memoryOnly` used to test
                               # EVENTS_BACKEND first and return early, so one variable
                               # governed every memory-only budget.
@@ -330,6 +355,31 @@ Recorded rather than deleted, because each looks like a bug someone will helpful
   migration (drizzle takes no advisory lock; not worth a lock table for one developer),
   and a *destructive* migration still deploys ahead of the code that tolerates it.
 
+- **FRAMEWORK BEHAVIOUR IS MEASURED HERE, NEVER RECALLED. TWO AGENTS PRODUCED TWO
+  CONFIDENT, MUTUALLY EXCLUSIVE, BOTH-WRONG ANSWERS ABOUT THE SAME FOUR LINES.**
+  S1 asked to carve JSON-LD out of the "no `dangerouslySetInnerHTML`" rule, claiming
+  React HTML-escapes a `<script>` text child so every `"` becomes `&quot;`; S6
+  independently claimed the opposite mechanism, that `&` is doubled. **Neither failure
+  mode exists.** On react-dom 19.2.8 a plain text child of `<script>` round-trips
+  through `JSON.parse` intact — `&` stays literal, `"` stays `\"`, and React applies
+  *script-aware* escaping to `</script` instead. Nobody ran the measurement before
+  arguing. `JsonLd.tsx` therefore uses a plain child and `serializeJsonLd` pre-escapes
+  `& < >` anyway — **not for correctness, but because that behaviour is an unspecified
+  implementation detail and a release must not depend on one.** The test renders the
+  component and parses the result, so it fails on both predicted failures *and* on a
+  future React that starts escaping. Same rule `docs/provider-comparison.md` learned
+  the hard way about its own numbers.
+
+- **THE SEARCH CONSOLE HTML-FILE METHOD IS 302'd BY THE MIDDLEWARE MATCHER, AND THE
+  ERROR NAMES THE WRONG CAUSE.** It wants `public/google<token>.html` served at
+  `/google<token>.html`; the matcher
+  `'/((?!_next/|cards/|dukuns/|favicon|icon|apple-icon|manifest|sitemap|robots).*)'`
+  **matches that path**, `isPublic()` does not name it, and Googlebot carries no
+  cookie — so it is sent to `/login`. Verification fails saying the file was not
+  found, and the file is right there in `public/`. Use a **DNS TXT Domain property**
+  instead (`docs/DEPLOY-VERCEL.md` §7b): it also covers the apex, which
+  308-redirects to `www` and which a URL-prefix property would leave unverified.
+
 - **`middleware.ts` must be at `src/middleware.ts`**, not the repo root, because the
   app lives under `src/`. At the root it is silently never executed and every route is
   open.
@@ -382,12 +432,13 @@ Recorded rather than deleted, because each looks like a bug someone will helpful
   reaches a model. It was **the only database-writing route declaring neither `runtime`
   nor `maxDuration`**, and Vercel's Hobby default is ten seconds.
 
-  Functions are Hobby in `sin1`, Neon free-plan in `ap-southeast-1`, Upstash in Tokyo. A
+  Functions are Hobby in `sin1`, Neon free-plan in `ap-southeast-1`, **Upstash in
+  `ap-southeast-1` Singapore too — this line said Tokyo and was wrong** (console, 2026-07-29). A
   free-plan Neon compute **suspends when idle**, so the first switch after a quiet spell
   is: a cold lambda whose graph includes @auth/core, postgres.js and — via `auth.ts` →
   `users.ts` — bcrypt; then `setUserLocale`, possibly the request that WAKES the
-  compute, on a `max: 1` connection; then `refreshSession()`, one `sin1`→Tokyo hop and
-  THEN a second query to that compute. Truncated at ten seconds the write is lost, no
+  compute, on a `max: 1` connection; then `refreshSession()`, one intra-region Upstash
+  hop (this used to say `sin1`→Tokyo) and THEN a second query to that compute. Truncated at ten seconds the write is lost, no
   response arrives, and the querent is looking at a dead control.
 
   **The lesson generalises: a user action that WRITES is one of the few things likely to
@@ -619,6 +670,9 @@ were removed once this one superseded them; both are still in history at `d7fdd8
 assets/major_arcanas/   SOURCE art. Never edit in place, never delete.
 public/cards/           GENERATED, committed. Never hand-edit.
 public/cards/thumb/     GENERATED 240x360, for the fan and slots.
+public/wallpapers/      GENERATED, COMMITTED. 22 x { 1024x1536 card, 1440x3120 phone },
+                        JPEG q90 4:4:4, 23.77MB. Its own cache header -- NOT /cards/*'s
+                        year of `immutable`. Never hand-edit. `npm run wallpapers`.
 public/dukuns/          reader portraits, 2:1 landscape scenes
 public/icon.png         GENERATED home-screen icon
 ```
@@ -627,6 +681,7 @@ Regenerate with the idempotent scripts, never by hand:
 
 ```sh
 npm run assets    # source PNGs -> 800x1200 + 240x360 WebP
+npm run wallpapers # source PNGs -> public/wallpapers/, 44 JPEGs, 23.77MB
 npm run cards     # rebuild src/data/cards.json
 python3 tools/make_icons.py
 ```
@@ -798,21 +853,51 @@ reader-voiced ceiling rather than a hand-set number on one service — spread3 5
 ## Localization (W6)
 
 Two locales, `id` and `en`, **interface and readings**. `id` is the default and the
-source language. Locale is **never a URL segment** (D6): nine routes stay nine, no link
-is locale-aware, and anything reaching for `router.push('/en/...')` is wrong.
+source language.
+
+**Locale is never a URL segment FOR THE NINE APP ROUTES (D6) — and IS one for public
+content (v0.4.0 S-D1).** This sentence used to end at "never a URL segment", full stop,
+and the exception is an **amendment rather than an oversight**: two languages cannot
+occupy one address in a search index. `/gallery` is Indonesian, `/en/gallery` is
+English, and inside the app `router.push('/en/...')` is still wrong and no `<Link>` is
+locale-aware. `/en/history` is not a route — it reaches `decide()` spelled exactly as
+the request spelled it and matches nothing. **A stripping bug that made the gated app
+reachable under `/en/` is the worst outcome available in this release and would look
+like a working feature.**
+
+**v0.4.0 BREACHES D6 FOR FIVE PUBLIC CONTENT ROUTES AND NOTHING ELSE (S-D1).** The nine
+app routes are untouched and `router.push('/en/...')` is still wrong in every one of
+them. The prefix is a middleware **rewrite**, not a route segment, so there is still one
+route tree. `src/lib/i18n/prefix.ts` is the pure leaf that owns the prefix maths *and*
+the content route table — it lives there rather than in `resolve.ts` because `gate.ts`
+imports it and `resolve.ts` carries a `next/server` type (R11).
+
+**On a content route the URL is the only input, and the switcher is a LINK.**
+`contentRewrite()` runs in middleware before the D6 chain and before the gate (contract
+G1), pins the locale into `x-jmt-locale`, and writes **no cookie** (S-D10). So a cookie,
+an `Accept-Language` and `?lang=` are all inert there — measured, in every `NODE_ENV` —
+and `ContentLocaleLink` is a server-rendered `<a href>` to the sibling URL rather than a
+`POST /api/locale`. `LocaleSwitch` is for the app and must not grow a `links` variant
+(R12). The evidence, the traps and the wire measurements are in
+`docs/workstream-notes.md`'s `## Locale-addressable public content (S2), v0.4.0`.
 
 ```
 src/lib/i18n/
   locale.ts        LEAF. Locale (re-exported from @/data/types), LOCALES, isLocale,
                    Localized<T>, intlTag, negotiate. No React, no next/*, no catalog --
                    the edge middleware and db/schema.ts both import it.
-  locales/id.ts    THE SOURCE CATALOG. Defines the key set. 118 keys.
+  locales/id.ts    THE SOURCE CATALOG. Defines the key set. 268 keys, 15.8KB as
+                   shipped JSON. (It said 118 for two releases. MEASURED.)
   locales/en.ts    typed FROM id.ts, so a missing key is a red typecheck.
   format.ts        makeT, the {param} derivation, formatDate, formatLocalDate.
                    NO runtime catalog import.
   catalog.ts       the ONLY module that loads both catalogs. catalogFor, tFor.
   resolve.ts       EDGE-SAFE. resolveForMiddleware, cookie/header names,
                    localeSwitcherEnabled. NO `server-only`.
+  prefix.ts        LEAF, EDGE-SAFE, v0.4.0 S2. stripLocalePrefix, localePath,
+                   isContentPath, isPublicContentPath, contentRewrite, and the
+                   content route table. NO `server-only`, NO `next/*` (gate.ts
+                   imports it), NO `process.env`.
   t.ts             SERVER-ONLY. getLocale (React cache()d), getT, getLocaleBundle.
   LocaleProvider.tsx  'use client'. useT, useLocale.
 ```
@@ -985,7 +1070,15 @@ the Shadow Arcana replacing the tally (V3)**, **the account shell — the circle
 sheet, and the first sign-out control this app has ever had (V4)**, **the reader swipe deck
 (V5)**, **history — `/history`, `/history/[id]`, and `ReadingView` (V6)**, **sharing —
 `/s/<slug>`, its OG preview, and the share sheet (V7)**, **`/account` — the deletion button, the
-editable facts, per-answer clearing, and the Inner Heavenly Lotus persona (V8)**, plus the reader picker, service
+editable facts, per-answer clearing, and the Inner Heavenly Lotus persona (V8)**,
+**the public surface and the technical SEO foundation -- a signed-out homepage, the
+gate change, a sitemap, JSON-LD, canonicals and cache headers (v0.4.0 S1)**,
+**locale-addressable public content -- `/en/`, the rewrite and the hreflang set (S2)**,
+**the twenty-two card lore pages, forty-four authored documents (S4)**,
+**the gallery -- 22 artworks, 2x11, measured at four phone widths (S3)**,
+**the wallpaper downloads -- 44 committed derivatives and the control in the zoom
+sheet (S5)**, **the blog -- `/blog`, `/blog/[slug]` and two articles authored twice
+rather than translated once (S6)**, plus the reader picker, service
 picker, the draw (fan, pick, flip, reduced-motion grid), the card detail overlay, the
 streaming reading endpoint, the prompt layer, and the web app manifest.
 
@@ -1004,8 +1097,10 @@ on the path of a byte the user is waiting for.** Detail, and the database-down c
 
 ```
 src/lib/analytics/
-  events.ts        the closed taxonomy: 60 names, a prop shape each, two compile-time
+  events.ts        the closed taxonomy: 66 names, a prop shape each, two compile-time
                    guards. NO IMPORTS -- it is the data dictionary, read by people.
+                   ONE OWNER PER RELEASE: S1 for v0.4.0 (S-D13). Every other
+                   workstream declares its events in its plan and S1 folds them in.
   track.ts         SERVER. AsyncLocalStorage store, ONE after() per request, defer().
   track.client.ts  'use client'. Batched: 2s debounce, flush at 20, queue capped at
                    200, fetch(keepalive) normally and sendBeacon on the hide path.
@@ -1465,6 +1560,509 @@ in the language it was generated in rather than the one the sharer was reading. 
 `getTranslation` call and the same `renderedLocale` treatment — do it in the same change that
 mounts the block, not after somebody notices.
 
+## The public surface (v0.4.0 / S1)
+
+**Before this, a search engine could see three pages of this application and one of them
+was a login form.** S1 is the keystone of v0.4.0: the gate change, a signed-out homepage,
+one leaf that owns the site's origin, a sitemap, JSON-LD, cache headers and the shared
+public footer. The evidence, the measurements and the crawl baseline are in
+`docs/workstream-notes.md`.
+
+```
+src/lib/seo/origin.ts     THE ORIGIN LEAF. Env only, ZERO imports. siteOrigin,
+                          absoluteUrl. `shareOrigin()` DELEGATES to it.
+src/lib/seo/jsonld.ts     PURE builders. No imports, origin as an argument.
+src/lib/i18n/prefix.ts    S2's leaf, landed early -- `gate.ts` imports it (R11/R14).
+src/components/JsonLd.tsx the ONE ld+json mount in the whole app.
+src/components/PublicShell.tsx   the frame + footer. Takes `path` (R17).
+src/components/PublicShare.tsx   S-D8's control. Takes a finished URL as a PROP.
+src/app/Landing.tsx       the signed-out homepage. No session, no DB, no model.
+src/app/page.tsx          the dual render. `currentUser()` and nothing else.
+src/app/sitemap.ts        a LEAF. Alternates are PER PATH, not per release.
+src/content/copy.test.ts  the copy lint over authored content, negative-controlled.
+tools/seo/crawl.sh        THE ACCEPTANCE TEST. No cookie jar.
+tools/seo/fit.sh          loop 4, committed.
+```
+
+### The six things a future session will otherwise undo
+
+1. **`'/'` IS NOT IN `isPublic()` AND MUST NEVER BE (S-D5).** That function
+   short-circuits `decide()` **above** the onboarding check, so `/` in the allowlist
+   stops sending a signed-in, half-onboarded querent to `/onboarding` and lands them on
+   a picker that assumes a completed `profiles` row. The clause is `!signedIn &&
+   pathname === '/'` in `decide()`, below the public check. `isPublicContentPath`
+   differs from `isContentPath` by exactly that one path, and both test files say so.
+2. **`isPublic()`'s CONTENT CLAUSE STRIPS `/en/`; THE OTHER CLAUSES MUST NOT
+   (contract G2).** Middleware strips first (G1), so in production the gate never sees
+   a prefix -- this is defence in depth. **Unconditional stripping would make
+   `/en/api/events` public.** `/en/history` is `false` and there is a test named for
+   the worst outcome available in this release.
+3. **`/arcana` IS PUBLIC THOUGH IT HAS NO PAGE (R6), so its 404 is a real 404.** It is
+   the parent of 22 indexed URLs and Google reads a login redirect on a content path as
+   a soft 404. The negative controls are `/arcanax` and `/arcana-foo`, never `/arcana`.
+4. **`/` IS DELIBERATELY UNCACHEABLE AND HAS NO `next.config.ts` ENTRY.** Three
+   independent reasons that would all have to be solved together: it dual-renders by
+   session, middleware writes `jmt_locale` on it (a `Set-Cookie` makes a response
+   edge-uncacheable whatever `Cache-Control` says), and its language follows D6's chain
+   because the signed-in arm is an app route. Adding it to the cache list would look
+   symmetrical; `headers.test.ts` asserts the absence.
+5. **`inLanguage` IS THE BARE TAG -- `id` / `en`, NEVER `intlTag()` (R15).**
+   `intlTag('en')` is `en-GB`, which V6 chose for date formats and which is a factual
+   claim we cannot make about our prose. `id-ID` on the `WebSite` node beside `id` on
+   S3's 22 `ImageObject`s in one `@graph` is what the rule prevents.
+6. **`sitemap.ts` ALTERNATES ARE PER PATH, NOT PER RELEASE (R2).** `/` is localized and
+   emits a reciprocal `id`/`en`/`x-default` set; `/terms` and `/privacy` have ONE address
+   serving both languages and emit **none**. A `hreflang` pair naming a URL that 404s is
+   non-reciprocal and **Google discards the whole set silently.** S3/S4/S6 add a path
+   only in the commit that adds its page, and only with the English document written.
+7. **THE ONLY WAY TO EMIT A CANONICAL OR AN `hreflang` IS `contentAlternates()`
+   (S-D15), AND IT TAKES THE LOCALES THAT ACTUALLY EXIST (R2).** Not `LOCALES`, which
+   is the answer that is wrong exactly when it matters — a card whose English lore is
+   unwritten emits `id` + `x-default` and no `en` key. It throws on a prefixed path, on
+   a non-content path, and on a canonical for a locale with no document, because a wrong
+   canonical de-indexes the correct page and nothing reports it. `sitemapLanguages()` is
+   the same function, so the `<xhtml:link>` set and the head's `<link rel="alternate">`
+   set cannot disagree. **`/en` shipped for one commit with `/`'s canonical** — found by
+   `curl`, not by a test, and now fenced in `page.contract.test.ts`.
+8. **`wallpapers/` IS EXCLUDED IN THE MATCHER AND MUST NEVER BE "FIXED" IN
+   `isPublic()` (R7).** Both give a 200; only the matcher stops middleware running, and
+   middleware running means a `Set-Cookie` on a ~550KB static response, which makes it
+   edge-uncacheable. `cards/` and `dukuns/` are there for the same reason. §6.2 said the
+   matcher would not need to change; S5 raised the flag it invited and was right.
+
+**`/terms` and `/privacy` ARE INDEXED NOW (R4).** Their `noindex` said "an indexed legal
+page for an app behind auth is noise"; the app stopped being behind auth in this release.
+Three things landed together and doing one half is worse than none: the `robots` field
+came off, both joined `SITEMAP_PATHS`, and both hardcoded Indonesian `<title>`s became
+`generateMetadata` reading the catalog -- the same `<title>`-from-the-wrong-input bug
+`/s/` was fixed for on 2026-07-28.
+
+**`NEXT_PUBLIC_SITE_ORIGIN` IS THE FIRST AND ONLY `NEXT_PUBLIC_` VARIABLE THIS PROJECT
+DECLARES**, and `scripts/audit-secrets.ts`'s "JMTarot has no NEXT_PUBLIC_ variables" rule
+is amended rather than suppressed: the allowlist pairs the name with its ONE legitimate
+reader, so any other module reading it still fails the build, and `lib/seo/origin.ts`
+joined the transitive client-boundary walk. **The prefix is misleading and kept anyway**
+(R10) -- the chain's other three rungs carry no prefix, so `siteOrigin()` inlines to
+`http://localhost:3001` in a browser bundle. A client component takes a finished URL as a
+prop.
+
+**`npm start` LISTENS ON 3000, WHICH IS PERMANENTLY HELD** by another project's Grafana
+container. `npm run dev` passes the port and `npm start` does not, so a local production
+check is `npx next start -p 3001`.
+
+**S2 IS LANDED NOW, AND THIS PARAGRAPH USED TO LIST IT AS THE GAP.** `/en` is 200 and
+renders the English landing, no content response writes `jmt_locale`, and `PublicShell`
+mounts `ContentLocaleLink` in what was a marked hole. Measured on the wire, 2026-07-29 —
+see `## Locale-addressable public content (S2), v0.4.0` in `docs/workstream-notes.md`.
+
+**A PUBLIC CONTENT RESPONSE NOW CARRIES ZERO COOKIES, AND THE LAST TWO WERE NOT OURS.**
+`authjs.csrf-token` and `authjs.callback-url` are appended by the `auth()` wrapper
+**after** the middleware handler returns (`next-auth/lib/index.js` builds
+`new Response(response?.body, response)` and then appends), so no line inside that
+handler could prevent them — which is why S-D10 read as satisfied while being false on
+every public page, `/s/` included. **The half that looked fine was the cache:** a
+`Set-Cookie` makes a response uncacheable at the edge whatever `Cache-Control` says, so
+`next.config.ts`'s `s-maxage` was measured, correct and inert.
+
+The fix is an **outer** `export default async function middleware()` around the
+`auth()`-wrapped gate: the inner handler marks a content response with an internal
+header, the outer deletes every `Set-Cookie` and then the marker. Three rules on it:
+
+- **`content.kind !== 'passthrough'` is the whole fence.** A signed-in visitor on `/`
+  is `passthrough` (S-D5), so stripping there would drop the `jmt_locale` sync D6 needs
+  *and* the sliding session cookie on the busiest screen in the app. `/login` and
+  `/api/auth/*` are `passthrough` too, which is what keeps the csrf token available to
+  the sign-in POST — a stranger clicking from `/blog` mints both at `/login`, one
+  request later.
+- **The marker must never be observable on the wire.** It is deleted in the same block.
+- **It costs the sliding refresh on content pages, deliberately.** Reading `/blog` all
+  day does not extend a 24-hour idle timeout; the 30-day absolute cap is untouched.
+  Browsing public content is not app activity, and the alternative is a `Set-Cookie` on
+  every cacheable page in the product to keep one timer alive.
+
+**Still open:** the `s-maxage` is measured locally but **not** against a Vercel CDN
+(R21) — and it is only now that the measurement can mean anything, because until this
+landed no content response was cacheable at all.
+
+
+## Card lore pages (v0.4.0 / S4)
+
+**Forty-four documents, twenty-two addresses, two languages.** `/arcana/<slug>` is
+the largest indexable surface this release adds and the one a competitor cannot
+copy, because the art and the voice are ours. The traps, the near-misses and the
+measurements are in `docs/workstream-notes.md`.
+
+```
+src/data/deck.ts                  +cardUrlSlug, +cardByUrlSlug, +CARD_URL_SLUGS.
+                                  NO NEW IMPORT -- `Card` and `CARDS` were in scope.
+src/lib/arcana/correspondence.ts  PURE, client-importable. The glyph table and the
+                                  bridge to @/lib/numerology. NOT in @/data (cycle)
+                                  and NOT in @/content (client-fenced).
+src/content/types.ts              PURE, client-importable. Block + LoreDoc. S6
+                                  appends BlogDoc below the marker.
+src/content/arcana/index.ts       the registry. NO PROSE. Card order is asserted.
+src/content/arcana/<slug>.<loc>.ts  44 documents. Server-imported only.
+src/content/arcana/lore.test.ts   THE COPY LINT. The release's only quality gate.
+src/components/Prose.tsx          the ONE block renderer. Server, exhaustive switch.
+src/app/arcana/page.tsx           notFound(). Four lines, an honest 404 (R6).
+src/app/arcana/[slug]/            page, ArcanaFacts, jsonld, page.contract.test.
+```
+
+### The five things a future session will otherwise undo
+
+1. **PROSE IS DATA BECAUSE THE LINT NEEDS STRINGS.** `terms.id.tsx` is the
+   precedent for long-form bilingual prose and it settles a DIFFERENT question
+   (MDX is not added). In a `.tsx` document a sentence is split across text nodes
+   by `{' '}`, punctuation arrives as `&ldquo;`, and `\btempoh\b` can straddle a
+   JSX boundary and never match. **Converting these files to TSX for authoring
+   comfort switches the release's only quality gate off, silently.** Typographic
+   characters go in the source literally; a test forbids a tag or an entity in any
+   `text` field.
+2. **`doc.yesno` IS ASSERTED AGAINST `effectiveYesNo()` AND IS NEVER WHAT IS
+   RENDERED.** The page takes the verdict from the engine plus
+   `reading.verdict.*`, so the words on screen are the words the app prints after
+   a real yes/no reading, by construction. The field exists because the flip is
+   counter-intuitive — **The Moon and The Hermit both answer `no` upright and
+   `yes` reversed** — and a writer following the artwork gets it backwards.
+   `page.contract.test.ts` fences both halves.
+3. **`EN_TICS` BANS THE EMPRESS'S OWN ENGLISH KEYWORD, AND THE LINT'S SCOPE IS
+   `src/content/**` ONLY.** `abundance` is on the tic list and is card 3's keyword
+   in generated `cards.json`; the chip on the page is unaffected and the lore has
+   to say what the thing IS. Same shape for `sacred` (The Hierophant),
+   `heal`/`healing` (Temperance, The Star) and `shadow work` (The Devil).
+   **Anyone who widens the lint to the rendered page fails on data S4 does not
+   own, concludes the lint is broken, and switches it off.**
+4. **`/arcana` HAS A PAGE THAT CALLS `notFound()`, AND THE FILE EXISTING IS THE
+   RULING** (R6). S4's own plan asserted its ABSENCE — Next 404s an absent route
+   anyway. The reconciliation answered S1's objection ("widening the allowlist for
+   a path with no page is how `isPublic` stops being readable") by giving the path
+   a page, so deleting the file reads as the ruling being undone. The negative
+   controls are `/arcanax` and `/arcana-foo`, never `/arcana`.
+5. **THE SITEMAP TAKES `LORE_SLUGS`, NEVER `CARD_URL_SLUGS`.** The deck has 22
+   cards whatever is written; the registry has the ones with a document. The two
+   lists are identical now, which is exactly when somebody simplifies it and
+   nothing fails until the next partial release. `contentAlternates` likewise
+   takes `localesFor(slug)` and not `LOCALES` (R2).
+
+**`Article`, NOT `CreativeWork`** (roadmap §13's open question, S4's call).
+`CreativeWork` is `Article`'s parent, and Google's documented eligibility is
+defined over `Article` and its subtypes. The argument for `CreativeWork` is
+correct and points at `about` rather than at the page type — a tarot card IS an
+artefact — so the graph nests both, and the painting is the `image`. **The
+breadcrumb's middle rung is `/gallery`, never `/arcana`**, because naming a
+deliberate 404 in markup is a machine-readable claim that a page exists.
+
+**Justice has no root card and it is a tautology, not a gap.** `reduce(11)` is 11,
+so `arcanaFor(11)` is Justice; `rootCardFor` suppresses it in the MODULE so every
+future consumer inherits the suppression. Anyone who "restores" the block renders
+*"Justice reduces to Justice"*; anyone who instead changes `reduce` silently
+rewrites every stored `frequency_verdicts` and `personas` row.
+
+**`generateStaticParams` DOES NOT MAKE THIS PAGE STATIC**, and the build output
+showing `ƒ` is the symptom of `## Localization` rule 5 working. What it buys with
+`dynamicParams = false` is a 404 at the routing layer for any slug outside the
+twenty-two. The TTFB story is entirely S1's cache headers.
+
+**Judgement's element is `water` in `cards.json` while the Golden Dawn attributes
+the trump to Fire.** Both are true, the page renders ours, and that disagreement is
+the Indonesian document's own anchor. **Do not "fix" `cards.json`** — it is
+generated, S4 does not own the generator, and the reading prompt has consumed
+`element` since the first release. `correspondence.test.ts` asserts the element
+join for the **twelve sign cards only**, all of which agree exactly; the nine
+planetary ones are editorial and deliberately unasserted.
+
+## The Gallery (v0.4.0 / S3)
+
+**Twenty-two artworks as a 2x11 grid, and twenty-two crawlable links into S4's lore
+pages.** The grid is the shape roadmap §8.1 ruled; the links are half the reason the
+page exists. The measurements, the two cross-page defects and the negative controls
+are in `docs/workstream-notes.md`.
+
+```
+src/app/gallery/page.tsx          SERVER. No session, no DB, no model, no cookie.
+src/app/gallery/images.ts         PURE. The 22 ImageObject args -- OUT of the page
+                                  so the cross-page @id join is testable.
+src/app/gallery/alt.ts            PURE. 22 localised alt sentences from ONE key.
+src/app/gallery/GalleryGrid.tsx   'use client'. One open card, one opener ref,
+                                  every track() call.
+src/app/gallery/GalleryTile.tsx   'use client'. PRESENTATIONAL. Always upright.
+src/app/gallery/imageJoin.test.ts THE CROSS-PAGE ASSERTION. Reads S4's module.
+src/components/PublicPageViewed.tsx  public.page_viewed with a REAL referrer_kind.
+src/lib/seo/jsonld.ts             GAINED imageGallery + eight optional ImageObject
+                                  fields. S4's four-field call is byte-identical.
+src/data/deck.ts                  GAINED cardImagePath / cardThumbPath.
+tools/seo/galleryfit.sh + .js     Loop 4, committed. The grid, measured.
+```
+
+### The six things a future session will otherwise undo
+
+1. **`/gallery` AND `/arcana/<slug>` SHARE AN `@id` FOR EACH ARTWORK, SO EVERY FIELD
+   THEY BOTH CARRY MUST AGREE.** A shared `@id` makes a consumer MERGE the two
+   nodes and pick one value for any duplicated field, silently. That broke twice
+   before it shipped -- `url` (the lore page vs the image file) and `caption` (the
+   keyword sentence vs the painting's description) -- and **both were found by
+   reading the JSON off the wire with a green suite.** The resolution is by field:
+   the lore page keeps `caption`, the gallery carries `description`, and `url` is
+   the image FILE on both. `imageJoin.test.ts` builds both graphs and asserts it;
+   it imports S4's `arcanaGraph` **on purpose**, because its subject IS the
+   agreement between two owners.
+2. **NO `?v=` IN STRUCTURED DATA.** `cardImage`/`cardThumb` append
+   `?v=${ART_VERSION}` for the browser cache; `cardImagePath`/`cardThumbPath` are
+   the unversioned twins and are what an `ImageObject` may name. Google Images
+   treats a changed URL as a NEW image with no history, so a version there orphans
+   22 indexed images on every art regeneration and reports nothing.
+3. **EVERY CARD IS UPRIGHT AND THE ZOOM SHEET LABELS BOTH GLOSSES.** `reversed` in
+   this app means the card came out of the deck that way, and no card here came out
+   of a deck (`/account` passes an orientation the card EARNED). `CardDetail`'s
+   `bothMeanings` is what makes an upright-only catalogue honest rather than half a
+   card -- and **the LABELS are what make it legal**: an unlabelled pair under
+   upright art is the contradiction `cardMeaning()` exists to prevent.
+4. **`CardDetail`'s `returnFocusTo` IS THE SAFARI FIX AND IT IS PROVEN, NOT
+   ASSUMED.** A programmatic `.click()` in WSL Chrome does NOT focus the button, so
+   loop 5 reproduced Safari's behaviour: `document.activeElement` was `<body>`
+   before AND after the tap, and focus still returned to the tile. The old
+   `activeElement` fallback would have dropped a keyboard user from row nine to the
+   top of a 3500px page. **CLAUDE.md said loop 5 could not test this.** It can.
+5. **THE 22 LORE HREFS ARE BUILT ON THE SERVER AND THE TILE IS `prefetch={false}`.**
+   A client component cannot compute a locale-prefixed path (no locale prop is
+   drilled anywhere), and 22 default-prefetching `<Link>`s in one grid would be 22
+   RSC payloads for `ƒ` pages nobody asked for, on the page whose Core Web Vitals a
+   crawler measures. The `<a href>` in the HTML is unaffected, which is the point.
+6. **THE 240px THUMB IS UPSCALED 1.15x-1.44x ON EVERY PHONE AND THAT IS INTRINSIC
+   TO 2x11.** The grid draws at 138-173 CSS px; a 2-column phone grid cannot be
+   served losslessly by a 240px source at ANY column width. Accepted -- the
+   alternatives are 3.7MB of full art or a new variant. `tools/normalize_cards.py`'s
+   `THUMB_W` comment carries the arithmetic.
+
+**`gallery.card.alt` IS THE ONE CATALOG VALUE WHOSE OUTPUT IS INDEXED CONTENT**, and
+`alt.ts` derives 22 distinct sentences per locale from it plus `cards.json` -- 44
+hand-written sentences in the catalog would ship to every visitor of every page
+(S-D6/I9). The word ORDER differs per locale on purpose: `kartu tarot the moon`
+against `the moon tarot card`.
+
+**`arcana.upright` / `arcana.reversed` ARE DELETED.** The two orientation words are
+`card.upright` / `card.reversed`, because THREE surfaces render them -- the draw
+screen's overlay, this zoom sheet and the lore page's section headings. S3's delta 18
+asked S4 for that before either shipped; S4 minted its own pair while `card.reversed`
+had existed since W6, and the gallery would have been the third spelling.
+
+**`referrer_kind` WAS THE LITERAL `'direct'` ON TWO PUBLIC SURFACES.** It is the prop
+separating an organic arrival from a reader already on the site -- §1's whole
+question -- and a constant reads as data. `TrackView` could not have got it right:
+its props come from a server component, where `document.referrer` does not exist.
+`PublicPageViewed` is the fix and all three surfaces mount it.
+
+**S5 LANDED HOURS AFTER THIS SECTION WAS WRITTEN AND CLOSED TWO OF ITS THREE OPEN
+ITEMS.** The paragraph here said *"no wallpaper download is mounted"*; S5 mounted
+`WallpaperDownload` in `GalleryGrid`'s zoom sheet at the placement S3 had recorded
+for it, added `.downloadSeam`, wrote clause 9's licence grant into
+`terms.{id,en}.tsx`, and `images.ts` therefore now claims `licenseUrl: /terms#9`
+honestly. **Do not read this section as if the download were still absent.**
+
+**Still open:** `contentUrl` is STILL the 800x1200 WebP rather than the 1024x1536
+wallpaper, and S5 left it deliberately with the argument in `images.ts` -- the node
+describes ONE binary, so moving `contentUrl` without `url`, `width`, `height` and
+`encodingFormat` leaves a node whose declared dimensions belong to a different file,
+and moving all four means editing S4's `jsonld.ts` in the same commit and changing
+the image identity of 22 pages. Worth doing as one change, by whoever owns both.
+And the `s-maxage` on this route is measured locally, never against a Vercel CDN
+(R21).
+
+## Wallpaper downloads (v0.4.0 / S5)
+
+**Twenty-two pieces of commissioned art, downloadable, free, with no account** — the
+one thing in this release a competitor cannot copy, handed to the reader. Two
+derivatives per card, committed; a control in the gallery's zoom sheet; a licence in
+clause 9. The measurements, the negative controls and the harness findings are in
+`docs/workstream-notes.md`.
+
+```
+tools/make_wallpapers.py    THE PIPELINE. Idempotent, byte-identical on re-run.
+tools/check_wallpapers.py   THE ORACLE. Holds its OWN table, dimensions, thresholds.
+public/wallpapers/          44 JPEGs, 23.77MB, committed. `npm run wallpapers`.
+src/lib/wallpaper.ts        PURE, CLIENT-IMPORTABLE LEAF. No process.env, no version.
+src/components/WallpaperDownload.tsx  'use client'. Two anchors, one event.
+src/components/wallpaperDownload.ts   PURE. chooseMethod, the one policy decision.
+tools/seo/wallpaperfit.{sh,js}        Loop 4, committed beside galleryfit.
+```
+
+### The six things a future session will otherwise undo
+
+1. **NOTHING IS UPSCALED AND NOTHING IS CROPPED, AND THE TRAP IS INSIDE THE FUNCTION
+   THAT LOOKS RIGHT TO REUSE** (S-D9, W-D7). `normalize_cards.py`'s `fit_to_ratio`
+   trims a dark mat and then scales the result to the target, so if `trim_dark_mat`
+   ever removes 4px it LANCZOSes 1020 → 1024 — the exact upscale S-D9 forbids, from
+   the shipping pipeline's own helper. `make_wallpapers.py` uses
+   `flatten`/`trim_dark_mat` as an **assertion** and then reads the untouched source
+   pixels. A source that fails the assertion is a source to fix.
+2. **`/wallpapers/*` IS DELIBERATELY NOT `immutable`, AND IT SHIPPED WRONG ONCE.**
+   §6.4 gives S5 the declaration and S1 the pen; the entry was first written from
+   `/cards/*`'s reasoning as a year of `immutable`, and `headers.test.ts` asserted it.
+   The traffic shape is the opposite one: the fan pulls 22 thumbs on every cold draw,
+   a wallpaper is fetched **once** by somebody who tapped a button. So
+   `max-age=86400, stale-while-revalidate=604800`, which is also why these filenames
+   carry no `?v=` and `src/lib/wallpaper.ts` has no `ART_VERSION` to forget.
+3. **JPEG, NOT WEBP, AND IT IS NOT AN OVERSIGHT.** WebP q90 is 24% smaller at matched
+   fidelity (measured). The one thing a wallpaper must do is reach the iOS Photos
+   library, because *Set Wallpaper* reads from nowhere else, and iOS's WebP story in
+   that pipeline is version-dependent. 6.6MB of git is not worth a download button
+   that silently does nothing on the platform this app is built for. Same file: 4:4:4
+   rather than 4:2:0, because the deck's signature is a thin gold hairline.
+4. **THE ANCHOR IS THE CONTRACT; `navigator.share` IS AN UPGRADE**, gated on
+   `canShare({files})` **and** `(pointer: coarse)` and never on a user-agent string.
+   On iOS `<a download>` lands the file in Files while *Set Wallpaper* reads Photos;
+   on a desktop, hijacking a download into an OS share sheet is worse than the
+   default. **A cancelled share sheet records NOTHING** — recording it makes every
+   download figure an intent figure.
+5. **NO `content-disposition` ON THAT PATH** (W-D10). It would force a download and
+   make the image impossible to *view*, and viewing is the precondition for iOS's
+   long-press → Add to Photos, the fallback when the share sheet is unavailable.
+   Verified in a real browser: navigating to the URL renders it, `1440×3120`.
+6. **THE ORACLE HOLDS ITS OWN EXPECTATIONS** (W-D6) and asserts the backdrop colour
+   with a **tolerance**: `#0a0812` goes in as (10, 8, 18) and comes out as
+   (10, 8, 19) on every card, because JPEG's DCT quantization moves it. An oracle
+   written with `== (10,8,18)` fails on correct output, and what somebody does then is
+   delete the check. Its flatness check is `check_card_art.py`'s
+   `EDGE_UNIFORM_STDDEV` **in reverse** — there a flat edge strip means the source is
+   not full bleed and fails; here it is the proof the card was padded rather than
+   scaled to fill. Same instrument, opposite verdict; do not "fix" either to agree.
+
+**`wallpaper.downloaded` CARRIES `{ card_id, variant, method, from }`**, and the
+declaration was folded into `events.ts` narrower than S5 wrote it — `method` and
+`from` dropped, `card` renamed `native`. Restored, with the reason in the file:
+`variant` must be spelled like the file on disk, `method` is the only way to see
+whether the iOS upgrade runs in production, and `from` mirrors
+`public.card_zoomed`'s `surface`. S-D13 makes S1 the owner of that file and everyone
+else a declarer; **folding a declaration in means transcribing it.**
+
+**Still open:** loop 6 — a real iPhone — is the only instrument for the three
+questions that matter, and none of them is answerable here: does a downloaded
+`-phone.jpg` reach Photos and does *Set Wallpaper* accept it (a release blocker), does
+the card look right on a lock screen, and is q90 blocking visible in a dark gradient
+on OLED (`QUALITY = 92` in one place, +2.9MB). S4 may mount this control on a lore
+page and has not; `from: 'arcana'` exists for that day.
+
+## The blog (v0.4.0 / S6)
+
+**Two articles, four documents, and the last 404 in the release's route table is
+closed.** `/blog` and `/blog/[slug]` are the only v0.4.0 surface whose subject is
+prose rather than a card, and they are where a stranger who has never touched a deck
+lands. The traps, the measurements and the deltas from S6's plan are in
+`docs/workstream-notes.md`.
+
+```
+src/content/types.ts        GAINED Inline, Phrasing, BlogDoc, and three OPTIONAL
+                            widenings to Block. S4 above the marker, S6 below.
+src/content/blocks.ts       PURE, NO `server-only`. Ten authoring helpers.
+src/content/blog/index.ts   the registry. NO PROSE. dates, locales, bodyHash.
+src/content/blog/<slug>.<loc>.ts   4 documents, 1270-1995 words each.
+src/content/blog/blog.content.test.ts   THE LINT. 36 cases, before the copy.
+src/lib/content/doc.ts      PURE LEAF. plainText / phrasingText / wordCount /
+                            readingMinutes / headingIds / linkPaths / linkKind.
+src/lib/seo/blog.ts         BlogPosting + Blog + both graphs. Into S1's directory.
+src/components/Prose.tsx    GAINED spans(), <ol>, and heading ids. S4's file.
+src/app/blog/**             the index, the article, its 404, the contract test.
+tools/seo/blogfit.{sh,js}   Loop 4, committed beside galleryfit and wallpaperfit.
+```
+
+### The six things a future session will otherwise undo
+
+1. **`plainText()` JOINS SPANS WITH THE EMPTY STRING, AND THAT IS THE CONDITION
+   RECONCILIATION R16 ATTACHED TO WIDENING THE UNION AT ALL.** S4's `text: string`
+   existed so the copy lint sees the exact sentence a reader sees, and that argument
+   is the better-stated one; it bent only because an article cannot carry bold
+   lead-ins or inline links without `Inline[]`. Two tests make the guarantee
+   mechanical rather than promised — `doc.test.ts` asserts the joining directly and
+   `blog.content.test.ts` asserts span adjacency, negative-controlled. **R16 says in
+   those words: if either is deleted, revert to `text: string`.** A `join(' ')` in
+   `plainText` or a `{' '}` in `Prose` breaks both silently.
+2. **`heading.id` AND `list.ordered` ARE OPTIONAL, AND THAT IS WHY 44 LORE DOCUMENTS
+   NEEDED NO EDIT.** `types.test.ts`'s *"a list carries no ordering"* case is
+   **inverted rather than deleted**: its reason was right about lore and wrong about
+   the union. Making either required is a 44-file rewrite for no reader-visible gain.
+3. **THERE IS NO `callout` KIND. S6 ASKED AND R16 REFUSED** — on S6's own
+   recommendation that it was the ask to refuse first. The two asides in the launch
+   article are paragraphs and read correctly as one. `types.contract.test.ts` asserts
+   the absence, because the failure mode of a refused ask is somebody granting it
+   quietly.
+4. **`bodyHash` IS MANUAL BOOKKEEPING AND SOMEBODY WILL WANT TO DELETE IT.** Editing
+   the prose fails a test whose fix is pasting a hash and bumping a date. There is no
+   truthful automatic source for `dateModified` — an mtime is a checkout artefact on
+   Vercel, `git log` is unavailable at request time, and either moves on a whitespace
+   change. Reconciliation §7 ruled on it directly: **the honest alternative is
+   dropping `dateModified` from the structured data, never emitting a date nobody
+   maintains.**
+5. **THE ARTICLE PAGE PASSES `entry.locales` AND THE INDEX PASSES `LOCALES`, AND THE
+   DIFFERENCE IS NOT AN INCONSISTENCY** (R2). The index is chrome served by one
+   rewritten route file, so neither address can 404. An article's `hreflang` must name
+   only the languages it was written in, or Google discards the whole set silently.
+   Both articles ship in both locales today, which is exactly when somebody
+   "simplifies" the first one. `blog.contract.test.ts` asserts the two spellings.
+6. **THE SECOND ARTICLE'S SLUG IS ENGLISH AND SINGULAR, AND THE RECONCILIATION WROTE
+   IT AS TWO.** R5 named it *"`apa-itu-tarot` / `what-tarot-is`"*, which reads as one
+   slug per locale. It cannot be: `contentAlternates()` derives the `/en/` twin from
+   **one** bare path, so a per-locale slug needs a per-locale path table nothing in
+   this release has. `what-tarot-is`, in both trees — the same ruling that kept
+   `/history` from becoming `/jejak`.
+
+**TWO ARTICLES, NOT ONE, AND THAT IS RECONCILIATION R5 CLOSING ROADMAP §13.** S6's
+plan shipped one and flagged the reason it should be two: a link labelled *"apa itu
+tarot"* landing two-thirds of the way into a 2,000-word how-to is a compromise, not a
+design. Jodith's request — *"ttg mitos, fakta, tarot itu apa, manfaat apa"* — got its
+own page. **Both articles carry `#what-tarot-is`, `#myths-and-facts` and
+`#what-its-for` in both locales**; R5 moved the *links* onto the new article, it did
+not take the sections out of the how-to, which would leave a how-to that teaches a
+method without first saying what the thing is.
+
+**THREE THINGS S6's PLAN ASKED FOR THAT ARE DELIBERATELY ABSENT, ALL BECAUSE S1
+CLOSED `events.ts` FIRST (S-D13).** No `ScrollDepth` — `content.scrolled` is not in
+the folded taxonomy. No delegated in-prose link listener — `public.link_clicked`'s
+`to` union has no `anchor` member, so wiring one means widening a closed workstream's
+data dictionary for an in-page jump. And no `content.share.*` catalog pair — S1's
+`public.share.*` already exists and `PublicShare` renders it, so a second pair would
+be two words for one button. In-prose link clicks are unmeasured, exactly as they
+already are on the 44 lore pages; `linkKind()` survives in `@/lib/content/doc` as the
+single definition for the day somebody wants it.
+
+**THE MEASURE AT 320px IS ~32 CHARACTERS AGAINST THE 45-75 GUIDELINE, AND IT IS
+ARITHMETIC RATHER THAN A DEFECT** (reconciliation §7, S6 F4). 288px of content at
+~9.1px per character in Cormorant Garamond at 19px cannot reach 45; getting there
+needs ~14px type, too small for two thousand words of serif. The lever used is
+padding, 20 → 16. **The next person to read the guideline will reach for a new
+font-size token; §10 forbids one without a written reason and `tools/seo/blogfit.sh`'s
+measurement is the reason not to.**
+
+**TWO THINGS `blogfit.sh` FOUND IN `PublicShare`, AND BOTH ARE S1's FILE ON
+TWENTY-THREE PAGES RATHER THAN S6's.** Its button is **36px tall at every width**,
+under the 44px iOS minimum. And it **renders in the server HTML, so with JavaScript off
+the control is present and dead** — which is the state S6's plan flag 5 said must not
+ship and which **reconciliation §7 records as already settled the other way**
+(*"The share control is invisible without JavaScript"*). It is not; there is no
+`mounted` guard. Left alone deliberately (§6 file ownership) and written up in
+`docs/workstream-notes.md`, because a reconciliation stating a property the code does
+not have is worse than an open item — nobody goes looking for it.
+
+**AND THE ONE FINDING THAT IS BIGGER THAN THIS WORKSTREAM: EVERY `/en/` CONTENT ROUTE
+LOSES ITS `Cache-Control`, MEASURED ON A REAL `npx next start`.** `/blog`,
+`/blog/<slug>`, `/gallery` and `/arcana/<slug>` all answer
+`public, s-maxage=3600, stale-while-revalidate=86400`; **`/en/blog`, `/en/blog/<slug>`,
+`/en/gallery` and `/en/arcana/<slug>` all answer `no-cache, must-revalidate`.** Four of
+the eight content entries in `next.config.ts` are inert and the four are exactly the
+English tree — twenty-five indexable pages. The config's `headers()` does run there (the
+catch-all's `x-frame-options` arrives); it is `cache-control` that loses to the rewritten
+render, and `headers.test.ts` asserts the entries EXIST, which they do. **R21 said this
+was "measured locally but not against a CDN"; the truth is that locally half of it never
+reaches the wire.** Diagnosis, the candidate fix and why S6 left it alone are in
+`docs/workstream-notes.md` — it is S1's `next.config.ts` and S2's rewrite, and a
+config-level test structurally cannot see it.
+
+**Still open:** the `s-maxage` on the BARE paths is measured on `next start` and never
+against a Vercel CDN (R21) — the residual gap `/gallery` and the lore pages carry. No RSS (S6 F10,
+out of scope and the only excluded feature that costs nothing to maintain). And nobody
+has read either article on a phone — reconciliation §8's *"no lint can tell whether a
+page is worth reading"* binds these two documents exactly as it binds the 22 lore
+pages.
+
 ## /account and the persona (V8)
 
 **The button `/privacy` §8 described for a whole release now exists**, and so do the four blocks
@@ -1524,6 +2122,20 @@ PHONE, AND FOUR OF THEM REVERSE A DECISION THIS FILE OR THAT CODE ARGUED FOR.**
   reader should call them.* `.label` is `text-transform: uppercase`, so that rendered as
   `WHAT YOU ARE CALLED` over TWO ROWS beside a one-word value. The Indonesian
   `Nama panggilan` never had the problem and is unchanged.
+- **THE ACCOUNT MENU HAS SIX ITEMS SINCE 2026-07-29, AND `AccountMenu`'s HEADER
+  USED TO FORBID A FIFTH.** `Galeri kartu` and `Tulisan` sit **below Reading
+  History**; v0.4.0's public footer had rendered them on the landing page and under
+  all 22 lore pages, and Miftah's ruling on a phone was that the homepage and the
+  card pages should look clean. The comment saying *"DO NOT ADD A FIFTH without a
+  decision recorded against VD12"* is **inverted rather than deleted** -- it is
+  still right about the case it was made for, which is a SHARE control. Their own
+  `account.menu.*` keys, never a reuse of `public.footer.{gallery,blog}`: a footer
+  names a destination to a stranger and this sheet names it to somebody signed in.
+  **`PublicShell`'s `LINKS` table is DELETED, not emptied**, and deleting the filter
+  with it let the landing page's footer grow a link to ITSELF -- caught by
+  `PublicShell.test.ts`, not by eye. The crawl was re-measured: nothing is orphaned,
+  because `sitemap.xml`, `hreflang`, `/gallery`'s 22 links and each lore page's own
+  `arcana.gallery` were always what a crawler follows.
 - **THE PAGE HAS A WAY OUT.** `history.home` and not a new key — the same gap `/history`
   closed one release earlier, and in a standalone home-screen instance there is no
   visible back button at all.
@@ -1869,5 +2481,7 @@ the `www` host — serve one, never both, because an OAuth redirect URI is a str
 and `AUTH_URL` pointed at the apex fails the callback after a redirect that looks successful.
 Production `AUTH_URL=https://www.jmtarot.site`; Google's Authorized Domain is the registrable
 `jmtarot.site`. The consent screen is still in **Testing** mode, so only manually-added test
-accounts can sign in. **What blocks publishing is Google's branding requirement of an app
-homepage that is not a login page** — signed out, `/` redirects to `/login`.
+accounts can sign in. **What blocked publishing was Google's branding requirement of an
+app homepage that is not a login page. Signed out, `/` now renders a landing page
+(v0.4.0, S-D5), so that blocker is closed**; what remains is pressing Publish on the
+consent screen. See `## The public surface (v0.4.0)`.

@@ -23,6 +23,22 @@ type Props = {
    * caption at the bottom of the render.
    */
   size?: 'thumb' | 'full';
+  /**
+   * Override the `alt` text.
+   *
+   * ADDED BY S3 AND DELIBERATELY NOT THE NEW DEFAULT. `card.alt.upright` is
+   * `{name}` -- terse on purpose, because on the draw screen a screen-reader user
+   * moves through 22 fanned cards and wants "The Moon", not a sentence each time.
+   * `/gallery` is the opposite case: it is a page whose job is to be findable in
+   * Google Images, where `alt` is INDEXED CONTENT, so it passes a localised
+   * sentence carrying the numeral and the card's own keywords
+   * (`src/app/gallery/alt.ts`).
+   *
+   * A PROP RATHER THAN A SECOND CATALOG KEY READ IN HERE, because the choice is a
+   * fact about the SURFACE and not about the card: the same card is terse in the
+   * fan and descriptive in the gallery, and this file cannot know which it is in.
+   */
+  alt?: string;
 };
 
 /**
@@ -33,7 +49,7 @@ type Props = {
  * optimizer has nothing to improve. It would only add a serverless invocation
  * and a re-encode per card, 22 of them on the first draw.
  */
-export function CardFace({ card, reversed = false, size = 'thumb' }: Props) {
+export function CardFace({ card, reversed = false, size = 'thumb', alt }: Props) {
   const t = useT();
   const src = size === 'thumb' ? cardThumb(card.slug) : cardImage(card.slug);
 
@@ -43,9 +59,10 @@ export function CardFace({ card, reversed = false, size = 'thumb' }: Props) {
         className={`${styles.art}${reversed ? ` ${styles.reversed}` : ''}`}
         src={src}
         alt={
-          reversed
+          alt ??
+          (reversed
             ? t('card.alt.reversed', { name: card.name })
-            : t('card.alt.upright', { name: card.name })
+            : t('card.alt.upright', { name: card.name }))
         }
         draggable={false}
         decoding="async"

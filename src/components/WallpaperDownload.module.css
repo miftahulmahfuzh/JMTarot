@@ -1,0 +1,102 @@
+/*
+ * S5's download control.
+ *
+ * Composed from `src/theme/tokens.css` only -- no new hex, no new font size, no
+ * new easing curve (roadmap §10). The idiom is the gold-hairline chip the gallery
+ * and the reader picker already use: `--gold-hairline` at rest, `--gold-border`
+ * plus `--gold-wash` on hover and focus.
+ *
+ * ONE COLUMN, ALWAYS. `Wallpaper ponsel` beside `1440×3120` is a long line and the
+ * Indonesian is the longer half here as it is everywhere else, so two of these do
+ * not fit side by side at 320px. Measured with loop 4 rather than guessed --
+ * `tools/seo/wallpaperfit.js`, and §8.1's rule applies: neither Chrome available
+ * here gives a real phone width, so a screenshot that LOOKS like a phone is not
+ * one.
+ *
+ * The 9px on `.dims` is not a new size: `GalleryGrid.module.css`'s `.keyword` and
+ * the reader picker's `.chip` already carry it for exactly this role, a
+ * letter-spaced uppercase gloss under a label. It is not in `tokens.css` because
+ * it was never promoted there; promoting it is a styling change this workstream
+ * does not own.
+ */
+
+.block {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+}
+
+.heading {
+  margin: 0;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-section-label);
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--muted);
+}
+
+.list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* `min-height: 44px` is the tap target the lore link uses, and the two sit in one
+   column in the zoom sheet -- a shorter one here would read as a different class
+   of control. */
+.link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 4px 6px;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--gold-text);
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-chip);
+  background: var(--gold-wash);
+}
+
+.link:hover,
+.link:focus-visible {
+  border-color: var(--gold-border);
+  background: var(--gold-wash-strong);
+  outline: none;
+}
+
+/* The dimensions are a fact, not a label: quieter, and never wrapped onto its own
+   line by a hyphen a translator cannot see. */
+.dims {
+  font-size: 9px;
+  letter-spacing: 1.2px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.hint,
+.licence {
+  margin: 0;
+  font-family: var(--font-body), serif;
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: center;
+  color: var(--muted);
+}
+
+.licence a {
+  color: var(--gold-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

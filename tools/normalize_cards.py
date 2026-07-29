@@ -68,6 +68,19 @@ QUALITY = 82
 # ratio -- more than an iPhone's 3x needs at that size, and the headroom means
 # the same file also serves the slightly larger slots. Quality drops to 80
 # because compression artefacts are invisible at this scale.
+#
+# S3 ADDED A SECOND CONSUMER AND THE HEADROOM DOES NOT REACH IT. `/gallery` draws
+# these at 138-173 CSS px (2 columns x 11 rows in a phone-width column, MEASURED --
+# see tools/seo/galleryfit.sh), so on a DPR-2 phone the browser wants 276-346 device
+# px and gets 240: a 1.15x to 1.44x UPSCALE. Accepted deliberately, because a
+# 2-column phone grid CANNOT be served losslessly by a 240px source at any column
+# width -- it would need <= 120 CSS px, and 288px of content minus a 12px gap cannot
+# produce that. The alternatives are the 800x1200 art (3.7MB for 22 cards, on the page
+# whose Core Web Vitals a crawler measures) or a new 480x720 variant (~1MB more
+# committed, a new asset class, out of v0.4.0's scope). At DPR 1 and >= 552px the
+# column is 238px and this file is very nearly 1:1, so the desktop case is already
+# exact. If a later release wants the @2x thumb it is one line here plus a `srcset`
+# in `CardFace`.
 THUMB_W, THUMB_H = 240, 360
 THUMB_QUALITY = 80
 

@@ -36,6 +36,7 @@ import {
 import { getTranslation } from '@/lib/db/queries/translations';
 import type { Locale, ReaderId, ServiceId } from '@/data/types';
 import type { DbOrTx } from '@/lib/db/types';
+import { siteOrigin } from '@/lib/seo/origin';
 import { isShareEntity, isValidSlug, newSlug, normalizeSlug, type ShareEntity } from './slug';
 import type { ResolvedShare, SharedTranslation, ShareLinkPublic } from './types';
 
@@ -94,26 +95,32 @@ export function sharingEnabled(): boolean {
  * inlined by the bundler and freezes the local value into the production build —
  * `resolve.ts` records the same reason for the same shape.
  *
- * `SHARE_BASE_URL` first, then **`AUTH_URL`'s ORIGIN and not its string**:
- * `AUTH_URL` is allowed to carry a path, and a share URL built by concatenation
- * would come out as `https://host/some/path/s/<slug>`. Never a trailing slash,
- * because `${origin}/s/${slug}` would otherwise double it and a doubled slash in
- * a capability URL is a 404 somebody has to debug from a chat message.
+ * `SHARE_BASE_URL` first, because the share host is allowed to differ from the
+ * app host and `docs/DEPLOY-VERCEL.md` §5 explains when you would want that.
+ *
+ * **EVERYTHING AFTER IT IS NOW `siteOrigin()`'s (v0.4.0 / S-D11), AND THE TWO
+ * RUNGS THIS FUNCTION USED TO OWN MOVED THERE RATHER THAN BEING DELETED.**
+ * `AUTH_URL`'s ORIGIN and `http://localhost:3001` are both in that chain, in
+ * that order, for the reasons this comment used to give: `AUTH_URL` is allowed
+ * to carry a path, so a share URL built by concatenation would come out as
+ * `https://host/some/path/s/<slug>`, and `npm run dev` lands on 3001 because
+ * port 3000 is permanently held by another project's Grafana container.
+ *
+ * **WHY DELEGATE RATHER THAN KEEP A SECOND COPY.** Two functions that
+ * independently decide this site's origin disagree the first time the domain
+ * changes, and the symptom is a canonical tag pointing at the wrong host, which
+ * de-indexes the correct page. A share URL and a canonical URL naming different
+ * hosts is the same bug wearing a different hat: the `Try It Yourself` button on
+ * `/s/` would send a stranger to a domain the sitemap says does not exist.
+ *
+ * Never a trailing slash, because `${origin}/s/${slug}` would otherwise double it
+ * and a doubled slash in a capability URL is a 404 somebody has to debug from a
+ * chat message. `siteOrigin()` guarantees that property; there is a test.
  */
 export function shareOrigin(): string {
   const explicit = process.env.SHARE_BASE_URL?.trim();
   if (explicit) return trimOrigin(explicit);
-
-  const authUrl = process.env.AUTH_URL?.trim();
-  if (authUrl) return trimOrigin(authUrl);
-
-  /*
-   * The local default. `npm run dev` lands on 3001 because port 3000 is
-   * permanently held by another project's Grafana container, and an OAuth
-   * redirect URI is an exact-match string, so 3001 is the app's real dev origin
-   * rather than a guess.
-   */
-  return 'http://localhost:3001';
+  return siteOrigin();
 }
 
 function trimOrigin(raw: string): string {

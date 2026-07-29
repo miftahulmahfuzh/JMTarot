@@ -22,10 +22,20 @@ import { PrivacyId } from './privacy.id';
  * after hydration.
  */
 
-export const metadata: Metadata = {
-  title: 'Kebijakan Privasi — JMTarot',
-  robots: { index: false, follow: false },
-};
+/**
+ * **INDEXABLE SINCE v0.4.0, AND THE TITLE NOW FOLLOWS THE DOCUMENT** —
+ * reconciliation R4, and `src/app/terms/page.tsx` carries the full argument for
+ * both halves. In short: the `noindex` field's premise was "an app behind auth",
+ * which S-D5 ends; and a hardcoded `Kebijakan Privasi — JMTarot` sat above an
+ * English document for every English reader, which is the `<title>`-resolved-
+ * from-the-wrong-input bug `/s/` was fixed for on 2026-07-28.
+ *
+ * `src/app/sitemap.ts` lists this path in the same commit. Do not do one half.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT();
+  return { title: `${t('common.privacy')} — ${t('app.title')}` };
+}
 
 export default async function PrivacyPage() {
   const locale = await getLocale();

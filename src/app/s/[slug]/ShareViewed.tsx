@@ -23,6 +23,7 @@
  */
 import { useEffect, useRef } from 'react';
 
+import { referrerKind } from '@/lib/analytics/referrer';
 import { track } from '@/lib/analytics/track.client';
 import type { ShareEntity } from '@/lib/share/slug';
 
@@ -56,23 +57,10 @@ export function ShareViewed({
   return null;
 }
 
-/**
- * A CLASS, never the referrer itself. Rule 2 of the taxonomy: a URL is unbounded
- * cardinality, and an external referrer is somebody else's page in our table.
- *
- * `internal` is worth having here rather than folding into `external`: it is what
- * distinguishes the sharer opening their own preview from the WhatsApp tap this
- * page exists for. Copied from `AppLaunched` rather than shared, because the two
- * are four lines and putting them in a module would give `track.client`'s import
- * graph a reason to grow.
- */
-function referrerKind(): 'direct' | 'internal' | 'external' {
-  if (typeof document === 'undefined' || !document.referrer) return 'direct';
-  try {
-    return new URL(document.referrer).origin === window.location.origin
-      ? 'internal'
-      : 'external';
-  } catch {
-    return 'direct';
-  }
-}
+/* `referrerKind` MOVED to `@/lib/analytics/referrer` when S3 became its third
+   caller (R19). The comment that used to sit here argued for COPYING it -- "the
+   two are four lines and putting them in a module would give `track.client`'s
+   import graph a reason to grow" -- and that argument is INVERTED in the new
+   module's header rather than deleted, because the failure mode of removing a
+   comment is somebody restoring the duplication in six months. The stated cost
+   never applied: the leaf has no imports and `track.client` does not import it. */

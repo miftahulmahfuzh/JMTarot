@@ -139,6 +139,13 @@ export const EVENT_NAMES = [
   'share.viewed',
   'share.cta_clicked',
 
+  // — the public content surface (v0.4.0) —
+  'public.page_viewed',
+  'public.link_clicked',
+  'public.link_shared',
+  'public.card_zoomed',
+  'wallpaper.downloaded',
+
   // — the app shell —
   'app.launched',
 
@@ -283,7 +290,18 @@ export type EventMap = {
                                  shadow_card_id: number; shadow_collision: 'top' | 'second' | 'none';
                                  dominance: 'tied' | 'narrow' | 'clear' | 'overwhelming'; pulse: number };
 
-  'locale.changed':            { from: string; to: string; surface: 'settings' | 'onboarding' | 'auto' };
+  /*
+   * `surface` GAINED `'content'` IN v0.4.0 (S2's switcher-as-link, §4.2).
+   *
+   * A content page's switcher is an `<a href>` to the sibling URL and does NOT
+   * `POST /api/locale`, because there is often no session and because the sibling
+   * URL *is* the other language -- so this event fires from a navigation rather than
+   * from a write, and separating it from `'settings'` is what stops the two being
+   * averaged into one meaningless rate. **Widened HERE by S1 (S-D13) rather than by
+   * S2 in its own branch**, which is the whole point of one owner for this file.
+   */
+  'locale.changed':            { from: string; to: string;
+                                 surface: 'settings' | 'onboarding' | 'auto' | 'content' };
 
   /*
    * V4. `surface` is a CLOSED UNION AND NOT A PATHNAME (rule 2: no unbounded
@@ -549,6 +567,119 @@ export type EventMap = {
   'share.viewed':              { share_id: string; entity: string; has_question: boolean;
                                  referrer_kind: 'direct' | 'internal' | 'external' };
   'share.cta_clicked':         { share_id: string; entity: string };
+
+  /*
+   * ── v0.4.0's FIVE, AND WHY THERE ARE FIVE RATHER THAN FIFTEEN ──────────────
+   *
+   * Rule 4: prefer one event with props over five events. Six workstreams are
+   * shipping public pages simultaneously, and the version where each declares its
+   * own `gallery.viewed` / `arcana.viewed` / `blog.viewed` gives
+   * `where name like 'public.%'` five sevenths of the surface and makes "how do
+   * people move through the content?" a five-way union. So `page` is a prop.
+   * Reconciliation R18 ruled the same way from S6's side: **S3 and S4 extend a
+   * `surface`/`page` union, they do not invent families.**
+   *
+   * **`slug` IS A CLOSED SET AND THEREFORE NOT FREE TEXT.** Rules 1 and 2 together
+   * are what make this legal: the value space is 22 card slugs (S-D4's table, §3.2)
+   * plus a handful of article slugs, all of them committed source. It is emphatically
+   * NOT a search query, a referrer, a title or a heading -- `events` rows SURVIVE
+   * ACCOUNT ERASURE with `user_id` nulled, and that is only honest because there is
+   * provably nothing identifying in them.
+   *
+   * **EVERY ONE OF THESE FIRES WITH A NULL `user_id`**, exactly like `terms.viewed`
+   * and `share.viewed`: the public pages have no session by construction (S-D10) and
+   * `/api/events` is already public for this reason, so no route change is needed.
+   *
+   * `locale` is the CLOSED two-value set, as a string because this file has no
+   * imports by design -- `moderation.refused.category` set that precedent. It is the
+   * language the PAGE was rendered in, which after S2's rewrite is the language the
+   * URL prefix names, and it is the number that answers the release's own question:
+   * §1 says Indonesian is the priority and English is upside, and this is how we find
+   * out whether that was right.
+   */
+  'public.page_viewed':        { page: 'landing' | 'gallery' | 'arcana' | 'blog_index' | 'blog_post';
+                                 locale: string; slug: string | null;
+                                 referrer_kind: 'direct' | 'internal' | 'external' };
+
+  /*
+   * `to` IS A DESTINATION CLASS, NOT AN HREF. An href is a URL and therefore
+   * unbounded (rule 2), and the interesting question is which of six destinations a
+   * reader chose -- `sign_in` against `gallery` against `arcana` is the funnel.
+   *
+   * `to: 'sign_in'` IS THE CONVERSION AND IS THE ONLY NUMBER IN THIS RELEASE THAT
+   * MEASURES WHETHER IT WORKED. Forty-four indexable pages that nobody signs in from
+   * is a different outcome from forty-four pages nobody visits, and without this prop
+   * the two look identical.
+   */
+  'public.link_clicked':       { from: 'landing' | 'gallery' | 'arcana' | 'blog_index' | 'blog_post' | 'footer';
+                                 to: 'sign_in' | 'app' | 'gallery' | 'arcana' | 'blog' | 'terms' | 'privacy' | 'wallpaper' | 'locale';
+                                 slug: string | null };
+
+  /*
+   * S-D8's control. **A DIFFERENT NAME FROM `share.copied`, AND NOT BY PREFERENCE.**
+   * `share.copied` requires a `share_id`, and S-D8's control mints no `share_links`
+   * row at all -- it shares the canonical URL of a page that is already public. There
+   * is no id to send, and reusing the name would put a null in a prop every existing
+   * query treats as present.
+   *
+   * `method` is `share.copied`'s union verbatim, for its reason: `webshare` is what
+   * "send it to WhatsApp" is on a phone, `clipboard` is the desktop path, and
+   * `manual` means both failed and the reader was left selecting the address bar.
+   * Without the third value that failure is invisible.
+   */
+  'public.link_shared':        { from: 'landing' | 'gallery' | 'arcana' | 'blog_index' | 'blog_post';
+                                 method: 'clipboard' | 'webshare' | 'manual';
+                                 slug: string | null };
+
+  /*
+   * S3 fires it, S1 declares it (S-D13). `card_id` is the INTEGER and never the name
+   * (rule 3): display names are translated and the data must not be.
+   *
+   * `surface` is a closed union with two members today. It is here rather than implied
+   * by the name because the draw screen's `draw.card_detail_opened` is the same
+   * gesture on a different page, and the day somebody wants both in one query the prop
+   * is what makes it possible without renaming an event.
+   */
+  'public.card_zoomed':        { card_id: number; surface: 'gallery' | 'arcana' };
+
+  /*
+   * S5 fires it. `variant` is the closed set S5's pipeline produces, and `card_id`
+   * is the integer (rule 3).
+   *
+   * NO FILENAME, NO BYTE COUNT AND NO USER AGENT. A filename is derivable from
+   * `(card_id, variant)`, a byte count is a fact about the pipeline rather than about
+   * a person's choice, and a user agent is free text with unbounded cardinality --
+   * rules 1 and 2 together. If "which variant do phones take" is ever the question,
+   * the honest answer is a second closed prop, not a UA string.
+   *
+   * **THIS SHAPE WAS FOLDED IN NARROWER THAN S5 DECLARED IT, AND THE TWO MISSING
+   * PROPS ARE RESTORED HERE (S5, 2026-07-29).** S-D13 makes S1 the single owner of
+   * this file and every other workstream a declarer; folding a declaration in means
+   * transcribing it, and this one lost `method` and `from` and renamed the variant
+   * `card` to `native`:
+   *
+   *   `variant` IS `'card'`, NOT `'native'`, because the file on disk is
+   *   `<slug>-card.jpg` and `WALLPAPER_VARIANTS` in `@/lib/wallpaper` is the union
+   *   the component actually holds. A prop spelled differently from the asset it
+   *   describes is a query written against a value that never appears.
+   *
+   *   `method` IS THE ANSWER TO A QUESTION THE COUNTS CANNOT SETTLE. The control is
+   *   an `<a download>` upgraded to `navigator.share` on a touch device, because on
+   *   iOS a download lands in Files and *Set Wallpaper* reads only from Photos. If
+   *   `share` never appears in production, that upgrade is not running and the
+   *   feature is worse on its target platform than it looks here.
+   *
+   *   `from` mirrors `public.card_zoomed`'s `surface` for the same reason: the same
+   *   gesture exists on two pages and the prop is what makes one query possible
+   *   without renaming an event. It is spelled `from` because that is the word
+   *   `public.link_clicked` uses and the prop the component takes.
+   *
+   * A CANCELLED SHARE SHEET FIRES NOTHING. `navigator.share` rejecting with
+   * AbortError means the person tapped Cancel, and recording it would make every
+   * "download" figure an "intent" figure.
+   */
+  'wallpaper.downloaded':      { card_id: number; variant: 'card' | 'phone';
+                                 method: 'share' | 'link'; from: 'gallery' | 'arcana' };
 
   'app.launched':              { standalone: boolean; referrer_kind: 'direct' | 'internal' | 'external' };
 

@@ -80,3 +80,23 @@
      carrying the meaning and the two codes are two characters each. */
   padding: 14px 4px;
 }
+
+/*
+ * The `link` variant: an `<a href>` to the sibling URL, on a public content page
+ * (v0.4.0 S2, §4.2). `ContentLocaleLink` is the component; `LocaleSwitch` never
+ * renders an anchor.
+ *
+ * A SEPARATE CLASS RATHER THAN THREE LINES ADDED TO `.option`, so the button and
+ * span variants keep the geometry that was MEASURED at 44px: `.option`'s comment
+ * records that its `min-height` said 44 and measured 42 for a whole workstream,
+ * and it is not worth re-deriving that against a font metric to save a selector.
+ *
+ * `display: inline-flex` because an anchor is inline and would ignore the
+ * vertical padding, which is the whole 44px tap target. `text-decoration: none`
+ * because an anchor is underlined and a button never was.
+ */
+.link {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}

@@ -1,0 +1,114 @@
+/*
+ * The block union, rendered. `Legal.module.css` is the model and most of this is
+ * its `.p` / `.list` / `.li` rules with a heading rhythm on top.
+ *
+ * TOKENS ONLY. `--fs-reading` / `--lh-reading` for body, `--fs-eyebrow` and
+ * `--ls-section-label` for labels, `--gold` / `--gold-hairline` / `--gold-wash`
+ * for rules and boxes. **No new hex value, font size or easing curve** -- if a
+ * rule here seems to want one, it wants an existing one.
+ *
+ * The measure lives on the page's `.doc`, not here: `Prose` renders inside four
+ * different sections and a second `max-inline-size` would fight the first.
+ */
+
+.h2 {
+  font-family: var(--font-display), serif;
+  font-size: 19px;
+  line-height: 1.35;
+  color: var(--gold);
+  margin: 28px 0 10px;
+  /* The anchor target lands here. Without the offset a linked heading sits flush
+     against the top edge and reads as if the link missed. `Legal.module.css`
+     carries the same line for `/terms#6-2`. */
+  scroll-margin-block-start: 24px;
+}
+
+.h3 {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-reading);
+  line-height: 1.35;
+  color: var(--text-warm);
+  margin: 20px 0 8px;
+  scroll-margin-block-start: 24px;
+}
+
+.p {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-reading);
+  line-height: var(--lh-reading);
+  color: var(--text-warm);
+  margin: 0 0 12px;
+}
+
+/*
+ * ONE CLASS FOR `<ul>` AND `<ol>`, because the only difference is the marker and the
+ * marker is the browser's. 22px rather than `Legal.module.css`'s 20: an `<ol>`
+ * reaching item 5 needs room for the marker without the text column stepping in and
+ * out between single- and double-digit items.
+ */
+.list {
+  margin: 0 0 12px;
+  padding-inline-start: 22px;
+}
+
+.li::marker {
+  color: var(--faint);
+}
+
+.li {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-reading);
+  line-height: var(--lh-reading);
+  color: var(--text-warm);
+  margin-block-end: 8px;
+}
+
+/*
+ * A left rule rather than an indent, for `Legal.module.css`'s `.sub` reason: an
+ * indent at 320px costs measure the document cannot spare and a hairline says
+ * "this is quoted" for 1px.
+ */
+.quote {
+  margin: 20px 0;
+  padding-inline-start: 14px;
+  border-inline-start: 1px solid var(--gold-hairline);
+}
+
+.quoteText {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-reading);
+  line-height: var(--lh-reading);
+  font-style: italic;
+  color: var(--text);
+  margin: 0 0 6px;
+}
+
+.quoteSource {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--faint);
+}
+
+.cardRef,
+/*
+ * AN INLINE LINK IN THE PROSE, and it shares `.cardRef`'s declarations on purpose:
+ * both are "a link into another page of this site, inside a sentence", and two rules
+ * would let a gold underline drift from a gold underline. `Prose.tsx` never renders an
+ * external link, so there is no second treatment to distinguish from.
+ */
+.link {
+  color: var(--gold);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/*
+ * A paragraph is the only place long enough for the browser's line breaker to make a
+ * visible difference at 320px, and `text-wrap: pretty` costs nothing where it is
+ * unsupported. No hyphenation and no justification: both look worse than a ragged edge
+ * at ~34 characters, and `hyphens: auto` has no Indonesian dictionary in Safari.
+ */
+.p {
+  text-wrap: pretty;
+}

@@ -1,0 +1,275 @@
+/*
+ * One lore page, on a 320px phone.
+ *
+ * `Legal.module.css` is the model and most of the reasoning is there: a
+ * comfortable measure, and a heading rhythm strong enough to find a section by
+ * thumb. `Prose.module.css` owns everything inside an authored block; this file
+ * owns the frame -- the art, the fact strip, the verdict, the link graph.
+ *
+ * TOKENS ONLY. No new hex value, font size or easing curve.
+ *
+ * **THE FACT STRIP IS THE WIDEST THING ON THIS PAGE**, and it is the one measured
+ * with loop 4 rather than eyeballed: `The High Priestess` is eighteen characters
+ * and `Sagittarius` plus its modality is a long value, in ENGLISH IN BOTH
+ * LOCALES. The fix is `overflow-wrap: anywhere` on the value, never a shorter
+ * label -- `.factLabel` is uppercase and a two-word label wraps to two rows, which
+ * is what turned `What you are called` into `WHAT YOU ARE CALLED` on /account.
+ */
+
+.doc {
+  /*
+   * 68ch, the same measure the legal documents use. On a 375px phone the viewport
+   * binds long before the measure does, so this only takes effect on a tablet or
+   * a desktop -- which is where a thousand words of unbounded prose becomes a
+   * 150-character line.
+   */
+  max-inline-size: 68ch;
+  margin-inline: auto;
+  padding: 24px 20px 48px;
+}
+
+.h1 {
+  font-family: var(--font-display), serif;
+  font-size: 28px;
+  line-height: 1.2;
+  color: var(--text-warm);
+  margin: 12px 0 10px;
+}
+
+.standfirst {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-reading);
+  line-height: var(--lh-reading);
+  color: var(--text);
+  margin: 0 0 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--gold-hairline);
+}
+
+/*
+ * The art. `height: auto` with the intrinsic `width`/`height` attributes set on
+ * the element is what keeps the aspect ratio reserved and the CLS at zero --
+ * **do not "fix" the reservation with a fixed height**, which breaks the ratio at
+ * every width but one. Loop 4's harness asserts the rendered ratio is still 2:3.
+ */
+.art {
+  display: block;
+  inline-size: 100%;
+  max-inline-size: 320px;
+  block-size: auto;
+  margin: 0 auto 24px;
+  border-radius: var(--radius-card, 10px);
+}
+
+/* --- the fact strip ------------------------------------------------------- */
+
+.facts {
+  display: grid;
+  /*
+   * `auto-fit` with a floor rather than a fixed column count: at 320px this is
+   * one column and at 560px it is three, with no breakpoint to keep in step with
+   * the label lengths.
+   */
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 14px 18px;
+  margin: 0 0 8px;
+  padding: 16px;
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-chip);
+  background: var(--gold-wash);
+}
+
+.fact {
+  min-inline-size: 0;
+}
+
+.factLabel {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-section-label);
+  text-transform: uppercase;
+  color: var(--label);
+  margin: 0 0 4px;
+}
+
+.factValue {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 17px;
+  line-height: 1.35;
+  color: var(--text-warm);
+  margin: 0;
+  /* `The High Priestess` at 320px. Measured, not guessed. */
+  overflow-wrap: anywhere;
+}
+
+.glyph {
+  margin-inline-end: 6px;
+  color: var(--gold);
+}
+
+/* The written line under a value -- `elementGloss`, `modalityGloss`. */
+.factValue .gloss {
+  display: block;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--faint);
+  margin-block-start: 2px;
+}
+
+/*
+ * The sign gloss is a SENTENCE and sits outside the `<dl>`: a `<dd>` with no
+ * `<dt>` is invalid, and this is prose rather than the value of a term. Twelve
+ * cards have one; the other ten render nothing at all (M14).
+ */
+.signGloss {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 15px;
+  line-height: 1.5;
+  font-style: italic;
+  color: var(--faint);
+  margin: 0 0 28px;
+  padding-inline-start: 4px;
+}
+
+/* --- the authored sections ------------------------------------------------ */
+
+.section {
+  margin-block-start: 32px;
+}
+
+.h2 {
+  font-family: var(--font-display), serif;
+  font-size: 19px;
+  line-height: 1.35;
+  color: var(--gold);
+  margin: 0 0 10px;
+  scroll-margin-block-start: 24px;
+}
+
+.h3 {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-reading);
+  line-height: 1.35;
+  color: var(--text-warm);
+  margin: 20px 0 8px;
+  scroll-margin-block-start: 24px;
+}
+
+.p {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-reading);
+  line-height: var(--lh-reading);
+  color: var(--text-warm);
+  margin: 0 0 12px;
+}
+
+/*
+ * `cardMeaning()`'s one line, directly above the authored paragraphs. **The
+ * adjacency is the enforcement** -- see the page's comment. Set apart with a rule
+ * so a reviewer reads it as a separate claim rather than as the first sentence.
+ */
+.gloss {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-reading);
+  line-height: var(--lh-reading);
+  font-style: italic;
+  color: var(--gold-text);
+  margin: 0 0 14px;
+  padding-inline-start: 14px;
+  border-inline-start: 2px solid var(--gold-border);
+}
+
+.verdict {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 16px;
+  margin: 0 0 14px;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 17px;
+  color: var(--text-warm);
+}
+
+.verdict dt {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-section-label);
+  text-transform: uppercase;
+  color: var(--label);
+  align-self: center;
+}
+
+.verdict dd {
+  margin: 0;
+  color: var(--gold-text);
+}
+
+.qa {
+  margin-block-end: 18px;
+}
+
+/* --- the link graph ------------------------------------------------------- */
+
+.links {
+  margin-block-start: 40px;
+  padding-block-start: 24px;
+  border-top: 1px solid var(--gold-hairline);
+}
+
+.linkList {
+  list-style: none;
+  margin: 0 0 20px;
+  padding: 0;
+}
+
+.linkList li {
+  margin-block-end: 10px;
+  /*
+   * `XVIII · The High Priestess` plus a reason on one line at 320px. The reason
+   * wraps under rather than pushing the row wide.
+   */
+  overflow-wrap: anywhere;
+}
+
+.linkList a {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 17px;
+  color: var(--gold);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.linkWhy {
+  display: block;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 14px;
+  color: var(--faint);
+}
+
+.gallery {
+  display: inline-block;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--button-text);
+  border: 1px solid var(--gold-border);
+  border-radius: var(--radius-chip);
+  padding: 12px 18px;
+  text-decoration: none;
+}
+
+/*
+ * §8.3, in `Legal.module.css`'s `.callout` shape -- the two statements that must
+ * not be skimmed past already look like this.
+ */
+.disclaimer {
+  margin-block-start: 32px;
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-chip);
+  background: var(--gold-wash);
+  padding: 16px;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--faint);
+}

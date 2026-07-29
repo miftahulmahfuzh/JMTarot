@@ -1,5 +1,6 @@
 'use client';
 
+import { referrerKind } from '@/lib/analytics/referrer';
 import { TrackView } from './TrackView';
 
 /**
@@ -30,19 +31,6 @@ function isStandalone(): boolean {
   return legacy || window.matchMedia?.('(display-mode: standalone)').matches === true;
 }
 
-/**
- * A CLASS, never the referrer itself.
- *
- * Rule 2 of the taxonomy: a URL is unbounded cardinality, and an external
- * referrer is somebody else's page in our analytics table.
- */
-function referrerKind(): 'direct' | 'internal' | 'external' {
-  if (typeof document === 'undefined' || !document.referrer) return 'direct';
-  try {
-    return new URL(document.referrer).origin === window.location.origin
-      ? 'internal'
-      : 'external';
-  } catch {
-    return 'direct';
-  }
-}
+/* `referrerKind` MOVED to `@/lib/analytics/referrer` when S3 became its third
+   caller (R19). The header there records the inversion of `ShareViewed`'s
+   argument for copying it, rather than deleting it. */

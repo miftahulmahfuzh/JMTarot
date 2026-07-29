@@ -1,7 +1,7 @@
 'use client';
 
 import { useT } from '@/lib/i18n/LocaleProvider';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode, type RefObject } from 'react';
 import { cardMeaning } from '@/data/deck';
 import type { Draw } from '@/data/types';
 import { CardFace } from './CardFace';
@@ -18,6 +18,58 @@ type Props = {
    * with the text below them.
    */
   onReturn?: () => void;
+  /**
+   * Show BOTH glosses, each labelled, instead of the one matching `draw.reversed`.
+   *
+   * FOR A CATALOGUE, NEVER FOR A DRAW. `/gallery` shows 22 upright artworks that
+   * nobody dealt, so both lines are true things to say about the card and neither
+   * is asserted as *the* meaning of the card on screen. Every other caller shows a
+   * card that came out of a deck one specific way up, where the other line is NOT
+   * true of the artwork above it -- which is the contradiction `cardMeaning()`
+   * exists to prevent and this flag must never be used to reopen.
+   *
+   * The LABELS are what make it legal. An unlabelled pair, or a reversed line
+   * under upright art with no label, is the same contradiction wearing two
+   * sentences.
+   *
+   * BOTH LINES STILL GO THROUGH `cardMeaning()`. Reading
+   * `card.meaning[locale].upright` by hand can get the locale wrong as well as
+   * the orientation; see `deck.ts`.
+   */
+  bothMeanings?: boolean;
+  /**
+   * The control that opened this sheet, so focus can go back to it.
+   *
+   * **SAFARI DOES NOT FOCUS A `<button>` WHEN IT IS CLICKED OR TAPPED**, so the
+   * `document.activeElement` read in the effect below captures `<body>` on the one
+   * platform this app is built for. `AccountMenu` has taken the opener as a prop
+   * since v0.3.0 for exactly this; CLAUDE.md records that THIS file still had the
+   * latent version, and that its consequence was "smaller, because its opener is
+   * a card in a long list".
+   *
+   * **ON `/gallery` IT IS NOT SMALLER.** The opener is one of 22 tiles in a grid
+   * three to three-and-a-half thousand pixels tall, so restoring focus to
+   * `<body>` moves a keyboard or VoiceOver user from row nine to the top of the
+   * document, with no way back but re-traversing every row they had passed.
+   *
+   * The caller passes a ref it fills from the click event's `currentTarget`,
+   * which IS the button whether or not the platform focused it. Reading
+   * `document.activeElement` asks the platform a question it answers differently
+   * on the platform we ship to; reading the event asks nothing.
+   * `document.activeElement` REMAINS THE FALLBACK, so the three callers that do
+   * not pass this -- `Draw`, `ReadingView`, `AccountCard` -- behave exactly as
+   * they did. Fixing theirs is not S3's; leaving the fallback is what makes this
+   * edit additive.
+   */
+  returnFocusTo?: RefObject<HTMLElement | null>;
+  /**
+   * Extra content, between the gloss and the buttons.
+   *
+   * `/gallery` puts the keywords and the lore link here, so everything
+   * gallery-specific lives in the gallery's own files and the draw screen's
+   * overlay does not acquire a link to a public page by being the same component.
+   */
+  children?: ReactNode;
 };
 
 /**
@@ -36,7 +88,15 @@ type Props = {
  * here, which is exactly what suppresses its caption: the heading below is the
  * only place the name and the numeral appear.
  */
-export function CardDetail({ draw, position, onClose, onReturn }: Props) {
+export function CardDetail({
+  draw,
+  position,
+  onClose,
+  onReturn,
+  bothMeanings = false,
+  returnFocusTo,
+  children,
+}: Props) {
   const t = useT();
   const closeRef = useRef<HTMLButtonElement | null>(null);
 
@@ -52,6 +112,12 @@ export function CardDetail({ draw, position, onClose, onReturn }: Props) {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
+  /* Same trick as `onCloseRef`, and `AccountMenu` does it for the same reason:
+     the effect below must depend on nothing, and the cleanup must read the
+     CURRENT value rather than the one that was passed on mount. */
+  const returnFocusRef = useRef(returnFocusTo);
+  returnFocusRef.current = returnFocusTo;
+
   /*
    * Escape closes, and focus moves into the dialog and back out again when it
    * goes. Restoring focus matters more than usual here: the thing that opened
@@ -59,7 +125,9 @@ export function CardDetail({ draw, position, onClose, onReturn }: Props) {
    * user back at the top of the document.
    */
   useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null;
+    /* THE FALLBACK, NOT THE ANSWER -- see `returnFocusTo`. Safari does not focus
+       a tapped button, so on the platform this app ships to this is `<body>`. */
+    const fallbackOpener = document.activeElement as HTMLElement | null;
     closeRef.current?.focus();
 
     const onKey = (e: KeyboardEvent) => {
@@ -78,7 +146,7 @@ export function CardDetail({ draw, position, onClose, onReturn }: Props) {
     return () => {
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = previous;
-      opener?.focus?.();
+      (returnFocusRef.current?.current ?? fallbackOpener)?.focus?.();
     };
   }, []);
 
@@ -114,8 +182,31 @@ export function CardDetail({ draw, position, onClose, onReturn }: Props) {
           One line, and which line depends on the orientation -- see
           cardMeaning(). A reversed card showing its upright gloss would be
           contradicted by the artwork sitting directly above it.
+
+          `bothMeanings` is the CATALOGUE branch and does not weaken that rule:
+          it labels each line, and it is only legal where no orientation was
+          dealt at all. See the prop.
         */}
-        <p className={styles.meaning}>{cardMeaning(draw, t.locale)}</p>
+        {bothMeanings ? (
+          <div className={styles.meanings}>
+            <p className={styles.meaning}>
+              <span className={styles.orientation}>{t('card.upright')}</span>
+              {cardMeaning({ card: draw.card, reversed: false }, t.locale)}
+            </p>
+            <p className={styles.meaning}>
+              <span className={styles.orientation}>{t('card.reversed')}</span>
+              {cardMeaning({ card: draw.card, reversed: true }, t.locale)}
+            </p>
+          </div>
+        ) : (
+          <p className={styles.meaning}>{cardMeaning(draw, t.locale)}</p>
+        )}
+
+        {/* BETWEEN THE GLOSS AND `.actions`, NEVER AFTER THEM. `.actions` holds
+            Close, which is the last thing in the sheet and the thing a thumb
+            reaches for; content below it is content nobody scrolls to on a
+            375x667 screen. */}
+        {children}
 
         <div className={styles.actions}>
           <button type="button" className={styles.close} onClick={onClose} ref={closeRef}>

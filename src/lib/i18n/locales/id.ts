@@ -157,6 +157,19 @@ const id = {
   // --- Card detail ----------------------------------------------------------
   //
   // The `·` separator stays in the JSX; only the word is copy.
+  //
+  // **`card.upright` AND `card.reversed` ARE ONE PAIR AND THERE MUST NOT BE A
+  // SECOND ONE.** S4 minted `arcana.upright` / `arcana.reversed` for the lore
+  // page's two section headings while `card.reversed` had already existed since
+  // W6; S3 needed the same pair for `/gallery`'s zoom sheet, which would have
+  // been the THIRD spelling of one word. Both `arcana.*` keys are deleted and
+  // the lore page reads these -- S3's delta 18 to S4, which argued it before
+  // either shipped: two keys for one word is how the gallery and the lore page
+  // end up disagreeing about what `Tegak` is called.
+  //
+  // Namespaced `card.` rather than `gallery.` for the same reason: the word is a
+  // fact about a CARD's orientation, and three surfaces render it.
+  'card.upright': 'Tegak',
   'card.reversed': 'Terbalik',
   'card.return': 'Kembalikan ke dek',
   // The bare-name alt gets a key so a locale can add "the card" if it needs to,
@@ -510,6 +523,21 @@ const id = {
   'account.menu.details': 'Tentang kamu',
   'account.menu.language': 'Bahasa',
   'account.menu.history': 'Riwayat bacaan',
+  /*
+   * The two public pages, moved OUT of the public footer and INTO this sheet
+   * (Miftah's ruling, 2026-07-29 -- `AccountMenu`'s header has the argument).
+   *
+   * **THEIR OWN KEYS RATHER THAN A REUSE OF `public.footer.{gallery,blog}`**,
+   * whose Indonesian is today the identical word. V8's precedent for reuse is
+   * `history.home`, and it holds there because "Home" cannot drift; a footer
+   * label can. The footer's job is to name a destination to a stranger who has
+   * never seen the app, and this sheet's is to name it to somebody signed in --
+   * the day one of them wants "Lihat semua kartu" the other must not follow.
+   * `gallery.card.zoomAria` is in the catalog for the same reason, one release
+   * apart.
+   */
+  'account.menu.gallery': 'Galeri kartu',
+  'account.menu.blog': 'Tulisan',
   'account.menu.signOut': 'Keluar',
 
   // The SHORT tags, for the two-item toggle inside the menu (R1/VD12). The long
@@ -817,6 +845,250 @@ const id = {
   'reading.verdict.yes': 'Ya',
   'reading.verdict.no': 'Tidak',
   'reading.verdict.maybe': 'Belum jelas',
+
+  // --- The public surface (v0.4.0 / S1) -------------------------------------
+  //
+  // CHROME ONLY (S-D6). Lore and article prose live in `src/content/**`, one
+  // module per locale, imported by the page that renders it -- because this
+  // catalog is shipped ENTIRE, as JSON, to every visitor of every page including
+  // the draw screen, and 22 lore documents x 2 locales is an order of magnitude
+  // more than the 242 short strings here. `src/lib/i18n/prose.test.ts` makes that
+  // mechanical: a value over 320 characters, or a catalog over 20,000 bytes,
+  // fails.
+  //
+  // These are the shared keys. S3, S4, S5 and S6 add their own page's chrome to
+  // THIS EDIT -- S1 folds every workstream's keys in, one file, one commit, the
+  // same rule S-D13 applies to `events.ts`. A workstream does not open this file.
+
+  /** The landing hero. `app.title` is the <h1>; this is the line under it. */
+  'landing.tagline': 'Dua puluh dua Major Arcana, dibacakan oleh tiga pembaca.',
+  'landing.lede':
+    'Tarik kartumu, ajukan pertanyaanmu, dan dapatkan satu bacaan yang ditulis khusus untuk hari itu — dalam bahasa Indonesia atau Inggris.',
+  'landing.signIn': 'Masuk untuk membaca',
+  'landing.hero.alt': 'Kartu {name}',
+
+  /** Four blocks, each at most one link. The order on screen is the order here. */
+  'landing.gallery.title': 'Lihat dua puluh dua kartunya',
+  'landing.gallery.body':
+    'Setiap Major Arcana, digambar ulang untuk aplikasi ini. Ketuk satu kartu untuk melihatnya besar.',
+  'landing.gallery.link': 'Buka galeri',
+  'landing.arcana.title': 'Arti setiap kartu',
+  'landing.arcana.body':
+    'Satu halaman per kartu: angka, unsur, lambang, arti tegak dan terbalik, serta ceritanya.',
+  'landing.arcana.link': 'Mulai dari The Moon',
+  'landing.readers.title': 'Tiga pembaca, tiga suara',
+  'landing.readers.body':
+    'Thessaly, Margaret dan Adrian membaca kartu yang sama dengan cara yang tidak sama.',
+  'landing.blog.title': 'Tulisan',
+  'landing.blog.body': 'Cara membaca tarot, dijelaskan tanpa istilah yang membingungkan.',
+  'landing.blog.link': 'Baca tulisannya',
+
+  /**
+   * The shared public footer (S1), mounted by every public content page.
+   *
+   * NO `otherLanguage` KEY HERE. R17 makes `PublicShell` mount S2's
+   * `ContentLocaleLink`, which names each language IN ITS OWN LANGUAGE through
+   * the existing `locale.name.*` pair -- because the reader of that control
+   * cannot, by definition, read the locale they are currently in.
+   */
+  'public.footer.gallery': 'Galeri',
+  'public.footer.arcana': 'Arti kartu',
+  'public.footer.blog': 'Tulisan',
+  'public.footer.app': 'Buka aplikasinya',
+  'public.footer.brandLine': 'JMTarot — bacaan Major Arcana.',
+
+  /** S-D8's control. NOT `/api/share` -- the page's own URL is already public. */
+  'public.share.button': 'Bagikan halaman ini',
+  'public.share.copied': 'Tautan disalin.',
+  'public.share.failed': 'Tidak bisa menyalin. Salin dari bilah alamat.',
+
+  /** Breadcrumb labels. English card names stay English (`## Card data`). */
+  'public.crumb.home': 'JMTarot',
+  'public.crumb.gallery': 'Galeri',
+  'public.crumb.blog': 'Tulisan',
+
+  /**
+   * ── S3: `/gallery`, the twenty-two cards as a catalogue ───────────────────
+   *
+   * CHROME ONLY, and there is remarkably little of it: the page's subject is the
+   * art, and every word ABOUT a card -- its name, its numeral, its keywords, both
+   * glosses -- is already in `cards.json` and already localised. Nine keys render
+   * twenty-two tiles.
+   *
+   * **`gallery.card.alt` IS A SINGLE LITERAL AND MUST NEVER BE BUILT WITH `+`.**
+   * A concatenated value has type `string` rather than a literal type, so its
+   * `{placeholders}` are not derived and `t()` silently stops checking the
+   * params. This one has three, and it is the only value in this catalog whose
+   * output is INDEXED CONTENT -- `alt` is what Google Images reads, and the art
+   * is the one asset a competitor cannot copy. `src/app/gallery/alt.ts` derives
+   * twenty-two distinct sentences per locale from it.
+   *
+   * **`gallery.card.zoomAria` IS NOT A REUSE OF `account.card.zoomAria`**, whose
+   * Indonesian is today the identical sentence. V8's precedent for reuse is
+   * `history.home`, and that holds because "Home" cannot drift; this one can and
+   * will -- the moment somebody makes `/account`'s label say *"Lihat kartumu
+   * lebih besar"* (**your** card), the gallery says "see your card larger" about
+   * The Moon, on a public page, with nothing failing. A key named `account.*`
+   * doing work on `/gallery` is a trap for whoever next edits `/account`.
+   *
+   * The two orientation labels the zoom sheet needs are `card.upright` /
+   * `card.reversed`, up beside the card detail block. Not `gallery.*`: three
+   * surfaces render them.
+   */
+  'gallery.meta.title': 'Galeri Major Arcana — 22 kartu tarot | JMTarot',
+  'gallery.meta.description':
+    'Lihat semua 22 kartu Major Arcana: gambar aslinya, arti tegak dan terbaliknya, serta kata kunci tiap kartu.',
+  'gallery.eyebrow': 'Galeri',
+  'gallery.title': '22 Kartu Major Arcana',
+  'gallery.hint': 'Ketuk kartu untuk melihatnya lebih besar.',
+  'gallery.card.alt': 'Kartu tarot {name}, Major Arcana {numeral}: {keywords}',
+  'gallery.card.zoomAria': 'Lihat {name} lebih besar',
+  'gallery.card.lore': 'Baca maknanya',
+
+  /**
+   * ── S4: `/arcana/<slug>`, the twenty-two lore pages ───────────────────────
+   *
+   * CHROME ONLY. Every word of the lore itself lives in `src/content/arcana/**`
+   * and never here (S-D6): twenty-two documents per locale is an order of
+   * magnitude more prose than this whole catalog, and `LocaleProvider` hands the
+   * client ONE resolved bundle -- so a lore paragraph in here would be serialised
+   * into the RSC payload of every visitor of every page, including the draw
+   * screen.
+   *
+   * **KEEP EVERY LABEL ONE OR TWO SHORT WORDS.** `.label` is
+   * `text-transform: uppercase` in the fact strip, which is what turned
+   * `What you are called` into `WHAT YOU ARE CALLED` over two rows on `/account`.
+   *
+   * **THE VERDICT WORDS ARE `reading.verdict.*` AND ARE NOT DUPLICATED HERE.**
+   * They must be the SAME WORDS the app prints after a real yes/no reading; a
+   * second key is how the lore page and the reading eventually disagree about
+   * what `maybe` is called.
+   *
+   * **THE SAME RULE TOOK `arcana.upright` / `arcana.reversed` AWAY** (S3). The
+   * two orientation words are `card.upright` / `card.reversed`, up beside the
+   * card detail block, because three surfaces render them: the draw screen's
+   * overlay, `/gallery`'s zoom sheet and this page's two section headings.
+   */
+  'arcana.verdict': 'Ya atau tidak',
+  'arcana.lore': 'Asal-usul kartu',
+  'arcana.inSpread': 'Dalam bacaan',
+  'arcana.questions': 'Pertanyaan yang sering muncul',
+  'arcana.neighbours': 'Kartu sebelum dan sesudah',
+  'arcana.related': 'Kartu yang berdekatan',
+  'arcana.related.root': 'akar angkanya',
+  'arcana.related.element': 'satu unsur',
+  'arcana.related.stage': 'satu tahap',
+  'arcana.gallery': 'Lihat semua 22 kartu',
+
+  /** The fact strip. One or two words each -- see the block above. */
+  'arcana.facts.numeral': 'Angka',
+  'arcana.facts.element': 'Unsur',
+  'arcana.facts.stage': 'Tahap',
+  'arcana.facts.polarity': 'Muatan',
+  'arcana.facts.attribution': 'Lambang',
+  'arcana.facts.modality': 'Sifat',
+  'arcana.facts.keywords': 'Kata kunci',
+
+  /**
+   * The enum VALUES stay English in the data and the displayed WORD is a key --
+   * `reading.verdict.{yes,no,maybe}` is the existing precedent for exactly this.
+   */
+  'arcana.element.fire': 'Api',
+  'arcana.element.earth': 'Tanah',
+  'arcana.element.air': 'Udara',
+  'arcana.element.water': 'Air',
+  'arcana.stage.beginning': 'Permulaan',
+  'arcana.stage.trial': 'Ujian',
+  'arcana.stage.reckoning': 'Perhitungan',
+  'arcana.polarity.light': 'Terang',
+  'arcana.polarity.shadow': 'Bayangan',
+  'arcana.polarity.neutral': 'Netral',
+  'arcana.modality.cardinal': 'Kardinal',
+  'arcana.modality.fixed': 'Tetap',
+  // 'Mutable' is a loanword Indonesian astrology writing does use, and it is the
+  // one modality whose borrowed form is identical in both catalogs -- which
+  // catalog.test.ts reads, correctly, as a key pasted across to make the typecheck
+  // go green. 'Berubah' is the ordinary word and says the same thing.
+  'arcana.modality.mutable': 'Berubah',
+
+  /**
+   * ── S5: the wallpaper download control ────────────────────────────────────
+   *
+   * CHROME ONLY (S-D6). Eight keys, declared in
+   * `docs/plans/2026-07-28-wallpapers.md`'s `## Deltas requested` D4 for S1 to
+   * fold in; **S1 landed without them, so S5 wrote them itself** — the
+   * single-owner rule exists to stop six agents editing this file in parallel,
+   * and there is no longer a parallel agent to collide with.
+   *
+   * **THERE IS DELIBERATELY NO `wallpaper.failed`.** Every branch of the control
+   * ends in a download — the share path falls back to the browser's own, and the
+   * browser's own is the default — so the only string that could render there is
+   * one that never legitimately does. The one outcome that produces no file is
+   * the person tapping Cancel on the share sheet, which is not a failure and must
+   * not be announced as one.
+   *
+   * `wallpaper.saveHint` NAMES iPhone EXPLICITLY, which is unusual for this app's
+   * copy and is the point: iOS is the platform where `<a download>` lands the file
+   * in Files while *Set Wallpaper* reads only from Photos, so this sentence IS the
+   * fallback mechanism when the Web Share sheet is unavailable.
+   *
+   * The dimensions are in the aria labels rather than only in the `<span>` because
+   * a screen reader user choosing between two downloads needs the same fact the
+   * sighted label carries; `1024 kali 1536` rather than `1024x1536` because that
+   * is how the number is read aloud.
+   */
+  'wallpaper.heading': 'Unduh gambarnya',
+  'wallpaper.card': 'Gambar kartu',
+  'wallpaper.phone': 'Wallpaper ponsel',
+  'wallpaper.cardAria': 'Unduh gambar kartu {card}, 1024 kali 1536 piksel',
+  'wallpaper.phoneAria': 'Unduh wallpaper ponsel {card}, 1440 kali 3120 piksel',
+  'wallpaper.saveHint':
+    'Di iPhone: buka gambarnya, tekan agak lama, lalu pilih Tambahkan ke Foto.',
+  'wallpaper.licence':
+    'Gambar kartu ini milik JMTarot. Kamu boleh menyimpannya dan memakainya sebagai ' +
+    'wallpaper pribadi. Bukan untuk dijual, ditempel ke barang dagangan, atau dipakai ' +
+    'secara komersial.',
+  'wallpaper.licenceLink': 'Syarat & Ketentuan bagian 9',
+
+  /*
+   * ── The blog (S6, v0.4.0) ──────────────────────────────────────────────────
+   *
+   * **CHROME ONLY. NO PROSE** (S-D6, I9). An article's `title` and `description`
+   * live on its `BlogDoc` in `src/content/blog/`, imported by the server page that
+   * renders them and by nothing else. Putting them here would ship ~5,800 words of
+   * article, in both languages, to every visitor of every page including the draw
+   * screen — which is the exact cost S-D6 exists to refuse, and it would be four
+   * values today and ninety the day the lore pages want the same thing.
+   *
+   * `blog.readingTime` IS A PLURAL FAMILY and the Indonesian pair is IDENTICAL on
+   * purpose (I5): CLDR gives `id` only `other`, so an Indonesian `.one` that differed
+   * would be a string somebody edited believing it renders. `catalog.test.ts` asserts
+   * the pair matches.
+   *
+   * **THE SHARE CONTROL REUSES `public.share.*` AND MINTS NOTHING.** S6's plan §D4
+   * asked for `content.share.action` / `.copied`; S1 had already shipped
+   * `public.share.{button,copied,failed}` and `PublicShare` renders them, so a second
+   * pair would be two words for one button — the `arcana.upright` mistake S3 records.
+   */
+  'blog.index.title': 'Tulisan',
+  'blog.index.description':
+    'Tulisan tentang tarot: cara membacanya, mitosnya, dan apa yang sebenarnya bisa dilakukan dengan setumpuk kartu.',
+  'blog.index.lede':
+    'Bacaan panjang tentang tarot, untuk dibaca sebelum atau sesudah menarik kartu.',
+  'blog.readMore': 'Baca selengkapnya',
+  'blog.published': 'Terbit {date}',
+  'blog.updated': 'Diperbarui {date}',
+  'blog.readingTime.one': 'sekitar {count} menit',
+  'blog.readingTime.other': 'sekitar {count} menit',
+  'blog.inThisArticle': 'Di dalam tulisan ini',
+  'blog.backToIndex': 'Semua tulisan',
+  'blog.notFound.title': 'Tulisan itu tidak ada',
+  'blog.notFound.body':
+    'Mungkin alamatnya salah, atau tulisan ini belum tersedia dalam bahasa yang kamu pakai.',
+  'blog.orient.title': 'Kalau baru mulai',
+  'blog.orient.gallery': 'Lihat ke-22 Major Arcana',
+  'blog.orient.firstCard': 'Mulai dari The Fool',
+  'blog.orient.feared': 'Kartu Death, dan kenapa ia tidak seperti dugaanmu',
 } as const satisfies Record<string, string>;
 
 export default id;

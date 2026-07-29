@@ -11,15 +11,43 @@ import { LocaleSwitch } from './LocaleSwitch';
 import styles from './AccountMenu.module.css';
 
 /**
- * The sheet the account circle opens. FOUR items (VD12 plus R7.1):
- * User Details -> /account, Language, History -> /history, and Sign out.
+ * The sheet the account circle opens. SIX items now:
+ * User Details -> /account, Language, History -> /history, **Gallery ->
+ * /gallery, Writing -> /blog**, and Sign out.
  *
  * VD12 fixed three. The fourth is roadmap R7.1, and the reason it is here rather
  * than in V8 is that it was falling between two workstreams the way `/account`
  * fell between W3 and W7: `auth.signed_out` has been in the closed taxonomy
  * since W4 with nothing to fire it, and a home-screen-installed PWA with no way
- * to leave is a real gap rather than a tidy-up. DO NOT ADD A FIFTH without a
- * decision recorded against VD12 -- sharing (V7) belongs on the artifact.
+ * to leave is a real gap rather than a tidy-up.
+ *
+ * ── THE FIFTH AND SIXTH ARE MIFTAH'S RULING (2026-07-29), AND THE COMMENT THAT
+ *    USED TO SIT HERE FORBADE THEM ────────────────────────────────────────────
+ *
+ * It said: *"DO NOT ADD A FIFTH without a decision recorded against VD12 --
+ * sharing (V7) belongs on the artifact."* **This is that decision**, and it is
+ * inverted rather than deleted, because the argument it was making is still
+ * right about the case it was made for: a SHARE control belongs on the thing
+ * being shared, not in an account menu.
+ *
+ * These two are a different kind of item. v0.4.0 put `/gallery` and `/blog` in
+ * the public footer, which is mounted on the landing page and on all 22 lore
+ * pages -- so a signed-in querent met "Galeri / Arti kartu / Tulisan" under
+ * every card reading. Miftah's report: **the homepage and the card pages should
+ * look clean.** The links are navigation to two public pages, they have to live
+ * somewhere reachable from inside the app, and this sheet is the app's only
+ * navigation surface. So they moved here, BELOW `/history`, in the order the
+ * ruling named.
+ *
+ * **THE SEO COST IS ZERO AND THAT IS NOT LUCK**: `hreflang`, the sitemap and the
+ * lore pages' own `arcana.gallery` link are what a crawler follows, and none of
+ * them is chrome. The footer's cross-links were a convenience for a reader; the
+ * account menu is where a signed-in reader's navigation already is.
+ *
+ * **`/blog` 404s UNTIL S6 LANDS.** That was already true of the footer link this
+ * replaces, and the branch is not deployable until S6 ships for exactly that
+ * reason -- roadmap §0.5. It is behind a session now rather than on the homepage,
+ * which is strictly better while it is still missing.
  *
  * ── A BOTTOM SHEET, NOT A DROPDOWN ───────────────────────────────────────────
  *
@@ -264,6 +292,36 @@ export function AccountMenu({
 
         <Link href="/history" className={styles.item} onClick={onClose}>
           <span className={styles.label}>{t('account.menu.history')}</span>
+          <span className={styles.chevron} aria-hidden="true">
+            ›
+          </span>
+        </Link>
+
+        {/*
+          THE TWO PUBLIC PAGES, BELOW READING HISTORY, IN THIS ORDER (Miftah's
+          ruling -- see the header). Plain `Link`s like the three above: the
+          destination pages own their view events, and `public.page_viewed` fires
+          from `PublicPageViewed` on arrival. Firing a click event here as well
+          would double-count the only funnel those pages have.
+
+          They are NOT `TrackLink`s with `public.link_clicked` either, and that is
+          deliberate: `from` on that event is a closed union of PUBLIC surfaces
+          (`landing | gallery | arcana | blog_index | blog_post | footer`), and
+          the account menu is none of them. Adding a seventh value to measure a
+          tap from inside the app would put an app surface in a public-funnel
+          union -- the "how do people move through the CONTENT" question stops
+          having a clean answer. If this tap ever needs measuring, it is
+          `account.opened`'s sibling, not this event's.
+        */}
+        <Link href="/gallery" className={styles.item} onClick={onClose}>
+          <span className={styles.label}>{t('account.menu.gallery')}</span>
+          <span className={styles.chevron} aria-hidden="true">
+            ›
+          </span>
+        </Link>
+
+        <Link href="/blog" className={styles.item} onClick={onClose}>
+          <span className={styles.label}>{t('account.menu.blog')}</span>
           <span className={styles.chevron} aria-hidden="true">
             ›
           </span>

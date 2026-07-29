@@ -28,6 +28,29 @@ export const CARDS = raw as Card[];
 const ART_VERSION = 3;
 
 /**
+ * The two art paths WITHOUT the version, and the two consumers are the reason
+ * they exist (S3's delta 17, v0.4.0).
+ *
+ * **A `?v=` IS RIGHT FOR AN `<img src>` AND WRONG IN STRUCTURED DATA.** The query
+ * string is a cache-buster for a browser; Google Images treats a changed URL as a
+ * NEW image with no history, so bumping `ART_VERSION` with the version in an
+ * `ImageObject` would orphan twenty-two indexed images and report nothing. The
+ * unversioned path is also what a `sitemap`-adjacent claim should name: it is the
+ * address of the artwork, not of one cache generation of it.
+ *
+ * **ONE SOURCE OF TRUTH, WHICH IS WHY `cardImage`/`cardThumb` DELEGATE** rather
+ * than each interpolating `/cards/`. Two independent spellings of a public asset
+ * path is the shape that breaks on the day the directory moves.
+ */
+export function cardImagePath(slug: string): string {
+  return `/cards/${slug}.webp`;
+}
+
+export function cardThumbPath(slug: string): string {
+  return `/cards/thumb/${slug}.webp`;
+}
+
+/**
  * Full-size card art, 800x1200. For the result panel, where the card is large
  * enough that the artwork is the point.
  *
@@ -36,7 +59,7 @@ const ART_VERSION = 3;
  * so the registry is gone and the slug is the only key we need.
  */
 export function cardImage(slug: string): string {
-  return `/cards/${slug}.webp?v=${ART_VERSION}`;
+  return `${cardImagePath(slug)}?v=${ART_VERSION}`;
 }
 
 /**
@@ -45,7 +68,7 @@ export function cardImage(slug: string): string {
  * thumbnails -- see tools/normalize_cards.py.
  */
 export function cardThumb(slug: string): string {
-  return `/cards/thumb/${slug}.webp?v=${ART_VERSION}`;
+  return `${cardThumbPath(slug)}?v=${ART_VERSION}`;
 }
 
 /** The design reverses roughly three cards in ten. */
@@ -145,4 +168,60 @@ export function birthCard(isoDate: string): Card {
     total = folded;
   }
   return CARDS[Math.min(total, 21)];
+}
+
+/**
+ * The card's PUBLIC URL slug (v0.4.0, S-D4). `the-moon`, never `18_moon`.
+ *
+ * **A SECOND IDENTIFIER, DELIBERATELY, AND THE TWO MUST NEVER BE MERGED.**
+ * `Card.slug` addresses a FILE: it matches the art filename and twenty-two
+ * committed assets under `public/cards/` depend on it, which is why `cardImage()`
+ * and `cardThumb()` interpolate it. This one addresses a DOCUMENT somebody found
+ * by typing words. An underscore and a leading number are worth nothing in a URL
+ * and cost a keyword; a hyphenated English name is the query.
+ *
+ * **IDENTICAL IN BOTH LOCALES, BECAUSE CARD NAMES ARE** (`## Card data`,
+ * `## Localization` rule 1). That is what makes the `hreflang` pair a clean
+ * `/arcana/X` <-> `/en/arcana/X` mapping with no per-locale slug table -- S-D4's
+ * own reason, and it is load-bearing for `contentAlternates()`.
+ *
+ * **NO SPECIAL CASES, AND `urlSlug.test.ts` ASSERTS THERE ARE NONE.** Four cards
+ * carry no article (`strength`, `justice`, `death`, `temperance`) and
+ * `Wheel of Fortune` keeps its `of`; both fall out of lowercasing and hyphenating.
+ * `Judgement` keeps the British spelling because the card does.
+ *
+ * DERIVED RATHER THAN TABULATED, and asserted against a committed table. A
+ * hand-written map would be twenty-two chances to typo an address that can never
+ * change; a derivation plus a table test is one function and one list a reviewer
+ * can read.
+ */
+export function cardUrlSlug(card: Card): string {
+  return card.name.toLowerCase().replace(/\s+/g, '-');
+}
+
+/**
+ * The twenty-two URL slugs, in Fool's Journey order.
+ *
+ * For `generateStaticParams`. **A `readonly string[]` and not a literal union**:
+ * `cards.json` is generated, so there is nothing to derive a union from at compile
+ * time, and the guarantee lives in `urlSlug.test.ts` instead -- the same place the
+ * address contract already lives.
+ *
+ * **`src/app/sitemap.ts` TAKES `LORE_SLUGS` FROM THE REGISTRY AND NOT THIS.**
+ * While the forty-four documents are being written, advertising a URL whose
+ * document does not exist is telling a crawler about a 404.
+ */
+export const CARD_URL_SLUGS: readonly string[] = CARDS.map(cardUrlSlug);
+
+/**
+ * One card by its URL slug, or `undefined`.
+ *
+ * `undefined` rather than a throw, for exactly `cardById`'s reason: every caller
+ * is a renderer, and the page turns the miss into `notFound()` where it can still
+ * send a status. Case-sensitive and exact -- `/arcana/The-Moon` is a different URL
+ * and must 404 rather than quietly serving the same document at a second address,
+ * which is a duplicate a crawler has to choose between.
+ */
+export function cardByUrlSlug(slug: string): Card | undefined {
+  return CARDS.find((c) => cardUrlSlug(c) === slug);
 }

@@ -2366,3 +2366,1590 @@ move into the cached function. And the new test's first version asserted **zero*
 `resolveShare` occurrences, which fails on the one legitimate call — the property is not
 "nobody resolves" but "nobody resolves *outside the gate*", which is what would put a
 query in front of the limiter.
+
+---
+
+# v0.4.0
+
+## S1 — the public surface and the technical SEO foundation
+
+The rules and the invariants are in `CLAUDE.md`'s `## The public surface (v0.4.0 / S1)`.
+This section is the **evidence**: what was measured, on what, and what it means.
+
+### R21 is answered locally, and it is the answer four plans wanted
+
+**A `next.config.ts` `cache-control` DOES survive a dynamically rendered App Router
+response.** Four plans flagged this independently (S1 flag 5, S2 flag 11, S3 flag 9,
+S4 flag 2) and it is the premise S-D10's whole TTFB argument rests on. Nobody had
+measured it, and every route in this app is `ƒ` because the root layout awaits
+`getLocale()`.
+
+Measured 2026-07-29 against a real `npx next start -p 3001` on a production build, with
+a **temporary probe entry** pointing `CONTENT_CACHE` at `/terms` — a route that exists
+and is dynamic, which is the whole point. The probe was removed in the same session.
+
+```
+/terms                  ƒ, WITH an entry   cache-control: public, s-maxage=3600, stale-while-revalidate=86400
+/                       ƒ, no entry        Cache-Control: private, no-cache, no-store, max-age=0, must-revalidate
+/cards/18_moon.webp     static, WITH one   cache-control: public, max-age=31536000, immutable
+```
+
+The middle line is the negative control and it is what makes the first line mean
+something: Next's dynamic default is real and visible, and the config entry beats it.
+
+**THIS IS NOT THE WHOLE OF R21 AND MUST NOT BE READ AS IT.** It proves the header
+reaches the wire. It does **not** prove Vercel's CDN honours `s-maxage` on a function
+response — the dev server has no CDN in front of it, and R21 asks for `curl -sI`
+against a **Vercel preview**. Until that is recorded here, every workstream still
+assumes the content routes are not edge-cached. Nothing in v0.4.0 depends on the cache
+and nothing new may.
+
+### The crawl baseline at S1 alone
+
+`tools/seo/crawl.sh http://localhost:3001`, production build, no cookie jar,
+2026-07-29. **It reports FAILED and that is correct** — it is the release's acceptance
+test, not S1's, and S1 must not deploy alone (flag 9).
+
+```
+/                    200  0   SET-COOKIE (jmt_locale, authjs.csrf-token, authjs.callback-url)
+/en                  200  1   REDIRECTED to /login?callbackUrl=%2Fen; LANDED ON LOGIN
+/gallery             404  0   NOT 200
+/en/gallery          404  0   NOT 200
+/arcana/the-moon     404  0   NOT 200
+/en/arcana/the-moon  404  0   NOT 200
+/blog                404  0   NOT 200
+/en/blog             404  0   NOT 200
+/terms               200  0   SET-COOKIE (...)
+/privacy             200  0   SET-COOKIE (...)
+/sitemap.xml         200  0   ok
+/robots.txt          200  0   ok
+```
+
+Read it line by line, because three of these are the change working:
+
+- **`/` is 200 with 0 hops.** It was a 302 to `/login` for anyone without a cookie. This
+  is the release's core change and the closed OAuth branding blocker.
+- **`/gallery`, `/arcana/the-moon` and `/blog` are 404, NOT 302.** That is the gate
+  change: `isPublic()` now lets them through and Next answers honestly. Before S1 they
+  were login redirects, which Google reads as soft 404s. S3/S4/S6 turn these into 200s.
+- **`/en` is still a login redirect** because S2's rewrite is not landed. Expected.
+- **`/terms` and `/privacy` are 200 with no `noindex`** (R4).
+- **`/s/` still answers `x-robots-tag: noindex, nofollow, noarchive` and
+  `referrer-policy: no-referrer`.** That line is the script's own negative control: if
+  it printed nothing, the crawl above would prove less than it looks like it does.
+
+**The `Set-Cookie` on `/` is expected and is S2's** — its cookie-write guard grows from
+`/s/` to `/s/` plus the content routes plus `/api/events` (R22). **But note what the
+crawl actually caught, which no plan predicted: there are THREE cookies, not one.**
+`jmt_locale` is S2's to suppress; `authjs.csrf-token` and `authjs.callback-url` come
+from the `auth()` wrapper around middleware and will still be there afterwards. That is
+the same gap `/s/` already carries and `/privacy` §4.4 already names, arriving on the
+landing page. S-D10 says a stranger leaves with nothing in their jar; **after S2 lands,
+that will still be false on every public page, and somebody has to decide whether it
+matters.**
+
+### The landing fits a phone — loop 4, not a screenshot
+
+`tools/seo/fit.sh /` against the production build, 2026-07-29:
+
+```
+{"width":320,"rootOverflows":false,"offenders":[]}
+{"width":360,"rootOverflows":false,"offenders":[]}
+{"width":390,"rootOverflows":false,"offenders":[]}
+```
+
+**Neither Chrome here gives a phone width** — both floor at ~500px — so this is a
+fixed-width container plus `scrollWidth > clientWidth`, which is exact for
+container-driven layout. Two things were expected to overflow and did not: the footer's
+`.links` row (it wraps) and the hero `<img>`, which is declared at `width={800}` and is
+held by `max-width: 100%`. `Landing.test.ts` asserts that CSS rule directly, because
+this loop needs a browser and that assertion does not.
+
+### Loop 5: the page agrees with what it renders
+
+`tools/e2e/run.sh` against the production build, signed out:
+
+- `text` returns the landing's `<h1>`, tagline, lede and all four block headings.
+- `document.querySelectorAll('h1').length` is **1**. Two `<h1>`s is the commonest
+  on-page SEO defect and it is invisible in a browser.
+- `document.querySelectorAll('script[type="application/ld+json"]').length` is **1**, and
+  `JSON.parse(...)['@graph'].map(n => n['@type'])` is **`Organization,WebSite`**.
+
+That last one is the interesting one, and it is R1's measurement repeated in a real
+browser rather than in a test: the plain text child parses. Confirmed again on the raw
+HTML — `publisher['@id']` matches the organization's `@id`, `inLanguage` is the bare
+`id`, and `SearchAction` appears nowhere.
+
+**One observation worth keeping: the harness reported `lang=en` on `/`.** That is
+correct today and will change: signed out, `/` currently follows D6's chain, so an
+`Accept-Language: en` browser gets English. After S2's `contentRewrite` reaches
+middleware, signed-out `/` pins `id` (§4.1) and only the signed-in arm keeps the chain.
+If it still says `en` after S2 lands, the pin is not wired.
+
+### `metadataBase` reached `/s/`, and that is the only visible evidence it works
+
+Before: `og:image` resolved against Next's guess. After, on the wire:
+
+```
+<meta property="og:image" content="http://localhost:3001/s/abcdefghjkmn/opengraph-image?..."/>
+```
+
+Absolute, at the origin the leaf decided. **VD18 is untouched** — the image still draws
+only `MAJOR ARCANA` and carries neither the question nor the prose.
+
+### The secrets tripwire's premise expired, and amending it was the real work
+
+`npm run build` **failed** the first time `origin.ts` existed, with four findings. The
+rule was *"JMTarot has no `NEXT_PUBLIC_` variables"* and S-D11 introduced one.
+
+The audit's own output says *"If a finding is legitimate, do not add a suppression"*,
+and that instruction is right, so the fix is not an allowlist entry:
+
+1. **The allowlist pairs the VARIABLE with its ONE legitimate reader**
+   (`NEXT_PUBLIC_READERS`), not just the name. Any other module reading
+   `NEXT_PUBLIC_SITE_ORIGIN` still fails the build — which is *stricter* than the old
+   rule was for every other variable, because the old one had nothing to say about
+   where a permitted read may live.
+2. **`lib/seo/origin.ts` joined the transitive `FORBIDDEN` client-boundary walk**, which
+   is the fence R10 actually asks for. `clientBoundary.test.ts` covers the direct
+   import; this covers a helper in between.
+3. **Test files are skipped in the read scan.** Nothing imports a `*.test.ts` from a
+   route, so Next never compiles one. Three of them tripped it, and
+   `layout.contract.test.ts`'s read is inside a `.not.toContain(...)` — a test asserting
+   the layout must NOT read the variable. Firing on that is the same pathology the
+   scanner's own comment already describes for `resolve.ts`.
+
+**Both new fences were negative-controlled rather than assumed**, by planting a probe
+and watching the build fail:
+
+```
+src/lib/_probe.ts reading it        -> [NEXT_PUBLIC_] a NEXT_PUBLIC_ read in source (NEXT_PUBLIC_SITE_ORIGIN)
+a 'use client' component importing  -> [boundary] src/components/_Probe.tsx -> src/lib/seo/origin.ts
+```
+
+### Three traps this workstream paid for
+
+- **`pkill -f next-server` KILLED THE SHELL RUNNING IT.** `pkill -f` matches full
+  command lines, and the command line *containing the pkill invocation* contains the
+  string `next-server`. The compound command died at exit 144 with the config edit
+  half-applied and no server running. Use `pkill -f 'next[-]server'`, which cannot
+  match itself. This is a sharper version of the trap `headers.test.ts` already
+  records (`pkill -f "next start"` does not work because the process renames itself).
+- **`npm start` LISTENS ON 3000, AND 3000 IS PERMANENTLY HELD** by another project's
+  Grafana container. `npm run dev` passes the port; `npm start` does not. The symptom
+  is `EADDRINUSE ::: 3000` from a script that looks like it should work, and every
+  documented local `curl` in the S1 plan assumed otherwise. Use
+  `npx next start -p 3001`.
+- **`*/` INSIDE A BLOCK COMMENT ENDS THE COMMENT.** `sitemap.test.ts` documented the
+  permitted import families as `@/content/*/index.ts` and produced
+  `[PARSE_ERROR] Unterminated string` twenty lines further down. Write the glob in
+  prose, not as a glob.
+- **THE UNIT PROJECT GLOBS `src/**` `/*.test.ts` ONLY.** A `.test.tsx` file is silently
+  never collected — `vitest run <path>` says "No test files found" and a bare run says
+  nothing at all. `JsonLd.test.ts` renders JSX through `createElement` rather than
+  widening the glob for every other workstream.
+
+### The catalog, measured
+
+268 keys after S1's 26. `id` serializes to **15,801 bytes**, `en` to **15,527**. The
+longest value is still `onboarding.intro.body` at **267** characters; the next three are
+`onboarding.q.worst_thing.hint` (182), `moderation.blocked.selfHarm.closing` (168) and
+`account.delete.body2` (147). `prose.test.ts`'s ceilings — 320 per value, 20,000 bytes
+per catalog — are set against those, with ~21% headroom on the one that matters.
+
+**CLAUDE.md said 118 keys for two releases** and the roadmap argues S-D6 from a line
+count. The bytes are the number that reaches a phone, and they are why 44 lore documents
+may never live in the catalog.
+
+### What S1 did NOT do, and where it deviated from its own plan
+
+- **The plan's `EN_PREFIX` placeholder in `sitemap.ts` was never written.** S2's
+  `prefix.ts` had to land first anyway (R11/R14), so the sitemap imports `localePath`
+  directly and the seam closed instead of being created.
+- **The plan's gate tests are inverted.** §1.1 chose "the gate knows no `/en/`
+  spelling", so `isPublic('/en/gallery')` would be `false`. **Reconciliation R14 kept
+  S2's contract G2 instead** — the content clause strips, every other clause does not —
+  and the tests assert that, plus the `/en/api/events` case that makes the narrowness
+  load-bearing.
+- **The plan's `dangerouslySetInnerHTML` in `JsonLd.tsx` was refused** (R1). See the
+  trap above.
+- **`/arcana` is public** (R6), reversing S1's flag 6, which had accepted a soft 404.
+  **`src/app/arcana/page.tsx` calling `notFound()` is NOT written** — the path 404s
+  today because no route file exists there at all, so the behaviour is already correct.
+  It belongs to whoever owns `src/app/arcana/**`, which is S4.
+- **`/terms` and `/privacy` became indexable** (R4), which S1's flag 7 raised and
+  explicitly declined to do alone.
+
+## Locale-addressable public content (S2), v0.4.0
+
+`/gallery` is Indonesian and `/en/gallery` is English, by a middleware rewrite, for five
+routes and no others. The rules and the invariants are in CLAUDE.md's `## Localization`;
+this is the evidence.
+
+### The contract
+
+`src/lib/i18n/prefix.ts` is a pure edge-safe leaf holding both the prefix maths and the
+content route table, because you cannot decide whether to honour `/en/x` without knowing
+whether `/x` is content. `src/middleware.ts` calls `contentRewrite(pathname, signedIn)`
+once and gets one of four answers: `passthrough` (D6 unchanged), `bare` (pin `id`),
+`rewrite` (pin `en`, rewrite to the bare route), `redirect` (301 to the canonical
+address).
+
+### Contract G1: the gate sees the STRIPPED path
+
+Resolved rather than left open (roadmap §6.1 asked for a decision). `decide()` never
+receives `/en/gallery`; `isPublic()` and S-D5's `/` clause are written against bare paths.
+The argument that settled it: `/en` rewrites to `/`, so S-D5's `pathname === '/'` clause
+fires for the English landing **and** the signed-in-but-not-onboarded arm still redirects
+to `/onboarding`. Under the other ordering that clause has to read
+`'/' || '/en' || '/en/'` and the onboarding arm is missed by everybody, because nobody
+tests `/en` while signed in and half-onboarded.
+
+`isPublic()`'s content clause still strips first (contract G2), so `/en/history` is proved
+non-public even though nothing can reach `decide()` with that spelling any more.
+
+### `isContentPath` and `isPublicContentPath` differ by exactly one path
+
+`/`. `isPublic()` short-circuits `decide()` **before** the onboarding check, so `'/'` in
+that allowlist would land a signed-in half-onboarded querent on a reader picker that
+assumes a completed profile — the change S-D5 forbids in capitals, arriving through a
+predicate instead of through a diff. A test asserts the symmetric difference is `['/']`.
+
+### `/` is the one path where the session is read, and it cannot be CDN-cached
+
+S-D5 makes `/` dual-render. Pinning `id` there unconditionally hands a signed-in English
+querent an Indonesian reader picker — D6 broken on the busiest screen in the app, by the
+workstream that promised not to touch it. So on `/` with a session, `contentRewrite`
+answers `passthrough` and the D6 chain and the cookie write behave exactly as before.
+
+The consequence is that `/` varies by session and **S-D10's cache header must not be
+applied to it**. That is true for S-D5's reasons before it is true for S2's. Every other
+content route is session-invariant, and a negative-control test asserts `contentRewrite`
+gives the identical answer for both values of `signedIn` on every path but `/`.
+
+### `?lang=` is inert on a content route, by construction
+
+`contentRewrite` takes a pathname and a boolean. There is no `NextRequest`, no
+`searchParams` and no header, so the dev override cannot reach it — in development or in
+production. §4.3 asked for "the prefix wins"; a function that cannot see the query cannot
+be overridden by it. The override is untouched for the nine app routes. Verified on the
+wire: `/?lang=en` is `id` and `/en?lang=id` is `en`.
+
+### The 301 arm is narrower on the wire than the plan expected, and Next's 308 is why
+
+**MEASURED, 2026-07-29, and it corrects the plan's flag 6.** That flag said both locales
+would be normalised "by the same 301 rather than one of them relying on Next's own
+`trailingSlash: false` 308". False: Next normalises a trailing slash **before middleware
+runs**, so `contentRewrite`'s trailing-slash branch is unreachable in production and both
+locales rely on the 308 after all.
+
+```
+/gallery/      308 -> /gallery          Next, before middleware
+/en/gallery/   308 -> /en/gallery       Next, before middleware
+/en/           308 -> /en               Next, before middleware
+/id/gallery    301 -> /gallery          ours
+/id            301 -> /                 ours
+/id/gallery/   308 -> /id/gallery -> 301 -> /gallery   two hops, settles
+```
+
+The `canonicalise()` calls stay: they are what makes `contentRewrite` a total function on
+a path it may be handed by a test, a future `basePath`, or any router that does not
+normalise first — and the fixed-point test proves no input loops. But do not read the
+trailing-slash 301 as a live path; the `/id/` family is the arm that actually fires.
+
+### The gate is opening on content paths, and a 404 is the proof
+
+With S3/S4/S6 unlanded, every content address is a **real 404** rather than a login
+redirect, which is the property the release is built on:
+
+```
+/gallery /en/gallery /arcana /arcana/the-moon /blog /en/blog      404
+/en/history /en/account /en/onboarding /en/api/events /en/thessaly
+        307 -> /login?callbackUrl=%2Fen%2Fhistory  (etc.)
+```
+
+**The `callbackUrl` is the assertion, not the 307.** It spells the path verbatim, which
+proves nothing stripped the prefix on the way to `decide()`. A `callbackUrl=%2Fhistory`
+would mean the gated app had become reachable under `/en/`.
+
+### The cookie guard, measured
+
+The first measurement, before the second half landed:
+
+```
+GET /            set-cookie: authjs.csrf-token, authjs.callback-url        (no jmt_locale)
+GET /en          set-cookie: authjs.csrf-token, authjs.callback-url        (no jmt_locale)
+POST /api/events set-cookie: authjs.csrf-token, authjs.callback-url        (no jmt_locale)
+GET /login       set-cookie: jmt_locale=id, authjs.csrf-token, authjs.callback-url
+```
+
+`/login` is the negative control: an app route with a disagreeing cookie still writes it,
+so the guard narrowed the write rather than deleting it. `/api/events` is R22 — it was
+collecting on the beacon the cookie `/s/` had just refused to set.
+
+### The two cookies S2 does not write and still had to remove
+
+**THE GUARD ABOVE ONLY DECIDES WHAT WE WRITE, AND S-D10 WAS STILL FALSE ON EVERY PUBLIC
+PAGE.** `authjs.csrf-token` and `authjs.callback-url` are appended by the `auth()`
+wrapper **after** the handler returns. Read it in `node_modules/next-auth/lib/index.js`:
+
+```js
+const finalResponse = new Response(response?.body, response);
+for (const cookie of sessionResponse.headers.getSetCookie())
+  finalResponse.headers.append('set-cookie', cookie);
+```
+
+So nothing inside the handler can prevent them, which is exactly why the rule read as
+satisfied for two releases — `/s/`'s guard has the same shape and the same hole, and V7's
+"a third party must leave with nothing in their jar" was false the whole time.
+
+**AND THE HALF THAT LOOKED FINE WAS THE CACHE.** A `Set-Cookie` makes a response
+uncacheable at the edge **whatever `Cache-Control` says**, so `next.config.ts`'s
+`s-maxage` on the content routes was measured, correct, and buying nothing. R21's open
+question — does the header survive a dynamic App Router response — could have been
+answered `yes` and still left the pages uncached.
+
+The fix is an **outer** wrapper, because that is the only position downstream of the
+append. The inner handler marks a content response with `x-jmt-strip-cookies`; the outer
+deletes every `Set-Cookie`, then the marker. Measured after:
+
+```
+GET /  /en  /gallery  /en/gallery  /blog     0 set-cookie headers
+GET /id/gallery  301                         0 set-cookie headers
+GET /en                                      no x-jmt-strip-cookies on the wire
+GET /login    set-cookie: jmt_locale, authjs.csrf-token, authjs.callback-url   (all three)
+```
+
+Three properties to keep:
+
+- **`content.kind !== 'passthrough'` is the whole fence, and widening it breaks two
+  things at once.** A signed-in visitor on `/` is `passthrough` (S-D5), so stripping
+  there would drop the `jmt_locale` sync D6 depends on *and* the sliding session cookie,
+  on the busiest screen in the app. `/login` and `/api/auth/*` are `passthrough` too,
+  which is what keeps the csrf token available to the sign-in POST: `Landing.tsx` links
+  to `/login` rather than posting anything, so a stranger clicking through mints both
+  cookies there, one request later, exactly as a cold visitor does today.
+- **The marker is deleted in the same block.** A header naming our internals on the pages
+  a stranger is most likely to read is not a cost worth paying for a debugging aid.
+- **It costs the sliding refresh on content pages, and that is the accepted trade.**
+  Reading `/blog` all day does not extend a signed-in querent's 24-hour idle timeout. The
+  30-day absolute cap is untouched, browsing public content is not app activity, and the
+  alternative is a `Set-Cookie` on every cacheable page in the product to keep one timer
+  alive for somebody reading an article.
+
+Verified beyond the header count: a dev-minted session survives a request to a stripped
+content path and `/history` still answers 200 afterwards, so the strip removes the
+*re-issued* cookie and never the one the browser already holds.
+
+### `/id/…` 301s rather than 404s, and both locales normalise the same way
+
+Indonesian has one address and it is the bare one. `stripLocalePrefix` still recognises
+the `/id/` segment, and that is the whole reason: a path people will guess **because**
+`/en/` exists gets a 301 to the address that exists, keeping whatever inbound link it
+arrived with, instead of a 404. A test iterates every redirect to a fixed point and
+asserts it settles in at most two steps; the wire agrees (see the table above).
+
+### The canonical `/en` shipped for one commit was `/`, and only `curl` saw it
+
+**THE HIGHEST-VALUE FINDING IN THIS WORKSTREAM, AND NO TEST FOUND IT.** S1 left
+`alternates: { canonical: '/' }` in `src/app/page.tsx` with a comment saying S2 would
+replace it. Measured before replacing it:
+
+```
+GET /      <link rel="canonical" href="http://localhost:3001"/>
+GET /en    <link rel="canonical" href="http://localhost:3001"/>     <-- the defect
+```
+
+A canonical naming another URL is an instruction to drop this one, so **the English
+landing page would have been de-indexed in favour of the Indonesian one, silently, in the
+release whose entire purpose is being indexed** — while `sitemap.xml` simultaneously
+claimed the two were a reciprocal pair. After `contentAlternates()`:
+
+```
+GET /      canonical -> /        alternate id -> /, en -> /en, x-default -> /
+GET /en    canonical -> /en      alternate id -> /, en -> /en, x-default -> /
+```
+
+The alternate set is **byte-identical on both twins and only the canonical moves**, which
+is what reciprocity means and the only form Google does not discard.
+
+### Two framework details, measured rather than recalled
+
+- **React serialises `hrefLang` as `hrefLang`, not `hreflang`**, in both
+  `<a hrefLang>` and Next's `<link rel="alternate" hrefLang>`. It is correct anyway —
+  HTML attribute names are ASCII case-insensitive, so the parsed DOM attribute is
+  `hreflang` — and `sitemap.xml`, which is XML and *is* case-sensitive, is serialised by
+  Next's own sitemap writer and comes out lowercase. Do not "fix" the JSX to a lowercase
+  prop: React would treat it as an unknown attribute and the warning is the only thing
+  you would gain.
+- **Next strips the trailing slash from an absolute canonical.** `contentAlternates`
+  returns `http://host/` for the root and the emitted tag is `href="http://host"`. Both
+  denote the same resource per the URL spec, and `sitemap.xml` keeps the slash, so the
+  two files disagree textually and not semantically. Recorded so it is not read as a bug
+  in the helper.
+
+### The D6 regression check, which is the only thing S2 could break that already worked
+
+A real dev-minted session, `POST /api/locale {"locale":"en"}`, then:
+
+```
+GET /     signed in, en    <html lang="en">   page-module   (the picker)
+GET /en   signed in, en    <html lang="en">   page-module   (the picker, one request)
+GET /     signed out       <html lang="id">   Landing-module
+```
+
+**The plan's Task 9 check 4 has a wrong field name**: `/api/auth/dev-session` takes
+`{"username": "..."}`, not `{"user": ...}`, and the wrong one is a 400 with an empty
+cookie jar — which then looks like "the session did not work" rather than "the request
+was rejected". The landing page also names all three readers, so grepping for `Thessaly`
+is not a test of which arm rendered; `Landing-module` versus `page-module` in the class
+names is.
+
+### Loop 5: the link really does reload the document, and it is 44px tall
+
+The behavioural half of the `next/link` trap, over CDP against `npm run dev`:
+
+```
+goto /en                            -> /en   lang=en
+eval a[hreflang=id].href            -> /
+tap  Indonesia                      -> /     lang=id   aria-current="Indonesia"
+tap  English                        -> /en   lang=en   aria-label="Change language"
+```
+
+**`lang` flipping is the whole assertion, not the pathname.** With a `next/link` the
+pathname would change and `document.documentElement.lang` would stay `en`, because the
+navigation resolves to the same route under the same root layout and Next does not
+re-render it — a visibly half-translated page with nothing failing anywhere.
+
+Two things the plan's §13.2 gets wrong, both costing a few minutes:
+
+- **`tools/e2e/run.sh tap` matches VISIBLE TEXT, not a CSS selector.** `tap
+  'a[hreflang="id"]'` prints `NO element matching`, which reads like the anchor is
+  missing. `tap 'Indonesia'` is the call.
+- **The harness does not scroll, and a tap it reports as landed can hit nothing.** It
+  filters on `getBoundingClientRect().width/height > 0`, which a below-the-fold element
+  satisfies, then dispatches Input-domain events at coordinates outside the viewport. It
+  printed `tapped "Indonesia" -> [exact] "indonesia"` and the URL did not change. Scroll
+  first: `eval 'document.querySelector("a[hreflang=id]").scrollIntoView({block:"center"})'`.
+  Worth fixing in the harness the next time somebody is in that file.
+
+**And it answers §13.3's deferral with a number instead of an argument.** That section
+says loop 4 is unnecessary because `.link` only adds `display: inline-flex`,
+`align-items: center` and `text-decoration: none` to the geometry `LocaleSwitch` already
+measured. Measured directly: the anchor's box is **92.67 × 44**. The 44 is the number
+`.option`'s comment records as having said 44 and measured 42 for a whole workstream, so
+it is the one worth having twice.
+
+### The crawl gate, and what its FAILED means today
+
+`tools/seo/crawl.sh http://localhost:3001` — **it defaults to production, which is still
+serving v0.3.0, so an unargued run reports every content path as a login redirect and
+tells you nothing about this branch.**
+
+```
+/                200  0 hops   set-cookie: authjs.csrf-token, authjs.callback-url
+/en              200  0 hops   set-cookie: authjs.csrf-token, authjs.callback-url
+/gallery /en/gallery /arcana/the-moon /en/arcana/the-moon /blog /en/blog     404
+/terms /privacy  200  0 hops   set-cookie: jmt_locale, authjs.*
+/sitemap.xml     200  4 urls   /robots.txt 200 with the Sitemap: directive
+/s/              404 + x-robots-tag: noindex, nofollow, noarchive
+crawl: FAILED
+```
+
+**The FAILED is §0.5's, not a regression.** The six 404s are S3, S4 and S6's pages, which
+are *meant* to be missing at this point in the sequence — that is the whole reason the
+script is the deploy gate and no unit test can replace it. What S2 changed is the first
+two rows: `/` and `/en` are 200 at zero hops and no longer report `jmt_locale`. `/terms`
+and `/privacy` still write it, correctly — R4 made them indexable but they are not
+content routes, they serve both languages at one address by D6's chain, and that chain is
+what the cookie is for.
+
+### The traps
+
+- **`NextResponse.rewrite(url)` without `{ request: { headers } }` is silent.** The right
+  route renders with no `x-jmt-locale`, so `getLocale()` falls through to the
+  `jmt_locale` cookie: `/en/gallery` is English for whoever has an `en` cookie and
+  Indonesian for the next stranger, under a canonical that claims English. **No unit test
+  in this project can see it.** The check is `curl` with a planted cookie, and it passes:
+  `/` with `jmt_locale=en` is `id`, `/en` with `jmt_locale=id` is `en`.
+  `middleware.ts` had carried this warning for `NextResponse.next()` since W6; it is the
+  same trap one function later.
+- **`next/link` must never cross the `/en/` boundary.** A client-side navigation from
+  `/gallery` to `/en/gallery` resolves — after the rewrite — to the same route under the
+  same root layout, so Next does not re-render the layout: `<html lang>` and
+  `LocaleProvider`'s catalog keep their old values and the page comes out
+  half-translated. `ContentLocaleLink` is a plain `<a>` for that reason and not for
+  crawlability (`next/link` renders a real anchor).
+- **`usePathname()` returns the PRE-rewrite path.** On `/en/gallery` it is `/en/gallery`
+  while the rendered route is `/gallery`, so a client-side sibling computation builds
+  `/en/en/gallery` and disagrees with the server about it. `ContentLocaleLink` takes the
+  bare path as a prop, and `localePath` throws on an already-prefixed argument. A contract
+  test forbids any `'use client'` file from importing `@/lib/i18n/prefix`.
+- **Do NOT copy `/s/[slug]`'s nested `LocaleProvider`.** There, the page's language differs
+  from the *request's* resolved locale, so a second catalog is the only way. Here the
+  request's resolved locale IS the page's language — middleware pinned it — so the root
+  layout's single provider is already correct and a nested one would ship two catalogs and
+  break I9's whole argument for +3.3KB gzipped on the pages a stranger opens on mobile
+  data.
+- **A relative `hreflang` is discarded by Google, and so is a non-reciprocal group** —
+  the whole group, not the broken edge, with nothing reporting it. `contentAlternates`
+  therefore builds absolute URLs from an `origin` parameter rather than leaning on
+  `metadataBase`, and its test walks the graph: every URL a page names must name that page
+  back.
+- **`contentAlternates` takes the locales that EXIST, and defaulting that to `LOCALES` is
+  the R2 trap wearing a convenience.** The parameter is required for that reason. `/` may
+  pass `LOCALES` honestly because middleware rewrites `/en` to the same route, so neither
+  address can 404; the 22 cards may not.
+- **A stranger's URL choice does not cross the sign-in boundary.** No content response
+  writes `jmt_locale` (S-D10), so a visitor who read `/en/blog` and then clicked into
+  `/login` gets whatever `Accept-Language` negotiates. Same asymmetry §4.2 states for the
+  signed-in direction, and accepted for the same reason.
+- **`PublicShell`'s hole test had to be INVERTED, not deleted.** S1 asserted the mount
+  point was a comment, so that no local `<a>` could become the second definition R17
+  exists to prevent. The half that still binds after S2 lands is that the shell mounts and
+  does not implement: exactly one `<ContentLocaleLink>`, and still no bare `<a>` of its
+  own.
+
+---
+
+## Card lore pages (S4), v0.4.0
+
+Forty-four authored documents at twenty-two permanent addresses. `CLAUDE.md`'s
+`## Card lore pages (v0.4.0 / S4)` holds the rules; this holds the evidence.
+
+### The twelve-card element invariant, and how it was checked
+
+`Card.glyph` had been in `cards.json` since the first release and **nothing had
+ever read it** — before `src/lib/arcana/correspondence.ts`, `grep -rn glyph src`
+found the type declaration and nothing else. Twenty-two committed astrological
+attributions, unused.
+
+The join is worth having because it is checkable. For the **twelve sign cards**,
+`SIGNS[sign].element` in `astrology.ts` equals `card.element` in `cards.json`,
+for all twelve, with no exceptions:
+
+```
+Aries/fire  Taurus/earth  Gemini/air     Cancer/water
+Leo/fire    Virgo/earth   Libra/air      Scorpio/water
+Sagittarius/fire  Capricorn/earth  Aquarius/air  Pisces/water
+```
+
+That single assertion is what makes the whole glyph table trustworthy: a glyph is
+one non-ASCII character in a source file, so the realistic failure is a key
+mangled by an editor, and a mangled key almost certainly disagrees with the card's
+own element. `correspondence.test.ts` names the card when it does.
+
+**The nine planetary cards and The Fool are deliberately unasserted**, and
+Judgement is why: `cards.json` gives it `water` while the Golden Dawn attributes
+the twentieth trump to Fire. Both are true. Asserting the planetary elements would
+force a choice between failing the suite and editing generated data S4 does not
+own.
+
+### `LORE_ANCHORS` is what makes §8.2 mechanical rather than promised
+
+"English is rewritten, not translated" is checked three ways, and the cheapest is
+the hardest to fake: the `id` and `en` documents for one card must not share an
+`anchor`. It forces the divergence to be **planned** instead of discovered
+afterwards. The other two are the DIVERGENCE table and a positional Q&A
+comparison.
+
+**And it caught real translation twice, in the first two pairs written.** The Fool
+and The Magician each came out with an English half that made the SAME argument in
+English — "priced waiting higher" against `menghitung bahwa menunggu lebih mahal`,
+and an identical check question in both halves. Both were rewritten before the
+table was filled in. The lesson: **design the two halves to make different
+arguments, not the same argument in two languages** — the anchor forces a
+different door and does not, on its own, force a different room.
+
+### The DIVERGENCE table's direction, which the first draft got backwards
+
+The row lists **the English words for the INDONESIAN half's images**, forbidden in
+the English `upright` and `reversed`. The first three rows listed the English
+half's own words instead, which is a table that cannot fail. Filling it correctly
+immediately failed The High Priestess: both halves had reached for a full diary as
+the reversed mechanism, so the English one became noise instead.
+
+**Scoped to `upright` and `reversed` only; `lore` is exempt and the exemption is
+principled.** Both documents describe ONE painting and must share its nouns —
+towers, wolf, dog, crayfish, skull. `glosses.ts` exempts its element glosses from
+its own table for the same shape of reason.
+
+### THE ASSERTION SHAPE, which is the finding most worth carrying forward
+
+`lore.test.ts` was written as
+
+```ts
+expect({ slug, field, word, hit }).toMatchObject({ hit: false })
+```
+
+and it fires correctly. **Then it prints `hit: true` and nothing else** — vitest
+omits the three MATCHING properties, which are exactly the three that say which
+card, which field and which word. Across forty-four documents that is a failure
+you cannot act on.
+
+Found by **breaking the lint on purpose and reading the output**, which is the only
+way this class of defect surfaces: the test is not wrong, it is useless. Rewritten
+to collect into an array and compare against `[]`:
+
+```
+[ 'the-moon.id standfirst: "tempoh"' ]
+[ 'the-moon.en upright[0]: "abundance"' ]
+[ 'strength.id lore: 16 (want 6-14)' ]
+```
+
+The block-count case had the identical defect in a different costume — `expected
+16 to be less than or equal to 14`, with no way to tell which of forty-four
+documents — and was rewritten the same way after it fired for real.
+
+The three deliberate breaks, run and read:
+
+| break | output |
+|---|---|
+| `tempoh` in the-moon.id's standfirst | `the-moon.id standfirst: "tempoh"` |
+| `yesno.reversed` flipped to `no` | `reversed: "no"` against `effectiveYesNo`'s `yes` |
+| `abundance` in the-moon.en's upright | `the-moon.en upright[0]: "abundance"` |
+
+### Three near-misses where the lint refused CORRECT prose
+
+Each is the `sobat`/`obat` shape, and each was resolved by rewording rather than by
+exempting — because an exemption would be the first on these lists and forty-four
+permanent documents is the wrong surface to open that door on.
+
+- **`dokter` is on `THERAPY_ID`, and Death's first Q&A sent a health question to
+  one.** That is the correct and safe sentence, and the list is also right: it
+  exists so no reader-facing copy sounds medical, and "ask a doctor" is medical
+  vocabulary whichever direction it points. Reworded to `layanan kesehatan`
+  (`kesehatan mental` is the banned PHRASE and does not match). **The English half
+  says `doctor` and passes**, because `THERAPY_EN` has no such entry — the two
+  lists are different scopes, not translations of each other.
+- **`temperature` is on the product-secret list** and Strength's English lore used
+  it to mean heat. Reworded. Recorded because the next writer will hit it too.
+- **`the Universe` is on `EN_TICS` and appears inside a genuine Waite quotation**
+  about The World. The excerpt was cut at the clause before it rather than
+  exempted: a quotation is still the word landing on the page.
+
+**And one block deleted rather than reworded.** Judgement's English half carried a
+`quote` whose `source` read *"A. E. Waite, paraphrased"*. A reworded sentence under
+a real author's name is VD4's fabricated-fact rule at small scale, and the
+block-count ceiling made the choice for free.
+
+### `/arcana` — the roadmap contradiction, and why the file exists
+
+§3.1 said a real 404; §6.1's negative-control list said non-public, and a
+non-public path inside the matcher is a **302 to `/login`**. R6 resolved it in
+S4's favour: `/arcana` is the parent of twenty-two indexed URLs, and Google reads
+a login redirect on a content path as a soft 404.
+
+**S4's own plan asserted the ABSENCE of `src/app/arcana/page.tsx`**, because Next
+404s an absent route anyway. That assertion is **inverted, not deleted**. R6
+answered S1's objection — widening the allowlist for a path with no page is how
+`isPublic` stops being readable — by giving the path a page, so the file existing
+is the record of the ruling and its absence would read as the ruling being undone.
+
+Measured on the wire:
+
+```
+/arcana            404, no Location header
+/en/arcana         404
+/arcana/not-a-card 404   (dynamicParams = false, before the module runs)
+/arcanax           307   -> /login          (the negative control)
+/en/history        307   -> /login          (the one that must never move)
+```
+
+### The signed-out crawl, and the head of the document
+
+No cookie jar, dev server, 2026-07-29:
+
+```
+44/44 lore URLs        200      (22 slugs x 2 locales)
+Set-Cookie             0        on every one sampled
+<h1> per page          1
+<link rel=alternate>   3        id, en, x-default -- reciprocal both directions
+noindex                0
+FAQPage                0
+@type                  Article, ImageObject, CreativeWork, BreadcrumbList, ItemList, ListItem
+sitemap /arcana/ lines 176      (44 entries x 1 url + 3 xhtml:link)
+```
+
+**`hreflang` is emitted by Next as `hrefLang`**, camel-cased in the HTML. HTML
+attribute names are case-insensitive so this is correct, and a crawl script
+grepping `hreflang="` finds nothing. Grep case-insensitively.
+
+### Complete with JavaScript disabled
+
+The property a crawler actually depends on, checked on the raw HTML of
+`/en/arcana/the-devil` rather than on a rendered DOM:
+
+```
+h1 1   h2 12   h3 4
+8 unique /en/arcana/ links + /en/gallery      (the 8-12 band)
+disclaimer, share control, both cardMeaning glosses, both verdict words,
+the keyword chips and all four Q&A pairs -- all present
+1100 words of visible text
+```
+
+Loop 5 confirms the same page renders `lang=en` with the English `<h1>` and one
+`ld+json` block in the DOM.
+
+### Loop 4, and the widths that were expected to fail
+
+`tools/seo/fit.sh` at 320 / 360 / 390. **NOT a screenshot** — neither Chrome here
+gives a phone width and both floor at ~500px.
+
+```
+/arcana/the-moon               320,360,390  rootOverflows false, offenders []
+/arcana/the-high-priestess     320,360,390  clean   (18 characters in a fact value)
+/en/arcana/the-high-priestess  320,360,390  clean
+/arcana/temperance             320          clean
+/en/arcana/temperance          320,360,390  clean   (Sagittarius + its modality)
+```
+
+The plan predicted the fact strip would be the first thing to overflow. It does
+not, because `.factValue` carries `overflow-wrap: anywhere` and the grid is
+`auto-fit, minmax(140px, 1fr)` — one column at 320 rather than a fixed count.
+
+### The build
+
+`npm run build` exit 0, `audit-secrets: clean`, 42 files scanned.
+**`/arcana/[slug]` builds as `ƒ`** — flag 2 predicted exactly this and it is the
+symptom of `## Localization` rule 5 working, not a defect. `●` would mean the root
+layout had stopped awaiting `getLocale()`.
+
+### What S4 did NOT write, and where it went instead
+
+- **The share control is S1's `PublicShare`**, mounted with the canonical as a
+  prop. S4's plan specified an `ArcanaShare` of its own; the single-definition
+  register put it with S1, and a second control would be two answers to "what does
+  sharing a public page do".
+- **The events are `public.*`, not `arcana.*`** (R18). S4's plan declared
+  `arcana.viewed` / `arcana.shared` / `arcana.link_clicked`; S1 folded all of it
+  into `public.page_viewed` with `page: 'arcana'`, `public.link_clicked` and
+  `public.link_shared`. Three near-duplicate families is the failure S-D13 exists
+  to prevent.
+- **`imageObject()` is in `src/lib/seo/jsonld.ts` and S4 wrote it**, though R9
+  assigns it to S3. S3 is blocked on S4a and therefore lands after; a second
+  definition of one node type is the reconciliation failure whichever order they
+  arrive in.
+
+### Still open
+
+- **Miftah reading four pages, one per stage plus Death, in both locales, on a
+  phone.** No lint can tell whether a page is worth reading — every mechanical
+  check passes on twenty-two documents of atmospheric nothing, and that is the
+  release's first risk. This is the acceptance test and it is not automatable.
+- **The Golden Dawn titles and Hebrew letters are single-sourced.** Each document
+  cites `angelorum.co`'s correspondence table in its header. VD4 binds a public
+  page harder than it binds `/account`; a second independent source per card would
+  be the honest next pass, and **Judgement's row is the one most likely to be
+  wrong** because the modern outer planets are not in the original system.
+- **The lore pages are the first surface where a stranger looks at the art
+  closely**, and `docs/art-inconsistency.md` measures the deck as three
+  inconsistent generations. Twenty-two pages in sequence is exactly the
+  presentation that makes it visible. Regenerating is out of scope (S-D9) and this
+  release is what will prompt somebody to ask.
+- **The `s-maxage` on `/arcana/:path*` is still unmeasured against a real CDN**
+  (R21). S1 owns that check and it needs a Vercel preview.
+
+---
+
+## The Gallery (S3), v0.4.0
+
+`/gallery` is 22 artworks as a 2×11 grid, complete at every phone width, with a
+zoom sheet that teaches both glosses and 22 crawlable links into S4's lore pages.
+The rules are in `CLAUDE.md`'s `## The Gallery (v0.4.0 / S3)`; this is the evidence.
+
+### The two cross-page defects, and neither was visible to the suite
+
+Both came from S3's own decision to share an `@id` with the lore page's
+`ImageObject`, which is the right decision and has a cost the plan did not name:
+**a shared `@id` means a consumer MERGES the two nodes, so every field they both
+carry has to agree.** Google picks one value for a duplicated field and does not
+report which.
+
+1. **`url` was the lore PAGE on `/gallery` and the image FILE on
+   `/arcana/<slug>`.** S3's plan argues for the page ("it is the landing page for
+   that artwork, and a gallery of 22 images all pointing at `/gallery` gives Google
+   Images nothing to rank per card") and S4's node had been shipped with the file,
+   which is what Google documents for an `Article`'s `image`. Both are defensible
+   in isolation; only one can be true of one node. **Found by reading the JSON off
+   the wire** with `curl … | python3 -c 'json.load…'`, after the whole unit suite
+   was green.
+2. **`caption` was the keyword sentence on `/gallery` and the painting's
+   description on the lore page.** Same shape, found by the test written for the
+   first one. The resolution is by FIELD rather than by precedence: the lore page
+   keeps `caption` (it describes the picture), the gallery carries `description`
+   (the upright gloss), and the merged node ends up with one of each — both true.
+   `ImageObjectArgs.caption` became optional to allow it.
+
+**The fix that matters is structural.** The 22 image nodes moved out of the page
+component into a pure `src/app/gallery/images.ts`, so `imageJoin.test.ts` can build
+BOTH graphs from one card and assert the shared fields match, in both locales. That
+test imports `arcanaGraph` — S4's module — deliberately: the objection to reading
+another workstream's file is that the fence goes red when they edit their code, and
+that is exactly the desired behaviour for an assertion whose whole subject is the
+agreement between two owners.
+
+**The generalisation worth keeping: a shared `@id` is an interface between pages,
+and it needs a test that spans them.** Nothing else in this project has one.
+
+### `referrer_kind: 'direct'` was a literal on two public surfaces
+
+`public.page_viewed`'s `referrer_kind` is the prop that separates an organic
+arrival from a reader who was already on the site — §1's whole question — and both
+S1's `Landing.tsx` and S4's `/arcana/[slug]` passed the string `'direct'`. **A
+constant is worse than a missing field, because it reads as data.**
+
+The cause is structural rather than carelessness: `TrackView` takes its props from
+whatever renders it, and on a content page that is a server component where
+`document.referrer` does not exist. `ShareViewed` hit the same wall on `/s/` in
+v0.3.0. `src/components/PublicPageViewed.tsx` is `TrackView`'s shape with one value
+computed on the client, and all three surfaces now mount it.
+
+### The grid, measured (loop 4), and the negative control that took two attempts
+
+`tools/seo/galleryfit.sh` + `galleryfit.js`, committed. Every number S3's plan
+predicted came out exactly, identically in both locales:
+
+```
+  w    col     cardH    gridH   rows perRow loreH nameLines overflow offenders
+  320  138.0   207.0    3009    11   [2]    44    [1]       false    []
+  360  158.0   237.0    3339    11   [2]    44    [1]       false    []
+  375  165.5   248.25   3463    11   [2]    44    [1]       false    []
+  390  173.0   259.5    3587    11   [2]    44    [1]       false    []
+```
+
+Plus 22 distinct lore hrefs, 22 distinct `alt` sentences and exactly one disclaimer
+at every width. **The plan expected `The High Priestess` to wrap to two lines at
+320 and it does not** — `CardFace`'s name plate is sized in `cqw`, so it scales with
+the column instead of overflowing it.
+
+**The negative control (`min-width: 260px` on `.tile`) reported GREEN the first
+time, and that was the harness being lied to rather than the harness being wrong.**
+The line went in at the top of the `.tile` block and the rule's own `min-width: 0`,
+four declarations later, won. `getComputedStyle(li).minWidth` returning `0px` is how
+it was caught. Placed after that declaration the control gives
+`overflow: true` at all four widths with `offenders: ["ul.grid 410>288"]` at 320.
+**Check the control actually applied before believing a green control** — a harness
+that cannot fail looks exactly like a page that cannot break.
+
+Two things the harness itself had to get right:
+
+- **The JavaScript lives in a `.js` file, not in a double-quoted bash argument.**
+  The first version hung `tools/e2e/run.sh eval` with no error and no output for
+  three minutes — and every fragment of it worked when sent alone. Passing JS with
+  backticks, `??`, regex literals and `${}` through bash quoting is a class of bug
+  with no diagnostics. One `sed` substitution of `__WIDTH__` instead.
+- **`nameLines` is counted with a `Range`'s line boxes, never
+  `height / lineHeight`.** The division reported THREE lines for every card at
+  every width, because `.name` carries padding — a confidently wrong metric that
+  would have failed a check on a page where nothing wraps.
+- **`.srOnly` is excluded from `offenders` by computed style, not by class name.**
+  It is a 1px box with `white-space: nowrap`, so `scrollWidth > clientWidth` is true
+  by design for all 22; counting them would put 22 permanent offenders in every run
+  and hide the real one.
+
+### Loop 5 reproduced the Safari focus bug in WSL Chrome, which CLAUDE.md said it could not
+
+`CardDetail` had the latent version of the `document.activeElement` opener bug for
+two releases, with the recorded consequence "smaller, because its opener is a card
+in a long list". On a 3000–3600px grid it is not smaller. S3 gave it a
+`returnFocusTo` prop filled from the click event's `currentTarget`.
+
+The plan expected loop 5 to prove only that the ref path works, because "this
+Chrome *does* focus a button on click". **It does not, for a programmatic
+`.click()`** — measured:
+
+```
+activeBeforeTap  BODY
+activeAfterTap   BODY          <- the fallback would have restored <body>
+restoredTo       "Lihat The Moon lebih besar"   <- the tile's own button
+```
+
+So the ref path is proven and the fallback is proven insufficient, in WSL, without
+a phone. **A synthetic click is a faithful model of Safari's refusal to focus a
+tapped button** — which `_accountshot.html` noticed for `PointerEvent`s in v0.3.0
+and nobody connected to this bug.
+
+Also confirmed on the real page: tile 19 opens The Moon (`h2` The Moon, numeral
+XVIII, two labelled glosses, three keywords, artwork upright, `body.overflow`
+hidden), its lore link and the sheet's lore link both point at `/arcana/the-moon`,
+Escape closes and restores the scroll lock, and clicking through lands on
+`/arcana/the-moon` (`lang=id`, `Arti Kartu The Moon (XVIII)`) from `/gallery` and on
+`/en/arcana/the-moon` (`lang=en`, `The Moon (XVIII): Tarot Card Meaning`) from
+`/en/gallery`.
+
+### The signed-out crawl, no cookie jar
+
+```
+/gallery, /en/gallery      200, NO Set-Cookie, no x-robots-tag
+locale pin                 accept-language en-GB -> lang="id"
+                           cookie jmt_locale=en  -> lang="id"
+                           /en/gallery under accept-language id-ID -> lang="en"
+internal links             22 distinct href="/arcana/…" on the id page
+                           22 distinct href="/en/arcana/…" on the en page
+                           0 cross-locale leak in either direction
+canonical + hreflang       reciprocal both ways, x-default on the id URL
+ld+json                    ImageGallery, numberOfItems 22, 22 distinct @id,
+                           no query string, no `license`, no `null`
+sitemap.xml                50 urls, /gallery and /en/gallery once each
+negative controls          /arcana 404 with no Location; /arcanax still 307;
+                           /s/<slug> still noindex, nofollow, noarchive
+```
+
+**The locale pin is the check with the highest severity and the least visibility.**
+If middleware left the bare path to `resolveForMiddleware`'s chain, `/gallery` would
+be viewer-variant: an `en-GB` browser gets English chrome at the Indonesian
+canonical URL, and a CDN serves whichever language warmed the cache to everybody
+under a canonical tag and an `hreflang` pair that both claim otherwise. It needs a
+hostile cookie AND a hostile `Accept-Language`; no unit test can see it.
+
+### What S3 did NOT build, and why each is a decision
+
+- **No wallpaper download.** S5 has not landed, so `WallpaperDownload` and
+  `wallpaperPath` do not exist. S3's plan names omitting the two lines as the
+  correct temporary state: a committed `<a href>` to `/wallpapers/…` is a 404 on a
+  public page, and a local `wallpaperPath()` would be a second definition of an
+  address S5 owns. The placement decisions S3 *does* own are recorded in
+  `GalleryGrid.tsx` so S5 does not re-derive them.
+- **No `licenseUrl` in the structured data.** `/terms#9` reserves rights rather
+  than granting any until S5 writes the wallpaper clause. A licence claim for a
+  page that states no terms is the `SearchAction` mistake with legal consequences.
+- **No `deps.contract.test.ts`.** The plan's Task 1 asserts S1/S2/S4/S5's exports
+  before writing a line. S1, S2 and S4 have landed — so every assertion is also
+  made by the code compiling — and S5's absence is a deliberate, documented gap
+  rather than something to fail a suite over. The plan itself says that file
+  deletes itself at reconciliation.
+- **No share control.** S-D8 permits one; the artifact worth sharing is a card, and
+  S4's lore page has `PublicShare`. A share button on the index shares the least
+  interesting of the 23 URLs.
+- **No `openGraph` block.** A gallery-specific preview means a satori route, and 24
+  of those across `/`, `/gallery`, `/blog` and 22 lore pages is 24 lambda
+  invocations drawing nearly the same picture.
+
+### The 240px thumb is upscaled on every phone, and it is intrinsic to 2×11
+
+The grid draws cards at 138–173 CSS px, so a DPR-2 phone wants 276–346 device px and
+gets 240: a **1.15×–1.44× upscale**. A 2-column phone grid cannot be served
+losslessly by a 240px source at any column width — it would need ≤ 120 CSS px, and
+288px of content minus a 12px gap cannot produce that. The alternatives are the
+800×1200 art (3.7MB for 22 cards, on the page whose Core Web Vitals a crawler
+measures) or a new 480×720 variant (~1MB more committed, out of scope). At DPR 1 and
+≥ 552px the column is 238px and the existing thumb is very nearly 1:1.
+`tools/normalize_cards.py`'s `THUMB_W` comment says so.
+
+### Gallery and Writing moved into the account menu (Miftah, 2026-07-29)
+
+Not S3's plan; a phone report against what S1 shipped. `Galeri / Arti kartu /
+Tulisan` rendered in the public footer on the landing page and under all 22 lore
+pages. The ruling: **the homepage and the card pages should look clean.**
+
+- `AccountMenu` gains `Galeri kartu` / `Card gallery` and `Tulisan` / `Writing`
+  below Reading History. Its header said *"DO NOT ADD A FIFTH without a decision
+  recorded against VD12"*; this is that decision, inverted rather than deleted.
+- `PublicShell`'s `LINKS` table is deleted, not emptied. One link is left, `/`.
+- **Deleting the filter with the table let the landing page's footer grow a link to
+  itself**, caught by `PublicShell.test.ts`'s "never links to the page it is
+  mounted on" — a test whose mechanism-level assertion looked like a tautology
+  until the day it fired. The suppression is now `surface === 'landing'`.
+- **The crawl was re-measured rather than reasoned about.** Outbound links per
+  page: `/` → gallery, arcana/the-moon, blog, login, legal, `/en` (its own body
+  sections, which are content); `/gallery` → 22 lore pages, `/`, `/en/gallery`,
+  legal; `/arcana/the-moon` → `/`, `/gallery`, neighbours, `/en` twin, legal.
+  Nothing is orphaned and no page is a leaf.
+- The landing's three body sections stay: they are the homepage's content — what
+  closed Google's "an app homepage that is not a login page" blocker — and the only
+  public path into `/blog`.
+
+## Wallpaper downloads (S5), v0.4.0
+
+**Every number here was measured in this worktree on 2026-07-29 unless it is marked
+as coming from the plan's own 2026-07-28 measurement pass.** CLAUDE.md's
+`## Wallpaper downloads (v0.4.0 / S5)` keeps the rules; this keeps the evidence.
+
+### The format decision, and the trick that does NOT scale
+
+Mean over six cards at 1024x1536, PSNR against the source PNG (plan's pass):
+
+| Encoding | mean KB | mean PSNR | p99.9 per-channel error |
+|---|---|---|---|
+| PNG, `optimize=True` | 2847 | ∞ | 0 |
+| PNG quantized to 256 colours | 1381 | — | **17–21** |
+| **JPEG q90, 4:4:4** | **555** | **38.00** | **11–13** |
+| JPEG q90, 4:2:0 | 472 | 37.19 | — |
+| JPEG q92, 4:4:4 | 621 | 38.94 | 10–11 |
+| JPEG q95, 4:4:4 | 809 | 41.04 | 8–9 |
+| WebP q90 | 471 | 38.99 | — |
+
+1. **PNG-256 IS 2.6x LARGER THAN JPEG q90 *AND* MEASURABLY WORSE**, and this is the
+   one worth knowing, because `normalize_cards.py` uses exactly that palette trick
+   for `public/cards/og/` and is right to at 200x300. It does not scale: at
+   1024x1536 with smooth dark gradients it bands and costs 1.4MB doing it. **Do not
+   "reuse the OG approach".**
+2. **WebP q90 beats JPEG q92 on both axes and is still not what ships.** The reason
+   is the target platform, not the encoder: a wallpaper has to reach iOS Photos
+   because *Set Wallpaper* reads nowhere else, and Photos does not treat WebP as a
+   native asset type. The evidence there is anecdotal and version-dependent, which
+   is exactly why the one download in this product does not bet on it.
+3. **65.1% of this deck's pixels are darker than 15% luminance**, so the error that
+   matters is the error in the dark: dark-region PSNR 37.64 at q85, **39.15 at q90**,
+   40.02 at q92, 41.99 at q95. q92 buys ONE level of p99.9 error for +12% bytes.
+   `QUALITY = 92` is the one-line lever if a real phone ever shows blocking.
+
+### The pipeline's one real trap: `fit_to_ratio` would upscale
+
+`normalize_cards.py`'s `fit_to_ratio` trims a dark mat and then scales the trimmed
+image to the target. On art that is already correct that costs nothing — **measured
+0px trimmed on all 22** — but a 4px trim would LANCZOS 1020 → 1024 and produce
+exactly the upscale S-D9 forbids, **from inside the function that looks like the
+right one to reuse.** So the pipeline calls `flatten`/`trim_dark_mat` as an
+assertion and then encodes the untouched source pixels. This is the thing a future
+session is most likely to reintroduce, because reusing the shipping pipeline's own
+helper is the obviously correct instinct.
+
+### The oracle's thresholds, each with the negative control that a wrong pipeline gives
+
+| Check | Correct output, all 22 | Negative control | Threshold |
+|---|---|---|---|
+| Card MAD vs source (64x96 downsample) | **0.123–0.188** | **10.174** (crop, then rescale) | ≤ 1.0 — a 54x margin |
+| Phone inner-region MAD | same | same | ≤ 1.0 |
+| Left-bar stddev (x < 204) | **0.000** | **19.88** (upscaled to fill) | ≤ 1.5 |
+| Left-bar mean RGB | **(10, 8, 19)** on all 22 | — | (10, 8, 18) ±3 |
+
+**THE BAR COLOUR DRIFTS BY EXACTLY ONE LEVEL OF BLUE, ON EVERY CARD,
+DETERMINISTICALLY.** `#0a0812` is (10, 8, 18) going in and (10, 8, 19) coming out,
+because JPEG's DCT quantization moves it. The oracle asserts a tolerance and never
+equality: an oracle written `== (10,8,18)` fails on correct output, and what
+somebody does at that point is delete the check.
+
+**And the flatness check is `check_card_art.py`'s `EDGE_UNIFORM_STDDEV` used in
+reverse.** There a flat edge strip is a FAILURE — it means the source art is not
+full bleed. Here a flat bar is the PROOF that the card was padded rather than scaled
+to fill, which is the whole of "no upscaling". Same constant, same instrument,
+opposite verdict, and a comment in both files so neither is "fixed" to agree.
+
+### 1440x3120, and the aspect-fill arithmetic
+
+1440 is the widest pixel width in common circulation (Galaxy S24/S25 Ultra), so **no
+phone ever upscales this file** — the strongest available form of "no upscaling": we
+do not do it and we do not make the device do it either. 3120 puts the aspect at
+0.4615, within 0.5% of every modern iPhone (0.4603–0.4614).
+
+The card is 1536/3120 = **49.2% of the canvas height**, so it survives an
+aspect-fill crop on anything: a 16:9 screen shows 0.4615/0.5625 = **82%** of the
+height, a 4:3 tablet **61.5%**. Both exceed 49.2%. Checked concretely on an iPhone
+SE 3 (750x1334): scaled to fill 750px of width the image is 1625px tall, cropping
+145px from each end, and the card sits y=412..1212 — inside. The card's top edge is
+at 25.4% of the height and iOS puts the clock at roughly 12–20%, so they do not
+collide. The card at 1024/1440 = **71.1% of screen width** reads as a framed object.
+
+Two things deliberately not on the canvas: **no gradient** (a subtle dark gradient
+in 8-bit sRGB bands on OLED, and the flat mat is nearly free — measured, the padded
+1440x3120 file is only **39KB** larger than the bare card, because a flat region is
+DC-only), and **no card name or glyph** (the regenerated deck carries no text at
+all, and a name burned into a wallpaper cannot be undone by the person who
+downloaded it).
+
+### The weight, and idempotency proved the way that matters
+
+`JPEG q90 4:4:4 progressive optimized`: **22 card 11.45MB + 22 phone 12.32MB =
+23.77MB, 44 files, 528KB mean**, reproducing the plan's per-card table exactly. R3
+ruled both variants ship and refused the reduction to 12.32MB.
+
+Idempotency was not asserted from Pillow's documentation: `git add public/wallpapers`
+then a second `npm run wallpapers` then `git status --porcelain | grep -v '^A '`
+returns nothing. Every file is byte-identical.
+
+### The live checks
+
+**`curl -i` against `next start -p 3001`** — `npm start` binds 3000, which Grafana
+holds permanently:
+
+```
+GET /wallpapers/the-moon-phone.jpg
+  HTTP/1.1 200                                          not a 302
+  content-type: image/jpeg      content-length: 599116
+  cache-control: public, max-age=86400, stale-while-revalidate=604800
+  set-cookie            0 occurrences                   S-D10
+  content-disposition   0 occurrences                   W-D10
+  x-robots-tag          absent                          S-D12
+  x-frame-options: SAMEORIGIN, both CSP headers present  /(.*) still applies
+GET /s/abcdefghijkl -> x-robots-tag: noindex, nofollow, noarchive
+```
+
+**F1 IS CONFIRMED EMPIRICALLY NOW, AND THE PLAN SAID IT WAS NOT.** Its flag ended *"I
+have not confirmed the 302 empirically"*. A path one letter outside the matcher's
+negative lookahead settles it:
+
+```
+/wallpapersx/the-moon-phone.jpg   307 -> /login?callbackUrl=%2Fwallpapersx%2F...
+/wallpapers/the-moon-phone.jpg    200
+```
+
+So the lookahead entry is what makes the asset public, exactly as R7 reasoned, and
+the failure it prevents reads as missing artwork rather than as an auth problem.
+
+**Loop 5, every step through real Input-domain events**, body read off the wire:
+
+```
+{"name":"wallpaper.downloaded","props":{"card_id":18,"variant":"phone",
+  "method":"link","from":"gallery"},"seq":3}
+```
+
+`card_id` is the integer, `variant` is spelled like the file on disk, `method` is
+`link` because loop 5 is a desktop pointer — so `(pointer: coarse)` is doing its job
+— and there is no free text in `props`. The `card` variant fires the same shape.
+
+**THREE HARNESS FINDINGS, ALL OF WHICH COST TIME AND ONE OF WHICH WOULD HAVE
+PRODUCED A FALSE CLAIM:**
+
+1. **`tapIn` reads `getBoundingClientRect()` and does NOT scroll**, so a tap aimed at
+   a tile **3741px down a 701px viewport** lands on nothing — and `tap` prints
+   `tapped "Lihat The Moon lebih besar" -> [exact]` anyway, because the match
+   succeeded and only the dispatch failed. The sheet never opened and the verb said
+   it did. `scrollIntoView({block:'center'})` first; after it, `top` is 191 and the
+   same real tap opens the sheet. (`innerWidth` was 500 with `--width 390`, again.)
+2. **Downloads are DENIED in headless Chrome** without `Browser.setDownloadBehavior`,
+   so the anchor's own request is never issued — `performance.getEntriesByType`
+   shows no `/wallpapers/*` entry and the server log has none. `curl` is what proves
+   the bytes. **Navigating to the URL instead renders it**: title
+   `the-moon-phone.jpg (1440×3120)`, `document.contentType` `image/jpeg`,
+   `naturalWidth` 1440 — which is W-D10's actual claim, that the image is viewable,
+   and it also proves the delivered pixels survive Python → git → Next → decode.
+3. **`net` truncates a POST body at 200 characters**, so the props were captured by
+   patching `fetch` and `sendBeacon` in the page — the technique CLAUDE.md records
+   for "does the UI agree with what it sends".
+
+**Loop 4 — `tools/seo/wallpaperfit.{sh,js}`, committed beside `galleryfit`.** The
+sheet width is derived, `min(340, w - 40)`, because `CardDetail`'s scrim carries 20px
+of side padding: 280 / 320 / 335 / 340 at 320 / 360 / 375 / 390.
+
+```
+id   overflow false, offenders [], sameRow false, linkH 44, labelLines 1,
+     dimsLines 1, licenceLines 5 4 4 4, blockH 266 247 247 247
+en   the same, labelLines 1, licenceLines 4 3 3 3, blockH 247 228 228 228
+```
+
+**Negative control run and recorded**, because a harness whose red state has never
+been seen cannot be trusted: `min-width: 400px` on the two anchors at w=320 gives
+`overflow: true` with five named offenders (`sheet`, `zoomActions`, `downloadSeam`,
+`block`, `list`, each `400>280`) — and `getComputedStyle(...).minWidth` was read back
+as `400px` FIRST, which is galleryfit's own trap, where the control was silently
+overridden by the rule's `min-width: 0` and the harness stayed green.
+
+**AND THE LINE COUNT WAS WRONG TWICE BEFORE IT WAS RIGHT. This is the third time this
+one metric has misled somebody in this project.**
+
+- `range.getClientRects().length` returns one rect per line box **per fragment**, so
+  a one-line anchor reported **5** (label text + `<span>` + three text nodes inside
+  it, since `{width}`, `×` and `{height}` are separate nodes) and `.licence` reported
+  5, 7, 8, 9 lines at **increasing** widths — the tell, since a wider box cannot wrap
+  more.
+- Rounding tops into 2px buckets then reported the English anchor as **2** lines: the
+  10px label sits at `top` 424 and its 9px `.dims` at 425, one visual line,
+  `align-items: center`, either side of a bucket edge. **A bucket edge is not a
+  distance.** Clustering sorted tops with a 4px tolerance is what a line is.
+- `galleryfit.js` records the sibling failure: `height / lineHeight` measured padding
+  and confidently reported three lines where nothing wrapped.
+
+### Two deltas S1 did not fold in, and one it folded in narrower
+
+S1 is complete, so S5 landed all three itself rather than leaving the feature
+uncompilable. The single-owner rule (S-D13) exists to stop six agents editing one
+file in parallel; there is no parallel agent left to collide with.
+
+- **The eight `wallpaper.*` catalog keys** (D4) were absent. Indonesian first (I2),
+  under `prose.test.ts`'s 320-character and 20,000-byte ceilings, and the longest
+  value in the catalog is still `onboarding.intro.body`.
+- **The `/wallpapers/*` cache header** was written as `max-age=31536000, immutable`
+  from `/cards/*`'s reasoning rather than from W-D4's declaration, and
+  `headers.test.ts` asserted the year. Corrected in both places, plus two new cases
+  and a negative control that `/cards/*` still has its year.
+- **`wallpaper.downloaded` lost `method` and `from`** and had `card` renamed
+  `native`. Restored with the argument in the file: a prop spelled differently from
+  the asset it describes is a query written against a value that never appears, and
+  `method` is the only way to see whether the iOS upgrade runs in production.
+
+### Clause 9, and the licence claim it unlocked
+
+F2 was real: clause 9 asserted the artwork is ours and its personal-use sentence was
+scoped to **readings**, so nothing in the agreement mentioned downloading the art. One
+sentence per locale, appended inside the clause with no renumbering, so
+`legal.test.ts`'s clause anchors and clause-6 sub-numbering are untouched. Worded to
+match `wallpaper.licence` exactly — a licence line that paraphrases the clause is a
+second, slightly different licence.
+
+That is what makes `licenseUrl: /terms#9` on the gallery's 22 `ImageObject`s honest,
+and `imageJoin.test.ts`'s assertion was **inverted rather than deleted**: it read
+`licenseUrl === undefined` with the comment "until S5 writes clause 9's grant".
+
+**`contentUrl` was NOT moved to the wallpaper, and that is a decision.** D6 asks for
+it and the reason is right — Google Images wants the highest honest resolution — but
+this node describes ONE binary: `encodingFormat` documents `contentUrl`'s MIME type,
+and `url`, `width` and `height` are the fields `/arcana/<slug>` also carries under
+the same `@id`. Moving `contentUrl` alone leaves declared 800x1200 WebP dimensions
+belonging to a different file, which is the same class of ambiguity as the two
+`@id` collisions S3 records. Moving all four means editing S4's `jsonld.ts` in the
+same commit and changing the image identity of 22 pages. Worth doing as one change.
+
+### One thing about this branch's history
+
+`tools/seo/wallpaperfit.{js,sh}` are committed inside **`593e1de`, a docs commit about
+Upstash's Singapore region**, and its message does not mention them. Two Claude
+sessions were working in this worktree at the same time and the other one's
+`git add` swept S5's staged harness. Nothing is lost and no file is wrong; the record
+for those two files is this section rather than their commit message.
+
+### Still open, and only hardware can close it
+
+**Loop 6 — a real iPhone against a Vercel preview.** Nothing above substitutes, and
+CLAUDE.md gives two live bugs as proof that loop 5 cannot. Three questions:
+
+1. **Does a downloaded `-phone.jpg` reach Photos, and does *Set Wallpaper* accept
+   it?** This is the whole feature and it is a release blocker. If the share sheet's
+   "Save Image" does not appear, `wallpaper.saveHint`'s long-press instruction is the
+   entire mechanism.
+2. **Does the card look right on a lock screen** — is 71.1% of the width correct,
+   does the clock overlap the composition, is the aspect-fill crop invisible?
+3. **Is q90 blocking visible in a dark gradient on OLED?** If yes, `QUALITY = 92` in
+   one place and the weight goes 23.77 → ~26.6MB.
+
+Also open: the `s-maxage`-style cache header is measured on `next start` and **not**
+against a Vercel CDN (R21); `tools/check_card_art.py:mean_colour` still uses
+`Image.Image.getdata`, deprecated in Pillow 12 and removed in 14 (F6, not S5's, and
+the two new scripts use `load()`/`tobytes()` so they do not acquire it); and the
+1440x3120 canvas is chosen against a 2026 device census, which ages (F7).
+
+## The blog (S6), v0.4.0
+
+CLAUDE.md's `## The blog (v0.4.0 / S6)` keeps the six rules. This is the evidence: what
+the plan asked for and did not get, the three defects the suite did not notice, the loop-4
+table, and the crawl.
+
+### The seam with S4, and what actually happened to it
+
+S6's plan opens with an `AMENDED` block conceding four things to S4 mid-draft, and
+reconciliation R16 ratified the concessions and ruled on four field-level asks. **By the
+time S6 was executed, S4 had landed and `src/content/types.ts` was the PRE-R16 union** —
+`heading` with no `id`, `list` with no `ordered`, `paragraph.text: string`, no `Inline`.
+So the ruling had to be applied to a file another workstream had already finished, which
+is the state S5 was in when it landed S1's two missed deltas.
+
+The property that made it safe, and the one to check before widening anything there
+again: **every change was optional or a union with what was already there.**
+
+| ask | R16 | how it landed |
+|---|---|---|
+| `heading.id?` | granted | optional — `Prose` emits the attribute only when present |
+| `list.ordered` | granted | **optional**, absent means unordered |
+| `paragraph.text: string \| Inline[]` | granted, with a guard | `Phrasing`, a union |
+| `callout` | **refused** | no sixth kind; two asides became paragraphs |
+
+**Not one of the forty-four lore documents needed an edit.** That is the evidence the
+seam held, and `types.contract.test.ts` asserts S4's plain-string shapes still typecheck
+so a future "tidy-up" to `Inline[]`-only fails rather than starting a 44-file rewrite.
+
+R16's guard is the part most easily lost: it granted `Inline[]` **because `plainText()`
+joins spans with the empty string**, so the copy lint still sees the exact reader string.
+Two tests hold it — `doc.test.ts`'s direct assertion and `blog.content.test.ts`'s
+adjacency case — and R16 says in those words that deleting either means reverting to
+`text: string`.
+
+### Three things the plan specified that could not be built, and why each was dropped
+
+None of these is a shortcut; each is a consequence of S1 having closed `events.ts` first
+(S-D13: **one owner per release, everyone else declares and S1 folds in**).
+
+1. **`ScrollDepth` and `content.scrolled`.** The plan's `## Analytics deltas` declares
+   four `content.*` names. The folded taxonomy has five `public.*` events and no
+   scroll-depth event at all — reconciliation R18 ruled the namespace to `public.*` and
+   S1 transcribed the agreed set. Adding a sixth now is editing a closed workstream's
+   data dictionary, which is exactly what S-D13 exists to prevent. **The four
+   `IntersectionObserver` sentinels are not built and nothing renders `data-depth`.**
+2. **The delegated in-prose link listener, and `data-content-link` on every `<a>`
+   `Prose` renders** (plan §D9). `public.link_clicked`'s `to` union is
+   `sign_in | app | gallery | arcana | blog | terms | privacy | wallpaper | locale` —
+   **no `anchor`**, and `linkKind()`'s fifth value is exactly that. So the listener would
+   have needed a union widened in S1's file for an in-page jump. Dropped; in-prose
+   clicks are unmeasured, **which is already true of the 44 lore pages' `cardRef`
+   links**, so this is consistency rather than a new gap. The index's three orientation
+   links fire the event through `TrackLink` with a literal `to`, which is what
+   `/arcana/[slug]` already does for its gallery link.
+3. **`content.share.action` / `.copied` and `SharePage.tsx`** (plan §D4, Task 10). S1
+   shipped `PublicShare` and `public.share.{button,copied,failed}` before S6 ran. A
+   second component and a second key pair for one button is the `arcana.upright`
+   mistake S3 records — the gallery would have been the third spelling of one word.
+
+### Three defects a green build did not notice
+
+**1. `t('blog.readingTime', { minutes })` typechecked as a MISSING KEY, not as a wrong
+call.** `blog.readingTime` is a plural family, so the catalog holds `.one` and `.other`
+and no bare `blog.readingTime` — and `t()` is typed over `keyof typeof id`, so the error
+was TS2345 naming 323 other keys. The fix is `t.plural('blog.readingTime', minutes)`,
+**and the catalog parameter had to become `{count}`**: `plural()` injects the count
+itself and a `{minutes}` placeholder would have rendered literally. Found by
+`npm run typecheck`, which is the only thing that could have: the value reads perfectly
+in the catalog and the call reads perfectly in the page.
+
+**2. `src/content/copy.test.ts`'s locale-naming case failed on `blocks.ts`.** That case
+asserts every file under `src/content/` is named `*.id.ts` or `*.en.ts`, because the
+lint derives the locale from the filename and `the-moon.ts` would be skipped SILENTLY.
+`blocks.ts` is legitimately locale-free. The exemption list went `(index|types)` →
+`(index|types|blocks)` **and is now documented as a CLOSED SET**: not "files that happen
+to be locale-free", but the three whose emptiness of prose is asserted elsewhere.
+Adding a fourth name without that guarantee is how a document escapes the lint.
+
+**3. `types.test.ts` asserted `expect(code).not.toContain('ordered')`.** S4 wrote it
+with the reason *"a numbered list in lore is a how-to, and a how-to about reading tarot
+is S6's article, not a card's page"* — right about lore, wrong about the union, and R16
+had already granted the field. **Inverted rather than deleted**, and the replacement is
+stronger than the original: it asserts `ordered?: boolean` and fails on
+`ordered: boolean`, which is the property that kept 44 documents untouched.
+
+### The lint, and the one entry that had to come out of it
+
+`blog.content.test.ts` is 36 cases. Three worth naming:
+
+- **The span-adjacency case has a negative control, and it needs one.** It passes on
+  four correct documents, which is precisely the state in which a broken whitespace
+  checker is indistinguishable from a working one. The control constructs
+  `[s('Lihat'), link('/gallery', 'galeri')]` and asserts the predicate says `false`.
+- **`' api '` is not in the product-secret list** (reconciliation §8, raised by S6 while
+  writing). `api` is Indonesian for fire and the article names the four elements, so the
+  substring check fired on `elemen api` in correct copy. `api key` and `/api/` are the
+  shapes that would indicate a leak. **A lint that cries wolf is a lint somebody
+  deletes.**
+- **`prompt` IS in it, and it cost one English sentence.** The draft read *"the card is a
+  prompt for a sentence you already had"* — an ordinary English noun, matched as a
+  substring, correctly flagged. Rewritten to *"an invitation to say"*. Worth recording
+  because the next English article will hit the same word.
+
+The lint also duplicates `copy.test.ts`'s Malay/therapy/tic checks on the TYPED structure
+rather than on string literals. That is not redundancy: `copy.test.ts`'s own header asks
+for it — *"importing the registry and walking the typed block union is strictly better
+than this regex"* — and the regex still covers a document no registry imports, which is
+the state a half-finished article is in.
+
+### The four documents, measured
+
+| document | words | reading time | description | title |
+|---|---|---|---|---|
+| `what-tarot-is.id` | 1270 | 6 min | 156 chars | 43 |
+| `what-tarot-is.en` | 1616 | 8 min | 157 | 56 |
+| `how-to-read-tarot.id` | 1693 | 8 min | 156 | 51 |
+| `how-to-read-tarot.en` | 1995 | 10 min | 157 | 53 |
+
+**The plan predicted ~2,400 words for the how-to and the Indonesian came in at 1,693.**
+Indonesian says the same thing in fewer words — no articles, fewer prepositions, heavy
+compounding — so the length floor in the lint is 1100 rather than the plan's 1200, and a
+word count is a poor cross-language proxy for how long a page takes to read. Nobody has
+measured Indonesian reading speed; `readingMinutes` uses 200 wpm for both and the label
+says *"sekitar"* / *"about"* (S6 F6, reconciliation §7).
+
+The divergence between locales is enforced, not trusted. Per article the two documents
+must share no `cardRef` card, no set of recommended `/arcana/` pages, no title and no
+description, and each must have at least one level-2 section the other does not:
+
+| article | `id`-only sections | `en`-only sections | worked card |
+|---|---|---|---|
+| `how-to-read-tarot` | `preparing` | `one-card`, `a-good-reading` | The Moon / Temperance |
+| `what-tarot-is` | `origins`, `not-for` | `how-it-works`, `skeptics` | The Fool / Justice |
+
+### Loop 4 — the article measure, and the thing it found
+
+`tools/seo/blogfit.{sh,js}`, committed beside `galleryfit` and `wallpaperfit`. It
+constrains `article[class*=page]` to a known width and reads a `ch`-calibrated probe
+against the paragraph's own computed font — **never a hardcoded 8.4px advance**, which
+silently stops being true the day `--font-body` changes.
+
+Sixteen measurements — four widths × four documents. **`contentPx` and `chars` are
+identical across all four documents at each width**, which is the point: the measure is a
+function of the container and the font, never of the content.
+
+```
+  w   contentPx  chars     how-to.id  what-is.id  how-to.en  what-is.en   (h1 lines / ToC rows)
+ 320     288       32        4 / 11      3 / 7      4 / 12      4 / 7
+ 360     328       36        3 / 11      3 / 7      3 / 12      4 / 7
+ 375     343       38        3 / 11      3 / 7      3 / 12      3 / 7
+ 390     358       40        3 / 11      2 / 7      3 / 12      3 / 7
+
+ chWidth 9.06px at every width, in both locales -- Cormorant Garamond at 19px.
+ overflow false and offenders [] in all sixteen. tocDead [], proseDead [] in all
+ sixteen. pageH 7351-12524px, so the how-to is about nine phone screens.
+```
+
+**`chars` is 32 at 320px against the 45-75 guideline and that is arithmetic** (S6 F4,
+reconciliation §7): 288px at 9.06px per character cannot reach 45, and getting there
+needs ~14px type. Padding is the lever and it is already spent, 20 → 16.
+
+**THE LINE-COUNT METRIC IS CLUSTERED WITH A TOLERANCE, WHICH IS S5's SCAR PAID FORWARD.**
+`getClientRects().length` counts fragments, so a paragraph with an inline `<a>` reports
+several rects for one line; 2px buckets then split two rects either side of a bucket
+edge. S5 got that metric wrong twice — *"the third time that metric has misled someone
+here"* — so this clusters rect tops at half the line height. The `h1Lines` column above
+is the metric that would have been wrong: four lines of a 28px display face at 320px is
+correct and a fragment count would have said more.
+
+#### The negative control FAILED TO GO RED, and fixing that fixed the harness
+
+`min-width: 420px` on `.p` in `Prose.module.css`, measured at 320px: `contentPx` came back
+**420** — a paragraph 132px wider than the page — and `overflow` came back **false** with
+an empty `offenders`. `getComputedStyle(p).minWidth` returned `420px`, so the rule WAS
+applied. **The control was armed and the harness could not see the defect.**
+
+The cause is a distinction worth carrying to the next harness:
+
+> **`scrollWidth > clientWidth` on a block answers *"does this block's CONTENT overflow
+> its own box"* — not *"is this block wider than its container"*.** A `min-width` makes the
+> element itself wide, so its own content fits perfectly and the overflow lands on the
+> PARENT's `scrollWidth`, which is where a phone's horizontal scrollbar actually comes
+> from.
+
+And the second form is the commoner real failure: a long unbroken URL, a wide table, an
+unwrapped code span. So `blogfit.js` now measures three things — a block's content against
+its own box, a block's box against the body's column, and the container chain — and the
+re-armed control names all three:
+
+```
+overflow true
+offenders ["p box 420>288" x23, "body content 420>288", "article content 436>320"]
+```
+
+Reverted, and the four widths re-measured green with the fixed harness.
+**A harness whose red state has never been seen is worth nothing, and this one was worth
+nothing for about twenty minutes.**
+
+**`chars` is ~32 at 320px against the 45-75 guideline and that is arithmetic** (S6 F4,
+reconciliation §7): 288px at 9.06px per character cannot reach 45, and getting there
+needs ~14px type. Padding is the lever and it is already spent, 20 → 16.
+
+**THE LINE-COUNT METRIC IS CLUSTERED WITH A TOLERANCE, WHICH IS S5's SCAR PAID FORWARD.**
+`getClientRects().length` counts fragments, so a paragraph with an inline `<a>` reports
+several rects for one line; 2px buckets then split two rects either side of a bucket
+edge. S5 got that metric wrong twice — *"the third time that metric has misled someone
+here"* — so this clusters rect tops at half the line height.
+
+**WHAT IT FOUND: `PublicShare`'s button is 36px tall at every width, under the 44px iOS
+minimum.** It is S1's component and its own stylesheet, and it already ships under 22
+lore pages, so it is pre-existing rather than S6's to fix (§6 file ownership) — but
+nothing was reporting it before, and `blogfit.sh`'s `smallTargets` is now what does.
+
+### And a second S1 finding, which contradicts a sentence in the reconciliation
+
+**`PublicShare` RENDERS ITS BUTTON IN THE SERVER HTML, SO WITH JAVASCRIPT OFF THE
+CONTROL IS PRESENT AND DEAD.** Verified by `curl` on `/blog/what-tarot-is` and on
+`/arcana/the-moon` — the same markup on both:
+
+```html
+<button type="button" class="PublicShare-module__…__button">Bagikan halaman ini</button>
+```
+
+S6's plan flag 5 said the opposite would ship — *"it renders `null` until mounted… a dead
+button is worse than no button"* — and **reconciliation §7 recorded it as a settled fact
+about the release: *"The share control is invisible without JavaScript"***. It is not.
+`PublicShare` has no `mounted` guard, no `useEffect`, and returns its markup on the first
+render.
+
+This is **pre-existing on twenty-three pages and S1's file to change**, so S6 did not
+touch it. It is written down here because reconciliation §7 is the document a future
+session will consult, and it currently states a property the code does not have — which
+is worse than an open item, because nobody goes looking for it. The fix is four lines
+(`const [mounted, setMounted] = useState(false)`, an effect, `if (!mounted) return null`)
+and the decision is whether a permanently-visible control that works for ~99% of visitors
+beats no control at all for the rest. **Not S6's call and not S6's file.**
+
+### The crawl, signed out, no cookie jar
+
+Six URLs — `/blog`, `/en/blog` and both articles in both trees. Every one **200**, every
+one carrying **zero `Set-Cookie`**, **no `x-robots-tag`** (S-D12 has not spread) and no
+`content-disposition`.
+
+The locale checks, which are the ones nothing else can do:
+
+```
+Cookie: jmt_locale=en        -> /blog/how-to-read-tarot is INDONESIAN   ✓
+Accept-Language: en-GB       -> INDONESIAN                              ✓
+?lang=en                     -> INDONESIAN (inert on content, S2 F5)    ✓
+/en/blog/how-to-read-tarot   -> ENGLISH                                 ✓
+```
+
+**All three hostile inputs lose to the URL** (§4.1), which is the property that stops a
+CDN serving whichever language warmed the cache to everybody under a canonical claiming
+otherwise.
+
+Off the wire: a canonical at the bare path, three `alternate` links (`id`, `en`,
+`x-default`), an Indonesian `<title>`, an unknown slug **404**, and the sitemap carrying
+exactly six blog rows.
+
+**ONE `application/ld+json` BLOCK, NOT TWO, AND THE PLAN EXPECTED TWO.** `graph()` wraps
+both nodes under one `@context` — S4's pattern, and two contexts is valid markup that
+doubles the bytes on the pages whose TTFB a crawler measures. Parsed off the wire:
+`BlogPosting` with `inLanguage: 'id'` (the bare tag, R15 — the plan's own test spelled
+`en-GB`), `wordCount: 1693`, `author` and `publisher` by `@id`, `isPartOf` the `Blog`
+node, an `ImageObject` at `#hero`, and a three-rung breadcrumb `/` → `/blog` → article.
+**No `&amp;` anywhere in it**, which is the failure `JsonLd.tsx`'s pre-escape exists to
+make impossible and which no validator flags.
+
+### EVERY `/en/` CONTENT ROUTE LOSES ITS CACHE HEADER, AND THAT IS NOT S6's TO FIX
+
+**Measured against a real `npx next start`, 2026-07-29.** This is R21's open item — *"the
+cache-header question has ONE owner and it is a blocker on the S-D10 claim"* — closed
+in the direction nobody expected. R21 and three workstream sections say the `s-maxage` is
+*"measured locally but not against a Vercel CDN"*. The truth is worse: **measured locally,
+half of it never reaches the wire at all.**
+
+```
+/blog                     public, s-maxage=3600, stale-while-revalidate=86400
+/en/blog                  no-cache, must-revalidate
+/blog/what-tarot-is       public, s-maxage=3600, stale-while-revalidate=86400
+/en/blog/what-tarot-is    no-cache, must-revalidate
+/arcana/the-moon          public, s-maxage=3600, stale-while-revalidate=86400
+/en/arcana/the-moon       no-cache, must-revalidate
+/gallery                  public, s-maxage=3600, stale-while-revalidate=86400
+/en/gallery               no-cache, must-revalidate
+```
+
+**IT IS NOT BLOG-SPECIFIC. Four of the eight content entries in `next.config.ts` are
+inert, and the four inert ones are exactly the English tree** — `/en/gallery`, the
+twenty-two `/en/arcana/<slug>`, `/en/blog` and both `/en/blog/<slug>`. Twenty-five
+indexable English pages, uncacheable at the edge, on a release whose entire argument for
+`s-maxage` over multiple root layouts is TTFB for a crawler (S-D10).
+
+**The diagnosis, because a shrug is not a record.** The config's `headers()` DOES run on a
+prefixed path — the catch-all's `x-frame-options: SAMEORIGIN` and
+`x-content-type-options: nosniff` both arrive on `/en/blog`. What does not survive is
+`cache-control` specifically, and the response carries `x-middleware-rewrite:
+http://localhost:3001/blog`. So the rewritten render's own `Cache-Control` wins over the
+matched config entry, while on the bare path — same route file, no rewrite — the config
+entry wins. **`headers.test.ts`'s comment is the thing that made this invisible**: it says
+*"Next's `headers()` matches the INCOMING request path, before middleware's rewrite… so
+`/en/gallery` never matches the `/gallery` entry"*, which is true about MATCHING and says
+nothing about which value survives a rewrite. The test asserts the config CONTAINS the
+four `/en/` entries. It does, and they do nothing.
+
+**S6 did not fix it, deliberately.** `next.config.ts` is S1's file and the rewrite is S2's
+(roadmap §6.4, §6.2), the fix is a cross-workstream design decision rather than a missed
+delta, and getting it wrong on the response that carries a session is the one mistake on
+this seam that is worse than the bug. The candidate fix is to set `Cache-Control` inside
+middleware on the rewrite branch — the one place that already knows a response is a
+content response, already manipulates headers on exactly those responses, and is already
+fenced by `content.kind !== 'passthrough'` so a signed-in `/` cannot be caught by it.
+**A config-level test cannot catch this class of bug and a `curl` against `next start`
+can, which is the loop this belongs in.**
+
+### Still open
+
+- **The `/en/` cache header, above. It is the release's most consequential open item and
+  it is S1/S2's.** `blogfit.sh` and `crawl.sh` both run against dev, where every route is
+  `no-cache`, so neither would have found it; `npx next start -p 3002` did.
+- **Nobody has read either article on a phone.** Reconciliation §8: *"no lint can tell
+  whether a page is worth reading"*, and every mechanical check passes on atmospheric
+  nothing. The acceptance test is Miftah reading both, in both languages, on glass.
+- **The `s-maxage` on the BARE paths is measured on `next start` and never against a
+  Vercel CDN** (R21) — the same residual gap `/gallery` and the 22 lore pages carry. The
+  `/en/` half is a different and larger problem; see the section above.
+- **`PublicShare`'s 36px button and its dead no-JS state**, above. S1's file, 23 pages.
+- **No RSS** (S6 F10). Out of scope, ~30 lines, no dependency, and the only excluded
+  feature that costs nothing to maintain.
+- **`og:image` is 2:3 card art on a page whose previews want ~1.91:1** (R20). The ruling
+  is a site-level default through `metadataBase`; naming the hero is still better than
+  naming nothing.
