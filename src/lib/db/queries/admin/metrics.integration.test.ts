@@ -11,10 +11,17 @@
  */
 import { sql } from 'drizzle-orm';
 import { afterAll, describe, expect, it } from 'vitest';
-import { llmCalls, users, type NewLlmCall } from '@/lib/db/schema';
+import { llmCalls, readings, users, type NewLlmCall } from '@/lib/db/schema';
 import { closeTestDb, withRollback } from '@/lib/db/testing/harness';
 import type { Tx } from '@/lib/db/types';
-import { callsByLocalDate, callsByUtcDay, tokensByBucketAndModel } from './metrics';
+import {
+  callsByLocalDate,
+  callsByOp,
+  callsByUtcDay,
+  peakWindow5h,
+  tokensByBucketAndModel,
+  ttftByService,
+} from './metrics';
 
 afterAll(closeTestDb);
 
@@ -29,7 +36,18 @@ async function seedUser(tx: Tx): Promise<string> {
   return user.id;
 }
 
-/** A ledger row with the boring columns filled in. `createdAt` defaults to now(). */
+/**
+ * A ledger row with the boring columns filled in.
+ *
+ * **`createdAt` DEFAULTS TO NOON UTC ON `localDate` RATHER THAN TO `now()`, AND THE
+ * FIRST DRAFT LEARNED WHY.** Half the catalogue filters on `created_at` (M1, M4, M5,
+ * M10 -- the ones served by `llm_calls_created_idx`) and half on `local_date` (M2, M3
+ * -- the querent's own day). A row left at the column default lands on *today*, so
+ * every `created_at`-filtered query returned nothing while every `local_date` one
+ * passed: four tests failed for a reason that had nothing to do with what they were
+ * testing. Pinning both here keeps a test's failure about its own subject -- and the
+ * two tests that deliberately separate the two clocks still override it.
+ */
 function row(over: Partial<NewLlmCall> & Pick<NewLlmCall, 'op' | 'localDate'>): NewLlmCall {
   return {
     model: 'glm-4.6',
@@ -37,6 +55,7 @@ function row(over: Partial<NewLlmCall> & Pick<NewLlmCall, 'op' | 'localDate'>): 
     streamed: false,
     status: 'ok',
     locale: 'id',
+    createdAt: new Date(`${over.localDate}T12:00:00Z`),
     ...over,
   };
 }
@@ -263,5 +282,223 @@ describe('M3 -- tokensByBucketAndModel', () => {
       const first = (probe as unknown as Array<Record<string, unknown>>)[0];
       expect(first.month).toBe('2026-07');
       expect(first.week).toBe('2026-07-20'); // 2026-07-20 is itself a Monday
+    }));
+});
+
+describe('M4 -- callsByOp', () => {
+  it('returns one row per op, never a tenth key, ordered totally', () =>
+    withRollback(async (tx) => {
+      const OPS = [
+        'reading',
+        'moderation',
+        'gist',
+        'day_summary',
+        'frequency',
+        'lotus',
+        'persona',
+        'translation',
+        'translation_repair',
+      ] as const;
+
+      await tx.insert(llmCalls).values(
+        OPS.map((op) => row({ op, localDate: '2026-07-20', totalMs: 1000 })),
+      );
+
+      const rows = await callsByOp(tx, { from: '2026-07-20', to: '2026-07-20' });
+      expect(rows).toHaveLength(9);
+      // Seam 3: A3 groups by `op` and must not invent a tenth value or an alias.
+      expect(rows.map((r) => r.op).sort()).toEqual([...OPS].sort());
+
+      // Every count ties at 1, so the `op` tiebreak is what makes the order total --
+      // without it two ops swap places between page loads and it reads as the data
+      // changing.
+      expect(rows.map((r) => r.op)).toEqual([...OPS].sort());
+    }));
+
+  it('percentile_cont over ONE row is that row, as a number', () =>
+    withRollback(async (tx) => {
+      await tx.insert(llmCalls).values([
+        row({ op: 'reading', localDate: '2026-07-20', totalMs: 4321 }),
+      ]);
+      const [only] = await callsByOp(tx, { from: '2026-07-20', to: '2026-07-20' });
+      expect(only.p50Ms).toBe(4321);
+      expect(typeof only.p50Ms).toBe('number');
+      expect(typeof only.p95Ms).toBe('number');
+    }));
+
+  it('is null -- not 0 -- when nothing was timed', () =>
+    withRollback(async (tx) => {
+      // "No measurement" is not "instant". A 0ms p95 on a chart is a lie that reads
+      // as a triumph.
+      await tx.insert(llmCalls).values([
+        row({ op: 'reading', localDate: '2026-07-20', totalMs: null }),
+      ]);
+      const [only] = await callsByOp(tx, { from: '2026-07-20', to: '2026-07-20' });
+      expect(only.p50Ms).toBeNull();
+      expect(only.calls).toBe(1);
+    }));
+
+  it('counts failed and aborted separately', () =>
+    withRollback(async (tx) => {
+      await tx.insert(llmCalls).values([
+        row({ op: 'reading', localDate: '2026-07-20', status: 'ok' }),
+        row({ op: 'reading', localDate: '2026-07-20', status: 'failed', errorKind: 'upstream_5xx' }),
+        row({ op: 'reading', localDate: '2026-07-20', status: 'aborted', errorKind: 'aborted' }),
+      ]);
+      const [only] = await callsByOp(tx, { from: '2026-07-20', to: '2026-07-20' });
+      expect(only.calls).toBe(3);
+      expect(only.failed).toBe(1);
+      expect(only.aborted).toBe(1);
+    }));
+});
+
+describe('M5 -- peakWindow5h', () => {
+  it('finds the worst window, and the peak is a NUMBER', () =>
+    withRollback(async (tx) => {
+      /*
+       * Six calls inside four hours, then three more nine hours later. The worst
+       * rolling five-hour window holds six.
+       */
+      const burst = ['08:00', '08:30', '09:00', '10:00', '11:00', '11:59'];
+      const later = ['21:00', '21:30', '22:00'];
+      await tx.insert(llmCalls).values(
+        [...burst, ...later].map((hhmm) =>
+          row({
+            op: 'reading',
+            localDate: '2026-07-20',
+            createdAt: at(`2026-07-20T${hhmm}:00Z`),
+          }),
+        ),
+      );
+
+      const peak = await peakWindow5h(tx, { from: '2026-07-20', to: '2026-07-20' });
+      expect(peak).not.toBeNull();
+      if (!peak) return;
+      expect(peak.calls).toBe(6);
+      /*
+       * **THE MOST LOAD-BEARING TYPE ASSERTION IN A3.** This value is compared with
+       * `>=` against 280. A string would be right most of the time -- `'300' >= 280`
+       * is true by coercion and `'30' >= 280` is false -- which is worse than a bug
+       * that always fires.
+       */
+      expect(typeof peak.calls).toBe('number');
+      expect(peak.windowEnd).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+    }));
+
+  it('THE NEGATIVE CONTROL: moving one call out of the window drops the peak to 5', () =>
+    withRollback(async (tx) => {
+      // Same six calls, but the first is now six hours before the last of the group,
+      // so no five-hour window contains all six.
+      const burst = ['05:30', '08:30', '09:00', '10:00', '11:00', '11:59'];
+      await tx.insert(llmCalls).values(
+        burst.map((hhmm) =>
+          row({
+            op: 'reading',
+            localDate: '2026-07-20',
+            createdAt: at(`2026-07-20T${hhmm}:00Z`),
+          }),
+        ),
+      );
+      const peak = await peakWindow5h(tx, { from: '2026-07-20', to: '2026-07-20' });
+      expect(peak?.calls).toBe(5);
+    }));
+
+  it('sees a window that STRADDLES MIDNIGHT, which is why it is a frame and not a bucket', () =>
+    withRollback(async (tx) => {
+      // Three calls before midnight and three after. Any daily bucketing splits this
+      // into 3 and 3 and hides the worst window in the range entirely.
+      await tx.insert(llmCalls).values([
+        row({ op: 'reading', localDate: '2026-07-20', createdAt: at('2026-07-20T22:00:00Z') }),
+        row({ op: 'reading', localDate: '2026-07-20', createdAt: at('2026-07-20T22:30:00Z') }),
+        row({ op: 'reading', localDate: '2026-07-20', createdAt: at('2026-07-20T23:00:00Z') }),
+        row({ op: 'reading', localDate: '2026-07-21', createdAt: at('2026-07-21T00:30:00Z') }),
+        row({ op: 'reading', localDate: '2026-07-21', createdAt: at('2026-07-21T01:00:00Z') }),
+        row({ op: 'reading', localDate: '2026-07-21', createdAt: at('2026-07-21T01:30:00Z') }),
+      ]);
+      const peak = await peakWindow5h(tx, { from: '2026-07-20', to: '2026-07-21' });
+      expect(peak?.calls).toBe(6);
+    }));
+
+  it('is NULL for an empty range -- "no calls" and "no data" are different answers', () =>
+    withRollback(async (tx) => {
+      expect(await peakWindow5h(tx, { from: '2026-07-20', to: '2026-07-20' })).toBeNull();
+    }));
+
+  it("excludes a 'refused' row, so headroom is not double-counted against itself", () =>
+    withRollback(async (tx) => {
+      await tx.insert(llmCalls).values([
+        row({ op: 'reading', localDate: '2026-07-20', createdAt: at('2026-07-20T08:00:00Z') }),
+        row({
+          op: 'reading',
+          localDate: '2026-07-20',
+          createdAt: at('2026-07-20T08:01:00Z'),
+          status: 'refused',
+        }),
+      ]);
+      const peak = await peakWindow5h(tx, { from: '2026-07-20', to: '2026-07-20' });
+      expect(peak?.calls).toBe(1);
+    }));
+});
+
+describe('M8 -- the two latencies never merge', () => {
+  it('TTFT 400 and total 9000 on ONE reading: each function returns its own number', () =>
+    withRollback(async (tx) => {
+      /*
+       * Roadmap seam 2. `readings.latency_ms` is time to FIRST TOKEN -- the wait a
+       * querent watched. `llm_calls.total_ms` is the whole call, timed from above
+       * `gateReading`. One word, two meanings, one schema; two functions, two names,
+       * and neither is called `latency`.
+       */
+      const userId = await seedUser(tx);
+      const [reading] = await tx
+        .insert(readings)
+        .values({
+          userId,
+          readerId: 'thessaly',
+          serviceId: 'spread3',
+          locale: 'id',
+          localDate: '2026-07-20',
+          model: 'glm-4.6',
+          promptVersion: 'id-v1.testtest',
+          latencyMs: 400,
+        })
+        .returning({ id: readings.id });
+
+      await tx.insert(llmCalls).values([
+        row({
+          op: 'reading',
+          localDate: '2026-07-20',
+          userId,
+          readingId: reading.id,
+          totalMs: 9000,
+        }),
+      ]);
+
+      const [ttft] = await ttftByService(tx, { from: '2026-07-20', to: '2026-07-20' });
+      const [op] = await callsByOp(tx, { from: '2026-07-20', to: '2026-07-20' });
+
+      expect(ttft.serviceId).toBe('spread3');
+      expect(ttft.p50Ms).toBe(400);
+      expect(op.p50Ms).toBe(9000);
+      // Neither returns the other, which is the assertion the seam asks for.
+      expect(ttft.p50Ms).not.toBe(op.p50Ms);
+    }));
+
+  it('skips readings with no TTFT rather than counting them as 0', () =>
+    withRollback(async (tx) => {
+      const userId = await seedUser(tx);
+      await tx.insert(readings).values([
+        {
+          userId,
+          readerId: 'thessaly',
+          serviceId: 'daily',
+          locale: 'id',
+          localDate: '2026-07-20',
+          model: 'glm-4.6',
+          promptVersion: 'id-v1.testtest',
+          latencyMs: null,
+        },
+      ]);
+      expect(await ttftByService(tx, { from: '2026-07-20', to: '2026-07-20' })).toEqual([]);
     }));
 });
