@@ -17,17 +17,29 @@
  * made the same call for the same second reason: with headers unsent, a failed
  * generation can still fall back.
  *
- * THE STATE MACHINE, in the order the branches are written below:
+ * THE STATE MACHINE, in the order the branches are written below. **IT GREW A FOURTH
+ * ARM ON 2026-07-29** — see `personaStaleness`:
  *
- *   row, not stale     -> serve it. No model call. Most page loads.
- *   row, stale         -> serve THE OLD BODY, regenerate in after().
- *   no row             -> generate synchronously. A failed generation still 200s,
- *                         because the fallback is a real body (A9).
+ *   fresh                  -> serve it. No model call. Most page loads.
+ *   drift / source-version -> serve THE OLD BODY, regenerate in after().
+ *   user-edit              -> regenerate IN FRONT of the response, serve the result.
+ *   no row                 -> generate synchronously. A failed generation still 200s,
+ *                             because the fallback is a real body (A9).
  *
  * **SERVE STALE, REFRESH BEHIND THE RESPONSE**, which is `/api/memory/frequency`'s
  * `still-true` branch. Making somebody wait five seconds to replace a true
  * paragraph with a slightly truer one is the wrong trade on a page they opened to
  * look at.
+ *
+ * **AND THE ONE CASE WHERE IT IS THE WRONG TRADE: A USER EDIT.** The answer routes
+ * stopped calling `generatePersona` on 2026-07-29 (Miftah's ruling — one model call
+ * per edit instead of two, and none at all for a querent who fixes three answers
+ * before reopening the page), so this route is now where an answer edit is honoured.
+ * A querent who just changed an answer and refreshed did it **to see the paragraph
+ * change**; serving them the old one means refreshing twice, which is W3's swallowed
+ * answer-edit bug arriving from the read side. A13's rule that
+ * `PERSONA_MIN_AGE_SECONDS` must never guard a user-caused regeneration is intact —
+ * only its enforcement point moved, from the write path to `personaStaleness`.
  *
  * **`await getLocale()`, NEVER `user.locale`.** They agree for a real user because
  * the `loc` claim is first in the resolution chain; they diverge under `?lang=`,
@@ -46,14 +58,14 @@ import {
 import { track, withAnalytics, type AnalyticsContext } from '@/lib/analytics/track';
 import { requireUser } from '@/lib/auth/server';
 import { db } from '@/lib/db/client';
-import { getPersona } from '@/lib/db/queries/persona';
+import { getPersona, touchPersona } from '@/lib/db/queries/persona';
 import { getTranslation } from '@/lib/db/queries/translations';
 import { getLocale } from '@/lib/i18n/t';
 import {
   generatePersona,
-  isPersonaStale,
   personaMaterial,
   personaMinAgeSeconds,
+  personaStaleness,
 } from '@/lib/persona/generate';
 import { PERSONA_SOURCE_VERSION } from '@/lib/persona/prompt';
 import { hit } from '@/lib/ratelimit';
@@ -70,7 +82,7 @@ export const maxDuration = 30;
 
 /**
  * Per user per hour. Generous, because most requests are a cached read and the
- * throttle in `isPersonaStale` is what actually bounds the model calls — this is
+ * throttle in `personaStaleness` is what actually bounds the model calls — this is
  * the backstop for a client stuck in a retry loop.
  *
  * `hit()` prefixes `read:`, so the effective key is `read:persona:<uid>`: its own
@@ -137,10 +149,21 @@ export async function GET(request: Request) {
      * `HistoryDetail` does for a reading. This route hands it the two things that
      * save a round trip: `entityId`, and any translation already in the table.
      */
-    const stale =
-      row === null || isPersonaStale(row, material.inputHash, personaMinAgeSeconds());
+    /*
+     * **WHY, NOT WHETHER (2026-07-29).** This used to be a boolean, and a boolean was
+     * enough while every user-caused regeneration was performed by the WRITE path.
+     * Since the answer routes stopped calling `generatePersona` — Miftah's ruling, to
+     * spend one model call per edit instead of two — the two kinds of staleness need
+     * opposite treatment here, and only `personaStaleness` can tell them apart.
+     */
+    const staleness = personaStaleness(
+      row,
+      material.inputHash,
+      personaMinAgeSeconds(),
+      material.answersTouchedAt,
+    );
 
-    if (row && !stale) {
+    if (row && staleness === 'fresh') {
       track('persona.viewed', {
         cached: true,
         locale: row.locale,
@@ -150,12 +173,24 @@ export async function GET(request: Request) {
       return json(row, true, user.id, locale);
     }
 
-    if (row) {
+    /*
+     * **`drift` AND `source-version` SERVE STALE; `user-edit` DOES NOT.** The whole
+     * point of the split.
+     *
+     * Drift means ten more readings have moved `input_hash` while the stored
+     * paragraph is still true, so making somebody wait five seconds to replace a true
+     * paragraph with a slightly truer one is the wrong trade on a page they opened to
+     * look at. A user edit is the opposite: the querent changed what the persona is
+     * built from and refreshed **specifically to see it change**, so serving the old
+     * body means they refresh twice and the feature reads as broken. That is W3's
+     * swallowed answer-edit bug wearing a different hat — the edit lands, and the
+     * screen keeps saying otherwise.
+     */
+    if (row && staleness !== 'user-edit') {
       /*
-       * Serve the OLD body and refresh behind the response. `'deferred'`, because a
-       * true paragraph is already on screen and shedding this costs nothing that is
-       * not already absent — unlike the branch below, where there is nothing to
-       * show.
+       * `'deferred'`, because a true paragraph is already on screen and shedding this
+       * costs nothing that is not already absent — unlike the branches below, where
+       * there is either nothing to show or something known to be wrong.
        */
       after(() =>
         generatePersona(user.id, locale, 'deferred', material).then((outcome) =>
@@ -170,6 +205,50 @@ export async function GET(request: Request) {
         chars: row.body.length,
       });
       return json(row, true, user.id, locale);
+    }
+
+    if (row) {
+      /*
+       * A USER EDIT, WITH A BODY ALREADY STORED. Regenerate IN FRONT of the response
+       * and serve the result. `'interactive'`, because somebody is waiting on the
+       * screen they came to look at — the same argument the no-row branch below makes.
+       *
+       * **THE `unchanged` BRANCH IS NOT DEAD CODE AND `touchPersona` IS WHAT MAKES
+       * THIS TERMINATE.** A querent who edits an answer back to the value it already
+       * had leaves `input_hash` byte-identical, so `generatePersona` returns
+       * `unchanged` and writes nothing — which would leave
+       * `max(onboarding_answers.updated_at)` permanently ahead of
+       * `personas.updated_at` and this branch re-entered on every page view forever.
+       * It costs two indexed reads and no model call, so it is cheap rather than
+       * expensive, and it is still a flag that cannot clear. One `update` closes it.
+       */
+      const outcome = await generatePersona(user.id, locale, 'interactive', material);
+      trackGenerated(outcome);
+
+      if (outcome.reason === 'unchanged') {
+        await touchPersona(db, user.id).catch(logFailure);
+      }
+
+      const written = await getPersona(db, user.id).catch((err) => {
+        logFailure(err);
+        return null;
+      });
+
+      /*
+       * FALLING BACK TO THE OLD ROW RATHER THAN 500ing, which the no-row branch
+       * cannot do. `generatePersona` never throws and always writes something, so
+       * reaching here with nothing means the READ failed — and a paragraph that is
+       * one edit out of date is strictly better than an error on a page whose other
+       * four blocks rendered.
+       */
+      const serve = written ?? row;
+      track('persona.viewed', {
+        cached: written === null,
+        locale: serve.locale,
+        fallback: serve.model === 'fallback',
+        chars: serve.body.length,
+      });
+      return json(serve, written === null, user.id, locale);
     }
 
     /*

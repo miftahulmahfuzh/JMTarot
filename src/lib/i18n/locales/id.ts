@@ -779,27 +779,44 @@ const id = {
   // and clause 7. That made it a published promise of a control nobody could
   // perform, which is the exact mistake `/account` itself made for a release.
   //
-  // THE PAGE SAYS WHICH ANSWERS EXIST AND NEVER WHAT IS IN THEM. There is no
-  // reveal control at all, so the plaintext never leaves the server — `worst_thing`
-  // is the most sensitive string in the product and this page is the one that lets
-  // somebody delete it, not read it back.
+  // ── SIX KEYS WERE DELETED HERE ON 2026-07-29 (Miftah's ruling) ────────────
   //
-  // "Terhapus" AND NOT "Dilewati" for a cleared answer, even though the column
-  // ends up in the same state as a skip: the querent needs to see that their
-  // deletion happened, and a row that reverts to "not answered" reads as if the
-  // button did nothing.
+  // `answered` ("Tersimpan"), `empty`, `cleared`, `clear`, `clearing` and
+  // `clearAria` are gone. The row is a button now: the question on the left, a
+  // tick or an empty circle where the Clear control used to be, and a sheet with
+  // the answer in it when you tap.
+  //
+  // **THE TWO STATE WORDS SURVIVE AS `state.*` AND ARE READ RATHER THAN SHOWN.**
+  // An icon with no accessible name is a row that says nothing at all to a screen
+  // reader, so removing the visible text made the label MANDATORY rather than
+  // optional. Do not delete these two thinking the icon speaks for itself.
+  //
+  // `cleared` went with its state, and that is now correct: V8 tracked "just
+  // cleared" for the life of the page because a row reverting to "Tidak dijawab"
+  // read as if the button had done nothing. The sheet closes and the icon changes,
+  // so there is nothing left to distinguish.
+  //
+  // THE HINT CHANGED TOO. It said the answers are not shown here ("Isinya tidak
+  // ditampilkan di sini"), which is no longer true — leaving it would be the copy
+  // contradicting the control directly beneath it.
   'account.answers.heading': 'Jawabanmu',
   'account.answers.hint':
-    'Enam pertanyaan yang pernah kamu jawab. Isinya tidak ditampilkan di sini, dan bisa kamu hapus satu per satu tanpa menghapus akun.',
-  'account.answers.answered': 'Tersimpan',
-  'account.answers.empty': 'Tidak dijawab',
-  'account.answers.cleared': 'Terhapus',
-  'account.answers.clear': 'Hapus',
-  'account.answers.clearing': 'Menghapus…',
-  'account.answers.clearAria': 'Hapus jawaban untuk: {question}',
-  'account.answers.failed': 'Belum terhapus. Coba lagi sebentar lagi.',
+    'Enam pertanyaan yang pernah kamu jawab. Ketuk salah satu untuk melihat, mengubah, atau menghapus jawabanmu.',
+  'account.answers.state.answered': 'Sudah dijawab',
+  'account.answers.state.empty': 'Belum dijawab',
+  'account.answers.openAria': '{question} — {state}. Ketuk untuk membuka.',
+  'account.answers.loading': 'Membuka…',
+  'account.answers.emptyField': 'Belum ada jawaban.',
+  'account.answers.save': 'Simpan',
+  'account.answers.saving': 'Menyimpan…',
+  'account.answers.remove': 'Hapus',
+  'account.answers.removing': 'Menghapus…',
+  'account.answers.cancel': 'Tutup',
+  'account.answers.failed': 'Belum tersimpan. Coba lagi sebentar lagi.',
+  // The Lotus is rewritten NOW; the Teratai Batin block waits for the next visit.
+  // Said out loud because nobody would guess either half.
   'account.answers.note':
-    'Menghapus satu jawaban juga menulis ulang Teratai Batinmu tanpa jawaban itu.',
+    'Mengubah atau menghapus satu jawaban langsung menulis ulang apa yang dibaca pembacamu. Teratai Batinmu menyusul saat kamu membuka halaman ini lagi.',
 
   // ==========================================================================
   // V8 — account deletion (VD13). The copy for a control `/privacy` §8 has

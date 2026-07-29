@@ -5,6 +5,9 @@
  *   npm run smoke -- --all             EIGHTEEN readings: both locales x 3 x 3
  *   npm run smoke -- --all --locale en NINE, one locale, for iterating
  *   npm run smoke -- --all --fixed     same hands, so two runs can be diffed
+ *   npm run smoke -- --all --choice    EIGHTEEN, all asking a two-option question:
+ *                                      did the reader CHOOSE one, and did yesno
+ *                                      stay out of it? READ THE MARKERS.
  *   npm run smoke -- --frequency       TWELVE verdicts: 6 card pairs x 2 locales
  *   npm run smoke -- --summary         SIX summaries: 3 readers x 2 locales
  *   npm run smoke -- --frequency --locale id   half of either, for iterating
@@ -60,6 +63,7 @@ import { getProvider } from '@/lib/llm';
 import { resolveBaseUrl } from '@/lib/llm/openai';
 import { isLocale, LOCALES, type Locale } from '@/lib/i18n/locale';
 import { budgetFor, type LengthBudget } from '@/lib/prompt/budget';
+import { splitChoiceMarker, validateChoice } from '@/lib/reading/choice';
 import type { MemoryContext } from '@/lib/prompt/memory';
 
 /*
@@ -103,6 +107,15 @@ async function run(
   user: string,
   maxTokens: number,
   promptVersion = 'smoke',
+  /**
+   * Filled in with the choice marker's candidate, when the reading opened with one.
+   *
+   * **AN OUT-PARAM RATHER THAN A WIDER RETURN TYPE**, because `run()` has eleven
+   * callers -- the nine-reading matrix, the Lotus, the translations, the persona --
+   * and only one of them cares. Widening the return to an object would touch every
+   * one of them to reach a field that is null in ten.
+   */
+  out?: { choice: string | null },
 ) {
   const provider = getProvider();
   process.stdout.write(`\n${'='.repeat(70)}\n${label}\n${'='.repeat(70)}\n`);
@@ -140,7 +153,29 @@ async function run(
       `tokens in=${usage.inputTokens ?? 'null'} out=${usage.outputTokens ?? 'null'}, ` +
       `prompt=${promptVersion}]\n`,
   );
-  return text;
+
+  /*
+   * THE CHOICE MARKER COMES OFF HERE, IN THE ONE FUNCTION EVERY CHECK READS FROM.
+   *
+   * **WITHOUT THIS, THE WORD BUDGET FAILS ON CORRECT OUTPUT.** `PILIHAN: Ayam` is a
+   * paragraph as far as `text.split(/\n\s*\n/)` is concerned, so a reading that
+   * obeyed the rule exactly would report an extra two-word paragraph and shift the
+   * total -- and `budget.ts` says in its own words that a check failing on correct
+   * behaviour is a check people learn to ignore. The Malay grep, the position
+   * framing check and the three voice proxies read the same string.
+   *
+   * The RAW stream is already on the terminal above, marker included, so a human
+   * reading a `--choice` run still sees exactly what the model emitted. That is the
+   * whole instrument for the FORMAT, which no event in production can measure:
+   * a marker the model spells differently enough to miss the matcher renders as
+   * prose and reports nothing.
+   */
+  const split = splitChoiceMarker(text, true);
+  if (out) out.choice = split.choice;
+  if (split.choice !== null) {
+    process.stdout.write(`[choice] marker named "${split.choice}"\n`);
+  }
+  return split.body;
 }
 
 async function main() {
@@ -201,6 +236,30 @@ async function main() {
   const frequency = process.argv.includes('--frequency');
   const translate = process.argv.includes('--translate');
   const persona = process.argv.includes('--persona');
+  /*
+   * `--choice`: THE ONLY INSTRUMENT FOR THE MARKER'S FORMAT.
+   *
+   * `reading.completed.choice` measures whether the reader named an option the
+   * querent never typed. It CANNOT measure a marker the model spelled differently
+   * enough to miss `splitChoiceMarker` -- that renders as prose and reports `none`,
+   * indistinguishable in production from a question that offered no choice. So the
+   * format is checked here, against a question that definitely offers one, by
+   * looking at the raw stream and at whether the marker parsed and validated.
+   *
+   * A CANNED QUESTION PER LOCALE rather than `--question`, so the check is the same
+   * two questions every time and a rate across runs means something. It composes
+   * with `--all`, so `npm run smoke -- --all --choice` is eighteen readings that
+   * should ALL carry a marker -- except the six `yesno` ones, which must carry NONE,
+   * because `CHOICE_RULE_*` is deliberately not in that task.
+   */
+  const choiceRun = process.argv.includes('--choice');
+  const CHOICE_QUESTION: Record<Locale, string> = {
+    id: 'mending makan ayam atau ikan nanti siang?',
+    /* REWRITTEN, NOT TRANSLATED, and the options differ on purpose -- the same
+       enforcement `## Localization` rule 3 applies to the worked examples. If a
+       future version of this line says chicken and fish, somebody translated it. */
+    en: 'should I take the new job offer or stay where I am?',
+  };
   /* Any comparison run wants fixed hands, for the reason spelled out at the
      `picks` assignment below: two runs that drew different cards cannot be
      diffed. `--memory` joins that list because its whole point is a recalled
@@ -333,6 +392,9 @@ async function main() {
   /** Every reading, for the blind print and the per-locale summaries. */
   const bodies: Array<{ locale: Locale; reader: string; service: string; text: string }> = [];
 
+  /** `--choice` only. Its own list, so a clean matrix still reports the format. */
+  const choiceProblems: string[] = [];
+
   let offered = 0;
   let used = 0;
   const bySignal = { card: 0, phrase: 0 };
@@ -373,19 +435,69 @@ async function main() {
       service: s,
       picks,
       locale,
-      question: arg('question'),
+      question: choiceRun ? CHOICE_QUESTION[locale] : arg('question'),
       context:
         lotus || memoryCtx
           ? { lotus: lotus ? LOTUS_BLOCK_FIXTURE : null, memory: memoryCtx }
           : undefined,
     });
+    const marker: { choice: string | null } = { choice: null };
     const text = await run(
       `${locale}  ${r} / ${s}`,
       prompt.system,
       prompt.user,
       prompt.maxTokens,
       prompt.promptVersion,
+      marker,
     );
+
+    if (choiceRun) {
+      const question = CHOICE_QUESTION[locale];
+      const valid = validateChoice(marker.choice, question);
+      /*
+       * `yesno` MUST NOT CARRY A MARKER, and this is the assertion that catches
+       * `CHOICE_RULE_*` leaking into the third task. Two answer boxes on one
+       * reading disagree -- `Ya` is not an answer to "ayam atau ikan" -- and
+       * `ReadingView`'s `else if` hides the symptom, so nothing on screen would
+       * show it.
+       */
+      if (s === 'yesno') {
+        if (marker.choice !== null) {
+          choiceProblems.push(`${locale} ${r}/yesno emitted a marker: "${marker.choice}"`);
+        }
+      } else if (marker.choice === null) {
+        choiceProblems.push(`${locale} ${r}/${s} named no option`);
+      } else if (valid === null) {
+        // The reader chose something the querent never offered. This is the
+        // production `invalid` case, visible here with the word attached.
+        choiceProblems.push(`${locale} ${r}/${s} named "${marker.choice}", not in the question`);
+      } else if (!namesChoiceInProse(text, valid)) {
+        /*
+         * THE PROSE MUST NAME IT TOO. The rule asks for both, because the box is
+         * chrome: a querent whose box failed to render must still be able to read the
+         * answer. Nothing in production measures this.
+         *
+         * **MATCHED ON CONTENT WORDS, NOT ON THE PHRASE, AND THE FIRST VERSION WAS AN
+         * EXACT `includes()` THAT FAILED CORRECT READINGS.** Measured 2026-07-29: a
+         * reading that chose `stay where I am` wrote *"staying where you are"* -- the
+         * right answer, in the second person, inflected, and reported as a violation
+         * six times out of eighteen. A check that fails on correct output is a check
+         * people learn to ignore, which is `budget.ts`'s own rule about ceilings.
+         */
+        choiceProblems.push(`${locale} ${r}/${s} chose "${valid}" but never says it in the prose`);
+      }
+      process.stdout.write(
+        `[choice] ${locale} ${r}/${s}: ` +
+          (s === 'yesno'
+            ? marker.choice === null
+              ? 'no marker (correct for yesno)'
+              : `LEAKED "${marker.choice}"`
+            : valid !== null
+              ? `chose "${valid}"`
+              : `INVALID "${marker.choice ?? '(none)'}"`) +
+          '\n',
+      );
+    }
     if (s === 'spread3') spreads.set(`${locale}/${r}`, text);
     bodies.push({ locale, reader: r, service: s, text });
 
@@ -450,6 +562,25 @@ async function main() {
   } else {
     for (const f of failures) process.stdout.write(`FAIL  ${f}\n`);
     process.stdout.write(`\n${failures.length} violation(s)\n`);
+  }
+
+  /*
+   * THE CHOICE VERDICT, ITS OWN HEADING (`--choice` only).
+   *
+   * Separate from the mechanical checks above because it answers a different
+   * question -- not "is this reading well-formed" but "did the reader actually
+   * choose" -- and because a run without `--choice` must not report a clean sweep
+   * of a check it never performed. That is the structural silence the voice proxies
+   * were fixed for; `n/a` beats `all clean` when nothing ran.
+   */
+  if (choiceRun) {
+    process.stdout.write(`\n${'#'.repeat(70)}\nCHOICE VERDICT\n${'#'.repeat(70)}\n`);
+    if (choiceProblems.length === 0) {
+      process.stdout.write('every reading chose one, named it in the prose, and yesno stayed out\n');
+    } else {
+      for (const c of choiceProblems) process.stdout.write(`FAIL  ${c}\n`);
+      process.stdout.write(`\n${choiceProblems.length} choice violation(s)\n`);
+    }
   }
   /*
    * WARNINGS PRINT AFTER THE FAILURES AND ARE NOT COUNTED WITH THEM. The English
@@ -795,6 +926,54 @@ function jaccard(a: string, b: string): number {
   let shared = 0;
   for (const w of x) if (y.has(w)) shared += 1;
   return shared / (x.size + y.size - shared);
+}
+
+/**
+ * Does the prose name the option the reader chose?
+ *
+ * **STEM MATCHING, BECAUSE A CHOICE IS AN INFLECTED PHRASE IN BOTH LANGUAGES.** An
+ * exact `includes()` was tried first and failed six correct readings out of eighteen:
+ * `stay where I am` came back as *"staying where you are"*, which is the right answer
+ * written the way a reader writes. Indonesian does the same thing with affixes --
+ * `pindah` becomes `berpindah`, `pilih` becomes `memilih`.
+ *
+ * So: take the option's CONTENT words, drop the ones too short or too generic to
+ * carry meaning, cut each to its first six characters to survive an affix, and demand
+ * that the longest one appears. One word rather than all of them, because a
+ * three-word option rephrased in the reader's voice keeps its noun and loses its verb
+ * -- and the noun is what tells the querent which lunch they are having.
+ *
+ * DELIBERATELY LOOSE. This is a smoke check a person reads beside the prose, not a
+ * gate: its job is to catch a reading that answers the marker and then talks about
+ * something else entirely, which is a real failure mode and the one that matters.
+ */
+function namesChoiceInProse(text: string, choice: string): boolean {
+  const hay = text.toLowerCase();
+  const STOP = new Set([
+    'the', 'a', 'an', 'my', 'me', 'i', 'am', 'is', 'to', 'in', 'on', 'at', 'of', 'it',
+    'that', 'this',
+    'yang', 'itu', 'ini', 'di', 'ke', 'dari', 'aku', 'saya', 'nanti',
+  ]);
+  /*
+   * **`stay`, `take`, `go`, `new`, `where` AND `makan` WERE ON THIS LIST AND CAME
+   * OFF, because they are the words that carry the option.** Measured 2026-07-29: a
+   * reading that chose `stay where I am` closed with *"**staying** asks that you bear
+   * the pressure of them"* -- the option named, inflected, in the right paragraph --
+   * and every word of the phrase was either a stop word or under three characters, so
+   * the matcher had nothing left and fell through to the exact-phrase branch. A verb
+   * looks generic in a stop list and is the whole answer in a choice.
+   */
+  const words = choice
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((w) => w.length >= 3 && !STOP.has(w))
+    .sort((a, b) => b.length - a.length);
+
+  /* Nothing but stop words -- e.g. the option IS "stay". Fall back to the phrase, so
+     the check neither passes vacuously nor fails on a word it deliberately ignored. */
+  if (words.length === 0) return hay.includes(choice.toLowerCase());
+
+  return words.some((w) => hay.includes(w.slice(0, 6)));
 }
 
 /**

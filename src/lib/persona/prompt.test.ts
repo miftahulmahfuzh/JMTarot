@@ -17,6 +17,7 @@ import {
   facetsFor,
   fallbackPersona,
   isPersonaStale,
+  personaStaleness,
   personaFactsFor,
   personaInputHash,
   personaSafetyCheck,
@@ -283,8 +284,127 @@ describe('isPersonaStale', () => {
      * TRANSLATION, not a regeneration, and regenerating would overwrite the
      * original the other locale's translation is derived from. The route asks V2.
      */
-    const source = String(isPersonaStale);
-    expect(source).not.toMatch(/\blocale\b/);
+    /*
+     * **BOTH FUNCTIONS, AND CHECKING ONLY THE FIRST WOULD NOW PASS FOR NOTHING.**
+     * `isPersonaStale` became a one-line wrapper on 2026-07-29, so its source
+     * trivially contains no `locale` whatever the real predicate does.
+     * `personaStaleness` is where the arms live and is what has to be clean.
+     */
+    expect(String(isPersonaStale)).not.toMatch(/\blocale\b/);
+    expect(String(personaStaleness)).not.toMatch(/\blocale\b/);
+  });
+});
+
+/**
+ * `personaStaleness` — WHY it is stale, which is four behaviours rather than a
+ * boolean.
+ *
+ * The reason it exists: since 2026-07-29 the answer routes no longer regenerate the
+ * persona, so this function is the only thing standing between a querent's answer
+ * edit and `PERSONA_MIN_AGE_SECONDS` swallowing it. A13's rule in capitals is that
+ * the floor must never guard a user-caused regeneration; the write path used to
+ * enforce it and now this does.
+ */
+describe('personaStaleness', () => {
+  const hash = personaInputHash(hashInput());
+  const now = new Date('2026-07-28T12:00:00Z');
+  const MIN_AGE = 3600;
+  const writtenAt = new Date(now.getTime() - 2 * 3600_000);
+
+  const row = (over: Partial<{ sourceVersion: number; inputHash: string; updatedAt: Date }> = {}) => ({
+    sourceVersion: PERSONA_SOURCE_VERSION,
+    inputHash: hash,
+    updatedAt: writtenAt,
+    ...over,
+  });
+
+  /** An hour BEFORE the persona was written: nothing pending. */
+  const before = new Date(writtenAt.getTime() - 3600_000);
+  /** An hour AFTER: the querent edited an answer since. */
+  const after = new Date(writtenAt.getTime() + 3600_000);
+
+  it('reports absent for a null row', () => {
+    expect(personaStaleness(null, hash, MIN_AGE, before, now)).toBe('absent');
+  });
+
+  it('reports fresh when nothing moved', () => {
+    expect(personaStaleness(row(), hash, MIN_AGE, before, now)).toBe('fresh');
+  });
+
+  it('reports drift for a hash mismatch older than the floor', () => {
+    expect(personaStaleness(row({ inputHash: 'x'.repeat(64) }), hash, MIN_AGE, before, now)).toBe(
+      'drift',
+    );
+  });
+
+  it('reports fresh for a hash mismatch inside the floor', () => {
+    const justWritten = new Date(now.getTime() - 60_000);
+    expect(
+      personaStaleness(
+        row({ inputHash: 'x'.repeat(64), updatedAt: justWritten }),
+        hash,
+        MIN_AGE,
+        new Date(justWritten.getTime() - 60_000),
+        now,
+      ),
+    ).toBe('fresh');
+  });
+
+  /**
+   * **THE ARM THE WHOLE DEFERRAL RESTS ON.** An answer written after the persona
+   * was, inside the floor, with a moved hash: `drift` would be throttled to `fresh`
+   * and the querent's edit would never reach the paragraph they refreshed to see.
+   */
+  it('reports user-edit inside the floor, where drift would be throttled', () => {
+    const justWritten = new Date(now.getTime() - 60_000);
+    expect(
+      personaStaleness(
+        row({ inputHash: 'x'.repeat(64), updatedAt: justWritten }),
+        hash,
+        MIN_AGE,
+        new Date(justWritten.getTime() + 1_000),
+        now,
+      ),
+    ).toBe('user-edit');
+  });
+
+  /**
+   * **THE TERMINATION CASE, AND IT IS THE ORDERING THAT MAKES IT WORK.** A querent
+   * who edits an answer back to the value it already had leaves `input_hash`
+   * byte-identical. A hash-first ordering would answer `fresh` and leave
+   * `answersUpdatedAt` permanently ahead of `personas.updated_at` — a dirty flag
+   * re-evaluated on every page view forever. Reported as `user-edit`, the route
+   * regenerates, gets `unchanged`, and calls `touchPersona` to clear it.
+   */
+  it('reports user-edit even when the hash is unchanged, so the flag can clear', () => {
+    expect(personaStaleness(row(), hash, MIN_AGE, after, now)).toBe('user-edit');
+  });
+
+  it('reports source-version ahead of everything, even inside the floor', () => {
+    const justWritten = new Date(now.getTime() - 60_000);
+    expect(
+      personaStaleness(
+        row({ sourceVersion: 0, updatedAt: justWritten }),
+        hash,
+        MIN_AGE,
+        new Date(justWritten.getTime() + 1_000),
+        now,
+      ),
+    ).toBe('source-version');
+  });
+
+  /** A querent with no answer rows at all. Null is never ahead of anything. */
+  it('treats a null answers timestamp as no edit pending', () => {
+    expect(personaStaleness(row(), hash, MIN_AGE, null, now)).toBe('fresh');
+  });
+
+  /**
+   * THE BOUNDARY. `answersTouchedAt === updatedAt` is the row the persona was
+   * written FROM, not an edit made since — a strict `>` is what keeps a
+   * just-regenerated persona from immediately looking dirty again.
+   */
+  it('does not call an exactly-equal timestamp an edit', () => {
+    expect(personaStaleness(row(), hash, MIN_AGE, writtenAt, now)).toBe('fresh');
   });
 });
 

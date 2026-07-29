@@ -1,6 +1,7 @@
 import 'server-only';
 
 import type { ServiceId, YesNo } from '@/data/types';
+import { CHOICE_MARKER } from '../reading/choice';
 import { midpoint, type LengthBudget } from './budget';
 
 /** How the code-derived verdict is spelled to the model and to the querent. */
@@ -9,6 +10,62 @@ export const VERDICT_WORD_ID: Record<YesNo, string> = {
   no: 'Tidak',
   maybe: 'Belum jelas',
 };
+
+/**
+ * CHOOSE ONE (Miftah's ruling, 2026-07-29).
+ *
+ * The report was a reading of *"mending makan ayam atau ikan nanti siang?"* that
+ * spent four paragraphs on surrender and appetite and never said ayam or ikan. A
+ * reader who will not choose between two lunches is not being mystical, it is
+ * being useless, and that is the one thing a tarot app can be about a question
+ * this small.
+ *
+ * ── WHY THIS IS IN THE TASK LAYER AND NOT `base.{id,en}.ts` ──────────────────
+ *
+ * It reads like a base-contract rule and it is not, for two reasons that each
+ * decide it on their own:
+ *
+ *   1. **IT MUST NOT REACH `yesno`.** That service's answer is already decided in
+ *      code by `effectiveYesNo()` and the prompt hands the model the word. A
+ *      second answer line there gives one reading TWO verdict boxes, and they
+ *      would disagree -- `Ya` is not an answer to "ayam atau ikan". So the rule is
+ *      interpolated into `daily` and `spread3` and nowhere else.
+ *   2. **`BASE_CONTRACT` IS SHARED WITH THE THREE SIDE PROMPTS** via
+ *      `FORMAT_RULES` -- the gist, the day summary and the frequency verdict -- and
+ *      not one of them reads a question. A rule about `<pertanyaan>` in a contract
+ *      used by prompts that have none is a rule applied to nothing.
+ *
+ * ── WHERE IT SITS INSIDE EACH TASK, WHICH IS NOT ARBITRARY ───────────────────
+ *
+ * After the LENGTH block and BEFORE the structural instructions, so the word
+ * ceiling stays the most recent thing the model has read when it starts writing.
+ * That is `build.ts`'s dilution argument for putting the memory instruction last,
+ * applied in the opposite direction: appending this at the end would displace
+ * `spread3`'s closing restatement of the ceiling, which exists because all three
+ * readers overran paragraph four until it was added.
+ *
+ * ── THE MARKER LINE ──────────────────────────────────────────────────────────
+ *
+ * `PILIHAN:` is ONE TOKEN IN BOTH LOCALES and is `CHOICE_MARKER`, imported rather
+ * than typed -- the lesson this file already paid for with `Batas 40 kata`, where
+ * three of four copies of a number were replaced by a constant and the fourth
+ * stood for a release. A marker spelled here and parsed there is the same defect
+ * with a worse symptom: the querent reads `PILIHAN: Ayam` above their reading.
+ *
+ * **"Salin PERSIS" IS A PROMPT RULE AND IS NOT TRUSTED.** `validateChoice` refuses
+ * anything that is not a word-bounded slice of the question, so the instruction
+ * buys a higher hit rate and nothing else. See `@/lib/reading/choice`.
+ */
+const CHOICE_RULE_ID = `PERTANYAAN YANG MENAWARKAN PILIHAN:
+Kalau di dalam <pertanyaan> penanya menyebutkan dua pilihan atau lebih -- "A atau B", "A apa B", tiga sekaligus, apa pun bentuknya -- kamu WAJIB memilih SATU. Bukan dua, bukan "dua-duanya baik", bukan "tergantung kamu", bukan "yang mana pun yang terasa benar". Kartunya yang memilih; kamu yang menyampaikan.
+Sebut pilihan itu di PARAGRAF TERAKHIR, dengan kata yang sama seperti yang ditulis penanya. Bukan di mana saja, bukan tersirat -- di paragraf terakhir, supaya bacaannya sendiri yang menjawab, bukan cuma baris di atasnya. Orang yang cuma membaca prosanya harus bisa tahu kamu memilih apa.
+Lalu tulis satu baris penanda SEBELUM bacaannya, diikuti satu baris kosong:
+
+${CHOICE_MARKER} <satu pilihan saja, disalin persis dari pertanyaannya>
+
+Baris penanda itu bukan bagian dari bacaan dan tidak masuk hitungan batas kata. Salin pilihannya PERSIS seperti tertulis di pertanyaan: jangan diterjemahkan, jangan dibetulkan ejaannya, jangan ditambahi kata apa pun.
+Yang ditulis di baris itu HANYA nama satu pilihan, sesingkat mungkin -- misalnya "ayam", bukan "makan ayam atau ikan nanti siang". Kalau di baris itu masih ada kata "atau" atau "apa", berarti kamu belum memilih. Jangan menyalin seluruh pertanyaannya, dan jangan menyebut pilihan yang tidak kamu ambil.
+Kalau <pertanyaan> tidak menawarkan pilihan apa pun, JANGAN tulis baris itu. Mulai langsung dari bacaannya.`;
 
 /**
  * The task layer, in Indonesian. Moved here verbatim by W6 Task 9.
@@ -39,7 +96,9 @@ export function servicePromptId(
     case 'daily':
       return `TUGASMU: bacaan Kartu Harian, satu kartu.
 
-PANJANG: tepat dua paragraf. Tiap paragraf 2 sampai 4 kalimat DAN maksimal ${b.maxParagraphWords} kata -- yang mana pun tercapai lebih dulu, di situ paragrafnya berhenti. Batas katanya yang menang, bukan jumlah kalimatnya.
+PANJANG: tepat dua paragraf. Tiap paragraf 2 sampai 3 kalimat DAN maksimal ${b.maxParagraphWords} kata -- yang mana pun tercapai lebih dulu, di situ paragrafnya berhenti. Batas katanya yang menang, bukan jumlah kalimatnya.
+
+${CHOICE_RULE_ID}
 
 Paragraf pertama: energi hari ini lewat kartu itu.
 Paragraf kedua: satu hal kecil yang konkret untuk diperhatikan hari ini. Satu saja, bukan daftar.
@@ -49,17 +108,19 @@ Tutup dengan membumi. Ini satu hari, bukan seluruh hidup, dan nada penutupmu har
     case 'spread3':
       return `TUGASMU: bacaan Tiga Kartu.
 
-PANJANG: tepat empat paragraf. Tiap paragraf 2 sampai 3 kalimat DAN maksimal ${b.maxParagraphWords} kata -- yang mana pun tercapai lebih dulu, di situ paragrafnya berhenti. Seluruh bacaan jadi sekitar ${midpoint(b)} kata. Ini bacaan pendek; kalau bisa lebih ringkas, lebih baik.
+PANJANG: tepat empat paragraf. Tiap paragraf 1 sampai 2 kalimat DAN maksimal ${b.maxParagraphWords} kata -- yang mana pun tercapai lebih dulu, di situ paragrafnya berhenti. Seluruh bacaan jadi sekitar ${midpoint(b)} kata. Ini bacaan pendek; kalau bisa lebih ringkas, lebih baik.
 
-Batas ${b.maxParagraphWords} kata itu berlaku untuk semua pembaca, termasuk yang gayanya berkalimat panjang dan beranak kalimat. Kalau kalimatmu memang panjang, tulis SATU atau DUA kalimat saja di paragraf itu, bukan tiga. Satu kalimat panjang yang masih di dalam batas kata lebih baik daripada dua kalimat yang melewatinya. Batas katanya yang menang, bukan jumlah kalimatnya.
+Batas ${b.maxParagraphWords} kata itu berlaku untuk semua pembaca, termasuk yang gayanya berkalimat panjang dan beranak kalimat. Kalau kalimatmu memang panjang, tulis SATU kalimat saja di paragraf itu, bukan dua. Satu kalimat panjang yang masih di dalam batas kata lebih baik daripada dua kalimat yang melewatinya. Batas katanya yang menang, bukan jumlah kalimatnya.
 
 Cara memendekkannya: satu gagasan per paragraf, bukan tiga. Jangan mengulang gagasan yang sama dengan kalimat lain, jangan menjelaskan ulang apa arti kartunya setelah kamu sudah mengatakannya, dan buang perumpamaan kedua kalau perumpamaan pertama sudah kena.
+
+${CHOICE_RULE_ID}
 
 Tiga paragraf pertama untuk tiga posisi, sesuai urutannya. MULAILAH tiap paragraf dengan nama posisinya persis seperti yang tertulis di pesan berikutnya, lalu lanjutkan kalimatnya. Jangan menggantinya dengan "masa lalu", "masa kini", atau "masa depan".
 
 SEBUT nama kartunya di kalimat pertama paragraf itu juga, persis seperti tertulis, dan tambahkan "(terbalik)" kalau kartunya terbalik. Memendekkan bacaan bukan alasan untuk menghilangkan nama kartu: penanya melihat kartunya di layar dan harus tahu paragraf mana bicara tentang yang mana.
 
-Paragraf keempat -- dan ini bagian terpenting -- MENYATUKAN ketiganya menjadi satu benang merah. Bukan ringkasan yang mengulang tiga paragraf tadi, melainkan satu pengertian yang hanya muncul kalau ketiga kartu dibaca bersama-sama: bagaimana yang pertama menjelaskan yang kedua, dan ke mana keduanya mengarahkan yang ketiga. Paragraf ini juga tetap 2 sampai 3 kalimat dan maksimal ${b.maxParagraphWords} kata.
+Paragraf keempat -- dan ini bagian terpenting -- MENYATUKAN ketiganya menjadi satu benang merah. Bukan ringkasan yang mengulang tiga paragraf tadi, melainkan satu pengertian yang hanya muncul kalau ketiga kartu dibaca bersama-sama: bagaimana yang pertama menjelaskan yang kedua, dan ke mana keduanya mengarahkan yang ketiga. Paragraf ini juga tetap 1 sampai 2 kalimat dan maksimal ${b.maxParagraphWords} kata.
 
 Kalau ketiga kartu tampak bertentangan, jangan diperhalus. Pertentangan itu justru sering isi bacaannya.
 
@@ -74,9 +135,9 @@ JAWABANNYA SUDAH DITENTUKAN: "${word}".
 
 Jawaban itu berasal dari kartu dan orientasinya, bukan dari penilaianmu. Kamu TIDAK boleh mengubahnya, melunakkannya, atau membantahnya di kalimat berikutnya.
 
-Mulai bacaanmu dengan kata "${word}" sebagai kata pertama. Lalu 2-3 kalimat tentang mengapa kartu ini berkata begitu.
+Mulai bacaanmu dengan kata "${word}" sebagai kata pertama. Lalu 1-2 kalimat tentang mengapa kartu ini berkata begitu.
 
-PANJANG: satu paragraf, 3 sampai 4 kalimat DAN maksimal ${b.maxParagraphWords} kata -- yang mana pun tercapai lebih dulu. Singkat memang wujud layanan ini.${
+PANJANG: satu paragraf, 2 sampai 3 kalimat DAN maksimal ${b.maxParagraphWords} kata -- yang mana pun tercapai lebih dulu. Singkat memang wujud layanan ini.${
         verdict === 'maybe'
           ? '\n\n"Belum jelas" bukan sikap ragu-ragu darimu. Itu memang isi kartunya: keadaannya belum matang untuk dijawab. Katakan begitu dengan yakin, dan sebutkan apa yang masih perlu terjadi.'
           : ''

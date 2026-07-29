@@ -325,18 +325,95 @@ export function personaInputHash(input: PersonaHashInput): string {
  * V2's question and the answer is a TRANSLATION — regenerating would overwrite the
  * original that translation is derived from. The route asks V2, not this.
  */
+export type PersonaStaleness =
+  /** Nothing to serve. Generate synchronously; this is a first visit. */
+  | 'absent'
+  /** The contract changed under it. Never throttled. */
+  | 'source-version'
+  /** The querent edited or cleared an answer. Never throttled, never deferred. */
+  | 'user-edit'
+  /** Readings have accumulated. Throttled, and served stale while it refreshes. */
+  | 'drift'
+  /** Serve it. Most page loads. */
+  | 'fresh';
+
+/**
+ * WHY it is stale, not just whether — and the four answers are four behaviours.
+ *
+ * **`isPersonaStale` USED TO BE THE WHOLE FUNCTION AND A BOOLEAN IS NO LONGER
+ * ENOUGH (2026-07-29).** Until then every user-caused regeneration was performed by
+ * the WRITE path calling `generatePersona` directly, so this predicate only ever
+ * saw drift and "throttle it" was the right answer to all of it. Miftah's ruling
+ * moved the answer-edit regeneration to the next `/account` open — one model call
+ * per edit instead of two — which makes telling the two apart this function's job,
+ * because they need opposite treatment:
+ *
+ *   `drift` is a LATENCY decision. Ten more readings have moved `input_hash`;
+ *   the stored paragraph is still true, so the route serves it and refreshes
+ *   behind the response, and `minAgeSeconds` bounds how often that costs a call.
+ *
+ *   `user-edit` is a CORRECTNESS decision. The querent changed what the persona
+ *   is built from and then came to look at it. **Throttling it is W3's swallowed
+ *   answer-edit bug**, and *deferring* it is a subtler version of the same thing:
+ *   the serve-stale branch would show the old paragraph on the refresh the querent
+ *   performed specifically to see the new one, so they would have to refresh
+ *   twice and the feature would read as broken. A13's rule in capitals —
+ *   `PERSONA_MIN_AGE_SECONDS` MUST NEVER GUARD A USER-CAUSED REGENERATION —
+ *   survives the move intact; only its enforcement point changed.
+ *
+ * **THE USER-EDIT ARM IS TESTED BEFORE THE HASH ARM, AND THAT ORDER IS LOAD-BEARING.**
+ * A querent who edits an answer back to the value it already had leaves
+ * `input_hash` byte-identical, so a hash-first ordering would return `fresh` while
+ * `answersTouchedAt` stayed permanently ahead of `personas.updated_at` — a dirty
+ * flag that never clears, re-checked on every page view forever. Reported as
+ * `user-edit`, the route regenerates, `generatePersona` returns `unchanged` after
+ * two indexed reads and no model call, and the route touches `updated_at` to clear
+ * it. Cheap, and it terminates.
+ *
+ * A SOURCE-VERSION MISMATCH IS NOT THROTTLED. "We changed how we write personas"
+ * is a deploy, happens once, and must reach everybody; throttling it would leave a
+ * fleet of personas written to a contract that no longer exists.
+ *
+ * IT TAKES NO LOCALE AND MUST NOT. A stored `id` body under an `en` viewer is
+ * V2's question and the answer is a TRANSLATION — regenerating would overwrite the
+ * original that translation is derived from. The route asks V2, not this.
+ *
+ * `answersTouchedAt` IS NULL FOR A QUERENT WITH NO ANSWER ROWS, which after
+ * completion means every one of the six was cleared long ago. Null can never be
+ * ahead of anything, so it reads as "no edit pending", which is correct.
+ */
+export function personaStaleness(
+  row: { sourceVersion: number; inputHash: string; updatedAt: Date } | null,
+  inputHash: string,
+  minAgeSeconds: number,
+  answersTouchedAt: Date | null,
+  now: Date = new Date(),
+): PersonaStaleness {
+  if (row === null) return 'absent';
+  if (row.sourceVersion !== PERSONA_SOURCE_VERSION) return 'source-version';
+  if (answersTouchedAt !== null && answersTouchedAt > row.updatedAt) return 'user-edit';
+  if (row.inputHash === inputHash) return 'fresh';
+
+  const ageSeconds = (now.getTime() - row.updatedAt.getTime()) / 1000;
+  return ageSeconds >= minAgeSeconds ? 'drift' : 'fresh';
+}
+
+/**
+ * The boolean the route used before the reasons existed.
+ *
+ * **KEPT AS A DERIVED WRAPPER RATHER THAN DELETED**, because it is the shape every
+ * existing test asserts and because "is this stale" is a real question with one
+ * answer. `personaStaleness` is what the route asks, since it has to choose between
+ * regenerating in front of the response and behind it.
+ */
 export function isPersonaStale(
   row: { sourceVersion: number; inputHash: string; updatedAt: Date } | null,
   inputHash: string,
   minAgeSeconds: number,
   now: Date = new Date(),
+  answersTouchedAt: Date | null = null,
 ): boolean {
-  if (row === null) return true;
-  if (row.sourceVersion !== PERSONA_SOURCE_VERSION) return true;
-  if (row.inputHash === inputHash) return false;
-
-  const ageSeconds = (now.getTime() - row.updatedAt.getTime()) / 1000;
-  return ageSeconds >= minAgeSeconds;
+  return personaStaleness(row, inputHash, minAgeSeconds, answersTouchedAt, now) !== 'fresh';
 }
 
 // ---------------------------------------------------------------------------

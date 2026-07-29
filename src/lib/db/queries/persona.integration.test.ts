@@ -3,7 +3,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { users } from '@/lib/db/schema';
 import { closeTestDb, withRollback } from '@/lib/db/testing/harness';
 import type { Tx } from '@/lib/db/types';
-import { getPersona, upsertPersona } from './persona';
+import { getPersona, touchPersona, upsertPersona } from './persona';
 
 afterAll(closeTestDb);
 
@@ -139,5 +139,78 @@ describe('persona queries', () => {
       // the app -- but a query that 500s on a bad id is a query that turns a
       // client bug into an outage, and `queries/share.ts` guards the same way.
       expect(await getPersona(tx, 'not-a-uuid')).toBeNull();
+    }));
+});
+
+/**
+ * `touchPersona` — the one `update` that makes the deferred answer-edit
+ * regeneration terminate (2026-07-29).
+ *
+ * Since the answer routes stopped calling `generatePersona`, `/api/persona` decides a
+ * regeneration is user-caused by comparing `max(onboarding_answers.updated_at)`
+ * against `personas.updated_at`. That comparison self-clears in every case but one: a
+ * querent who edits an answer back to the value it already had leaves `input_hash`
+ * byte-identical, `generatePersona` returns `unchanged`, nothing is written, and the
+ * flag stays raised on every page view forever.
+ */
+describe('touchPersona', () => {
+  it('moves updated_at and rewrites nothing else', () =>
+    withRollback(async (tx) => {
+      const userId = await seedUser(tx);
+      await upsertPersona(tx, { userId, ...ROW });
+      const before = await getPersona(tx, userId);
+      expect(before).not.toBeNull();
+
+      /* Nudged backwards first, because postgres `now()` is frozen for the whole
+         transaction -- the same technique this file already uses above. The column is
+         written from JavaScript's `new Date()`, which is why the touch can overtake
+         it inside one transaction at all. */
+      await tx.execute(
+        sql`update personas set updated_at = updated_at - interval \'1 hour\' where user_id = ${userId}`,
+      );
+      const nudged = await getPersona(tx, userId);
+
+      await touchPersona(tx, userId);
+
+      const after = await getPersona(tx, userId);
+      expect(after!.updatedAt.getTime()).toBeGreaterThan(nudged!.updatedAt.getTime());
+
+      /*
+       * **NOTHING ABOUT THE PERSONA CHANGED, SO NOTHING ABOUT THE PERSONA MAY HAVE
+       * BEEN REWRITTEN.** Touching `body`, `model` or `prompt_version` here would make
+       * the row claim a generation that did not happen -- and `model` is the column an
+       * operator greps when asking "why does this read like a template".
+       */
+      expect(after!.body).toBe(before!.body);
+      expect(after!.inputHash).toBe(before!.inputHash);
+      expect(after!.model).toBe(before!.model);
+      expect(after!.promptVersion).toBe(before!.promptVersion);
+      expect(after!.locale).toBe(before!.locale);
+      expect(after!.createdAt.getTime()).toBe(before!.createdAt.getTime());
+    }));
+
+  /**
+   * **NOT AN UPSERT.** No row means no flag to clear, and inserting one here would
+   * create a persona with no body, which `/account` would then render as the
+   * querent's portrait.
+   */
+  it('is a no-op when there is no row, and never inserts one', () =>
+    withRollback(async (tx) => {
+      const userId = await seedUser(tx);
+      await touchPersona(tx, userId);
+
+      expect(await getPersona(tx, userId)).toBeNull();
+      const rows = await tx.execute<{ c: number }>(
+        sql`select count(*)::int as c from personas where user_id = ${userId}`,
+      );
+      expect(rows[0].c).toBe(0);
+    }));
+
+  it('refuses a malformed uuid without throwing', () =>
+    withRollback(async (tx) => {
+      /* `getPersona`'s guard, for its reason: `user_id` is a uuid column and postgres
+         raises 22P02 on a malformed literal, so a query that 500s on a bad id turns a
+         caller bug into an outage. */
+      await expect(touchPersona(tx, 'not-a-uuid')).resolves.toBeUndefined();
     }));
 });

@@ -740,6 +740,33 @@ describe('publicReadingForShare', () => {
     });
   });
 
+  /**
+   * **`readings.choice` RIDES ON `includeQuestion` AND HAS NO SWITCH OF ITS OWN
+   * (2026-07-29).**
+   *
+   * The chosen option is a word-bounded SLICE of `readings.question`, so a link that
+   * excluded the question and selected this column would put a fragment of the exact
+   * string the sharer declined to publish through the driver and into the flight
+   * payload — defeating mechanism 1 through the one field that reads as a verdict
+   * rather than as user text.
+   *
+   * Sharing the question is the default since 2026-07-28 and the sheet no longer
+   * offers a switch, so this arm is unreachable from the UI today. **That is exactly
+   * why it is asserted**: `publicReadingQuery` keeps the CAPABILITY to exclude the
+   * column real, and a capability that is correct for one field and broken for its own
+   * substring is worse than not having it.
+   */
+  it('NEVER SELECTS readings.choice when the question is excluded', async () => {
+    await withRollback(async (tx) => {
+      const user = await makeUser(tx, 'dev:v11-choice-sql');
+      const r = await reading(tx, user, { question: SENTINEL });
+
+      expect(publicReadingQuery(tx, r, false).toSQL().sql).not.toMatch(/\bchoice\b/);
+      // THE CONTROL, without which a typo makes the line above pass for nothing.
+      expect(publicReadingQuery(tx, r, true).toSQL().sql).toMatch(/\bchoice\b/);
+    });
+  });
+
   it('NEVER SELECTS profiles.nickname when include_nickname is false', async () => {
     await withRollback(async (tx) => {
       const user = await makeUser(tx, 'dev:v7-nick-sql', 'Mif');

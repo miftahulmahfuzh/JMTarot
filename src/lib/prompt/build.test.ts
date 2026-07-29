@@ -610,17 +610,30 @@ describe('the locale fork', () => {
       budgetFor(locale, 'spread3', reader).maxParagraphWords;
 
     for (const locale of ['id', 'en'] as const) {
-      // 40 x 1.3 = 52. Was a hand-set 55; VD19 replaced the number with the rule.
-      expect(ceiling('margaret', locale)).toBe(52);
-      expect(ceiling('thessaly', locale)).toBe(LENGTH_BUDGET[locale].spread3.maxParagraphWords);
-      expect(ceiling('adrian', locale)).toBe(LENGTH_BUDGET[locale].spread3.maxParagraphWords);
+      /*
+       * 28 x 1.3 = 36. It was 52 (40 x 1.3) until the 30% cut of 2026-07-29, and
+       * before that a hand-set 55; VD19 replaced the number with the rule.
+       *
+       * **DERIVED FROM `LENGTH_BUDGET` RATHER THAN TYPED**, which is the whole
+       * lesson of the number this file is about. A literal 36 here is a fourth
+       * copy of a figure that has now moved twice, and it would go stale in the
+       * one test whose job is to prove the multiplier reaches the prompt. What is
+       * asserted is the RELATIONSHIP; `MARGARET_MULTIPLIER`'s own tests own the
+       * value.
+       */
+      const base = LENGTH_BUDGET[locale].spread3.maxParagraphWords;
+      expect(ceiling('margaret', locale)).toBe(Math.round(base * MARGARET_MULTIPLIER));
+      expect(ceiling('margaret', locale)).toBeGreaterThan(base);
+      expect(ceiling('thessaly', locale)).toBe(base);
+      expect(ceiling('adrian', locale)).toBe(base);
     }
 
     // And it is in the PROSE, not only in the constant.
     const of = (reader: 'thessaly' | 'margaret') =>
       buildPrompt({ reader, service: 'spread3', picks: draw, locale: 'en' }).system;
-    expect(of('margaret')).toContain('52-word limit');
-    expect(of('thessaly')).toContain('40-word limit');
+    const base = LENGTH_BUDGET.en.spread3.maxParagraphWords;
+    expect(of('margaret')).toContain(`${Math.round(base * MARGARET_MULTIPLIER)}-word limit`);
+    expect(of('thessaly')).toContain(`${base}-word limit`);
   });
 
   it('REACHES EVERY READER-VOICED CEILING, NOT ONLY spread3 (VD19)', () => {

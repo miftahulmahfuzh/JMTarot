@@ -65,3 +65,33 @@ export async function upsertPersona(db: DbOrTx, row: NewPersona): Promise<void> 
       },
     });
 }
+
+/**
+ * Move `updated_at` and nothing else. **THE ONE LINE THAT MAKES THE DEFERRED
+ * ANSWER-EDIT REGENERATION TERMINATE (2026-07-29).**
+ *
+ * Since the answer routes stopped calling `generatePersona`, `/account`'s read path
+ * decides a regeneration is user-caused by comparing
+ * `max(onboarding_answers.updated_at)` against `personas.updated_at`. That
+ * comparison is self-clearing in every case but one: **a querent who edits an
+ * answer back to the value it already had leaves `input_hash` byte-identical**, so
+ * `generatePersona` returns `unchanged` and never writes — leaving the answer row
+ * permanently ahead of the persona row and a dirty flag that is re-evaluated on
+ * every single page view, forever. Cheap (two indexed reads, no model call) and
+ * still wrong: a flag that cannot clear is a bug somebody finds in six months and
+ * misdiagnoses as a caching problem.
+ *
+ * So the route calls this when the outcome was `unchanged` and the run was
+ * user-caused. **IT DOES NOT TOUCH `body`, `input_hash`, `model` OR
+ * `prompt_version`** — nothing about the persona changed, and rewriting the body
+ * with itself would make `model` and `updated_at` claim a generation that did not
+ * happen.
+ *
+ * **IT IS NOT AN UPSERT.** No row means no flag to clear, and inserting one here
+ * would create a persona with no body. The `where` simply matches nothing, which is
+ * the correct no-op.
+ */
+export async function touchPersona(db: DbOrTx, userId: string): Promise<void> {
+  if (!UUID_RE.test(userId)) return;
+  await db.update(personas).set({ updatedAt: new Date() }).where(eq(personas.userId, userId));
+}

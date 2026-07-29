@@ -24,8 +24,17 @@ import 'server-only';
  *    is allowed to wait. **Adding a cooldown "for symmetry" reintroduces W3's bug:**
  *    its ten minutes swallowed a user-caused answer edit, leaving `input_hash`
  *    byte-identical and `updated_at` frozen — the delete button being a lie. The
- *    throttle that DOES exist is `isPersonaStale`'s, on the read path, and it is a
+ *    throttle that DOES exist is `personaStaleness`'s, on the read path, and it is a
  *    latency decision rather than a correctness one.
+ *
+ * **THE CALLER SET CHANGED ON 2026-07-29 AND ABSOLUTE 3 IS WHY IT COULD.** The two
+ * answer routes no longer call this at all — an answer edit defers to the next
+ * `/account` open, which is one model call per edit instead of two. `/api/account/facts`
+ * still calls it directly, because a facts edit happens ON this page with the
+ * paragraph in view. What makes the deferral safe is `personaStaleness`'s
+ * `'user-edit'` arm: it reports an answer edit as stale REGARDLESS of the floor and
+ * the route regenerates in front of the response rather than behind it. Delete that
+ * arm and A13's rule is broken from the other side.
  *
  * THERE IS ALSO NO IN-PROCESS CACHE. `getLotusBlock`'s exists because a READING
  * needs its block on the request path. Nothing here is on a request path that
@@ -46,7 +55,7 @@ import type { Locale } from '@/data/types';
 import { db } from '@/lib/db/client';
 import { recentReadingIds, topCardAllTime, topReaderAllTime, readingCountAllTime } from '@/lib/db/queries/allTime';
 import { getLotusAvatar } from '@/lib/db/queries/lotus';
-import { getAnswers } from '@/lib/db/queries/onboarding';
+import { answersUpdatedAt, getAnswers } from '@/lib/db/queries/onboarding';
 import { getPersona, upsertPersona } from '@/lib/db/queries/persona';
 import { getProfile } from '@/lib/db/queries/profile';
 import { getProvider } from '@/lib/llm';
@@ -59,6 +68,7 @@ import {
   facetsFor,
   fallbackPersona,
   isPersonaStale,
+  personaStaleness,
   personaFactsFor,
   personaInputHash,
   personaSafetyCheck,
@@ -66,6 +76,7 @@ import {
   type PersonaFacts,
   type PersonaInput,
   type PersonaRejectReason,
+  type PersonaStaleness,
 } from './prompt';
 
 /** What actually happened, for the log and for `persona.generated`. */
@@ -157,6 +168,13 @@ type Material = {
   introversion: number | null;
   wishKind: WishKind | null;
   rawAnswers: string[];
+  /**
+   * `max(onboarding_answers.updated_at)`, or null. **NOT prompt material** — it is
+   * here because `personaMaterial` is the one round of reads `/account` pays for,
+   * and `personaStaleness` needs it to tell a user's answer edit from ordinary
+   * hash drift. Reading it separately would be a seventh query on that page.
+   */
+  answersTouchedAt: Date | null;
 };
 
 /**
@@ -174,14 +192,19 @@ export async function personaMaterial(userId: string, locale: Locale): Promise<M
   const profile = await getProfile(db, userId);
   if (!profile || !profile.completedAt) return null;
 
-  const [answers, avatar, topCard, topReader, readingCount, readingIds] = await Promise.all([
-    getAnswers(db, userId),
-    getLotusAvatar(db, userId),
-    topCardAllTime(db, userId),
-    topReaderAllTime(db, userId),
-    readingCountAllTime(db, userId),
-    recentReadingIds(db, userId),
-  ]);
+  const [answers, avatar, topCard, topReader, readingCount, readingIds, answersTouchedAt] =
+    await Promise.all([
+      getAnswers(db, userId),
+      getLotusAvatar(db, userId),
+      topCardAllTime(db, userId),
+      topReaderAllTime(db, userId),
+      readingCountAllTime(db, userId),
+      recentReadingIds(db, userId),
+      /* One `max()` over at most six rows on an indexed `user_id`, and it reads no
+         text -- see `answersUpdatedAt`. It joins this `Promise.all` rather than
+         being a seventh round trip on the page that pays for these. */
+      answersUpdatedAt(db, userId),
+    ]);
 
   const bare = {
     fullName: profile.fullName,
@@ -230,6 +253,7 @@ export async function personaMaterial(userId: string, locale: Locale): Promise<M
     rawAnswers: answers
       .filter((a) => isFreeText(a.key) && !a.skipped && a.text)
       .map((a) => a.text as string),
+    answersTouchedAt,
   };
 }
 
@@ -437,4 +461,4 @@ export async function readPersonaView(
 }
 
 /** Re-exported so a route does not have to import from two persona modules. */
-export { isPersonaStale };
+export { isPersonaStale, personaStaleness, type PersonaStaleness };

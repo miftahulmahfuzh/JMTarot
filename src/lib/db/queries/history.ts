@@ -349,6 +349,10 @@ export async function readingsForDay(
       status: readings.status,
       verdict: readings.verdict,
       question: readings.question,
+      /* Selected, unlike `body`: it is at most 40 characters and it is what makes
+         a choice reading legible in a list of otherwise identical spreads. VD8 is
+         about the PROSE, not about every column. */
+      choice: readings.choice,
       hasBody: sql<boolean>`${readings.body} is not null`,
       sharedAt: readings.sharedAt,
     })
@@ -392,6 +396,7 @@ export async function readingsForDay(
     status: r.status,
     verdict: r.verdict,
     question: r.question,
+    choice: r.choice,
     /*
      * `Boolean(...)` and not a bare cast. postgres.js returns a real boolean for
      * `is not null`, but the `sql<boolean>` above is an assertion the driver is
@@ -519,6 +524,7 @@ export async function readingWithCards(
     status: row.status,
     verdict: row.verdict,
     question: row.question,
+    choice: row.choice,
     body: row.body,
     sharedAt: row.sharedAt ? row.sharedAt.toISOString() : null,
     cards,

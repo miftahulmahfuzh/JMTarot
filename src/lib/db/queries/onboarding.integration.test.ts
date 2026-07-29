@@ -19,6 +19,8 @@ import { withRollback } from '../testing/harness';
 import {
   clearFreeTextAnswers,
   deleteAnswer,
+  answersUpdatedAt,
+  getAnswer,
   getAnsweredKeys,
   getAnswers,
   getOnboardingState,
@@ -439,6 +441,192 @@ describe('the question catalog and the database agree', () => {
         await upsertAnswer(tx, userId, { key, text: null, choice: null, skipped: true });
       }
       expect((await getAnsweredKeys(tx, userId)).sort()).toEqual([...ONBOARDING_QUESTION_KEYS].sort());
+    });
+  });
+});
+
+/**
+ * `getAnswer` and `answersUpdatedAt` — the two reads the 2026-07-29 answer sheet
+ * added.
+ *
+ * WHAT ONLY AN INTEGRATION TEST CAN CHECK: that the reveal path decrypts the SAME
+ * bytes `upsertAnswer` wrote, through the SAME AAD. A unit test with a mocked handle
+ * would assert `decryptField` was called, which is a test of the mock — and the
+ * failure mode here is a mismatched AAD, which `decryptField` reports as null and is
+ * indistinguishable from data loss.
+ */
+describe('getAnswer', () => {
+  it('round-trips the plaintext through the column', async () => {
+    await withRollback(async (tx) => {
+      const userId = await makeUser(tx, 'getanswer');
+      const secret = 'the afternoon nobody came to the door';
+      await upsertAnswer(tx, userId, {
+        key: 'worst_thing',
+        text: secret,
+        choice: null,
+        skipped: false,
+      });
+
+      const got = await getAnswer(tx, userId, 'worst_thing');
+      expect(got?.text).toBe(secret);
+      expect(got?.skipped).toBe(false);
+
+      // AND THE COLUMN IS STILL CIPHERTEXT. The whole point of reading it back.
+      const [raw] = await tx
+        .select({ answerText: onboardingAnswers.answerText })
+        .from(onboardingAnswers)
+        .where(eq(onboardingAnswers.userId, userId));
+      expect(raw.answerText).toMatch(/^v1\./);
+      expect(raw.answerText).not.toContain('afternoon');
+    });
+  });
+
+  it('returns null for a question with no row, and a skip for one that was skipped', async () => {
+    await withRollback(async (tx) => {
+      const userId = await makeUser(tx, 'getanswer-absent');
+      /*
+       * **A MISSING ROW AND A SKIP ARE DIFFERENT FACTS.** Both render an empty field,
+       * and the route reports the first as a 404 on purpose: after completion, no row
+       * means the stepper never reached that question, which is a bug worth seeing
+       * rather than an empty textarea worth editing.
+       */
+      expect(await getAnswer(tx, userId, 'best_thing')).toBeNull();
+
+      await upsertAnswer(tx, userId, {
+        key: 'best_thing',
+        text: null,
+        choice: null,
+        skipped: true,
+      });
+      const skipped = await getAnswer(tx, userId, 'best_thing');
+      expect(skipped).not.toBeNull();
+      expect(skipped?.text).toBeNull();
+      expect(skipped?.skipped).toBe(true);
+    });
+  });
+
+  it('reads a closed question out of answer_choice, unencrypted', async () => {
+    await withRollback(async (tx) => {
+      const userId = await makeUser(tx, 'getanswer-closed');
+      await upsertAnswer(tx, userId, {
+        key: 'color',
+        text: null,
+        choice: 'grey',
+        skipped: false,
+      });
+      const got = await getAnswer(tx, userId, 'color');
+      expect(got?.choice).toBe('grey');
+      expect(got?.text).toBeNull();
+    });
+  });
+
+  it('reads only the key it was asked for', async () => {
+    await withRollback(async (tx) => {
+      const userId = await makeUser(tx, 'getanswer-one');
+      await upsertAnswer(tx, userId, {
+        key: 'best_thing',
+        text: 'the good one',
+        choice: null,
+        skipped: false,
+      });
+      await upsertAnswer(tx, userId, {
+        key: 'worst_thing',
+        text: 'the sensitive one',
+        choice: null,
+        skipped: false,
+      });
+
+      /*
+       * ONE KEY PER REQUEST IS THE PRIVACY PROPERTY, and this is the closest a test
+       * can get to it: asking for `best_thing` must not return `worst_thing`'s text.
+       * The route-level guarantee (no bulk variant exists) is enforced by there being
+       * no such export.
+       */
+      const got = await getAnswer(tx, userId, 'best_thing');
+      expect(got?.text).toBe('the good one');
+      expect(JSON.stringify(got)).not.toContain('sensitive');
+    });
+  });
+});
+
+describe('answersUpdatedAt', () => {
+  it('is null before any answer exists', async () => {
+    await withRollback(async (tx) => {
+      const userId = await makeUser(tx, 'touched-none');
+      expect(await answersUpdatedAt(tx, userId)).toBeNull();
+    });
+  });
+
+  /**
+   * **THE SIGNAL THE DEFERRED PERSONA REGENERATION RESTS ON.** `personaStaleness`
+   * compares this against `personas.updated_at` to tell a user's answer edit from
+   * ordinary hash drift, because only the first may bypass
+   * `PERSONA_MIN_AGE_SECONDS`. If `upsertAnswer` ever stops setting `updated_at` by
+   * hand — which Drizzle's `$onUpdate()` does NOT do inside `onConflictDoUpdate` —
+   * this returns the insert time forever and every answer edit is silently
+   * throttled. That is W3's swallowed-edit bug, and this is the test that sees it.
+   */
+  it('moves when an answer is edited, and is the max across the six', async () => {
+    await withRollback(async (tx) => {
+      const userId = await makeUser(tx, 'touched-edit');
+      await upsertAnswer(tx, userId, {
+        key: 'best_thing',
+        text: 'first',
+        choice: null,
+        skipped: false,
+      });
+      const first = await answersUpdatedAt(tx, userId);
+      expect(first).not.toBeNull();
+
+      /* Postgres `now()` is fixed for the whole transaction, so a second write inside
+         one `withRollback` cannot advance the clock. The column is written from
+         JavaScript's `new Date()` for exactly that reason -- see `upsertAnswer` -- so
+         a nudged value is what proves the conflict branch writes it at all. */
+      await tx
+        .update(onboardingAnswers)
+        .set({ updatedAt: new Date(first!.getTime() + 60_000) })
+        .where(eq(onboardingAnswers.userId, userId));
+
+      const later = await answersUpdatedAt(tx, userId);
+      expect(later!.getTime()).toBe(first!.getTime() + 60_000);
+
+      // A second, older row must not pull the max backwards.
+      await upsertAnswer(tx, userId, {
+        key: 'color',
+        text: null,
+        choice: 'white',
+        skipped: false,
+      });
+      await tx
+        .update(onboardingAnswers)
+        .set({ updatedAt: new Date(first!.getTime() - 60_000) })
+        .where(eq(onboardingAnswers.questionKey, 'color'));
+
+      expect((await answersUpdatedAt(tx, userId))!.getTime()).toBe(first!.getTime() + 60_000);
+    });
+  });
+
+  it('moves when an answer is deleted, so an erasure is a user edit too', async () => {
+    await withRollback(async (tx) => {
+      const userId = await makeUser(tx, 'touched-delete');
+      await upsertAnswer(tx, userId, {
+        key: 'best_thing',
+        text: 'something',
+        choice: null,
+        skipped: false,
+      });
+      await tx
+        .update(onboardingAnswers)
+        .set({ updatedAt: new Date('2020-01-01T00:00:00Z') })
+        .where(eq(onboardingAnswers.userId, userId));
+
+      await deleteAnswer(tx, userId, 'best_thing');
+
+      /* `deleteAnswer` sets `updatedAt` by hand too. Without it, clearing an answer
+         would never reach the persona -- the delete button being a lie, one artifact
+         further out than the version W3 already fixed. */
+      const at = await answersUpdatedAt(tx, userId);
+      expect(at!.getTime()).toBeGreaterThan(new Date('2020-01-01T00:00:00Z').getTime());
     });
   });
 });

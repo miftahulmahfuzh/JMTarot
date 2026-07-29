@@ -1,8 +1,10 @@
 /*
- * The six answer rows on `/account`.
+ * The six answer rows on `/account`, and the sheet one of them opens.
  *
- * NO NEW HEX, NO NEW FONT SIZE, NO NEW CURVE. `--danger` is reused for the one
- * failure line, which is the only place on this block where something went wrong.
+ * NO NEW HEX, NO NEW FONT SIZE, NO NEW CURVE. Every value here is a token or a
+ * value already in this tree; `--danger` is reused for the failure line and for the
+ * remove control, the only places on this block where something is destroyed or
+ * went wrong.
  */
 
 .wrap {
@@ -34,20 +36,7 @@
   list-style: none;
 }
 
-/*
- * `flex-wrap` and a hairline per row rather than a grid, because the question
- * titles are full sentences in both locales -- "Hal paling berat yang pernah kamu
- * saksikan" is three lines at 320px -- and a two-column grid would put a 44px
- * button next to a three-line label and leave the row looking broken. Wrapping
- * lets the button drop under its own label at narrow widths.
- */
 .row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 12px;
-  padding: 12px 0;
   border-bottom: 1px solid var(--gold-hairline);
 }
 
@@ -55,14 +44,36 @@
   border-bottom: none;
 }
 
-.text {
+/*
+ * THE WHOLE ROW IS THE TAP TARGET NOW, AND THAT IS WHAT REMOVING THE CLEAR BUTTON
+ * BOUGHT. V8's row was a flex container with a separate 44px button inside it, which
+ * needed `flex-wrap` so a three-line question title -- "Hal paling berat yang pernah
+ * kamu saksikan" is three lines at 320px -- did not sit beside a button and leave the
+ * row looking broken. With one control there is nothing to wrap: the label takes the
+ * slack and the mark keeps its column.
+ *
+ * `min-height: 44px` AND NOT PADDING ALONE, so a one-line question still clears the
+ * iOS minimum. `PublicShare`'s 36px button is the counter-example this release
+ * already ships on twenty-three pages.
+ */
+.rowButton {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  /* Takes the slack, so the button keeps its intrinsic width and the label wraps
-     rather than the button shrinking below its tap target. */
-  flex: 1 1 60%;
-  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 12px 0;
+  text-align: left;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.rowButton:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--gold-border);
+  border-radius: var(--radius-chip);
 }
 
 .question {
@@ -70,66 +81,304 @@
   font-size: var(--fs-hint);
   color: var(--text-warm);
   overflow-wrap: anywhere;
+  /* Takes the slack, so the mark keeps its intrinsic size and the label wraps. */
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /*
- * "Saved" / "Cleared" / "Not answered", in the slot-label treatment -- the same
- * Cinzel micro-caps the draw screen uses under each card position. It is metadata
- * about the row above it, and setting it in the body face would make it read as a
- * second sentence.
+ * THE STATE, AS A MARK. **BOTH VARIANTS ARE THE SAME SIZE WHETHER OR NOT THEY HOLD A
+ * GLYPH.** An empty circle and a ticked one have to occupy one column, or the six
+ * question titles wrap at two different widths and the list reads as ragged. That is
+ * what `flex: 0 0 auto` plus a fixed box buys; do not replace the empty variant with
+ * `display: none`.
  */
-.state {
+.markAnswered,
+.markEmpty {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
   font-family: var(--font-display), serif;
-  font-size: var(--fs-slot-label);
+  font-size: var(--fs-eyebrow);
+  line-height: 1;
+}
+
+.markAnswered {
+  color: var(--gold);
+  border: 1px solid var(--gold-border);
+  background: var(--gold-wash);
+}
+
+/*
+ * QUIET, AND NOT IN `--danger`. An unanswered question is not an error -- roadmap §8
+ * makes all six skippable, so "not answered" is a legitimate resting state, and
+ * colouring it as a warning would scold somebody for exercising a right.
+ */
+.markEmpty {
+  border: 1px solid var(--gold-hairline);
+  background: transparent;
+}
+
+/* ── the sheet ────────────────────────────────────────────────────────────── */
+
+/*
+ * BOTTOM-ANCHORED, `AccountMenu`'s and `CardDetail`'s shape, and the right one on a
+ * phone: the controls land under the thumb rather than at the top of a reach. The
+ * backdrop is `--canvas` at 94% with a blur, which is the treatment all three sheets
+ * in this app share -- a literal rather than a token because that is how the other
+ * two spell it, and a fourth spelling is worse than a shared literal.
+ */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(10, 8, 18, 0.94);
+  backdrop-filter: blur(6px);
+}
+
+.sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  /* The app's shell width. The sheet is never wider than the page it belongs to. */
+  max-width: 520px;
+  /*
+   * THE BOTTOM INSET IS NOT OPTIONAL AND body's PADDING DOES NOT HELP.
+   * `globals.css` pads <body> with `env(safe-area-inset-bottom)`, but this is
+   * `position: fixed` -- positioned against the VIEWPORT -- so it is not inside that
+   * padding box. Without this line the buttons sit under the home indicator in
+   * standalone mode. `AccountMenu` pays for the same thing.
+   */
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+  background: var(--canvas);
+  border-top: 1px solid var(--gold-border);
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+  /*
+   * A five-row textarea, a counter and three buttons is taller than a landscape
+   * phone. Scrolling INSIDE the sheet, never on the body behind it. `dvh` and not
+   * `vh`, because on iOS Safari `vh` counts the address bar that is not there.
+   */
+  max-height: 90dvh;
+  overflow-y: auto;
+}
+
+/* Focused programmatically on open, so no ring: `AccountMenu`'s measured reason --
+   Chrome applies `:focus-visible` to programmatic focus, and a thumb user who has
+   never touched a keyboard would find the whole sheet outlined. */
+.sheet:focus,
+.sheet:focus-visible {
+  outline: none;
+}
+
+.sheetTitle {
+  margin: 0;
+  font-family: var(--font-display), serif;
+  font-weight: 400;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-section-label);
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.sheetFraming {
+  margin: 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: var(--fs-hint);
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.loading {
+  margin: 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: var(--fs-hint);
+  color: var(--faint);
+}
+
+/*
+ * **`--fs-hint` IS 17px AND THE 16px FLOOR IS THE REASON, NOT THE RHYTHM.** Under
+ * 16px, iOS Safari ZOOMS THE PAGE on focus and the zoom does not undo itself on
+ * blur -- `onboarding.module.css` records this against its own textarea, which is
+ * the field this one is a second copy of. `maximumScale: 1` would also stop it and
+ * is deliberately absent from `layout.tsx`, because it blocks pinch-zoom and fails
+ * WCAG 1.4.4. The font size is the real fix, and this is the field most likely to be
+ * edited on a phone with the keyboard up.
+ */
+.textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-hint);
+  line-height: 1.5;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-chip);
+  /* Vertical only: a horizontally resizable field inside a 100%-width sheet can be
+     dragged wider than its own container. */
+  resize: vertical;
+}
+
+.textarea:focus-visible {
+  outline: none;
+  border-color: var(--gold-border);
+  box-shadow: 0 0 0 1px var(--gold-border);
+}
+
+.counter {
+  margin: 0;
+  align-self: flex-end;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-slot-label);
+  color: var(--faint);
+}
+
+/* The three colour plates, as a row that wraps rather than shrinking below 44px. */
+.plates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.plate,
+.plateOn {
+  flex: 1 1 auto;
+  min-height: 44px;
+  padding: 0 14px;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  background: transparent;
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-chip);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.plateOn {
+  color: var(--gold);
+  border-color: var(--gold-border);
+  background: var(--gold-wash);
+}
+
+.plate:focus-visible,
+.plateOn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--gold-border);
+}
+
+.scale {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/*
+ * The one control here whose native chrome is worth keeping: a custom thumb is a
+ * 44px target to rebuild from nothing, and the stepper's slider already looks like
+ * this. `accent-color` tints it from the palette with no new hex.
+ */
+.range {
+  width: 100%;
+  min-height: 44px;
+  accent-color: var(--gold);
+}
+
+.scaleEnds {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
   letter-spacing: var(--ls-slot-label);
   text-transform: uppercase;
   color: var(--label);
 }
 
 /*
- * QUIET, AND NOT IN `--danger`. Clearing one answer is a right the querent is
- * exercising, not a destructive action they need warning about -- `/privacy`
- * describes it as an ordinary choice. The one control on this page that gets the
- * warning colour is the one that deletes the account.
+ * SAVE, REMOVE, CLOSE -- in that DOM order, which is the order a screen reader and
+ * the keyboard get. Save is the reason the sheet is open. **REMOVE SITS IN THE MIDDLE
+ * RATHER THAN AT AN EDGE**, so a thumb reaching for the nearest button does not land
+ * on the destructive one.
  */
-.clear {
-  flex: 0 0 auto;
+.actions {
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.save,
+.remove,
+.cancel {
+  flex: 1 1 auto;
   min-height: 44px;
-  padding: 0 10px;
+  padding: 0 14px;
   font-family: var(--font-display), serif;
   font-size: var(--fs-eyebrow);
   letter-spacing: var(--ls-button);
   text-transform: uppercase;
-  color: var(--muted);
-  background: transparent;
-  border: 1px solid var(--gold-hairline);
   border-radius: var(--radius-chip);
   cursor: pointer;
 }
 
-.clear:hover:not(:disabled),
-.clear:focus-visible:not(:disabled) {
-  color: var(--text-warm);
-  border-color: var(--gold-border);
-  outline: none;
+.save {
+  color: var(--gold);
+  border: 1px solid var(--gold-border);
+  background: var(--gold-wash);
 }
 
-.clear:focus-visible {
+/*
+ * `--danger`, UNLIKE V8's CLEAR BUTTON, AND THE REASON CHANGED WITH THE CONTROL.
+ * That button was the only thing in its row, so its position said what it was for
+ * and quiet was right -- clearing one answer is a right the querent is exercising,
+ * not something to warn them about. In here it sits between Save and Close, and the
+ * only question that matters is which of three adjacent buttons destroys something.
+ */
+.remove {
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  background: transparent;
+}
+
+.cancel {
+  color: var(--muted);
+  border: 1px solid var(--gold-hairline);
+  background: transparent;
+}
+
+.save:focus-visible,
+.remove:focus-visible,
+.cancel:focus-visible {
+  outline: none;
   box-shadow: 0 0 0 1px var(--gold-border);
 }
 
-.clear:disabled {
-  /* One clear at a time: the route regenerates the Lotus block AND the persona in
-     its `after()`, and two concurrent clears would race those two regenerations. */
+.save:disabled,
+.remove:disabled,
+.cancel:disabled {
+  /* One write at a time: the save route regenerates the Lotus block in its
+     `after()`, and two concurrent writes would race that regeneration. */
   cursor: default;
   color: var(--faint);
+  border-color: var(--gold-hairline);
+  background: transparent;
 }
 
 .failed {
-  /* Full width, below both, so it does not squeeze the row it belongs to. */
-  flex: 1 1 100%;
   margin: 0;
   font-family: var(--font-body), Georgia, serif;
   font-style: italic;

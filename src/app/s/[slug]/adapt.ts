@@ -101,6 +101,21 @@ export function adaptSharedReading(
       status: 'ok',
       verdict: reading.verdict,
       question: 'question' in reading ? (reading.question ?? null) : null,
+      /*
+       * **READ WITH `'question' in reading`, NOT `'choice' in reading`, AND THAT IS
+       * THE POINT RATHER THAN A TYPO.** The choice is a word-bounded slice of the
+       * question, so `publicReadingQuery` selects the two columns under one
+       * `includeQuestion` ternary -- a link that excluded the question and rendered
+       * the choice would publish a fragment of the exact string the sharer declined
+       * to publish, through the one field that reads as a verdict rather than as
+       * user text.
+       *
+       * Testing the key that actually gates the projection is what keeps this
+       * agreeing with that query. `'choice' in reading` would be true whenever the
+       * question was included AND look equally correct, until somebody gives the
+       * column its own flag.
+       */
+      choice: 'question' in reading ? (reading.choice ?? null) : null,
       body: reading.body,
       /*
        * `sharedAt` IS NULL ON THE PUBLIC PAGE, DELIBERATELY. The column is real

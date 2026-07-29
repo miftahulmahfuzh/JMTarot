@@ -482,20 +482,31 @@ const en: Catalog = {
 
   'account.draw.cta': 'Draw a card',
 
-  // Per-answer clearing (reconciliation §7.3). See id.ts for why it ships and why
-  // a cleared answer says "Cleared" rather than reverting to "Not answered".
+  // Read, edit and remove (2026-07-29). See id.ts for the six keys that were
+  // deleted, why the two state words survive as `state.*` aria-labels, and why the
+  // hint could not stay as it was.
+  //
+  // `state.answered` IS "Answered" AND NOT "Saved". The word being replaced was
+  // shown next to a Clear button, where "Saved" answered "did my typing land?".
+  // It is now read aloud beside a question, where the querent's question is "have
+  // I done this one?" — and `account.facts.nickname` is the precedent for a label
+  // that was right for its old context and wrong for its new one.
   'account.answers.heading': 'Your answers',
   'account.answers.hint':
-    'The six questions you were asked. What you wrote is not shown here, and you can clear any of them one at a time without deleting your account.',
-  'account.answers.answered': 'Saved',
-  'account.answers.empty': 'Not answered',
-  'account.answers.cleared': 'Cleared',
-  'account.answers.clear': 'Clear',
-  'account.answers.clearing': 'Clearing…',
-  'account.answers.clearAria': 'Clear the answer to: {question}',
-  'account.answers.failed': 'That did not clear. Try again in a moment.',
+    'The six questions you were asked. Tap one to read, change or remove what you wrote.',
+  'account.answers.state.answered': 'Answered',
+  'account.answers.state.empty': 'Not answered',
+  'account.answers.openAria': '{question} — {state}. Tap to open.',
+  'account.answers.loading': 'Opening…',
+  'account.answers.emptyField': 'Nothing written yet.',
+  'account.answers.save': 'Save',
+  'account.answers.saving': 'Saving…',
+  'account.answers.remove': 'Remove',
+  'account.answers.removing': 'Removing…',
+  'account.answers.cancel': 'Close',
+  'account.answers.failed': 'That did not save. Try again in a moment.',
   'account.answers.note':
-    'Clearing an answer also rewrites your Inner Lotus without it.',
+    'Changing or removing an answer rewrites what your reader knows straight away. Your Inner Lotus follows the next time you open this page.',
 
   // V8 — account deletion (VD13). See id.ts for why there are three body
   // strings and why `{days}` is interpolated.

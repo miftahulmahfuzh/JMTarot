@@ -74,6 +74,23 @@ type PublicReadingBase = {
 export type PublicReading = PublicReadingBase & {
   question?: string | null;
   nickname?: string | null;
+  /**
+   * **`choice` IS IN THE CONDITIONAL HALF AND IT BELONGS TO `includeQuestion`,
+   * NOT TO ITS OWN SWITCH.**
+   *
+   * It is a word-bounded slice of `readings.question`, so a link that excluded the
+   * question and carried the choice would publish a fragment of the exact string
+   * the sharer declined to publish — a leak through the one field nobody would
+   * think to check, because it reads as a verdict rather than as user text.
+   *
+   * Sharing the question is the default since 2026-07-28 and the sheet no longer
+   * offers a switch, so this arm is unreachable from the UI today. That is
+   * precisely why the coupling is written down: `publicReadingQuery` keeps the
+   * CAPABILITY to exclude the column real, with `.toSQL()` assertions, and a
+   * capability that is correct for one field and broken for its own substring is
+   * worse than not having it.
+   */
+  choice?: string | null;
 };
 
 /**

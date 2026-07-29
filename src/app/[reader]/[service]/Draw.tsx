@@ -9,6 +9,7 @@ import { ReadingPanel, type ReadingState } from '@/components/ReadingPanel';
 import { ShareFooter } from '@/components/ShareFooter';
 import { Slots } from '@/components/Slots';
 import { CARDS, effectiveYesNo, shuffleDeck } from '@/data/deck';
+import { splitChoiceMarker, validateChoice } from '@/lib/reading/choice';
 import { slotLabels } from '@/data/services';
 import type { Draw as DrawnCard, Reader, Service, YesNo } from '@/data/types';
 import { useT } from '@/lib/i18n/LocaleProvider';
@@ -96,6 +97,17 @@ export function Draw({
     atIso: string;
     localDate: string;
     question: string | null;
+    /**
+     * The option the cards chose, validated against the question — or null, which
+     * is almost every reading.
+     *
+     * **CAPTURED HERE FOR THE SAME REASON `verdict` IS DERIVED IN `verdictFor`:**
+     * the share preview must show what the public page will show. It cannot be
+     * derived, though — a choice is a word out of the querent's own question and no
+     * pure function of the cards can produce it — so it is lifted off the stream and
+     * kept, which is the one fact on this screen that arrives only from the model.
+     */
+    choice: string | null;
     cards: DrawnCard[];
   } | null>(null);
   /** Index into `deck` of the card whose detail overlay is open, if any. */
@@ -363,16 +375,61 @@ export function Draw({
 
         const decoder = new TextDecoder();
         const readerStream = res.body.getReader();
+        /*
+         * `raw` IS THE WIRE AND `text` IS THE SCREEN, AND KEEPING THEM APART IS THE
+         * WHOLE OF THE CHOICE MARKER'S CLIENT SIDE.
+         *
+         * The reader may open with `PILIHAN: Ayam\n\n` — a protocol line, not prose
+         * — and it arrives split across chunks at an arbitrary byte.
+         * `splitChoiceMarker` is handed the text accumulated SO FAR, not the delta,
+         * which is what makes it pure and idempotent: there is no state to carry
+         * between chunks and nothing to reset between readings. The server runs the
+         * same function once over the finished body.
+         *
+         * **`pending` IS WHY THERE IS AN `if` AND NOT AN UNCONDITIONAL
+         * `setReading`.** While the leading bytes could still become the marker,
+         * nothing is painted, so the marker cannot appear for one frame and then
+         * vanish. For an ordinary reading the very first chunk decides — `Y` is not
+         * `P` — so this costs nothing and the behaviour is byte-identical to before.
+         *
+         * `firstByteMs` is still the FIRST BYTE off the wire, deliberately: it feeds
+         * `latency_ms`, whose documented meaning is time to first token, and
+         * re-pointing it at the first PROSE byte would make one column mean two
+         * things depending on whether a reading had a marker.
+         */
+        let raw = '';
         let text = '';
 
         for (;;) {
           const { done, value } = await readerStream.read();
           if (done) break;
           if (firstByteMs === null) firstByteMs = Date.now() - requestedAt;
-          text += decoder.decode(value, { stream: true });
-          setReading({ status: 'streaming', text });
+          raw += decoder.decode(value, { stream: true });
+          const split = splitChoiceMarker(raw, false);
+          if (!split.pending) {
+            text = split.body;
+            setReading({ status: 'streaming', text });
+          }
         }
-        text += decoder.decode();
+        raw += decoder.decode();
+
+        /*
+         * `done: true` IS THE FLUSH. A stream that died four characters into the
+         * marker must still show what it managed to send, so nothing may be held
+         * back here — and it is also the call that yields the choice for the share
+         * preview below.
+         */
+        const finalSplit = splitChoiceMarker(raw, true);
+        text = finalSplit.body;
+        /*
+         * VALIDATED ON THIS SIDE TOO, against the same sanitized-ish question the
+         * server validated against. This is NOT the authority — the server's row is,
+         * and it revalidates from `readings.question` — but rendering the model's
+         * unvalidated word here would put model-controlled text in a highlighted box
+         * on the querent's screen, which is the thing `validateChoice` exists to make
+         * impossible on every surface rather than on the persisted ones.
+         */
+        const choice = validateChoice(finalSplit.choice, trimmed || null);
 
         /*
          * V7. CAPTURED HERE, BEFORE THE LAST `setReading`, so the footer that
@@ -390,6 +447,7 @@ export function Draw({
           atIso: new Date().toISOString(),
           localDate: todayKey(),
           question: trimmed || null,
+          choice,
           cards: chosen.map((i) => deckNow[i]!),
         };
 
@@ -415,6 +473,22 @@ export function Draw({
           truncated: false,
           status: 'ok',
           source: 'client',
+          /*
+           * THE CLIENT'S OWN VERDICT ON THE MARKER, not a copy of the server's --
+           * which it could not be, since the two never exchange it. The browser
+           * validates against the question in its own textarea and the server
+           * against the stored `readings.question`; those are the same string, so
+           * the two copies of this event must agree, and this pair is the only
+           * place a divergence would surface. That is the same argument the header
+           * makes about `status`.
+           *
+           * `chars: text.length` above is the PROSE length here, because `text` is
+           * already the stripped body -- the server's copy counts what the tee saw
+           * on the wire. The two were always allowed to disagree; now they disagree
+           * by the length of a marker line on the readings that have one.
+           */
+          choice: finalSplit.choice === null ? 'none' : choice === null ? 'invalid' : 'valid',
+          choice_length: finalSplit.choice?.length ?? 0,
         });
       } catch (err) {
         if (controller.signal.aborted) {
@@ -643,6 +717,14 @@ export function Draw({
              */
             verdict: verdictFor(service, finished.current.cards),
             question: finished.current.question,
+            /*
+             * LIFTED OFF THE STREAM AND NOT DERIVED, which is the one asymmetry with
+             * `verdict` directly above. There is no pure function of the cards that
+             * yields `ayam`: the option is a word out of this querent's question and
+             * only the model chose between them. Already validated against the
+             * question when it was captured.
+             */
+            choice: finished.current.choice,
             body: reading.text,
             sharedAt: null,
             cards: finished.current.cards.map((d, i) => ({

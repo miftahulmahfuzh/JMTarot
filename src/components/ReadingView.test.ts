@@ -33,6 +33,7 @@ const BASE: ReadingViewData = {
   body: 'Kartu pertama bicara soal apa yang sudah kamu tinggalkan.',
   verdict: null,
   question: null,
+  choice: null,
   sharedAt: null,
   cards: [
     { cardId: 0, reversed: false, position: 0 },
@@ -228,6 +229,69 @@ describe('ReadingView', () => {
 
   it('renders no verdict chip when the reading has none', () => {
     const html = render({ verdict: null }, 'id');
+    for (const v of ['yes', 'no', 'maybe'] as const) {
+      expect(html).not.toContain(`>${catalogFor('id')[`reading.verdict.${v}`]}<`);
+    }
+  });
+
+  /*
+   * ── THE CHOICE VERDICT (2026-07-29) ────────────────────────────────────────
+   *
+   * The box a multiple-choice question gets. Three properties, and the third is
+   * the one that would ship a visible bug if it broke.
+   */
+  it('renders the chosen option in the same chip the verdict uses', () => {
+    const html = render({ question: 'ayam atau ikan?', choice: 'ayam' }, 'id');
+    expect(html).toContain('>ayam<');
+  });
+
+  /**
+   * **NEVER TRANSLATED, WHICH IS THE OPPOSITE OF EVERY OTHER STRING IN THIS
+   * COMPONENT.** The chosen option is a word-bounded slice of `question`, and the
+   * question is rendered as typed on every surface — so a fragment of it follows
+   * the question rather than the chrome. An English viewer of an Indonesian
+   * question sees `ayam`, and that is correct: `Chicken` in a box above prose
+   * quoting `ayam` is the bug this asserts against.
+   */
+  it('leaves the chosen option in the querent’s own words for either viewer', () => {
+    for (const locale of ['id', 'en'] as const) {
+      expect(render({ question: 'ayam atau ikan?', choice: 'ayam' }, locale)).toContain('>ayam<');
+    }
+  });
+
+  /**
+   * **ONE BOX, NEVER TWO.** `CHOICE_RULE_*` is interpolated into `daily` and
+   * `spread3` and deliberately not into `yesno`, so a reading holding both is
+   * unreachable by construction — this is the belt to that brace, and it is the
+   * assertion that fails if the `else if` in the component is ever split into two
+   * independent blocks. Two answer boxes on one reading would DISAGREE: `Tidak` is
+   * not an answer to "ayam atau ikan".
+   */
+  it('never renders both an answer chip and a choice chip', () => {
+    const html = render(
+      { serviceId: 'yesno', verdict: 'no', question: 'ayam atau ikan?', choice: 'ayam' },
+      'id',
+    );
+    expect(html).toContain(catalogFor('id')['reading.verdict.no']);
+    expect(html).not.toContain('>ayam<');
+  });
+
+  /**
+   * THE NEGATIVE CONTROL FOR THE THREE CASES ABOVE, and it asserts on CONTENT
+   * rather than on a class name. The first version checked
+   * `expect(html).not.toContain('verdict')`, which passed for the wrong reason:
+   * CSS modules resolve to `{}` under Vitest, so `styles.verdict` is `undefined`
+   * and the class never appears in the markup whether the chip rendered or not.
+   * The question still names the option, so a chip that leaked would be visible
+   * here as `>ayam<` and nothing else in the document produces that.
+   */
+  it('renders no chip when the reading has neither a verdict nor a choice', () => {
+    const html = render(
+      { verdict: null, choice: null, question: 'ayam atau ikan?' },
+      'id',
+    );
+    expect(html).toContain('ayam atau ikan?');
+    expect(html).not.toContain('>ayam<');
     for (const v of ['yes', 'no', 'maybe'] as const) {
       expect(html).not.toContain(`>${catalogFor('id')[`reading.verdict.${v}`]}<`);
     }

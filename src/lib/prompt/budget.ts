@@ -76,19 +76,62 @@ export function midpoint(b: LengthBudget): number {
  * `spread3` does. The numbers below are what two paragraphs and one paragraph of that
  * ceiling come to.
  */
+/**
+ * EVERY NUMBER HERE CAME DOWN 30% ON 2026-07-29, AND IT IS MIFTAH'S RULING ON A
+ * PHONE: the readings were too long to read on the device this app is built for.
+ *
+ * The previous values are kept in the table below rather than only in git,
+ * because the calibration comments above and in `READER_MULTIPLIER` cite them by
+ * value -- "she sits ON the 40-word ceiling", "157, 159, 163, 199 and 200" -- and
+ * a reader who cannot find 40 anywhere concludes those comments are stale.
+ *
+ *            was  ->  now        was      ->  now         was      ->  now
+ *   daily     55  ->   39      50-115     ->  35-81
+ *   spread3   40  ->   28     105-155     ->  74-109
+ *   yesno     70  ->   49      30-72      ->  21-50
+ *
+ * **THE FLOOR SCALED TOO, AND IT HAD TO.** Leaving `spread3` at a 105-word floor
+ * under a 4 x 28 = 112 ceiling leaves a seven-word band, so the smoke script
+ * would FAIL on output that obeyed the prompt exactly -- which `READER_MULTIPLIER`
+ * below says in its own words is the one thing a check must never do. Scaling one
+ * end of a band is not shortening it, it is narrowing it.
+ *
+ * **FOUR PARAGRAPHS SURVIVED, WHICH WAS THE ACTUAL DECISION.** Dropping the
+ * synthesis paragraph would have bought `spread3` ~36 words each instead of 28
+ * and was offered and refused: `services.id.ts` forbids it in its own voice --
+ * *"EMPAT paragraf, bukan tiga. Paragraf keempat wajib ada; tanpa penyatuan itu,
+ * bacaan ini cuma tiga keterangan kartu yang berdiri sendiri."* A shorter reading
+ * that is three unconnected card notes is not a shorter reading, it is a
+ * different and worse one.
+ *
+ * **THE SENTENCE COUNTS CAME DOWN WITH THEM**, in `services.{id,en}.ts` -- spread3
+ * 2-3 to 1-2, daily 2-4 to 2-3, yesno 3-4 to 2-3. A sentence count that cannot be
+ * met inside the word ceiling is noise in the prompt, and this file's whole
+ * argument is that the ceiling is the control.
+ *
+ * `MAX_TOKENS` IS DELIBERATELY UNCHANGED -- see `services.ts`. Those are runaway
+ * guards at roughly double the target, and lowering them buys nothing while making
+ * the `gpt-5.6-luna` blank-reading failure worse.
+ *
+ * **28 MAY READ CLIPPED AND THAT IS THE OPEN QUESTION, not whether the ruling was
+ * right.** The English `spread3` calibration was already unconverged at 157-243
+ * words; this moved the target without converging it. The instrument is the blind
+ * read at the end of `npm run smoke -- --all`: if the three readers stop being
+ * distinguishable at 28 words, the fix is the persona paragraphs, not this number.
+ */
 export const LENGTH_BUDGET: Record<Locale, Record<ServiceId, LengthBudget>> = {
   id: {
-    // Two paragraphs x 55 = 110; the floor allows a genuinely terse day.
-    daily: { maxParagraphWords: 55, minTotalWords: 50, maxTotalWords: 115 },
-    spread3: { maxParagraphWords: 40, minTotalWords: 105, maxTotalWords: 155 },
-    // One paragraph, so the total IS the paragraph and the band cannot exceed the
-    // ceiling. Being short is the shape of the service.
-    yesno: { maxParagraphWords: 70, minTotalWords: 30, maxTotalWords: 72 },
+    // Two paragraphs x 39 = 78; the floor allows a genuinely terse day.
+    daily: { maxParagraphWords: 39, minTotalWords: 35, maxTotalWords: 81 },
+    spread3: { maxParagraphWords: 28, minTotalWords: 74, maxTotalWords: 109 },
+    // One paragraph, so the total IS the paragraph and the band barely exceeds
+    // the ceiling. Being short is the shape of the service.
+    yesno: { maxParagraphWords: 49, minTotalWords: 21, maxTotalWords: 50 },
   },
   en: {
-    daily: { maxParagraphWords: 55, minTotalWords: 50, maxTotalWords: 115 },
-    spread3: { maxParagraphWords: 40, minTotalWords: 105, maxTotalWords: 155 },
-    yesno: { maxParagraphWords: 70, minTotalWords: 30, maxTotalWords: 72 },
+    daily: { maxParagraphWords: 39, minTotalWords: 35, maxTotalWords: 81 },
+    spread3: { maxParagraphWords: 28, minTotalWords: 74, maxTotalWords: 109 },
+    yesno: { maxParagraphWords: 49, minTotalWords: 21, maxTotalWords: 50 },
   },
 };
 
@@ -110,8 +153,16 @@ export const LENGTH_BUDGET: Record<Locale, Record<ServiceId, LengthBudget>> = {
  * 1.3 IS CLOSE TO WHAT WAS ALREADY MEASURED, which is why it is credible rather
  * than round: the old override was 55 against a base of 40, i.e. 37.5%, derived
  * from five `--all --fixed` runs putting her spread3 paragraphs at 38-55 in both
- * locales. So `spread3` moves 55 -> 52 and the other two gain a ceiling that
+ * locales. So `spread3` moved 55 -> 52 and the other two gained a ceiling that
  * matches how she actually writes.
+ *
+ * **THE MULTIPLIER DID NOT MOVE IN THE 30% CUT AND MUST NOT.** Her extra length is
+ * a fact about the READER, so it scales WITH the base rather than against it:
+ * `spread3` is now 28 x 1.3 = 36, `daily` 51, `yesno` 64, and her spread3 total
+ * ceiling 142. Scaling 1.3 down as well would cut her twice and make her the only
+ * reader shortened by more than the ruling asked for -- which, since she is the
+ * one reader whose voice rules mandate subordinated sentences, is the reader it
+ * would break first. **36 IS THE NUMBER TO WATCH** in the next `--all` run.
  *
  * IT APPLIES TO CEILINGS ONLY. `minTotalWords` is a floor and a floor scaled by
  * a reader's verbosity would demand length rather than permit it.

@@ -64,6 +64,16 @@ export type HistoryItem = {
   verdict: YesNo | null;
   /** The querent's own typed text, or null. */
   question: string | null;
+  /**
+   * The option the cards chose, when the question offered one. A word-bounded
+   * SLICE of `question`, validated at draw time and never re-derived.
+   *
+   * **DISPLAY TEXT, UNLIKE `verdict` DIRECTLY ABOVE IT**, because there is no
+   * closed set to tokenise `ayam` into — and therefore **never translated**, since
+   * `question` is not translated on any surface either. `ReadingView` renders it
+   * verbatim. See `readings.choice` in `schema.ts`.
+   */
+  choice: string | null;
   /** `body is not null`, computed in SQL. See the header for why not the body. */
   hasBody: boolean;
   /** ISO 8601, or null. V7 writes the column; V6 only reads it. */

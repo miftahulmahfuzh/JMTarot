@@ -64,6 +64,8 @@ npm run smoke -- --persona    # one real persona PER LOCALE, whole. READ IT.
 npm run smoke -- --persona --locale en   # one, for iterating
 npm run smoke -- --all --lotus   # the nine WITH a canned Lotus block, fixed hands
 npm run smoke -- --all --fixed   # the nine without one, same hands, for the diff
+npm run smoke -- --all --choice  # EIGHTEEN, all asking a two-option question. THE ONLY
+                     # instrument for the choice marker's FORMAT. READ THE MARKERS.
 ```
 
 **Development** runs against Postgres in Docker; `db:up` must run before `npm run
@@ -496,6 +498,12 @@ decides it, including the reversal flip, and the prompt hands the model the word
 tells it to open with it. Letting the model choose produced answers that contradicted
 the card's own orientation.
 
+**THE CHOICE VERDICT IS THE ONE EXCEPTION AND IT IS NOT A RELAXATION OF THAT RULE**
+(2026-07-29). A question offering options — *"mending makan ayam atau ikan?"* — gets the
+same box, holding `ayam`. Code cannot derive it: the options are words the querent typed
+and no function of the cards knows about lunch, so the model picks and **code validates**.
+See `## The choice verdict`.
+
 `meaning` is a **pair** of one-line Indonesian glosses, upright and reversed. Always
 read it through `cardMeaning(draw)`: the reversed line is a different statement, not a
 negation, and showing the upright line under visibly upside-down artwork contradicts the
@@ -590,6 +598,58 @@ fluent reading generated with no contract at all.
   interpolated into the prompt and asserted by the smoke script so the two cannot drift.
   `budgetFor(locale, service, reader)` applies **`MARGARET_MULTIPLIER = 1.3`** to every
   reader-voiced ceiling — VD19, a fact about the reader rather than about one service.
+- **EVERY BUDGET CAME DOWN 30% ON 2026-07-29** (Miftah's ruling: too long to read on a
+  phone), **ceilings AND floors** — scaling one end of a band narrows it rather than
+  shortening it, and would fail the smoke script on output that obeyed the prompt.
+  `spread3` keeps FOUR paragraphs: dropping the synthesis would leave three unconnected
+  card notes. `MAX_TOKENS` and the 1.3 are untouched — the first is a runaway guard, and
+  scaling the second would cut Margaret twice.
+- **`daily` DID NOT LAND THE CUT AND THAT IS RECORDED RATHER THAN FIXED.** `spread3` came
+  in at 80–111 words against the old 130–200; `daily` took the largest relative cut (two
+  paragraphs, not four) and Margaret wrote 53, 84 and 67-word openings against her 51
+  ceiling **on identical hands**. Same precedent as this file's unconverged English
+  `spread3` calibration: measure before moving it.
+
+## The choice verdict (2026-07-29)
+
+**A question offering options gets answered with ONE of them, in the box the yes/no verdict already
+had.** The report was a four-paragraph reading of *"mending makan ayam atau ikan nanti siang?"* that
+never said ayam or ikan. `src/lib/reading/choice.ts` (PURE, no `server-only`, no `process.env`),
+`CHOICE_RULE_{ID,EN}` in `src/lib/prompt/services.{id,en}.ts`, `readings.choice`.
+
+- **`CHOICE_RULE_*` IS IN `daily` AND `spread3` AND NEVER `yesno`**, whose answer is already forced by
+  `effectiveYesNo()`. Two answer boxes on one reading would disagree — `Ya` is not an answer to "ayam
+  atau ikan" — and `ReadingView` uses `else if` rather than two blocks as the belt to that brace.
+- **THE MARKER CROSSES THE WIRE AND A SERVER-SIDE STREAM TRANSFORM CANNOT WORK**: the choice arrives
+  long after the response headers, so a server that strips it cannot tell the client what it was, and
+  the draw screen is where the querent reads. `Draw.tsx` strips incrementally and `/api/reading`'s
+  `defer()` strips once over the finished body, **with the same pure function**. The failure mode is a
+  chunk-boundary bug rendering `PILIHAN: Ayam` above a reading, so `choice.test.ts` feeds one body in
+  EVERY possible split.
+- **THE STRIPPED BODY IS WHAT REACHES `persistReading`, `extractGist` AND `detectCallback`.** A marker
+  in `readings.body` would be quoted back at the querent by W5's chained reading as if the reader had
+  said it — the reason `[Bacaan terputus...]` is kept out of that column.
+- **`validateChoice` RETURNS A SLICE OF THE QUESTION, NEVER THE MODEL'S COPY**, which is why it
+  returns a string rather than a boolean: a caller handed `true` would render the model's text.
+  **`MULTI_OPTION` IS THE HALF THAT WAS MISSING AND SHIPPED WRONG FOR ONE COMMIT** — three of eighteen
+  live readings answered with a whole clause, `makan ayam atau ikan nanti siang`, which passed every
+  word-bounded and length check and would have put the reported bug in the highlighted box. A
+  candidate containing `atau`/`apa`/`or`/`versus` or a comma named more than one option and is
+  refused. Biased towards rejecting: a false rejection costs the box, a false acceptance ships the
+  report.
+- **NEVER TRANSLATED, and it is the one piece of reading chrome that does not follow `t`.** `body` is
+  translated; `question` is not, on every surface. The choice is a fragment of the question, so it
+  follows the question — and translating it would make the substring guarantee uncheckable. Rendered
+  with **no `lang` attribute**, matching the question block: `reading.locale` is the language the
+  PROSE came out in, and a querent may type Indonesian into the English app.
+- **`readings.choice` RIDES ON `include_question` IN `publicReadingQuery`, IN THE SAME TERNARY.** It is
+  a slice of the question, so a link excluding the question and selecting this column publishes a
+  fragment of the excluded string through the one field that reads as a verdict rather than as user
+  text.
+- **`npm run smoke -- --all --choice` IS THE ONLY INSTRUMENT FOR THE FORMAT.**
+  `reading.completed.choice` measures whether the model named something the querent never typed
+  (`invalid`); it CANNOT see a marker spelled differently enough to miss the matcher, which renders as
+  prose and reports `none`.
 
 ## Localization (W6)
 
@@ -771,10 +831,16 @@ Every reading, every card and every meaningful choice is persisted, and **none o
 of a byte the user is waiting for.** `src/lib/analytics/**`, `src/app/api/events/route.ts` (public,
 always 204), `src/components/Track*.tsx`, `docs/analytics-queries.md`.
 
-- **`events.ts` is the closed taxonomy — 66 names, a prop shape each, and NO IMPORTS**, because it
+- **`events.ts` is the closed taxonomy — 67 names, a prop shape each, and NO IMPORTS**, because it
   is the data dictionary and people read it. **ONE OWNER PER RELEASE: S1 for v0.4.0 (S-D13);** every
   other workstream declares its events in its plan and S1 folds them in, and **folding a
   declaration in means transcribing it**, not narrowing it.
+- **THE CEILING MOVED 66 → 67 ONCE, on 2026-07-29, and the register was revisited rather than the
+  number bumped.** Four names were drafted and ONE landed: `reading.choice_offered` became two PROPS
+  on `reading.completed` (numerator and denominator in one scan), two answer-write names became one
+  `account.answer_changed` with a closed `action`, and `revealed` was dropped — request volume in the
+  platform log answers the privacy question and a look-and-close changes no decision. **Expect to
+  FOLD rather than add, and write down what you folded.**
 - **`latency_ms` is TIME TO FIRST TOKEN**, not total generation time — that is
   `reading.completed.total_ms`. Changing the meaning later makes every historic row a different
   measurement.
@@ -1106,11 +1172,12 @@ person*, and per-answer clearing. `src/lib/account/{delete,grace}.ts`,
   abstraction rule enforced by CONSTRUCTION rather than by prompting, with a canary in
   `prompt.test.ts`. **`<sosok>` is the sixth fence and is defence in depth *because* of that** — say
   so, or somebody reads the fence as evidence the block carries raw text, or deletes it along with the
-  rule that made it unnecessary. **`answerPresence` DECRYPTS NOTHING** and there is no reveal control,
-  so `worst_thing`'s plaintext never leaves the server.
+  rule that made it unnecessary. **`answerPresence` STILL DECRYPTS NOTHING** — but "there is no reveal
+  control" is no longer true; see the answer-sheet bullets below.
 - **THE STALENESS THROTTLE IS ON THE READ PATH AND NEVER INSIDE `generatePersona`** (A13). A throttle
   on the *reader* is a latency decision; a throttle inside the *generator* is W3's swallowed
-  answer-edit bug. **A facts edit and a cleared answer both call `generatePersona` DIRECTLY.**
+  answer-edit bug. **A facts edit still calls `generatePersona` DIRECTLY; an ANSWER edit no longer
+  does** — see the deferral bullet below.
 - **`personaInputHash` HAS NO LOCALE AND `personas.facts` IS LOCALE-FREE.** If either carried one,
   tapping `EN` would regenerate the persona and replace the prose the querent just read — and V2's
   translation, whose whole purpose is that switch, would never be used. **The fix for an untranslated
@@ -1140,8 +1207,39 @@ person*, and per-answer clearing. `src/lib/account/{delete,grace}.ts`,
   made for, which is a SHARE control. `Galeri kartu` and `Tulisan` carry their own `account.menu.*`
   keys, never a reuse of `public.footer.*`. **`PublicShell`'s `LINKS` table is DELETED, not emptied**
   — deleting the filter with it let the landing page's footer grow a link to ITSELF.
+- **THE SIX ANSWERS ARE READABLE AND EDITABLE SINCE 2026-07-29, AND L13 IS WHAT DIED** — it said
+  *"the six are deletable and NOT editable"*. Miftah's ruling. The reveal is an AMENDMENT rather than
+  a violation: reconciliation §7.3 asked for *"without showing their decrypted text **until
+  asked**"*, V8 made "asked" unreachable, and a tap on a question is asking. **`worst_thing`'s
+  plaintext leaves the server ONLY through `GET /api/onboarding/answer/<key>` — one key per request,
+  `private, no-store`, and there must NEVER be a bulk variant**, because a six-answer read for a
+  browser puts the most sensitive string in the product into the response to *opening a page*.
+  `queries/onboarding.ts` is still the only module that encrypts or decrypts that column. L13's
+  "turns a rite into a settings page" is answered by placement — below the persona, labelled by
+  question, nothing revealed until tapped.
+- **AN ANSWER EDIT DEFERS THE PERSONA AND KEEPS THE LOTUS EAGER, AND THE ASYMMETRY IS AN ERASURE DUTY.**
+  `lotus_avatars.summary` is read into **every reading prompt**, so deferring it would let a reading
+  taken before the next `/account` visit still be generated from the answer just deleted — which
+  `/privacy` clause 3 promises against, twice, in both locales. `personas.body` is read by `/account`
+  alone, so it waits. One model call per edit instead of two. **A13's rule is intact and only its
+  enforcement point moved**, to `personaStaleness`, via
+  `max(onboarding_answers.updated_at) > personas.updated_at` — no schema delta. Three things not to
+  undo: the `user-edit` arm is tested BEFORE the hash arm (an edit back to the old value leaves
+  `input_hash` identical, so a hash-first ordering never clears the flag); `touchPersona` closes that
+  hole and is NOT dead code; and `user-edit` regenerates IN FRONT of the response, because
+  serve-stale would show the old paragraph on the refresh performed to see the new one.
+- **`answersUpdatedAt` TYPES ITS AGGREGATE `unknown` AND CONVERTS BY HAND — do not "tidy" it into
+  `sql<Date>`.** Drizzle maps a timestamp to a `Date` when it knows the COLUMN; inside a raw `sql`
+  template there is no mapper and postgres.js returns a **string**. The first version asserted `Date`,
+  the compiler believed it, and `personaStaleness`'s `>` compared a string to a Date — coercing and
+  answering *something*, so every answer edit was judged wrongly **with a green typecheck and a green
+  unit suite**, because the unit tests pass real `Date`s in. Only an integration test calling
+  `.getTime()` saw it. Same rule as `readingsForDay`'s `hasBody`: **`sql<T>` is an assertion the
+  driver is not obliged to honour.**
 - **Still open:** `GET /api/persona` 500s when the database is down rather than 204;
-  `PERSONA_MIN_AGE_SECONDS=3600` is a guess; `account.details_viewed` always reports `from: 'direct'`.
+  `PERSONA_MIN_AGE_SECONDS=3600` is a guess; `account.details_viewed` always reports `from: 'direct'`;
+  the answer sheet is unmeasured on a real phone (a textarea with the keyboard up inside a `90dvh`
+  sheet is the geometry WSL cannot answer).
 
 ## Trust, safety and secrets (W7)
 
@@ -1248,7 +1346,8 @@ three Neon knobs (max 1, prepare false, ssl require) are conditional on `VERCEL`
 `NODE_ENV`, because a preview build is also `NODE_ENV=production`; do not trim that comment**.
 `types.ts` (Db / Tx / DbOrTx) is type-only with no runtime imports, so a query module cannot
 acquire the singleton by accident. `schema.ts` has **ONE OWNER: W1** and holds thirteen tables
-(ten at W1, plus `translations`, `share_links` and `personas`). `crypto.ts` is AES-256-GCM field
+(ten at W1, plus `translations`, `share_links` and `personas`); 2026-07-29 added a COLUMN and no
+table, `readings.choice` (migration `0008`). `crypto.ts` is AES-256-GCM field
 encryption, `v1.<iv>.<ct>.<tag>` base64url. `queries/` is one file per read concern, **every
 function taking the handle first**. `migrations/` is generated and committed — read its README
 before adding one. `testing/` holds `harness.ts` (`withRollback`, `resetDb`) and `globalSetup.ts`.

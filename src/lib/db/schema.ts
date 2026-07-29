@@ -318,6 +318,27 @@ export const readings = pgTable(
      * storing them would make the analytics untranslatable the moment W6 lands.
      */
     verdict: text('verdict').$type<YesNo>(),
+    /**
+     * The option the cards chose, when the querent's question offered a choice.
+     * NULL otherwise, which is almost every reading.
+     *
+     * **A SLICE OF `question`, NOT THE MODEL'S OUTPUT, AND NEVER A CATALOG KEY.**
+     * The two facts about this column that everything else follows from:
+     *
+     *   1. `verdict` above stores a machine token (`yes`/`no`/`maybe`) precisely
+     *      so the displayed word can be localised. This column CANNOT do that: the
+     *      option is `ayam`, a word the querent typed, and there is no closed set
+     *      to tokenise it into. So it stores display text -- the only column in
+     *      this table that does -- and `validateChoice` is what makes that safe by
+     *      refusing anything that is not a word-bounded substring of `question`.
+     *   2. **IT IS THEREFORE NEVER TRANSLATED.** `body` is; `question` is not, on
+     *      every surface. A fragment of the question follows the question. See
+     *      `ReadingView`.
+     *
+     * Not `notNull` and no default: a reading without a choice question genuinely
+     * has none, and an empty string would be a third state nothing wants.
+     */
+    choice: text('choice'),
     /** The generated prose. NULL if the stream died before a token arrived. */
     body: text('body'),
     /**

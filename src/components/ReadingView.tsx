@@ -291,6 +291,44 @@ export function ReadingView({ reading, prose, footer, onCardOpened }: ReadingVie
       */}
       {reading.verdict ? (
         <div className={styles.verdict}>{t(`reading.verdict.${reading.verdict}`)}</div>
+      ) : reading.choice ? (
+        /*
+          THE CHOICE VERDICT (2026-07-29). The same box, one branch later.
+
+          **`else if`, NEVER A SECOND `{… ? … : null}` BLOCK.** A reading with a
+          verdict AND a choice would render two answer boxes, and they would
+          disagree — `Ya` is not an answer to "ayam atau ikan". `CHOICE_RULE_*`
+          is interpolated into `daily` and `spread3` and deliberately not into
+          `yesno`, so the pair is unreachable by construction; this ordering is
+          the belt to that brace, and it is one line instead of an invariant
+          somebody has to remember.
+
+          **NOT THROUGH THE CATALOG, WHICH IS THE OPPOSITE OF THE LINE ABOVE, AND
+          THE DIFFERENCE IS THE POINT.** `verdict` is a machine token that
+          `effectiveYesNo()` chose from a closed set, so the word on screen is a
+          translation of it. A choice is `ayam` — a word this querent typed, from
+          a set only they know — so there is no key to look up and nothing to
+          translate. `validateChoice` guarantees at draw time that this string is
+          a word-bounded slice of `reading.question`, which is what makes
+          rendering it raw safe: it is the querent's own text, and React escapes
+          it like any other.
+
+          **THIS IS THE ONE PIECE OF READING CHROME THAT DOES NOT FOLLOW `t`.**
+          Rule 4 next door is about never showing prose in a language the viewer
+          did not ask for; this is its mirror image. The question directly above
+          is rendered as typed on every surface — history, share, the draw
+          screen — so a fragment of it must be too. Translating it would put
+          `Chicken` in a box over prose quoting `ayam`, and it would make the
+          substring guarantee uncheckable.
+
+          **AND NO `lang` ATTRIBUTE, WHICH THE FIRST VERSION HAD.**
+          `lang={reading.locale}` looks like the careful thing to write and is a
+          false claim: `locale` is the language the PROSE came out in, and the
+          querent may well have typed an Indonesian question in the English app.
+          The question block twenty lines up carries no `lang` for exactly that
+          reason, and a fragment of it must not claim more than the whole does.
+        */
+        <div className={styles.verdict}>{reading.choice}</div>
       ) : null}
 
       <section

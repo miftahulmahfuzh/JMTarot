@@ -48,6 +48,7 @@ const READING: ReadingViewData = {
   status: 'ok',
   verdict: null,
   question: 'haruskah aku pindah kerja',
+  choice: null,
   body: 'Kartu pertama berbicara tentang ambang.',
   sharedAt: null,
   cards: [

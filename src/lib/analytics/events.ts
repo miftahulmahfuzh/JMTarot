@@ -109,6 +109,11 @@ export const EVENT_NAMES = [
 
   // — /account and the persona (V8) —
   'account.deleted',
+  /*
+   * The 67th name (2026-07-29). **THE ONLY ONE ADDED FOR THIS CHANGE, AND THREE
+   * WERE DRAFTED.** See its prop shape below for what was dropped and why.
+   */
+  'account.answer_changed',
   'persona.generated',
   'persona.viewed',
 
@@ -218,11 +223,47 @@ export type EventMap = {
                                  has_question: boolean; question_length: number;
                                  lotus_present: boolean; memory_block_present: boolean; prompt_version: string };
   'reading.first_token':       { reading_id: string; latency_ms: number };
-  /** `source` is load-bearing. See EventSource. */
+  /**
+   * `source` is load-bearing. See EventSource.
+   *
+   * ── `choice` AND `choice_length` (2026-07-29) ──────────────────────────────
+   *
+   * **TWO PROPS AND NOT A `reading.choice_offered` NAME, WHICH THIS FILE'S OWN
+   * CEILING ASKED FOR.** `events.test.ts` bounds the taxonomy at 66 names and says
+   * in those words that for a new measurement *"the answer is almost always a prop
+   * on one of the five above"*. It was written about v0.4.0's public surface and
+   * the argument generalises, so a 67th name was written, read back, and folded in
+   * here instead. The query shape is strictly better for it: the numerator and the
+   * denominator are now one table scan over one event rather than a join between
+   * two.
+   *
+   * `'none'` on almost every reading -- a question offering a choice is rare.
+   * `'invalid'` means the reader named something the querent never typed, so no box
+   * was rendered, and **that is the number the choice verdict lives or dies by**:
+   * V2's rule governs it verbatim, above ~2% fix the prompt rather than the
+   * architecture. Split the two failure kinds with `choice_length`: past
+   * `CHOICE_MAX_CHARS` the reader wrote a clause instead of an option, at or under
+   * it the reader invented a third choice.
+   *
+   * **`choice_length` AND NEVER THE WORD, AND THIS IS THE STRICTEST CASE OF THAT
+   * RULE IN THE FILE.** The chosen option is a word-bounded SLICE of
+   * `readings.question` -- literally a fragment of free text somebody typed -- so
+   * the word itself here would put user prose in `events.props`. `events` rows
+   * survive account erasure with `user_id` nulled, and that is only honest because
+   * `sanitizeProps()` provably strips everything identifying. `0` when there was no
+   * marker.
+   *
+   * **BOTH COPIES CARRY THEM, server and client, and a disagreement is
+   * information** -- exactly what the header says about `status`. The client
+   * validates against the question in its own textarea and the server against the
+   * stored `readings.question`; those must agree, and this is the only place it
+   * would show if they stopped.
+   */
   'reading.completed':         { reading_id: string; reader_id: string; service_id: string;
                                  latency_ms: number; total_ms: number; chars: number;
                                  token_input: number | null; token_output: number | null;
-                                 truncated: boolean; status: 'ok' | 'partial'; source: EventSource };
+                                 truncated: boolean; status: 'ok' | 'partial'; source: EventSource;
+                                 choice: 'none' | 'valid' | 'invalid'; choice_length: number };
   'reading.failed':            { reading_id: string; reader_id: string; service_id: string;
                                  stage: 'validation' | 'prompt' | 'connect' | 'stream';
                                  chars_before_failure: number; error_kind: string; source: EventSource };
@@ -345,6 +386,44 @@ export type EventMap = {
   'account.deleted':           { reading_count: number; had_persona: boolean;
                                  flags_redacted: number; links_revoked: number;
                                  days_since_signup: number; elapsed_ms: number };
+  /*
+   * `/account`'s answer sheet (2026-07-29). **THE 67th NAME, AND THE CEILING MOVED
+   * BY EXACTLY ONE BECAUSE THREE NAMES WERE DRAFTED AND TWO WERE REFUSED.**
+   *
+   * Drafted: `account.answer_revealed`, `account.answer_edited`,
+   * `account.answer_cleared`. `events.test.ts` bounds the taxonomy and says the
+   * answer to a new measurement is *"almost always a prop on one of the five
+   * above"* — which is right, and there is no existing event that hosts this one.
+   * `onboarding.question_answered` is the tempting host and is the wrong one: firing
+   * it from `/account` would put edits inside the onboarding funnel, so
+   * `onboarding.completed`'s denominator would count people who finished the rite
+   * weeks ago.
+   *
+   * So: ONE name with a closed `action`, not three names.
+   *
+   * **`revealed` WAS DROPPED RATHER THAN FOLDED IN, and it is the interesting
+   * omission.** It would have counted how often somebody opens an answer to look at
+   * it. Two reasons it is not here: the privacy question it seemed to answer ("how
+   * often does plaintext leave the server") is answered by
+   * `GET /api/onboarding/answer/<key>` request volume in the platform log, which is
+   * where request counts belong; and a look-and-close changes no decision, while
+   * `edited` and `removed` are the two that say whether the control earns its place.
+   * `linkKind()` is the precedent for keeping a capability without wiring an event
+   * nobody has a question for.
+   *
+   * **`length` AND NEVER THE TEXT.** `onboarding.question_answered` carries exactly
+   * this pair and this is the same fact from a different screen. `events` rows
+   * survive account erasure with `user_id` nulled, which is only honest because
+   * `sanitizeProps()` provably strips everything identifying — and `worst_thing`'s
+   * plaintext is the single worst thing that could be in this file. `0` for a
+   * removal, and for a closed question it is the length of the closed VALUE
+   * (`grey`, `25`), which carries nothing.
+   *
+   * `question_key` is one of six, so it is closed by construction rather than by
+   * assertion.
+   */
+  'account.answer_changed':    { question_key: string; action: 'edited' | 'removed';
+                                 length: number };
 
   /*
    * THREE FACET PROPS, NOT AN ARRAY, and this is rule 1's runtime half rather

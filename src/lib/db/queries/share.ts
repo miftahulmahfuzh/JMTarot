@@ -536,7 +536,17 @@ export function publicReadingQuery(
       locale: readings.locale,
       verdict: readings.verdict,
       body: readings.body,
-      ...(includeQuestion ? { question: readings.question } : {}),
+      /*
+       * **`choice` RIDES ON `includeQuestion`, IN THE SAME TERNARY, ON PURPOSE.**
+       * It is a word-bounded slice of `readings.question`, so excluding the
+       * question and selecting this column would put a fragment of the excluded
+       * string through the driver and into the flight payload -- defeating
+       * mechanism 1 through the one field that does not look like user text.
+       *
+       * Two lines would let somebody "fix" a false positive by giving it its own
+       * flag. One ternary makes that a deliberate edit rather than a plausible one.
+       */
+      ...(includeQuestion ? { question: readings.question, choice: readings.choice } : {}),
       ...(includeNickname ? { nickname: profiles.nickname } : {}),
     })
     .from(readings)
@@ -604,7 +614,7 @@ export async function publicReadingForShare(
      * integration test asserts on the returned object and what makes the type
      * union in `@/lib/share/types` honest.
      */
-    ...('question' in row ? { question: row.question } : {}),
+    ...('question' in row ? { question: row.question, choice: row.choice } : {}),
     ...('nickname' in row ? { nickname: row.nickname } : {}),
   };
 }

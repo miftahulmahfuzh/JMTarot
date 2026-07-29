@@ -3986,6 +3986,169 @@ fetch so the next person cannot ship this state again silently.
 
 ---
 
+## The answer sheet and the choice verdict (2026-07-29)
+
+Two changes reported together and landed on one branch, `feat/answers-and-choice`.
+`/account`'s six answers became readable and editable; every reading came down 30%
+and a multiple-choice question now gets one option, in the box the yes/no verdict
+already had. The design is
+`docs/plans/2026-07-29-answers-and-choice-design.md`; the rules are in CLAUDE.md.
+This is the evidence.
+
+### The three findings a green suite did not have
+
+**1. `sql<Date>` LIED AND THE UNIT TESTS COULD NOT SEE IT.** `answersUpdatedAt` was
+written as `select({ at: sql<Date | null>\`max(...)\` })`. Drizzle maps a timestamp to
+a `Date` when it knows the COLUMN; inside a raw `sql` template there is no mapper, so
+postgres.js returned a **string**. `personaStaleness` compares that value with `>`
+against a real `Date`, which coerces through `ToPrimitive` and answers *something* —
+so every answer edit would have been judged wrongly, with a green typecheck and a
+green unit suite, because the unit tests pass real `Date`s in (that is what the type
+said). Caught by the integration test asserting `.getTime()`, the only layer that sees
+the driver. **The rule was already written one file over**, on `readingsForDay`'s
+`hasBody`: *"`sql<boolean>` is an assertion the driver is not obliged to honour."*
+
+**2. THE CHOICE BOX SHIPPED THE EXACT BUG IT WAS BUILT TO PREVENT, FOR ONE COMMIT.**
+`validateChoice` guaranteed the box contains only the querent's own words —
+word-bounded, capped at 40 characters, sliced out of `readings.question`. Measured
+live on the first `npm run smoke -- --all --choice`: three of eighteen readings
+answered the marker with a whole clause, `PILIHAN: makan ayam atau ikan nanti siang`.
+Every check passed, because a clause from the question IS a word-bounded substring of
+the question and 32 characters is inside the cap. **The box would have rendered
+`makan ayam atau ikan`** — the confusing non-answer the feature exists to stop,
+promoted out of the prose and into the one highlighted element on the page. The
+guarantee was true and insufficient: it has to be one of the querent's *options*.
+`MULTI_OPTION` is the fix, biased towards rejecting because a false rejection costs
+the box and nothing else while a false acceptance ships the report.
+
+**3. THE LOOP-4 NEGATIVE CONTROL WAS DEFEATED EXACTLY AS `galleryfit` WARNED.**
+`answersfit.sh`'s header says to check `getComputedStyle` before believing a green
+control. It was ignored on the first attempt: `min-width: 420px` was injected at the
+top of `.question`, `overflow` stayed false, and the harness looked fine. **The block
+ends with `min-width: 0`** — the flex-shrink line — so the injection lost the cascade
+and `getComputedStyle(q).minWidth` read `0px`. Injected after that line it reads
+`420px` and the harness reports `overflow: true, section 454>320`. A control that
+cannot fail is indistinguishable from a harness that cannot see.
+
+### Loop 4, measured
+
+`tools/seo/answersfit.{sh,js}`, against this worktree's dev server, both locales, four
+widths. **Eight cells, all clean:**
+
+```
+overflow false, offenders 0, smallTargets 0, markWidths [22]
+maxTitleLines  id: 2 at 320px, 1 at 360/375/390
+               en: 2 at 320px, 1 at 360/375/390
+```
+
+Both negative controls proven: `min-width: 420px` (placed to win) gives
+`overflow: true` with `454>320`; removing `min-height: 44px` gives
+`smallTargets: ["row 26px"] x6`.
+
+**A TRAP THAT COST TWENTY MINUTES AND IS NOT IN ANY OTHER HARNESS: THE MEASUREMENT WAS
+AGAINST THE WRONG WORKTREE.** Port 3001 was held by a dev server from
+`.worktrees/v0.4.0-seo`, so `npm run dev` here auto-incremented to **3003** and said
+so in output nobody read. The harness reported six `clear` buttons reading `Hapus` —
+V8's component — which reads as a build cache problem and is a different branch
+answering. `readlink /proc/<pid>/cwd` on the port's owner is the check.
+**`E2E_BASE` DOES NOT OVERRIDE A RUNNING PROFILE'S BASE**; it is pinned at `launch`.
+Pass an absolute URL to `goto` instead of relaunching a Chrome that holds a shared
+Google session.
+
+### Loop 5, the round trip
+
+Driven on the real page, dev session planted through `POST /api/auth/dev-session`:
+
+- Tapped a row -> sheet opens, reveals, and offers **Simpan / Tutup only** for an
+  unanswered question. No Remove, because a delete on a never-answered question 404s
+  honestly and reads as a broken button.
+- Typed, saved -> `POST /api/onboarding/answer` body was
+  `{"key":"worst_thing","text":"the afternoon the water came up over the step"}` —
+  **the request agrees with the field**, which is the question this loop exists for.
+- The event carried `{question_key, action: "edited", length: 45}` and **not the
+  text**.
+- Row's `aria-label` flipped to `Sudah dijawab`, mark to the tick.
+- Reopened -> the plaintext came back through the real route, counter `45 / 500`, and
+  **Hapus now appears**.
+- The column: `v1.0DAuCUIReI6ED…`, 103 bytes, and
+  `answer_text like '%afternoon%'` is **false**.
+- Removed -> `answer_text IS NULL, skipped = true`. The honest record, not a row
+  delete.
+
+### The deferred persona, verified live on both branches
+
+`max(onboarding_answers.updated_at) > personas.updated_at` was `t` after the edit.
+
+- **The ordinary path.** A genuine edit, one refresh: `input_hash` moved
+  `0bc194d11f -> c6e3dbffc1`, `model = glm-4.6`. One refresh, not two.
+- **The idempotence hole, hit by accident and closed.** Adding an answer and then
+  removing it returns the answer set to its original state, so `input_hash` came back
+  **byte-identical** — `generatePersona` returned `unchanged`, wrote nothing, and the
+  flag would have stayed raised on every page view forever. `touchPersona` moved
+  `updated_at` (06:19:38 -> 06:43:52) with the body untouched, and the flag cleared.
+  **That branch is not dead code; it is the case a querent reaches by fixing a typo
+  and changing their mind.**
+- **The Lotus stayed eager**, which is the erasure half: `lotus_avatars.updated_at`
+  06:45:25, seconds after the write, and its summary quotes the new answer. Deferring
+  it would mean a reading taken before the next `/account` visit was still generated
+  from the deleted answer, which `/privacy` clause 3 promises twice.
+
+### The 30% cut: what landed and what did not
+
+Four `--all --choice --fixed` runs, 72 live readings.
+
+```
+                   run 1   run 3   run 4
+choice violations      9       8       4
+budget violations     15       6       8
+```
+
+**`spread3` LANDED.** It is coming in at 80-111 words against the old 130-200, in
+both locales, with the synthesis paragraph intact and every position and card named.
+`en adrian/spread3` measured 18+19+20+23 = 80 and 26+22+21+21 = 90.
+
+**`daily` DID NOT, AND MARGARET'S `daily` IS THE WORST CASE.** It took the largest
+relative cut — 55 -> 39 on a two-paragraph service, where `spread3` had four
+paragraphs to spread the loss over — and she wrote 53, 84 and 67-word opening
+paragraphs against a 51 ceiling **on identical fixed hands**, so that is model
+variance on top of a ceiling she is ignoring. Three of run 4's four choice failures
+are also `daily`: it has no synthesis paragraph, so *"name the option in your LAST
+paragraph"* lands on *"one small concrete thing to watch for today"* and competes with
+it.
+
+**THIS IS RECORDED RATHER THAN FIXED, and `budget.ts` has the precedent** — it ships
+saying the English `spread3` calibration is not converged. Converging `daily` needs
+several more eighteen-call runs and a judgement about how much terseness to trade for
+Margaret obeying a ceiling; the alternative on the table is giving `daily` back some
+of its cut, which would undo part of what was asked for. **Two `card name missing`
+failures are the same pressure** and `services.id.ts` already predicted it in writing:
+compression made Thessaly stop naming cards once before.
+
+**The choice-naming check was WRONG TWICE before it was right, both times by being too
+strict.** An exact `includes()` failed six correct readings — `stay where I am` came
+back as *"staying where you are"*. Stem matching fixed that and then failed the same
+readings again, because `stay`, `take`, `go`, `new` and `where` were on the stop list:
+**a verb looks generic in a stop list and is the whole answer in a choice.** What
+survives is a real finding — `id thessaly/spread3` chose `makan ayam` and closed by
+arguing against *ikan*, naming the option it did not pick and never the one it did.
+
+### Still open
+
+- **`daily`'s ceiling is not converged and Margaret ignores it**, above. The one
+  number in this change that wants more measurement.
+- **Nobody has read a shortened reading on a phone.** The whole point of the 30% cut
+  is how it reads on glass, and reconciliation §8 binds: no lint can tell whether
+  28 words reads as terse or as clipped.
+- **`reading.completed.choice` cannot see a mis-spelled marker.** A model that writes
+  `Pilihan -` renders as prose and reports `none`, indistinguishable from a question
+  with no choice. `npm run smoke -- --all --choice` is the only instrument for the
+  format; the event measures the content.
+- **`yesno` asked a choice question still answers `Ya`.** Pre-existing, out of scope,
+  and `CHOICE_RULE_*` is deliberately excluded from that task so it cannot grow a
+  second box.
+- **The sheet is unmeasured on a real phone (loop 6).** A textarea with the keyboard
+  up inside a `90dvh` sheet is exactly the geometry WSL cannot answer.
+
 # Part II — the full prior text of CLAUDE.md's sections, moved 2026-07-29
 
 **CLAUDE.md was cut a second time on 2026-07-29, from 167,282 characters to 93,841 — 44% moved

@@ -15,6 +15,7 @@ import { persistReading, touchLastSeen } from '@/lib/analytics/flush';
 import { extractGist } from '@/lib/memory/gist.generate';
 import { recallChain } from '@/lib/memory/chain';
 import { detectCallback } from '@/lib/prompt/memory';
+import { splitChoiceMarker, validateChoice } from '@/lib/reading/choice';
 import { LOCAL_DATE_HEADER, SESSION_HEADER, parseLocalDate, validSessionId } from '@/lib/analytics/localdate';
 import { teeReading, type ReadingOutcome } from '@/lib/analytics/tee';
 import { defer, track, withAnalytics, type AnalyticsContext } from '@/lib/analytics/track';
@@ -585,6 +586,61 @@ export async function POST(request: Request) {
     defer(async () => {
       const outcome = await Promise.race([done, streamTimeout()]);
 
+      /*
+       * THE CHOICE MARKER COMES OFF HERE, ONCE, BEFORE ANYTHING READS THE BODY.
+       *
+       * **AND THERE IS DELIBERATELY NO STREAM TRANSFORM.** The obvious design puts
+       * one between `gated.stream` and `teeReading` so the marker never crosses
+       * the wire -- and it cannot work, because the choice arrives long after the
+       * response headers and the client would then have no way to learn it. The
+       * draw screen is where the querent actually reads their reading, so
+       * `Draw.tsx` runs `splitChoiceMarker` incrementally on its own copy. One
+       * pure function, two callers; `tee.ts` is untouched, which matters because
+       * its two branches have independent queues that were expensive to get right
+       * once already.
+       *
+       * **`prose` AND NOT `outcome.body` IS WHAT EVERY LINE BELOW MUST USE.** Three
+       * consumers, and the marker is wrong in all three:
+       *
+       *   - `readings.body` would carry it, and W5's chained reading quotes that
+       *     column back at the querent in a later prompt as if the reader had said
+       *     it. That is the exact reason `[Bacaan terputus...]` is kept out.
+       *   - `extractGist` would distil it.
+       *   - `detectCallback` would scan it.
+       *
+       * `done: true`, because the stream is over: nothing may be held back, so a
+       * generation that died mid-marker flushes verbatim rather than vanishing.
+       *
+       * `outcome.chars` is left alone. It is `tee.ts`'s measurement of what it saw
+       * on the wire, and re-deriving it here would make one column mean two things
+       * depending on whether a reading had a marker.
+       */
+      const split = splitChoiceMarker(outcome.body, true);
+      const prose = split.body;
+      /*
+       * **VALIDATED AGAINST THE SANITIZED QUESTION, WHICH IS THE ONE THE MODEL
+       * SAW.** `cleanQuestion` is also what `readings.question` stores, so the
+       * column this slice comes from is byte-identical to the column it will be
+       * rendered beside -- and `validateChoice`'s guarantee ("the box is a
+       * substring of the question") is checkable against the stored row rather
+       * than against a string that existed only in this handler.
+       */
+      const choice = validateChoice(split.choice, cleanQuestion);
+
+      /*
+       * TWO PROPS ON `reading.completed`, NOT AN EVENT OF ITS OWN -- see that
+       * declaration in `events.ts` for why the 67th name was written and then
+       * folded in.
+       *
+       * `invalid` is the measurement that matters: the rate at which the reader
+       * names an option the querent never typed. What it CANNOT see is a marker the
+       * model spelled differently enough to miss the matcher -- that renders as
+       * prose and reports `none`, because there is nothing to report. The instrument
+       * for the FORMAT is `npm run smoke -- --all` with choice questions; these
+       * props are the instrument for the CONTENT.
+       */
+      const choiceOutcome = split.choice === null ? 'none' : choice === null ? 'invalid' : 'valid';
+
       if (outcome.firstTokenMs !== null) {
         track('reading.first_token', { reading_id: readingId, latency_ms: outcome.firstTokenMs });
       }
@@ -602,6 +658,8 @@ export async function POST(request: Request) {
           truncated: outcome.truncated,
           status: outcome.status,
           source: 'server',
+          choice: choiceOutcome,
+          choice_length: split.choice?.length ?? 0,
         });
       } else if (outcome.status === 'aborted') {
         track('reading.aborted', {
@@ -635,10 +693,18 @@ export async function POST(request: Request) {
           question: cleanQuestion,
           status: outcome.status,
           verdict: service === 'yesno' ? effectiveYesNo(draw(picks[0])) : null,
+          /*
+           * ALREADY NULL WHEN THERE WAS NO CHOICE, and null again when the model
+           * named something the querent had not typed. The two are one column on
+           * purpose: from the row's point of view both mean "this reading has no
+           * choice to show", and `reading.choice_offered.valid` is where the
+           * difference is recorded.
+           */
+          choice,
           // '' becomes NULL: §3 says body is "NULL if the stream died", and an
           // empty string that is not null is how W5 ends up chaining off a
           // reading that said nothing.
-          body: outcome.body || null,
+          body: prose || null,
           model: process.env.LLM_MODEL ?? 'unknown',
           promptVersion: prompt.promptVersion,
           latencyMs: outcome.firstTokenMs,
@@ -660,7 +726,7 @@ export async function POST(request: Request) {
        * platform cut the invocation short. `extractGist` never throws, so it
        * cannot take `touchLastSeen` down with it.
        */
-      await extractGist({ readingId, body: outcome.body || null, locale });
+      await extractGist({ readingId, body: prose || null, locale });
 
       /*
        * DID THE CALLBACK ACTUALLY FIRE (§4.5)? Pure code over the finished
@@ -673,9 +739,9 @@ export async function POST(request: Request) {
        * ratio's denominator in the wrong place and make it look far healthier
        * than it is.
        */
-      if (memory && outcome.body) {
+      if (memory && prose) {
         const hit = detectCallback({
-          body: outcome.body,
+          body: prose,
           currentCardIds: picks.map((p) => p.id),
           recalledCardIds: memory.recalled.flatMap((r) => r.cards.map((c) => c.cardId)),
           locale,

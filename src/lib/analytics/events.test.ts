@@ -59,9 +59,29 @@ describe('the event taxonomy', () => {
    * S4, S5 or S6 needs a name, the answer is almost always a prop on one of the
    * five above**, and that plan says so rather than raising this number.
    */
-  it('stays inside v0.4.0’s fixed name budget', () => {
+  /*
+   * **THE CEILING MOVED 66 -> 67 ON 2026-07-29, ONCE, AND THE REGISTER WAS
+   * REVISITED RATHER THAN THE NUMBER BUMPED.** That is the process this assertion
+   * exists to force, so here is the accounting:
+   *
+   *   DRAFTED, four names:  `reading.choice_offered`, `account.answer_revealed`,
+   *                         `account.answer_edited`, `account.answer_cleared`.
+   *   LANDED, one:          `account.answer_changed`.
+   *
+   * `reading.choice_offered` became `choice` + `choice_length` on
+   * `reading.completed`, which is the "prop on an existing event" answer above and
+   * gives a better query shape besides — numerator and denominator in one scan.
+   * The two answer-write names became one with a closed `action`. `revealed` was
+   * dropped outright: request volume in the platform log answers the privacy
+   * question, and a look-and-close changes no decision.
+   *
+   * So the taxonomy grew by ONE for a change that touched two features, and the
+   * guidance in this comment is what did the work. **The next person here should
+   * expect to fold rather than add**, and should write down what they folded.
+   */
+  it('stays inside the fixed name budget', () => {
     expect(EVENT_NAMES.length).toBeGreaterThanOrEqual(44);
-    expect(EVENT_NAMES.length).toBeLessThanOrEqual(66);
+    expect(EVENT_NAMES.length).toBeLessThanOrEqual(67);
   });
 
   /*

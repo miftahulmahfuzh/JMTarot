@@ -57,6 +57,13 @@
       "when": 1785240860641,
       "tag": "0007_v10-share-links-per-locale",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785303711992,
+      "tag": "0008_v11-readings-choice",
+      "breakpoints": true
     }
   ]
 }

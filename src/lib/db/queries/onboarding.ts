@@ -221,6 +221,123 @@ export async function getAnswers(db: DbOrTx, userId: string): Promise<Onboarding
 }
 
 /**
+ * ONE answer, DECRYPTED, for the querent to look at and edit (2026-07-29).
+ *
+ * ── THIS IS THE "UNTIL ASKED" THAT V8 MADE UNREACHABLE ───────────────────────
+ *
+ * `answerPresence` above says in its own header that reconciliation §7.3's
+ * requirement was *"show which answers exist without showing their text until
+ * asked"*, and that **"there is no 'until asked' here: V8 does not offer a reveal
+ * at all"**. Miftah's ruling is that a querent must be able to see and fix what
+ * they said, and a tap on a question IS asking. So this is the amendment that
+ * header invited rather than a hole knocked in it, and L13's "the six are
+ * deletable and NOT editable" is what actually changed.
+ *
+ * ── WHY IT IS ONE KEY AND WHY THERE IS NO `getAnswersForDisplay` ─────────────
+ *
+ * `getAnswers` already returns all six decrypted and is right to: it feeds the
+ * distiller, server-side, and its output never leaves the process. A six-answer
+ * READ PATH for a browser is a different thing entirely -- it would put
+ * `worst_thing`'s plaintext in the response to opening a page, which is the
+ * render-path decryption `/account` deliberately does not do. **One key per
+ * request means the most sensitive string in the product crosses the wire only
+ * when the querent tapped that specific row.**
+ *
+ * Returns null when there is no row at all -- a question the stepper never
+ * reached. A row that exists with `answer_text IS NULL` is a SKIP and comes back
+ * as one, which the caller renders as an empty field rather than as "not asked".
+ *
+ * AN UNDECRYPTABLE ANSWER READS AS A SKIP, which is `getAnswers`' documented
+ * asymmetry and `decryptField`'s: a rotated key, a wrong AAD or a tampered tag
+ * returns null, and there is genuinely no answer to be had from that row any more.
+ * The querent sees an empty field they can rewrite, which is the only useful thing
+ * left to offer them.
+ */
+export async function getAnswer(
+  db: DbOrTx,
+  userId: string,
+  key: OnboardingQuestionKey,
+): Promise<OnboardingAnswer | null> {
+  const [row] = await db
+    .select({
+      answerText: onboardingAnswers.answerText,
+      answerChoice: onboardingAnswers.answerChoice,
+      skipped: onboardingAnswers.skipped,
+    })
+    .from(onboardingAnswers)
+    .where(and(eq(onboardingAnswers.userId, userId), eq(onboardingAnswers.questionKey, key)))
+    .limit(1);
+
+  if (!row) return null;
+
+  const text =
+    row.answerText === null ? null : decryptField(row.answerText, answerAad(userId, key));
+
+  return {
+    key,
+    text,
+    choice: row.answerChoice,
+    skipped: row.skipped || (row.answerText !== null && text === null),
+  };
+}
+
+/**
+ * When any of the six was last written, or null if none ever was.
+ *
+ * **THE SIGNAL THAT AN ANSWER EDIT WAS USER-CAUSED, AND IT IS TWO EXISTING
+ * COLUMNS RATHER THAN A NEW ONE.** Since 2026-07-29 a facts edit still regenerates
+ * the persona eagerly but an ANSWER edit does not -- it defers to the next
+ * `/account` open, which is the whole LLM-call saving. That leaves the READ path
+ * needing to tell "the querent just changed an answer" from "ten more readings
+ * have accumulated", because `PERSONA_MIN_AGE_SECONDS` must throttle the second
+ * and **must never guard the first**. Comparing this against
+ * `personas.updated_at` answers it with no new state to keep in step: both columns
+ * are already maintained BY HAND, here and in `upsertPersona`, because Drizzle's
+ * `$onUpdate()` does not fire inside `onConflictDoUpdate`.
+ *
+ * `max()` over at most six rows on an indexed `user_id`, so it joins
+ * `personaMaterial`'s existing `Promise.all` for free.
+ *
+ * IT READS NO TEXT. Same rule as `getAnsweredKeys`: a function on the path that
+ * decides whether to regenerate must never be the reason a plaintext answer exists
+ * in memory.
+ */
+export async function answersUpdatedAt(db: DbOrTx, userId: string): Promise<Date | null> {
+  const [row] = await db
+    /*
+     * **TYPED `unknown`, NOT `Date`, AND CONVERTED BELOW. THE FIRST VERSION SAID
+     * `sql<Date | null>` AND THAT WAS A LIE THE COMPILER BELIEVED.**
+     *
+     * Drizzle maps a timestamp to a `Date` when it knows the COLUMN; inside a raw
+     * `sql` template there is no mapper, so postgres.js hands back whatever it hands
+     * back — which for `max(timestamptz)` is a STRING. The assertion made
+     * `answersTouchedAt` a `Date` as far as TypeScript was concerned, and
+     * `personaStaleness` compares it with `>` against a real `Date` from
+     * `personas.updated_at`. A string-versus-Date `>` coerces through
+     * `ToPrimitive` and answers something, so **every answer edit would have been
+     * compared wrongly with a green typecheck and a green unit suite** — the unit
+     * tests pass real `Date`s in, because that is what the type says.
+     *
+     * Caught by the integration test asserting `.getTime()`, which is the only layer
+     * that sees the driver. Exactly the trap `readingsForDay`'s `Boolean(...)`
+     * comment names one file over: **`sql<T>` is an assertion the driver is not
+     * obliged to honour.** Do not "tidy" this back into a typed template.
+     */
+    .select({ at: sql<unknown>`max(${onboardingAnswers.updatedAt})` })
+    .from(onboardingAnswers)
+    .where(eq(onboardingAnswers.userId, userId));
+
+  const raw = row?.at ?? null;
+  if (raw === null) return null;
+  if (raw instanceof Date) return raw;
+  /* A string or a number, depending on the driver's parser settings. An
+     unparseable value reads as "no edit pending", which is the safe direction: it
+     under-reports a user edit into ordinary drift rather than regenerating forever. */
+  const at = new Date(raw as string);
+  return Number.isNaN(at.getTime()) ? null : at;
+}
+
+/**
  * Write one answer. Idempotent on `(user_id, question_key)`.
  *
  * A SKIP WRITES `answer_text = NULL`, NEVER AN ENCRYPTED EMPTY STRING. The
