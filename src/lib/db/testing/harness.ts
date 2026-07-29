@@ -85,16 +85,22 @@ export async function withRollback(fn: (tx: Tx) => Promise<void>): Promise<void>
  * naming them.** A1 owns the list; the two owed entries are named here so that
  * "was it forgotten?" is answerable without reading a reconciliation.
  *
- * **`llm_calls` PAID ITS ENTRY IN A2's MIGRATION COMMIT (`0010`), exactly as the
- * paragraph above asked.** One of the two owed entries is now discharged; A6's
- * `blog_posts` / `blog_post_locales` remain owed, in `0011`'s commit.
+ * **BOTH OWED ENTRIES ARE NOW PAID, EACH IN ITS OWN MIGRATION COMMIT.**
+ * `llm_calls` landed with A2's `0010`; `blog_posts` and `blog_post_locales` land
+ * with A6's `0011`. R7's requirement -- that somebody owns the line -- held: the
+ * paragraph above named the two debts and both were settled without a
+ * reconciliation. **Seventeen tables, and the list is exhaustive by intent**:
+ * `CASCADE` would handle the two blog tables from `blog_posts` alone, and both are
+ * named anyway so that a table added to the schema and forgotten here shows up as
+ * leaked state rather than as a silent survivor.
  */
 export async function resetDb(): Promise<void> {
   await testDb.execute(sql`
     TRUNCATE TABLE users, profiles, onboarding_answers, lotus_avatars,
                    readings, reading_cards, events, daily_summaries,
                    moderation_flags, frequency_verdicts, translations,
-                   share_links, personas, admin_access_log, llm_calls
+                   share_links, personas, admin_access_log, llm_calls,
+                   blog_posts, blog_post_locales
     RESTART IDENTITY CASCADE`);
 }
 
