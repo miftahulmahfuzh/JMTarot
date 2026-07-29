@@ -48,6 +48,10 @@ import { theHangedManId } from './the-hanged-man.id';
 import { theHangedManEn } from './the-hanged-man.en';
 import { deathId } from './death.id';
 import { deathEn } from './death.en';
+import { temperanceId } from './temperance.id';
+import { temperanceEn } from './temperance.en';
+import { theDevilId } from './the-devil.id';
+import { theDevilEn } from './the-devil.en';
 import { theMoonId } from './the-moon.id';
 import { theMoonEn } from './the-moon.en';
 
@@ -72,6 +76,8 @@ export const ARCANA_LORE: Record<string, Localized<LoreDoc>> = {
   justice: { id: justiceId, en: justiceEn },
   'the-hanged-man': { id: theHangedManId, en: theHangedManEn },
   death: { id: deathId, en: deathEn },
+  temperance: { id: temperanceId, en: temperanceEn },
+  'the-devil': { id: theDevilId, en: theDevilEn },
   'the-moon': { id: theMoonId, en: theMoonEn },
 };
 
