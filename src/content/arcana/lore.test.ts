@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CARDS, CARD_URL_SLUGS, cardById, cardUrlSlug, effectiveYesNo } from '@/data/deck';
+import { phrasingText } from '@/lib/content/doc';
 import { EN_TICS, MALAY, THERAPY_EN, THERAPY_ID } from '@/lib/copy/vocab';
 import type { Block, LoreDoc } from '@/content/types';
 import { ARCANA_LORE, LORE_SLUGS, loreFor } from './index';
@@ -51,13 +52,25 @@ import { ARCANA_LORE, LORE_SLUGS, loreFor } from './index';
 function textsOf(doc: LoreDoc): { field: string; text: string }[] {
   const out: { field: string; text: string }[] = [];
   const push = (field: string, text: string) => out.push({ field, text });
+  /*
+   * `phrasingText` AND NOT `b.text` DIRECTLY, since reconciliation R16 widened
+   * `paragraph.text` and `list.items[]` to `string | Inline[]` for S6's articles. The
+   * lore documents all take the plain-string arm, so this call is a no-op on every
+   * one of them today -- and it is the reason the widening did not cost this file its
+   * guarantee. **It joins spans with the EMPTY STRING**, which is the whole of R16's
+   * condition: the linted string stays byte-identical to the rendered one, so a
+   * `\btempoh\b` cannot hide across a span boundary. One definition, in
+   * `@/lib/content/doc`; a local `.map().join('')` here would be the second.
+   */
   const blocks = (field: string, bs: readonly Block[]) => {
     bs.forEach((b, i) => {
       const at = `${field}[${i}]`;
-      if (b.kind === 'heading' || b.kind === 'paragraph') push(at, b.text);
-      else if (b.kind === 'list') b.items.forEach((x, j) => push(`${at}.items[${j}]`, x));
+      if (b.kind === 'heading') push(at, b.text);
+      else if (b.kind === 'paragraph') push(at, phrasingText(b.text));
+      else if (b.kind === 'list')
+        b.items.forEach((x, j) => push(`${at}.items[${j}]`, phrasingText(x)));
       else if (b.kind === 'quote') {
-        push(`${at}.text`, b.text);
+        push(`${at}.text`, phrasingText(b.text));
         push(`${at}.source`, b.source);
       } else push(`${at}.text`, b.text);
     });

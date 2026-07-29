@@ -48,6 +48,37 @@ describe('the prose renderer', () => {
     expect(code).not.toMatch(/['"`]\/en\/arcana/);
   });
 
+  it('renders the three things reconciliation R16 granted, and not the one it refused', () => {
+    /*
+     * S6's four field-level asks on S4's union. `heading.id`, `list.ordered` and
+     * inline spans are here; **`callout` was refused** and the `switch` still has five
+     * arms. The failure mode of a refused ask is somebody granting it quietly, so the
+     * absence is asserted rather than assumed.
+     */
+    expect(code).toContain('id={block.id}');
+    expect(code).toContain("block.ordered ? 'ol' : 'ul'");
+    expect(code).toContain('function spans(');
+    expect(code).not.toContain("case 'callout'");
+  });
+
+  it('never inserts whitespace between two spans', () => {
+    /*
+     * THE CONDITION R16 ATTACHED TO GRANTING `Inline[]`: the copy lint reads
+     * `plainText()`, which joins spans with the empty string, so the renderer must too
+     * or the lint is checking a string the reader never sees. A `join(' ')` or a
+     * `{' '}` in here breaks that silently -- and `blog.content.test.ts`'s adjacency
+     * case is what catches the authoring half of the same bug.
+     */
+    expect(code).not.toContain("join(' ')");
+    expect(code).not.toContain("{' '}");
+  });
+
+  it('leaves an in-page anchor unprefixed', () => {
+    // `localePath('en', '#next')` would be `/en/#next` -- a navigation to another page
+    // rather than a jump inside this one. The `#` branch is what stops it.
+    expect(code).toContain("startsWith('#')");
+  });
+
   it('prefetches nothing', () => {
     // Ten prefetches per page, on CDN-cached content, for a visitor who will
     // follow at most one link.

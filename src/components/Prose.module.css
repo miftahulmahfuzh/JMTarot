@@ -40,9 +40,19 @@
   margin: 0 0 12px;
 }
 
+/*
+ * ONE CLASS FOR `<ul>` AND `<ol>`, because the only difference is the marker and the
+ * marker is the browser's. 22px rather than `Legal.module.css`'s 20: an `<ol>`
+ * reaching item 5 needs room for the marker without the text column stepping in and
+ * out between single- and double-digit items.
+ */
 .list {
   margin: 0 0 12px;
-  padding-inline-start: 20px;
+  padding-inline-start: 22px;
+}
+
+.li::marker {
+  color: var(--faint);
 }
 
 .li {
@@ -80,8 +90,25 @@
   color: var(--faint);
 }
 
-.cardRef {
+.cardRef,
+/*
+ * AN INLINE LINK IN THE PROSE, and it shares `.cardRef`'s declarations on purpose:
+ * both are "a link into another page of this site, inside a sentence", and two rules
+ * would let a gold underline drift from a gold underline. `Prose.tsx` never renders an
+ * external link, so there is no second treatment to distinguish from.
+ */
+.link {
   color: var(--gold);
   text-decoration: underline;
   text-underline-offset: 3px;
+}
+
+/*
+ * A paragraph is the only place long enough for the browser's line breaker to make a
+ * visible difference at 320px, and `text-wrap: pretty` costs nothing where it is
+ * unsupported. No hyphenation and no justification: both look worse than a ragged edge
+ * at ~34 characters, and `hyphens: auto` has no Indonesian dictionary in Safari.
+ */
+.p {
+  text-wrap: pretty;
 }
