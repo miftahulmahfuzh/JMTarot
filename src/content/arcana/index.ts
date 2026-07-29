@@ -58,6 +58,12 @@ import { theStarId } from './the-star.id';
 import { theStarEn } from './the-star.en';
 import { theMoonId } from './the-moon.id';
 import { theMoonEn } from './the-moon.en';
+import { theSunId } from './the-sun.id';
+import { theSunEn } from './the-sun.en';
+import { judgementId } from './judgement.id';
+import { judgementEn } from './judgement.en';
+import { theWorldId } from './the-world.id';
+import { theWorldEn } from './the-world.en';
 
 /**
  * **THE ENTRIES ARE WRITTEN IN CARD ORDER AND `registry.test.ts` ASSERTS IT.**
@@ -85,6 +91,9 @@ export const ARCANA_LORE: Record<string, Localized<LoreDoc>> = {
   'the-tower': { id: theTowerId, en: theTowerEn },
   'the-star': { id: theStarId, en: theStarEn },
   'the-moon': { id: theMoonId, en: theMoonEn },
+  'the-sun': { id: theSunId, en: theSunEn },
+  judgement: { id: judgementId, en: judgementEn },
+  'the-world': { id: theWorldId, en: theWorldEn },
 };
 
 /**

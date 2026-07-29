@@ -153,6 +153,9 @@ const DIVERGENCE: Record<string, string[]> = {
   'the-devil': ['renew', 'terms', 'anniversary', 'lamp'],
   'the-tower': ['crack', 'patch', 'inspect', 'stood'],
   'the-star': ['survived', 'repeat', 'direction', 'unnoticed'],
+  'the-sun': ['midday', 'filter', 'store', 'all at once'],
+  judgement: ['summons', 'deserve', 'postpone', 'condition'],
+  'the-world': ['filed', 'hanging', 'announce', 'resurface'],
   'the-moon': ['step', 'night', 'guess', 'message', 'seven', 'two in the morning'],
 };
 
@@ -442,5 +445,34 @@ describe('the lore documents', () => {
       const specs = [...src.matchAll(/^import\s[^\n]*?from\s+'([^']+)'/gm)].map((m) => m[1]);
       expect({ slug, locale, specs }).toMatchObject({ specs: ['@/content/types'] });
     }
+  });
+
+  // ── the release gate ─────────────────────────────────────────────────────
+
+  it('covers all twenty-two cards in BOTH locales', () => {
+    /*
+     * **WRITTEN LAST, DELIBERATELY.** Every other assertion in this file has been
+     * green since the first card landed; this one was the only thing red while the
+     * tree was being written, and it went green once. A test that is red for
+     * twenty-one commits is a test people learn to scroll past, and by the time it
+     * matters nobody reads its output.
+     *
+     * `CARD_URL_SLUGS` and not a transcribed list: the address contract already
+     * has exactly one hand-written table and it is in `urlSlug.test.ts`.
+     *
+     * **THE EQUALITY IS ORDERED, WHICH IS A SECOND ASSERTION IN DISGUISE.**
+     * `LORE_SLUGS` is `Object.keys(ARCANA_LORE)` and the sitemap reads it, so this
+     * also pins the registry to card order -- and it caught Justice sitting between
+     * Strength and The Hermit once already.
+     */
+    expect([...LORE_SLUGS]).toEqual([...CARD_URL_SLUGS]);
+    const missing: string[] = [];
+    for (const slug of CARD_URL_SLUGS) {
+      for (const locale of ['id', 'en'] as const) {
+        if (loreFor(slug, locale) === undefined) missing.push(`${slug}.${locale}`);
+      }
+    }
+    expect(missing).toEqual([]);
+    expect(ALL).toHaveLength(44);
   });
 });

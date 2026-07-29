@@ -1,4 +1,5 @@
 import type { MetadataRoute } from 'next';
+import { LORE_SLUGS } from '@/content/arcana';
 import { LOCALES, type Locale } from '@/lib/i18n/locale';
 import { sitemapLanguages } from '@/lib/seo/alternates';
 import { absoluteUrl, siteOrigin } from '@/lib/seo/origin';
@@ -100,6 +101,27 @@ const SITEMAP_PATHS: readonly SitemapPath[] = [
   // R4. Indexable since v0.4.0; one address each, language by D6.
   { path: '/terms', localized: false },
   { path: '/privacy', localized: false },
+  /*
+   * ── S4: the twenty-two lore pages ──────────────────────────────────────────
+   *
+   * **FROM `LORE_SLUGS`, THE REGISTRY -- NEVER FROM `CARD_URL_SLUGS`.** The deck
+   * has twenty-two cards whatever is written; the registry has the ones with a
+   * document. While the forty-four were being authored, advertising an address
+   * whose document did not exist would have been telling a crawler about a 404,
+   * and Search Console reports that against the whole file rather than the row.
+   * The two lists are identical now, which is exactly when somebody "simplifies"
+   * this to the deck and nothing fails until the next partial release.
+   *
+   * `localized: true` is honest for all twenty-two because every card has BOTH
+   * documents -- `lore.test.ts`'s completeness case is the gate, and R2 is per
+   * PAGE rather than per release. A card shipping Indonesian-only would need its
+   * own locale list here, not a `true`.
+   *
+   * `LORE_SLUGS` is `Object.keys(ARCANA_LORE)` and `registry.test.ts` pins that
+   * to card order, so the sitemap comes out in Fool's Journey order rather than
+   * in whatever order the files were written.
+   */
+  ...LORE_SLUGS.map((slug) => ({ path: `/arcana/${slug}`, localized: true })),
 ];
 
 function entriesFor(entry: SitemapPath): MetadataRoute.Sitemap {

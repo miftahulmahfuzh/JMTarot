@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { CARD_URL_SLUGS } from '@/data/deck';
 import sitemap from './sitemap';
 
 beforeEach(() => {
@@ -25,8 +26,18 @@ describe('sitemap.xml', () => {
       'https://www.jmtarot.site/terms',
       'https://www.jmtarot.site/privacy',
       // S3 adds /gallery and /en/gallery.
-      // S4 adds 22 /arcana/<slug> and 22 /en/arcana/<slug>.
       // S6 adds /blog, /en/blog and the articles.
+      /*
+       * S4's forty-four, spread rather than transcribed. **THE ONE HAND-WRITTEN
+       * SLUG TABLE IN THIS REPOSITORY IS IN `urlSlug.test.ts`** and a second copy
+       * here would be twenty-two more chances to typo a permanent address --
+       * while adding nothing, because the interesting assertion is the COUNT and
+       * the ORDER, both of which this expresses.
+       */
+      ...CARD_URL_SLUGS.flatMap((slug) => [
+        `https://www.jmtarot.site/arcana/${slug}`,
+        `https://www.jmtarot.site/en/arcana/${slug}`,
+      ]),
     ]);
   });
 
@@ -99,8 +110,15 @@ describe('sitemap.xml', () => {
     const legal = sitemap().filter((e) => /\/(terms|privacy)$/.test(e.url));
     expect(legal).toHaveLength(2);
     for (const e of legal) expect(e.alternates).toBeUndefined();
-    // And no `/en/` twin was emitted for them.
-    expect(urls().filter((u) => u.includes('/en/'))).toEqual([]);
+    /*
+     * And no `/en/` twin was emitted FOR THEM. **This assertion used to be
+     * `urls().filter(u => u.includes('/en/'))` against the whole file**, which
+     * passed only because the sole localized path was `/`, whose English address
+     * is `/en` with no trailing slash. S4's twenty-two `/en/arcana/<slug>` URLs
+     * are correct and made it fail -- so it is narrowed to the two paths the test
+     * is actually about, rather than relaxed.
+     */
+    expect(urls().filter((u) => /\/en\/(terms|privacy)$/.test(u))).toEqual([]);
   });
 
   it('is byte-stable across calls', () => {
