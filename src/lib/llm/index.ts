@@ -3,7 +3,7 @@ import 'server-only';
 import { createAnthropicProvider } from './anthropic';
 import { createOpenAIProvider } from './openai';
 import { ModelCeilingError, reserveModelCall } from './meter';
-import type { CompletionPrompt, LLMCallOpts, LLMProvider } from './types';
+import type { CompleteOpts, CompletionPrompt, LLMProvider } from './types';
 
 export type { LLMProvider, ReadingPrompt } from './types';
 
@@ -85,13 +85,13 @@ function metered(provider: LLMProvider): LLMProvider {
     // Unwrapped, deliberately. Read the comment above before changing this line.
     streamReading: provider.streamReading,
 
-    async complete(prompt: CompletionPrompt, opts?: LLMCallOpts) {
+    async complete(prompt: CompletionPrompt, opts: CompleteOpts) {
       /*
        * `interactive` IS THE DEFAULT AND IT IS THE SAFE ONE: a call site that
        * forgets to declare is treated as something a person is waiting for, so the
        * failure of omission is "shed too late", never "shed a reading early".
        */
-      const reservation = await reserveModelCall(opts?.callClass ?? 'interactive');
+      const reservation = await reserveModelCall(opts.callClass ?? 'interactive');
       if (!reservation.ok) throw new ModelCeilingError(reservation.tier);
 
       return provider.complete(prompt, opts);

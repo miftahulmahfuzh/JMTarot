@@ -236,6 +236,7 @@ async function generate(
   if (prompt === null || facts.mechanic === null) return null;
 
   const { text: raw } = await getProvider().complete(prompt, {
+    op: 'frequency',
     /*
      * DEFERRED, on BOTH of this function's call paths -- the `after()`
      * regeneration and the awaited first generation.

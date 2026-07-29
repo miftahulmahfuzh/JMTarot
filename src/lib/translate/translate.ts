@@ -422,6 +422,14 @@ async function generate(
 
     const { text } = await getProvider().complete(prompt, {
       /*
+       * **THE ONE `op` IN THE APP THAT IS AN EXPRESSION, and it is the same shape
+       * this file's `callClass` already is.** A repair pass is a second call the
+       * querent never waited for, so it is counted apart from the translation it
+       * repairs -- folding them would hide the cost of the repair architecture,
+       * which is the one thing this file's header asks to be able to measure.
+       */
+      op: repairing ? 'translation_repair' : 'translation',
+      /*
        * THE BODY IS `interactive` AND THE GIST IS `deferred`, and the difference is
        * whether a person is watching a spinner for these bytes. `meter.ts`'s soft
        * tier sheds deferred work first, so a quota running low costs a chained

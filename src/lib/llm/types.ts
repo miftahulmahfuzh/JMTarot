@@ -75,8 +75,49 @@ export type CompletionPrompt = Omit<ReadingPrompt, 'promptVersion'>;
  */
 export type ReadingUsage = { inputTokens: number | null; outputTokens: number | null };
 
+/**
+ * WHICH CALL THIS IS. Nine values for nine call sites, and the set is CLOSED.
+ *
+ * `llm_calls.op` (A2, v0.5.0) is what makes "what does a user cost" answerable by
+ * purpose rather than in aggregate, and A3 groups by it. **A tenth value is a
+ * reconciliation question, not an authoring convenience** -- the roadmap's seam 3:
+ * A3 must not invent one and must not alias one, and `callClass.test.ts` asserts
+ * that the values used across `src/**` are exactly these nine.
+ *
+ * DEFINED HERE, in the file with no imports, for the same reason `CallClass` is:
+ * `queries/admin/calls.ts` names it and may not acquire `server-only` even
+ * transitively (`contract.test.ts` walks the graph), and `scripts/` names it with no
+ * Next runtime at all.
+ *
+ * **`translation_repair` IS SEPARATE FROM `translation` ON PURPOSE.** A repair pass
+ * is a second call the querent never waited for, and folding the two hides the cost
+ * of V2's repair architecture -- which is the one thing V2's own header asks to be
+ * able to measure.
+ */
+export type LLMOp =
+  | 'reading'
+  | 'moderation'
+  | 'gist'
+  | 'day_summary'
+  | 'frequency'
+  | 'lotus'
+  | 'persona'
+  | 'translation'
+  | 'translation_repair';
+
 export type LLMCallOpts = {
   signal?: AbortSignal;
+  /**
+   * Which call site this is, for the ledger. **OPTIONAL HERE AND REQUIRED ON
+   * `CompleteOpts`, and the split is deliberate** (A2-D8).
+   *
+   * This bag is shared with `streamReading`, which the decorator does NOT wrap and
+   * which therefore writes no row -- so requiring `op` here would break
+   * `streamReading(prompt, { signal })` at three call sites for a field nothing on
+   * that path reads. The three streaming sites pass their `op` to `recordCall`
+   * directly instead.
+   */
+  op?: LLMOp;
   /** Overrides `LLM_MODEL` for one call: `LOTUS_MODEL` (W3), `MODERATION_MODEL` (W7). */
   model?: string;
   /**
@@ -139,6 +180,20 @@ export type LLMCallOpts = {
  */
 export type LLMStream = AsyncIterable<string> & { usage: Promise<ReadingUsage> };
 
+/**
+ * `complete()`'s opts, with `op` REQUIRED.
+ *
+ * **THIS IS THE METHOD THE DECORATOR WRITES A LEDGER ROW FOR**, so a buffered call
+ * site that does not declare itself would produce a row with no purpose -- a cost
+ * the dashboard can see and cannot attribute. Requiring it at the interface turns
+ * that omission into a compile error rather than into a `group by` with a blank in
+ * it.
+ *
+ * Adapters keep `opts?: LLMCallOpts` and need no edit: a parameter of a wider type
+ * accepts a narrower argument (bivariance), and neither adapter reads `op`.
+ */
+export type CompleteOpts = LLMCallOpts & { op: LLMOp };
+
 export interface LLMProvider {
   /**
    * Plain text chunks in order, as they arrive.
@@ -171,9 +226,12 @@ export interface LLMProvider {
    * and then parsing it is ceremony -- nobody is watching it arrive.
    *
    * `usage` must always settle and must never reject.
+   *
+   * **`opts` IS REQUIRED AND SO IS ITS `op`** (A2). Every call through here is
+   * metered and recorded; see `CompleteOpts`.
    */
   complete(
     prompt: CompletionPrompt,
-    opts?: LLMCallOpts,
+    opts: CompleteOpts,
   ): Promise<{ text: string; usage: ReadingUsage }>;
 }

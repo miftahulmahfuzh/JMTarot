@@ -401,7 +401,7 @@ describe('complete', () => {
         }),
       }) as unknown as Response),
     );
-    const out = await createOpenAIProvider().complete({ system: 's', user: 'u', maxTokens: 48 });
+    const out = await createOpenAIProvider().complete({ system: 's', user: 'u', maxTokens: 48 }, { op: 'gist' });
     expect(out).toEqual({ text: 'OK', usage: { inputTokens: 36, outputTokens: 16 } });
   });
 
@@ -412,7 +412,7 @@ describe('complete', () => {
       'fetch',
       vi.fn(async () => ({ ok: true, status: 200, json: async () => ({}) }) as unknown as Response),
     );
-    const out = await createOpenAIProvider().complete({ system: 's', user: 'u', maxTokens: 48 });
+    const out = await createOpenAIProvider().complete({ system: 's', user: 'u', maxTokens: 48 }, { op: 'gist' });
     expect(out.text).toBe('');
   });
 });

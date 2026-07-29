@@ -336,7 +336,7 @@ export async function generatePersona(
     }
 
     const prompt = buildPersonaPrompt(input);
-    const { text } = await getProvider().complete(prompt, { model, callClass });
+    const { text } = await getProvider().complete(prompt, { op: 'persona', model, callClass });
 
     /*
      * One paragraph, whatever the model did with the newline rule. Collapsing

@@ -72,7 +72,7 @@ export async function extractGist(
        * the reading's own last sentence -- which is a slightly less specific
        * chain block next time and nothing else. Exactly what the soft tier is for.
        */
-      { callClass: 'deferred' },
+      { op: 'gist', callClass: 'deferred' },
     );
     gist = sanitizeGist(text);
     if (!gist) reason = text.trim() ? 'unusable' : 'empty';

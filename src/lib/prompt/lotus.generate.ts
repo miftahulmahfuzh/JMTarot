@@ -156,7 +156,7 @@ export async function generateLotus(
     }
 
     const prompt = buildLotusPrompt(input);
-    const { text } = await getProvider().complete(prompt, { model, callClass });
+    const { text } = await getProvider().complete(prompt, { op: 'lotus', model, callClass });
 
     let parsed: LotusResult;
     try {

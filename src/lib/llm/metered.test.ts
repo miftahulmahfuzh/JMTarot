@@ -30,6 +30,12 @@ vi.mock('./anthropic', () => ({
 }));
 
 const PROMPT = { system: 's', user: 'u', maxTokens: 10 };
+/**
+ * `op` IS REQUIRED ON `complete()` SINCE A2, so every call here declares one. The
+ * value is arbitrary in the tests that are about the ceiling and load-bearing in the
+ * ones that are about the ledger row.
+ */
+const OP = { op: 'gist' } as const;
 
 beforeEach(() => {
   _reset();
@@ -46,7 +52,7 @@ describe('complete() passes the ceiling on the way out', () => {
   it('reaches the provider while there is headroom', async () => {
     vi.stubEnv('LLM_WINDOW_CALL_CEILING', '10');
     const { getProvider } = await import('./index');
-    await getProvider().complete(PROMPT);
+    await getProvider().complete(PROMPT, OP);
     expect(reached).toEqual(['complete']);
   });
 
@@ -61,11 +67,11 @@ describe('complete() passes the ceiling on the way out', () => {
     const { getProvider } = await import('./index');
     const provider = getProvider();
 
-    await provider.complete(PROMPT);
-    await provider.complete(PROMPT);
+    await provider.complete(PROMPT, OP);
+    await provider.complete(PROMPT, OP);
     reached.length = 0;
 
-    await expect(provider.complete(PROMPT)).rejects.toBeInstanceOf(ModelCeilingError);
+    await expect(provider.complete(PROMPT, OP)).rejects.toBeInstanceOf(ModelCeilingError);
     expect(reached).toEqual([]);
   });
 
@@ -75,15 +81,15 @@ describe('complete() passes the ceiling on the way out', () => {
     const { getProvider } = await import('./index');
     const provider = getProvider();
 
-    await provider.complete(PROMPT, { callClass: 'interactive' });
+    await provider.complete(PROMPT, { ...OP, callClass: 'interactive' });
     reached.length = 0;
 
-    await expect(provider.complete(PROMPT, { callClass: 'deferred' })).rejects.toBeInstanceOf(
+    await expect(provider.complete(PROMPT, { ...OP, callClass: 'deferred' })).rejects.toBeInstanceOf(
       ModelCeilingError,
     );
     expect(reached).toEqual([]);
 
-    await provider.complete(PROMPT, { callClass: 'interactive' });
+    await provider.complete(PROMPT, { ...OP, callClass: 'interactive' });
     expect(reached).toEqual(['complete']);
   });
 
@@ -99,10 +105,10 @@ describe('complete() passes the ceiling on the way out', () => {
     const { getProvider } = await import('./index');
     const provider = getProvider();
 
-    await provider.complete(PROMPT, { callClass: 'interactive' });
+    await provider.complete(PROMPT, { ...OP, callClass: 'interactive' });
     reached.length = 0;
 
-    await provider.complete(PROMPT); // no callClass at all
+    await provider.complete(PROMPT, OP); // no callClass at all
     expect(reached).toEqual(['complete']);
   });
 
@@ -121,7 +127,7 @@ describe('complete() passes the ceiling on the way out', () => {
      */
     vi.stubEnv('LLM_WINDOW_CALL_CEILING', '10');
     const { getProvider } = await import('./index');
-    await getProvider().complete(PROMPT, { model: 'glm-4.5-flash', temperature: 0 });
+    await getProvider().complete(PROMPT, { ...OP, model: 'glm-4.5-flash', temperature: 0 });
     expect(seenOpts[0]).toMatchObject({ model: 'glm-4.5-flash', temperature: 0 });
   });
 });
@@ -144,7 +150,7 @@ describe('streamReading is NOT metered here, and that is deliberate', () => {
     const { getProvider } = await import('./index');
     const provider = getProvider();
 
-    await provider.complete(PROMPT); // spends the only slot
+    await provider.complete(PROMPT, OP); // spends the only slot
     reached.length = 0;
 
     const stream = provider.streamReading({ ...PROMPT, promptVersion: 'id-v1.deadbeef' });

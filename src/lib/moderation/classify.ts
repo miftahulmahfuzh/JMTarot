@@ -302,6 +302,7 @@ export async function classifyQuestion(
   let text: string;
   try {
     ({ text } = await getProvider().complete(prompt, {
+      op: 'moderation',
       /*
        * **INTERACTIVE, AND DO NOT MARK IT DEFERRED.** It is a network call that
        * gates a reading a person is waiting for. Shedding it at the soft ceiling

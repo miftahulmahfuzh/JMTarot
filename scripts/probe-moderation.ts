@@ -108,7 +108,7 @@ async function stability(model: string | undefined, runs: number) {
 
   for (let i = 0; i < runs; i++) {
     try {
-      const { text } = await getProvider().complete(prompt, { model, temperature: 0 });
+      const { text } = await getProvider().complete(prompt, { op: 'moderation', model, temperature: 0 });
       const trimmed = text.trim();
       shapes.set(trimmed, (shapes.get(trimmed) ?? 0) + 1);
       try {
@@ -150,6 +150,7 @@ async function classifierLatency(model: string | undefined, runs: number) {
     const started = performance.now();
     try {
       const { text } = await getProvider().complete(buildClassifierPrompt(item.q, 'id'), {
+        op: 'moderation',
         model,
         temperature: 0,
       });
@@ -237,7 +238,7 @@ async function main() {
   const t0 = performance.now();
   const { text } = await getProvider().complete(
     { system: 'Reply with the single word OK.', user: 'go', maxTokens: 8 },
-    { model, temperature: 0 },
+    { op: 'moderation', model, temperature: 0 },
   );
   console.log(`  ${fmt(performance.now() - t0)}  ->  ${JSON.stringify(text.trim())}`);
 

@@ -526,11 +526,14 @@ async function main() {
        * reading -- no unit test can tell the difference, and every one of these
        * goes silently into a future reading's <riwayat> block.
        */
-      const raw = await getProvider().complete({
-        system: gistPrompt('id').system,
-        user: gistUserTurn(text),
-        maxTokens: gistPrompt('id').maxTokens,
-      });
+      const raw = await getProvider().complete(
+        {
+          system: gistPrompt('id').system,
+          user: gistUserTurn(text),
+          maxTokens: gistPrompt('id').maxTokens,
+        },
+        { op: 'gist' },
+      );
       const cleaned = sanitizeGist(raw.text);
       const fell = cleaned === null;
       const finalGist = cleaned ?? fallbackGist(text) ?? '';
@@ -1473,7 +1476,7 @@ async function runSummary(locales: Locale[]) {
         localDate: '2026-07-26',
         readings: day,
       });
-      const { text } = await getProvider().complete(prompt);
+      const { text } = await getProvider().complete(prompt, { op: 'day_summary' });
       const clean = text.trim();
       const words = clean.split(/\s+/).filter(Boolean).length;
 
@@ -1587,11 +1590,14 @@ async function runTranslate() {
       const picks = fixedPicks(i, 3);
 
       const native = buildPrompt({ reader: r.id, service: service.id, picks, locale: source });
-      const { text: rawSource } = await getProvider().complete({
-        system: native.system,
-        user: native.user,
-        maxTokens: native.maxTokens,
-      });
+      const { text: rawSource } = await getProvider().complete(
+        {
+          system: native.system,
+          user: native.user,
+          maxTokens: native.maxTokens,
+        },
+        { op: 'reading' },
+      );
       const src = rawSource.trim();
 
       const prompt = buildTranslationPrompt({
@@ -1602,7 +1608,7 @@ async function runTranslate() {
         readerId: r.id,
         serviceId: service.id,
       });
-      const { text: rawOut } = await getProvider().complete(prompt);
+      const { text: rawOut } = await getProvider().complete(prompt, { op: 'translation' });
       const translated = rawOut.trim();
 
       out[target][r.id] = translated;
@@ -1794,7 +1800,7 @@ async function runFrequency(locales: Locale[]) {
       }
       const m = facts.mechanic;
 
-      const { text } = await getProvider().complete(prompt);
+      const { text } = await getProvider().complete(prompt, { op: 'frequency' });
       const clean = text.replace(/\s+/g, ' ').trim();
       const words = clean.split(/\s+/).filter(Boolean).length;
       lines.push(clean);
