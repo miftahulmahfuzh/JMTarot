@@ -4149,6 +4149,261 @@ arguing against *ikan*, naming the option it did not pick and never the one it d
 - **The sheet is unmeasured on a real phone (loop 6).** A textarea with the keyboard
   up inside a `90dvh` sheet is exactly the geometry WSL cannot answer.
 
+# v0.5.0
+
+## Admin foundation, the gate, and the audit trail (A1)
+
+The surface every other v0.5.0 workstream mounts inside. Plan:
+`docs/plans/2026-07-30-admin-foundation.md`, 16 tasks. **The reconciliation
+(`docs/plans/2026-07-30-RECONCILIATION-v0.5.0.md`) outranks it and thirteen of its
+rulings bind A1** — the ones that changed the work are R1, R3, R7, R20, R23, R30,
+R31, R32, R34, R35, R36, R37 and R38.
+
+### The `23502` evidence, which is what makes §1.1 a resolution rather than a preference
+
+Roadmap §3.1 declared `admin_access_log.admin_user_id` as `NOT NULL` with an FK action
+of `on delete set null`, and §12.1 framed the contradiction as a question about
+*attribution*. It is not. **That combination raises `23502` at delete time, so the
+hard delete of any user an admin had ever read about ABORTS** — `/privacy` clause 8's
+erasure promise failing for exactly the population most likely to have invoked it,
+visible only in a cron log.
+
+Reproduced on a scratch table on 2026-07-30, against the real Postgres 16 container,
+rather than by temporarily breaking `schema.ts` and regenerating (same error, no risk
+of committing the break):
+
+```
+code   : 23502
+message: null value in column "admin_user_id" of relation "jmt_scratch_audit"
+         violates not-null constraint
+detail : Failing row contains (99f37176-…, null, onboarding_answer).
+table  : jmt_scratch_audit
+column : admin_user_id
+```
+
+**READ THE `table` AND `column` FIELDS: THE ERROR NAMES THE AUDIT TABLE, NOT `users`.**
+The statement that fails is `delete from users`, and nothing in the message says so.
+That is why this would have read as an unrelated audit-table bug in a cron log rather
+than as an erasure failure — and it is the general shape worth remembering: **an
+`ON DELETE SET NULL` cascade reports the constraint it violated, never the delete that
+triggered it.**
+
+`audit.integration.test.ts`'s first two cases are the executable form. Both fail
+against §3.1's literal schema.
+
+### `/admin` and `/en/admin` through the existing chain, so nobody re-derives it
+
+R1: **A1's diff to `src/middleware.ts` and `src/lib/auth/gate.ts` is zero lines**, and
+the acceptance criterion is `git diff --stat` on both being empty. It is. Roadmap §6
+said the matcher needed to learn `/admin`; the matcher is a negative-lookahead
+EXCLUSION list, so `/admin` is already covered and adding it would **stop middleware
+running on it** — inverting A-D3 and removing the redirect that sends a signed-out
+visitor to `/login`.
+
+```
+/admin
+  contentRewrite('/admin', signedIn)  -> passthrough  (not in CONTENT_EXACT/CONTENT_TREES)
+  decide({ pathname: '/admin' })
+    isPublic('/admin')                -> false
+    !signedIn                         -> redirect /login            (verified by curl)
+    signedIn && !onboarded            -> redirect /onboarding        (R34, below)
+    signedIn && onboarded             -> next
+  requireAdminPage()                  -> notFound() unless allowlisted
+
+/en/admin
+  stripLocalePrefix -> { locale: 'en', path: '/admin' }
+  isContentPath('/admin')             -> false
+  => contentRewrite returns passthrough WITHOUT stripping            (contract G2)
+  decide({ pathname: '/en/admin' })   -> matches nothing -> Next -> 404
+```
+
+**`isPublic()` gaining `/admin` is not a preference, it is a correctness failure**: that
+function short-circuits `decide()` *above* the signed-out arm, so the edit that looks
+like it makes the 404 come from Next also makes the surface reachable by a stranger.
+`gate.test.ts` has nine assertions whose only job is to go red when somebody tries it.
+
+### The three identities, measured
+
+`tools/admin/probe.sh`, against a dev server with a real minted session
+(`POST /api/auth/dev-session`, `DEV_PASSWORD_LOGIN=1`; the script prints the cookie's
+length and never its value):
+
+| identity | `/admin*` pages | `/api/admin/**` |
+|---|---|---|
+| no cookie | 302 → `/login` | **401** from `decide()` |
+| signed in, onboarded, not allowlisted | **404** | **404** from `requireAdmin()` |
+| signed in, onboarded, allowlisted | **200**, renders `Ringkasan` | (no route yet) |
+
+Both codes matter and R36 is why: **a probe treating 401 as a failure reds on correct
+behaviour, which is how an acceptance test gets disabled.**
+
+Two things the first version of the probe got wrong, recorded because both look right:
+
+1. **Signed out, the "refusal shape" comparison measures middleware against itself.**
+   Every path — including `/api/definitely-not-a-route` — answers
+   `401 {"error":"Unauthorized"}`, 24 bytes, from `decide()`. `adminNotFound()` is
+   never reached, so the section now requires a cookie and says why.
+2. **A 404 is ambiguous for an ADMIN while A4–A6 are unlanded, and that is A-D2
+   working.** The admin sees 200 on `/admin` and 404 on `/admin/users`,
+   `/admin/tokens`, `/admin/blog` — from Next's router, not from the gate. One 200 is
+   what proves the identity.
+
+**R35's residual-difference measurement is NOT YET POSSIBLE and is owed by A5.** A1
+ships no `/api/admin/**` route, so nothing returns `adminNotFound()` over the wire yet.
+For the record, in `next dev` an unmatched `/api/` path answers with a ~38KB
+`text/html` error page; the production figure is A5's to record beside its own route.
+Until then the claim is what `identity.contract.test.ts` asserts: 404, empty body, no
+distinguishing header, and byte-identity explicitly not claimed.
+
+### The nav has three dead links until A4, A5 and A6 land
+
+`ADMIN_PAGES` is the closed route-template list (R32) and the nav renders every entry
+with a label — four of them, three of which have no page yet. Deliberate: the
+alternative is a second list of which pages exist, which is the drift R32 avoided by
+having one list. An admin clicking `Token` before A4 lands gets a 404 they can explain.
+
+### The constant-time compare: what it buys, and what it must not be cited as
+
+`equalsNoShortCircuit` folds every character into an accumulator and `isAdminEmail`
+scans the whole list. **A JS string compare under a JIT is not rigorously
+constant-time and cannot be made so without leaving the language.** What it buys is
+that the loop count does not depend on where the first differing character is, and
+that neither an entry's position nor its similarity to the candidate is observable in
+the obvious way.
+
+**The threat is thin and saying so is the point.** The value is an email address, not a
+secret, and an attacker learns "is X an admin" from the 404-vs-200 they get for free.
+It is here because A-D1 asks for it and because it costs four lines. `node:crypto`'s
+`timingSafeEqual` is the rigorous answer and is deliberately not used: it would be the
+one import in a file whose zero-import property is what makes the security decision
+unit-testable. **Do not delete it as theatre, and do not cite it as evidence that an
+email is a credential.**
+
+### Three source-level fences that would have failed on prose describing themselves
+
+`allowlist.test.ts` forbids `.includes(`, `.indexOf(`, `.some(` and `process.env` in
+`allowlist.ts`; `adminSurface.test.ts` forbids `getT(`, `<main` and `usePathname` under
+`src/app/admin/**`. **The plan's own file bodies contained every one of those tokens,
+in comments explaining why they are forbidden.** Two different resolutions, and the
+difference is worth keeping:
+
+- **`allowlist.ts`: the prose was reworded**, because the plan's acceptance criterion is
+  a literal `grep -c 'process.env'` of 0 and a leaf whose whole claim is "no imports, no
+  env read" is cheap to describe without naming them.
+- **`adminSurface.test.ts`: the fences read COMMENT-STRIPPED source**, because three
+  admin files legitimately document exactly what they forbid and the alternative is
+  prose that cannot name it. This follows this project's own rule, written twice:
+  `queries/contract.test.ts` parses import specifiers rather than grepping because *"a
+  rule that fires on prose describing the rule is a rule people delete"* — its first
+  version failed against the sentence "Never import from '../client'" in a doc comment —
+  and `sitemap.test.ts`'s LEAF fence strips comments for the same reason.
+
+All five `adminSurface.test.ts` fences were broken once, seen red, and reverted: the
+gate call, a `getT()` call, a dropped `maxDuration`, a second `<main>`, and a
+`usePathname()` import. **A fence nobody has seen fail is a fence nobody knows works.**
+
+### `enable_seqscan = off` needs a STABLE comparand
+
+V8's technique for asserting an index *serves* a predicate rather than merely exists.
+The first version of the index test used `where subject_user_id = gen_random_uuid()` and
+failed against a perfectly good index: **`gen_random_uuid()` is VOLATILE, so Postgres
+cannot use it as an index key at all** and planned a Seq Scan even with seqscan
+disabled and a cost of 1e10. A literal uuid fixes it. Anyone copying the technique to a
+new index needs this.
+
+### `resetDb()` got ONE of R7's three tables, and the reason is `TRUNCATE`
+
+R7 assigned `harness.ts`'s TRUNCATE list to A1 and asked for all three of the release's
+new tables in `0009`'s commit, on the correct ground that a list assigned to nobody goes
+stale silently. **It cannot be done: `TRUNCATE` names a relation, so `llm_calls` (A2,
+`0010`) and `blog_posts`/`blog_post_locales` (A6, `0011`) would make every `resetDb()`
+caller fail with `42P01 undefined_table` from this commit until theirs lands.** A2 and
+A6 each add their own, in the migration's commit, and the harness header names the two
+owed entries so "was it forgotten?" is answerable without reading a reconciliation.
+
+### Five `/privacy` clauses, not the two A-D16 named
+
+R31, and the three extra are the ones a reader would point at:
+
+| clause | before | why admin access made it misleading |
+|---|---|---|
+| 4 | *"Three parties, and no others."* | An answer about THIRD parties, read as the exhaustive answer to "who sees my answers" |
+| 5 | the honest-limits paragraph | There is now a **second** limit, and the one paragraph about limits is the worst place to omit it |
+| 6 | a retention row per data class | `admin_access_log` had none, and the sweep is forbidden to touch it, so the honest row reads *kept indefinitely* |
+
+New sub-clauses `3-1` and `8-1` in both locales; **no existing anchor renumbered** —
+`/privacy` §4.4 is cited by name in `src/middleware.ts`, and the T&C precedent is that
+sub-numbering is an interface. `legal.test.ts`'s pre-existing anchor-set equality is what
+makes "both locales" mechanical, **so the risk was never forgetting `en` — it was
+amending too few clauses in both**, which is what eight new content assertions fence.
+
+Written last, from the shipped code (§11 seam 8), which is why the uncomfortable
+sentences are in: one key per request, no bulk read, no export, the audit row that gates
+the reveal, and **that a question which was REFUSED can be read too** — R31 calls that
+the sentence most likely to be omitted, and there is a test for it by name.
+
+Loop 4 (`getBoundingClientRect` in a fixed-width container, via CDP): zero overflow at
+320/360/390 in both locales, with `3-1` and `8-1` present in each. **Loop 4 is the loop
+for width and a ~390px screenshot is not** — both Chromes here floor the window at
+~500px. Whether the amended clause 3 is *readable* on glass is loop 6's and nobody's
+task in this release.
+
+### The three event names, and the three folded out
+
+67 → 70. `admin.page_viewed`, `admin.blog_saved`, `admin.blog_status_changed`.
+
+- **`admin.pii_revealed` — dropped.** `admin_access_log` is the record of truth for a
+  reveal, and a second copy would put a resource key into the one table whose rows
+  survive that subject's erasure.
+- **`admin.user_viewed` — dropped.** Opening a page changes no decision — the argument
+  that killed `revealed` in v0.4.0.
+- **`llm.call_recorded` — dropped.** That is a row in `llm_calls`. **A fact table and an
+  event stream recording the same fact is how they drift**, and it is why A2 imports
+  nothing from `events.ts` (R47).
+
+**R32 kept `admin.page_viewed` and struck its justification.** A-D18 dropped its sibling
+for a reason that applies verbatim to it. The honest reason to keep it is not
+decision-support: it is knowing which of six pages is worth maintaining, which is the
+input to whether v0.6.0 keeps building this. That reason is written at the declaration,
+and once the question is answered the name should go.
+
+**A6's `locale: Locale` is spelled `string`, and that is not a narrowing.** `events.ts`
+has no imports by design, so `Locale` is unavailable in it — the
+`translation.generated.entity` and `moderation.refused.category` precedent, with the
+closed set in the comment.
+
+### Known and deliberate
+
+- **R34: an un-onboarded admin cannot reach `/admin`**, and the redirect to
+  `/onboarding` reads exactly like a misspelt `ADMIN_EMAILS`. Documented, not fixed:
+  exempting `/admin` means `isOnboardingExempt` learning an admin path, and S-D5's whole
+  argument is that this chain must not acquire special cases. The cost is one confusing
+  five minutes, once, for one person, and **`.env.example`'s annotation says so, which is
+  where somebody will actually be looking.**
+- **R38: self-deletion is not revocation.** `requireAdmin()` reads the token, not
+  `users.deleted_at`, so a soft-deleted admin keeps access for up to
+  `SESSION_TTL_HOURS`. Listing it is the fix; the alternative is a database read on every
+  admin request to close a hole that requires the admin to have deleted their own
+  account.
+- **R37: `ADMIN_EMAILS` is PRODUCTION ONLY**, because Preview shares `DATABASE_URL` with
+  Production. In `docs/DEPLOY-VERCEL.md` §6a as well as `.env.example`, per the ruling.
+- **The `/admin` shell's CSS is a guess and is labelled one in its own header.** Roadmap
+  §0.5 and §12.7: nobody has looked at this dashboard on the machine it will be used
+  from, loop 3 at 1440px is the instrument, and it is A4's acceptance step.
+- **`recordAdminAccess()` throws and A5 must `await` it before the decrypt.** A1 can only
+  guarantee the function throws; the ordering is a property of A5's handler. R30 calls
+  this the highest-value seam in the release, because writing it in house style would
+  make A5's invariant unimplementable **and looks implemented**.
+
+### What A1 did not touch, deliberately
+
+`gate.ts`, `middleware.ts`, `prefix.ts`, `alternates.ts`, `sitemap.ts`,
+`api/cron/sweep/route.ts`, `CLAUDE.md`. Four of those got new tests and no production
+lines. `admin_access_log` has no retention policy and no sweep entry on purpose —
+`/privacy` clause 6 now promises *kept indefinitely*, and that is the whole policy.
+
+---
+
 # Part II — the full prior text of CLAUDE.md's sections, moved 2026-07-29
 
 **CLAUDE.md was cut a second time on 2026-07-29, from 167,282 characters to 93,841 — 44% moved
