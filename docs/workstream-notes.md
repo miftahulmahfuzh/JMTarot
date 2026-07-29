@@ -4234,6 +4234,23 @@ length and never its value):
 | signed in, onboarded, not allowlisted | **404** | **404** from `requireAdmin()` |
 | signed in, onboarded, allowlisted | **200**, renders `Ringkasan` | (no route yet) |
 
+**Identity 3 was confirmed ON PRODUCTION on 2026-07-30**, by Miftah, signing in as the
+allowlisted Google account: `/admin` answers 200. That is the only check that could close
+it, and it closes two things at once — **`ADMIN_EMAILS` is stored on Vercel as type
+`Sensitive`, so its value cannot be read back by CLI or dashboard**, and a signed-in 200
+is therefore the only available proof that the value carries no typo. It also confirms
+the whole A-D2 chain on the real edge rather than on `next dev`: middleware passes the
+request through, `requireAdminPage()` finds the email on the allowlist, and the page
+renders. R34 did not bite, because that account had already completed onboarding.
+
+`AUTH_USERS` was deleted from Vercel in the same session, per `docs/DEPLOY-VERCEL.md`'s
+*"Two that must be removed, not set"*. **Checked before deleting rather than after:** its
+only reader is `verifyCredentials` inside the `DEV_PASSWORD_LOGIN`-gated Credentials
+provider, and `auth.ts:211-215` already wraps that call in a `try/catch` that logs and
+returns `null` — so its absence cannot reach a production code path even if the flag were
+somehow set. One Vercel entry covered both Production and Preview, so removing it once
+removed both and the second call answered `env_not_found`.
+
 Both codes matter and R36 is why: **a probe treating 401 as a failure reds on correct
 behaviour, which is how an acceptance test gets disabled.**
 
