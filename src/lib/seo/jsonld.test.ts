@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { breadcrumbList, graph, organization, serializeJsonLd, website } from './jsonld';
+import {
+  breadcrumbList,
+  graph,
+  imageGallery,
+  imageObject,
+  type ImageObjectArgs,
+  type JsonLdNode,
+  organization,
+  serializeJsonLd,
+  website,
+} from './jsonld';
 
 const ORIGIN = 'https://www.jmtarot.site';
 
@@ -156,5 +166,167 @@ describe('serializeJsonLd', () => {
     const name = 'Syarat & Ketentuan, a "quoted" thing, </script>';
     const parsed = JSON.parse(serializeJsonLd(breadcrumbList([{ name, url: `${ORIGIN}/` }])));
     expect(parsed.itemListElement[0].name).toBe(name);
+  });
+});
+
+/*
+ * ── S3, v0.4.0: the gallery's two node types ─────────────────────────────────
+ *
+ * Appended to S1's file by S1's invitation (its own header sequences the appends
+ * S1 -> S3 -> S4 -> S6). **S1's assertions above must still pass**: if they do
+ * not, an append became an edit. The assertions below are chosen for failure
+ * modes rather than for coverage -- each one names a way the markup can be valid
+ * and wrong.
+ */
+const img = (i: number, licenseUrl?: string): ImageObjectArgs => ({
+  id: `${ORIGIN}/arcana/card-${i}#image`,
+  url: `${ORIGIN}/arcana/card-${i}`,
+  contentUrl: `${ORIGIN}/cards/0${i}_card.webp`,
+  thumbnailUrl: `${ORIGIN}/cards/thumb/0${i}_card.webp`,
+  encodingFormat: 'image/webp',
+  width: 800,
+  height: 1200,
+  caption: `caption ${i}`,
+  description: `gloss ${i}`,
+  inLanguage: 'id',
+  creator: `${ORIGIN}/#organization`,
+  licenseUrl,
+});
+
+const buildGallery = (n = 22, licenseUrl?: string) =>
+  imageGallery({
+    url: `${ORIGIN}/gallery`,
+    name: 'Galeri',
+    description: 'd',
+    inLanguage: 'id',
+    origin: ORIGIN,
+    breadcrumb: breadcrumbList([{ name: 'JMTarot', url: `${ORIGIN}/` }]),
+    images: Array.from({ length: n }, (_, i) => img(i, licenseUrl)),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the builder
+    // returns an index signature on purpose; the test reads named fields.
+  }) as any;
+
+describe('imageObject, S3\'s optional half', () => {
+  it('is byte-identical to S4\'s four-field call when nothing else is passed', () => {
+    /*
+     * THE REGRESSION GUARD ON THE APPEND ITSELF. S4's lore page passes four
+     * fields, and the optional ones must vanish rather than serialize as null --
+     * a `"@id": null` in a graph is a node claiming to have no identity, which is
+     * worse than a node with none.
+     */
+    const node = imageObject({ url: `${ORIGIN}/a.webp`, width: 800, height: 1200, caption: 'c' });
+    expect(JSON.parse(JSON.stringify(node))).toEqual({
+      '@type': 'ImageObject',
+      url: `${ORIGIN}/a.webp`,
+      width: 800,
+      height: 1200,
+      caption: 'c',
+    });
+  });
+
+  it('refuses a relative contentUrl, thumbnailUrl or @id -- not only a relative url', () => {
+    // The original check covered `url` alone, and a relative `contentUrl`
+    // resolves against a base somebody else guessed, which is the whole reason
+    // the check exists.
+    const base = { url: `${ORIGIN}/a.webp`, width: 1, height: 1, caption: 'c' };
+    expect(() => imageObject({ ...base, contentUrl: '/cards/x.webp' })).toThrow(/contentUrl/);
+    expect(() => imageObject({ ...base, thumbnailUrl: '/cards/thumb/x.webp' })).toThrow(
+      /thumbnailUrl/,
+    );
+    expect(() => imageObject({ ...base, id: '/arcana/x#image' })).toThrow(/@id/);
+    expect(() => imageObject({ ...base, licenseUrl: '/terms#9' })).toThrow(/license/);
+  });
+});
+
+describe('imageGallery', () => {
+  it('is one ImageGallery holding every image', () => {
+    const g = buildGallery();
+    expect(g['@type']).toBe('ImageGallery');
+    expect(g['@id']).toBe(`${ORIGIN}/gallery#gallery`);
+    expect(g.numberOfItems).toBe(22);
+    expect(g.associatedMedia).toHaveLength(22);
+    expect(g.associatedMedia.every((m: JsonLdNode) => m['@type'] === 'ImageObject')).toBe(true);
+    expect(g.isPartOf).toEqual({ '@id': `${ORIGIN}/#website` });
+  });
+
+  it('derives numberOfItems from the array rather than trusting a number', () => {
+    // A literal beside a list of another length is a contradiction reported
+    // against the whole node.
+    expect(buildGallery(3).numberOfItems).toBe(3);
+  });
+
+  it('gives every image a UNIQUE @id anchored on its own lore page', () => {
+    /*
+     * A duplicate `@id` makes Google merge twenty-two images into one node, and
+     * the symptom is "our cards do not appear in Google Images" with nothing in
+     * the report. The `#image` suffix is also the JOIN with S4's lore page, which
+     * emits the same id for the same artwork.
+     */
+    const ids = buildGallery().associatedMedia.map((m: JsonLdNode) => m['@id']);
+    expect(new Set(ids).size).toBe(22);
+    expect(ids[0]).toBe(`${ORIGIN}/arcana/card-0#image`);
+  });
+
+  it('emits NO query string anywhere -- the ?v= trap', () => {
+    /*
+     * `cardImage()`/`cardThumb()` append `?v=${ART_VERSION}`, which is right for
+     * an `<img src>` and wrong here: every bump would change twenty-two image
+     * URLs and Google Images treats a changed URL as a new image with no
+     * history. `cardImagePath()`/`cardThumbPath()` are the unversioned twins.
+     */
+    expect(JSON.stringify(buildGallery())).not.toContain('?');
+  });
+
+  it('emits only absolute URLs, with nothing root-relative left behind', () => {
+    const json = JSON.stringify(buildGallery());
+    for (const url of json.match(/"https?:[^"]+"/g) ?? []) expect(url).toMatch(/^"https:\/\//);
+    expect(json).not.toMatch(/"\/[a-z]/);
+  });
+
+  it('passes inLanguage through and decides nothing about it (R15)', () => {
+    expect(buildGallery(1).inLanguage).toBe('id');
+    expect(imageObject({ ...img(0), inLanguage: 'en' }).inLanguage).toBe('en');
+  });
+
+  it('claims a licence ONLY when the caller supplies one', () => {
+    /*
+     * The negative direction is the load-bearing half: a licence URL for a page
+     * that states no terms is the `SearchAction` mistake with legal consequences
+     * instead of cosmetic ones. `/terms#9` today RESERVES rights rather than
+     * granting any, so `/gallery` passes nothing and both fields vanish.
+     */
+    const without = JSON.stringify(buildGallery(1));
+    expect(without).not.toContain('license');
+    expect(without).not.toContain('acquireLicensePage');
+    expect(without).not.toContain('null');
+
+    const m = buildGallery(1, `${ORIGIN}/terms#9`).associatedMedia[0];
+    expect(m.license).toBe(`${ORIGIN}/terms#9`);
+    expect(m.acquireLicensePage).toBe(`${ORIGIN}/terms#9`);
+  });
+
+  it('keeps contentUrl and thumbnailUrl distinct, because they are two files', () => {
+    // `contentUrl` is the highest-resolution representation and `thumbnailUrl` is
+    // what the tile paints. Collapsing them into one field is how a 240px thumb
+    // ends up advertised to Google Images as the artwork.
+    const m = buildGallery(1).associatedMedia[0];
+    expect(m.contentUrl).toContain('/cards/');
+    expect(m.thumbnailUrl).toContain('/cards/thumb/');
+    expect(m.contentUrl).not.toBe(m.thumbnailUrl);
+    expect(m.encodingFormat).toBe('image/webp');
+  });
+
+  it('refuses a relative page url', () => {
+    expect(() =>
+      imageGallery({
+        url: '/gallery',
+        name: 'x',
+        description: 'x',
+        inLanguage: 'id',
+        origin: ORIGIN,
+        breadcrumb: breadcrumbList([{ name: 'x', url: `${ORIGIN}/` }]),
+        images: [],
+      }),
+    ).toThrow(/absolute url/);
   });
 });

@@ -16,7 +16,7 @@ function build(locale: 'id' | 'en') {
     canonical: locale === 'id' ? CANONICAL : `${ORIGIN}/en/arcana/the-moon`,
     origin: ORIGIN,
     locale,
-    imageUrl: `${ORIGIN}/cards/18_moon.webp?v=3`,
+    imageUrl: `${ORIGIN}/cards/18_moon.webp`,
     homeLabel: 'JMTarot',
     homeUrl: `${ORIGIN}/`,
     galleryLabel: 'Galeri',
@@ -58,6 +58,18 @@ describe('the arcana JSON-LD graph', () => {
     expect(image.height).toBe(1200);
     expect(String(image.url).startsWith('https://')).toBe(true);
     expect(image.caption).toBe(theMoonId.imageAlt);
+    /*
+     * S3, v0.4.0. TWO PROPERTIES, ONE REASON: `/gallery` emits an `ImageObject`
+     * for this same artwork, so the two must share an `@id` (or Google ranks two
+     * unrelated nodes) and neither may carry `?v=` (or a bump of `ART_VERSION`
+     * orphans the indexed image). `image.url` is the unversioned path the page
+     * passes; the `<img src>` on screen keeps its cache-buster.
+     */
+    expect(image['@id']).toBe(`${CANONICAL}#image`);
+    expect(String(image.url)).not.toContain('?');
+    expect(nodes('en').Article.image).toMatchObject({
+      '@id': `${ORIGIN}/en/arcana/the-moon#image`,
+    });
   });
 
   it('describes the CARD in `about`, with its English name in both locales', () => {

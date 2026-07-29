@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { CARDS, CARD_URL_SLUGS, cardByUrlSlug, cardUrlSlug } from './deck';
+import {
+  CARDS,
+  CARD_URL_SLUGS,
+  cardByUrlSlug,
+  cardImage,
+  cardImagePath,
+  cardThumb,
+  cardThumbPath,
+  cardUrlSlug,
+} from './deck';
+
+/** Recovered from a versioned URL rather than imported: `ART_VERSION` is private. */
+const ART_VERSION_IN_URL = cardImage('x').split('?v=')[1];
 
 /**
  * Roadmap §3.2's table, transcribed. **THE TRANSCRIPTION IS THE POINT** (S-D4): a
@@ -64,5 +76,40 @@ describe('the URL slug', () => {
     expect(cardUrlSlug(CARDS[8])).toBe('strength');
     expect(cardUrlSlug(CARDS[10])).toBe('wheel-of-fortune');
     expect(cardUrlSlug(CARDS[20])).toBe('judgement');   // not `judgment`
+  });
+});
+
+/*
+ * ── S3, v0.4.0: the unversioned art paths ────────────────────────────────────
+ *
+ * `?v=${ART_VERSION}` is a cache-buster for an `<img src>` and a defect in
+ * structured data: Google Images treats a changed URL as a NEW image with no
+ * history, so a version in an `ImageObject` orphans twenty-two indexed images on
+ * every art regeneration and nothing reports it. These four functions are two
+ * pairs, and the pairing is the assertion -- two independent spellings of a
+ * public asset path is what breaks on the day the directory moves.
+ */
+describe('the versioned and unversioned art paths', () => {
+  it('differ by exactly the version query string', () => {
+    for (const card of CARDS) {
+      expect(cardImage(card.slug)).toBe(`${cardImagePath(card.slug)}?v=${ART_VERSION_IN_URL}`);
+      expect(cardThumb(card.slug)).toBe(`${cardThumbPath(card.slug)}?v=${ART_VERSION_IN_URL}`);
+    }
+  });
+
+  it('carry no query string at all in the unversioned form', () => {
+    for (const card of CARDS) {
+      expect(cardImagePath(card.slug)).not.toContain('?');
+      expect(cardThumbPath(card.slug)).not.toContain('?');
+    }
+  });
+
+  it('name the two real files, at the two real sizes', () => {
+    // `ART_VERSION` is deliberately not exported -- it is bumped in `deck.ts` and
+    // read nowhere else -- so it is recovered from the versioned URL rather than
+    // imported, which also asserts the versioned form still carries one.
+    expect(cardImagePath('18_moon')).toBe('/cards/18_moon.webp');
+    expect(cardThumbPath('18_moon')).toBe('/cards/thumb/18_moon.webp');
+    expect(ART_VERSION_IN_URL).toMatch(/^\d+$/);
   });
 });

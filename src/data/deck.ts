@@ -28,6 +28,29 @@ export const CARDS = raw as Card[];
 const ART_VERSION = 3;
 
 /**
+ * The two art paths WITHOUT the version, and the two consumers are the reason
+ * they exist (S3's delta 17, v0.4.0).
+ *
+ * **A `?v=` IS RIGHT FOR AN `<img src>` AND WRONG IN STRUCTURED DATA.** The query
+ * string is a cache-buster for a browser; Google Images treats a changed URL as a
+ * NEW image with no history, so bumping `ART_VERSION` with the version in an
+ * `ImageObject` would orphan twenty-two indexed images and report nothing. The
+ * unversioned path is also what a `sitemap`-adjacent claim should name: it is the
+ * address of the artwork, not of one cache generation of it.
+ *
+ * **ONE SOURCE OF TRUTH, WHICH IS WHY `cardImage`/`cardThumb` DELEGATE** rather
+ * than each interpolating `/cards/`. Two independent spellings of a public asset
+ * path is the shape that breaks on the day the directory moves.
+ */
+export function cardImagePath(slug: string): string {
+  return `/cards/${slug}.webp`;
+}
+
+export function cardThumbPath(slug: string): string {
+  return `/cards/thumb/${slug}.webp`;
+}
+
+/**
  * Full-size card art, 800x1200. For the result panel, where the card is large
  * enough that the artwork is the point.
  *
@@ -36,7 +59,7 @@ const ART_VERSION = 3;
  * so the registry is gone and the slug is the only key we need.
  */
 export function cardImage(slug: string): string {
-  return `/cards/${slug}.webp?v=${ART_VERSION}`;
+  return `${cardImagePath(slug)}?v=${ART_VERSION}`;
 }
 
 /**
@@ -45,7 +68,7 @@ export function cardImage(slug: string): string {
  * thumbnails -- see tools/normalize_cards.py.
  */
 export function cardThumb(slug: string): string {
-  return `/cards/thumb/${slug}.webp?v=${ART_VERSION}`;
+  return `${cardThumbPath(slug)}?v=${ART_VERSION}`;
 }
 
 /** The design reverses roughly three cards in ten. */

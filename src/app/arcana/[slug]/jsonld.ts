@@ -38,7 +38,16 @@ export function arcanaGraph(input: {
   canonical: string;
   origin: string;
   locale: Locale;
-  /** Absolute URL of the 800x1200 art. Built by the page from `siteOrigin()`. */
+  /**
+   * Absolute URL of the 800x1200 art. Built by the page from `siteOrigin()`.
+   *
+   * **UNVERSIONED, AND THAT CHANGED IN S3.** The page renders `cardImage()` with
+   * its `?v=${ART_VERSION}` cache-buster and passes `cardImagePath()` here:
+   * Google Images treats a changed URL as a NEW image with no history, so a
+   * version in structured data orphans twenty-two indexed images on every art
+   * regeneration and reports nothing. `/gallery` follows the same rule, which is
+   * also what lets the two pages share one `@id`.
+   */
   imageUrl: string;
   /** The gallery's label, from the catalog. Never a second word for one page. */
   galleryLabel: string;
@@ -71,6 +80,16 @@ export function arcanaGraph(input: {
       // about a regional variant that nothing here was written in.
       inLanguage: locale,
       image: imageObject({
+        /*
+         * **THE SAME `@id` `/gallery` EMITS FOR THIS ARTWORK, WHICH IS WHAT MAKES
+         * THE TWO PAGES DESCRIBE ONE IMAGE** (S3, v0.4.0). Both are
+         * `<absolute lore url>#image`, so Google merges them into a single node
+         * with two mentions rather than ranking forty-four unrelated ones. It is
+         * derived from `canonical` for the same reason the `Article`'s
+         * `mainEntityOfPage` is: one string, so the locale twin gets the locale's
+         * own id and the pair cannot cross.
+         */
+        id: `${canonical}#image`,
         url: input.imageUrl,
         width: 800,
         height: 1200,

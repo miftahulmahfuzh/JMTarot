@@ -145,6 +145,64 @@ export type ImageObjectArgs = {
   width: number;
   height: number;
   caption: string;
+  /*
+   * ── EVERYTHING BELOW IS OPTIONAL AND WAS ADDED BY S3 (v0.4.0) ──────────────
+   *
+   * `/gallery` needs a richer node than a lore page's inline one: twenty-two of
+   * them in one `ImageGallery`, each of which has to be distinguishable and
+   * joinable. **The alternative was a second builder, and that is exactly the
+   * failure the register in reconciliation §5 exists to prevent** -- two
+   * definitions of `ImageObject` in one codebase would disagree about `@id`
+   * within a release. Additive and `undefined`-by-default, so S4's four-field
+   * call is byte-identical.
+   */
+  /**
+   * **THE JOIN BETWEEN `/gallery` AND `/arcana/<slug>`, AND IT IS THE WHOLE
+   * REASON THIS FIELD EXISTS.** Both pages describe ONE artwork, so both emit
+   * `<absolute lore url>#image` and Google merges them into a single node with
+   * two mentions. Omit it and the gallery's twenty-two images and the lore
+   * pages' twenty-two are forty-four unrelated nodes.
+   *
+   * It must be UNIQUE per image. A duplicate `@id` merges twenty-two images into
+   * one, and the symptom is "our cards do not appear in Google Images" with
+   * nothing in the report.
+   */
+  id?: string;
+  /**
+   * ABSOLUTE, and the highest-resolution representation of the artwork -- which
+   * is **not** what the page renders. `/gallery` paints a 240x360 thumb at
+   * 138-173 CSS px; Google Images wants the biggest honest file. So `contentUrl`
+   * and the rendered `src` legitimately differ, and `thumbnailUrl` is where the
+   * thumb belongs.
+   *
+   * **NO QUERY STRING IN EITHER.** `cardImage()`/`cardThumb()` append
+   * `?v=${ART_VERSION}` because `/cards/*` is `immutable` for a year on
+   * non-content-hashed filenames; that is right for an `<img src>` and wrong
+   * here, because Google Images treats a changed URL as a NEW image with no
+   * history. `cardImagePath()`/`cardThumbPath()` are the unversioned twins.
+   */
+  contentUrl?: string;
+  thumbnailUrl?: string;
+  /** MIME type of `contentUrl`. `image/webp` for our art. */
+  encodingFormat?: string;
+  /** A sentence about the subject -- the upright gloss, via `cardMeaning()`. */
+  description?: string;
+  /** The BARE tag (R15). Whatever the rest of this graph used. */
+  inLanguage?: string;
+  /** `@id` of the publisher, so the image is attributed to one organisation. */
+  creator?: string;
+  /**
+   * The page STATING the licence.
+   *
+   * **A LICENCE URL IS A CLAIM, SO THE CALLER SUPPLIES IT OR OMITS IT.** Emitting
+   * `license: <some url>` for a page that states no terms is the `SearchAction`
+   * mistake with legal consequences instead of cosmetic ones. `/terms#9` is an
+   * intellectual-property clause that RESERVES rights; it becomes a licence
+   * statement only when S5 writes the wallpaper grant into it, and until then
+   * `undefined` is the honest value. `JSON.stringify` drops it, so an absent
+   * clause is an absent claim rather than a `null` a crawler has to interpret.
+   */
+  licenseUrl?: string;
 };
 
 /**
@@ -164,15 +222,91 @@ export type ImageObjectArgs = {
  * register exists to prevent, whichever order they land in.
  */
 export function imageObject(a: ImageObjectArgs): JsonLdNode {
-  if (!/^https?:\/\//.test(a.url)) {
-    throw new Error(`imageObject needs an absolute url, got: ${a.url}`);
+  /*
+   * EVERY URL-SHAPED FIELD IS CHECKED, NOT ONLY `url`. S3 added three more of
+   * them, and a relative `contentUrl` fails in exactly the way the original
+   * comment describes -- silently, against a base somebody else guessed.
+   */
+  for (const [field, value] of [
+    ['url', a.url],
+    ['@id', a.id],
+    ['contentUrl', a.contentUrl],
+    ['thumbnailUrl', a.thumbnailUrl],
+    ['license', a.licenseUrl],
+  ] as const) {
+    if (value !== undefined && !/^https?:\/\//.test(value)) {
+      throw new Error(`imageObject needs an absolute ${field}, got: ${value}`);
+    }
   }
   return {
     '@type': 'ImageObject',
+    /* `undefined` vanishes through `JSON.stringify`, so every optional field
+       below is absent rather than null when the caller omits it. */
+    '@id': a.id,
     url: a.url,
+    contentUrl: a.contentUrl,
+    thumbnailUrl: a.thumbnailUrl,
+    encodingFormat: a.encodingFormat,
     width: a.width,
     height: a.height,
     caption: a.caption,
+    description: a.description,
+    inLanguage: a.inLanguage,
+    creator: a.creator ? { '@id': a.creator } : undefined,
+    /* Both fields or neither -- Google Images' licence badge reads
+       `acquireLicensePage`, and one without the other is a half-claim. */
+    license: a.licenseUrl,
+    acquireLicensePage: a.licenseUrl,
+  };
+}
+
+export type ImageGalleryArgs = {
+  /** ABSOLUTE URL of the gallery page itself, in THIS locale. */
+  url: string;
+  name: string;
+  description: string;
+  /** The BARE tag (R15). */
+  inLanguage: string;
+  /** `${origin}/#website`, so the page hangs off one site node. */
+  origin: string;
+  /** `breadcrumbList([...])`'s node, embedded inline. */
+  breadcrumb: JsonLdNode;
+  images: readonly ImageObjectArgs[];
+};
+
+/**
+ * `/gallery`: one `ImageGallery` holding twenty-two `ImageObject`s (S3, v0.4.0).
+ *
+ * S-D16 names exactly this for this page, and what it refuses is settled in this
+ * file's header: no `SearchAction`, no `FAQPage`.
+ *
+ * **`associatedMedia` AND NOT `hasPart`.** `ImageGallery` is a `CollectionPage`,
+ * and the documented property for the media a collection page collects is
+ * `associatedMedia`; `hasPart` would be describing sub-pages, which twenty-two
+ * images are not.
+ *
+ * **`numberOfItems` IS DERIVED FROM THE ARRAY AND MUST STAY THAT WAY.** A literal
+ * `22` beside a list of some other length is a contradiction a validator reports
+ * against the whole node, and the array is the thing that is true.
+ *
+ * PURE, and every URL and size arrives as an argument -- this file knows nothing
+ * about `@/lib/wallpaper`, `cardThumbPath` or `process.env`.
+ */
+export function imageGallery(a: ImageGalleryArgs): JsonLdNode {
+  if (!/^https?:\/\//.test(a.url)) {
+    throw new Error(`imageGallery needs an absolute url, got: ${a.url}`);
+  }
+  return {
+    '@type': 'ImageGallery',
+    '@id': `${a.url}#gallery`,
+    url: a.url,
+    name: a.name,
+    description: a.description,
+    inLanguage: a.inLanguage,
+    isPartOf: { '@id': `${a.origin}/#website` },
+    breadcrumb: a.breadcrumb,
+    numberOfItems: a.images.length,
+    associatedMedia: a.images.map((image) => imageObject(image)),
   };
 }
 
