@@ -86,10 +86,18 @@ describe('PublicShell', () => {
   });
 
   it('never links to the page it is mounted on', () => {
-    // Cheap source-level check on the mechanism: the footer link list is built by
-    // filtering on `surface`, not written out five times.
+    /*
+     * The mechanism, source-level. It used to be a `filter` over a table of three
+     * cross-links; those moved into the account menu (2026-07-29, see the
+     * component's header) and the ONE remaining link is `/`, so the suppression is
+     * a `surface === 'landing'` guard instead.
+     *
+     * **THIS ASSERTION EARNED ITS KEEP THE DAY THE LINKS MOVED.** The first version
+     * of that change deleted the filter along with the table, and the landing
+     * page's footer silently grew a link to itself -- caught here, not by eye.
+     */
     expect(CODE).toContain('surface');
-    expect(CODE).toMatch(/filter|!==\s*surface|surface\s*!==/);
+    expect(CODE).toMatch(/filter|!==\s*surface|surface\s*!==|surface === 'landing'/);
   });
 
   it('introduces no new design token', () => {

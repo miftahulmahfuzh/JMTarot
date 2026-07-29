@@ -6,19 +6,39 @@ import { getT } from '@/lib/i18n/t';
 import styles from './PublicShell.module.css';
 
 /**
- * The frame around every public content page: the cross-links, the
- * entertainment-only disclaimer, the legal links and the other-language link.
+ * The frame around every public content page: the entertainment-only disclaimer,
+ * the legal links, the other-language link, and one way into the app.
  *
- * ── THE FOOTER IS THE ASK, AND THE CROSS-LINKS ARE THE POINT ────────────────
+ * ── THE CROSS-LINKS ARE GONE, AND THIS PARAGRAPH USED TO ARGUE FOR THEM ─────
  *
- * Jodith asked for a footer on the landing, blog and article pages. What makes it
- * worth more than decoration is the internal linking: twenty-two lore pages that
- * each link to the gallery and the blog, and a gallery that links back, is the
- * shape of a site that gets crawled completely. A footer is the cheapest place to
- * guarantee every public page is two clicks from every other.
+ * It said: *"Jodith asked for a footer on the landing, blog and article pages.
+ * What makes it worth more than decoration is the internal linking: twenty-two
+ * lore pages that each link to the gallery and the blog, and a gallery that links
+ * back, is the shape of a site that gets crawled completely."*
  *
- * **A PAGE NEVER LINKS TO ITSELF.** `surface` filters the list. A self-link is not
- * harmful to a crawler and it is confusing to a person, and the filter is one line.
+ * **Miftah's ruling, 2026-07-29, on a phone: the homepage and the card pages
+ * should look clean.** `Galeri / Arti kartu / Tulisan` appeared under the landing
+ * page and under all 22 lore pages, and the two that are navigation rather than
+ * content -- `/gallery` and `/blog` -- **moved into the account menu, below
+ * Reading History**. `AccountMenu`'s header records the decision.
+ *
+ * **THE CRAWL ARGUMENT SURVIVES THE CHANGE, WHICH IS WHY IT COST NOTHING.** What a
+ * crawler follows here was never this footer: `sitemap.xml` lists every public URL,
+ * `hreflang` names both locale trees, `/gallery` links to all 22 lore pages, each
+ * lore page links to its neighbours, its correspondences AND `/gallery`
+ * (`arcana.gallery`), and the landing page's own sections link to all three. Every
+ * public page is still reachable, and no page is now a leaf. What is gone is a
+ * duplicate of those links in chrome.
+ *
+ * **`/` STAYS, AS THE ONE CONVERSION LINK.** It is the dual render: a stranger sees
+ * the landing, a signed-in reader sees the picker. That is the link the footer is
+ * FOR -- a stranger who has just read a card page and wants the app -- and it is
+ * the only one the account menu cannot carry, because a stranger has no account.
+ *
+ * **`surface` IS KEPT THOUGH NOTHING FILTERS ANY MORE.** It is `public.link_clicked`'s
+ * `from`, which is the one number telling `to: 'sign_in'` apart per surface -- the
+ * conversion measurement §7 names. A prop that looks unused is worth one sentence;
+ * deleting it would delete the funnel.
  *
  * ── IT IS A SERVER COMPONENT AND IT HAS NO SESSION (S-D10) ──────────────────
  *
@@ -80,8 +100,10 @@ export type PublicSurface = 'landing' | 'gallery' | 'arcana' | 'blog_index' | 'b
 
 export type PublicShellProps = {
   /**
-   * Which page is mounting it. Decides which cross-link is omitted (a page never
-   * links to itself) and is the `from` prop on `public.link_clicked`.
+   * Which page is mounting it. **`public.link_clicked`'s `from`, and since the
+   * cross-links moved out (see the header) that is its only job** -- there is one
+   * link left and every page renders it, so nothing filters on this any more. It is
+   * kept because `to: 'sign_in'` per surface is the conversion number §7 names.
    *
    * A CLOSED UNION AND NOT A PATHNAME -- events rule 2, and V4's `account.opened`
    * is the precedent: the mounting page passes its own, so there is no pathname to
@@ -102,12 +124,19 @@ export type PublicShellProps = {
   children: ReactNode;
 };
 
-/** Which footer link belongs to which surface, so a page can omit its own. */
-const LINKS = [
-  { surfaces: ['gallery'], href: '/gallery', to: 'gallery', key: 'public.footer.gallery' },
-  { surfaces: ['arcana'], href: '/arcana/the-moon', to: 'arcana', key: 'public.footer.arcana' },
-  { surfaces: ['blog_index', 'blog_post'], href: '/blog', to: 'blog', key: 'public.footer.blog' },
-] as const;
+/*
+ * THE `LINKS` TABLE IS DELETED, NOT EMPTIED. It held `/gallery`,
+ * `/arcana/the-moon` and `/blog` with a `surfaces` list each so a page could omit
+ * its own -- see the header for the ruling that removed them and for why the crawl
+ * does not depend on them. An empty array with the filter still around it would
+ * read as a feature somebody switched off and invite a "fix".
+ *
+ * `public.footer.{gallery,arcana,blog}` STAY IN THE CATALOG: `public.footer.app`
+ * and `public.footer.brandLine` are still rendered here, `catalog.test.ts` does not
+ * require every key to have a live reader, and the three are the obvious strings to
+ * reuse if a future release wants a cross-link block back on ONE surface rather
+ * than on all five.
+ */
 
 export async function PublicShell({ surface, path, children }: PublicShellProps) {
   const t = await getT();
@@ -117,21 +146,22 @@ export async function PublicShell({ surface, path, children }: PublicShellProps)
       {children}
 
       <footer className={styles.footer} data-path={path}>
+        {/*
+          **A PAGE STILL NEVER LINKS TO ITSELF, AND THAT IS THE WHOLE OF WHAT IS
+          LEFT OF THE FILTER.** The one remaining link is `/`, so the surface it
+          must be suppressed on is the landing -- which is `/`. `PublicShell.test.ts`
+          asserts the mechanism, and it FAILED on the first version of this change:
+          the cross-links went, the filter went with them, and the landing page's
+          footer quietly grew a link to itself. The landing carries its own sign-in
+          call to action anyway, so it loses nothing.
+        */}
+        {surface === 'landing' ? null : (
         <nav className={styles.links} aria-label={t('public.crumb.home')}>
-          {LINKS.filter((l) => !(l.surfaces as readonly string[]).includes(surface)).map((l) => (
-            <TrackLink
-              key={l.href}
-              href={l.href}
-              className={styles.link}
-              name="public.link_clicked"
-              props={{ from: surface, to: l.to, slug: null }}
-            >
-              {t(l.key)}
-            </TrackLink>
-          ))}
-          {/* The conversion link. `/` is the dual render: a stranger sees the
-              landing, a signed-in reader sees the picker, and the gate decides
-              -- which is exactly what `TryItYourself` already relies on. */}
+          {/* The conversion link, and now the only one. `/` is the dual render: a
+              stranger sees the landing, a signed-in reader sees the picker, and the
+              gate decides -- which is exactly what `TryItYourself` already relies
+              on. `to: 'sign_in'`'s sibling and the reason `surface` is still a
+              prop. */}
           <TrackLink
             href="/"
             className={styles.link}
@@ -141,6 +171,7 @@ export async function PublicShell({ surface, path, children }: PublicShellProps)
             {t('public.footer.app')}
           </TrackLink>
         </nav>
+        )}
 
         {/*
           THE OTHER-LANGUAGE LINK (R17). One mount, here, rather than three lines

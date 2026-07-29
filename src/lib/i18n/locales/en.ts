@@ -317,6 +317,10 @@ const en: Catalog = {
   'account.menu.details': 'About you',
   'account.menu.language': 'Language',
   'account.menu.history': 'Reading history',
+  /* Written, not translated: `Galeri kartu` is "the card gallery" and this is the
+     phrase an English reader expects for the same destination. */
+  'account.menu.gallery': 'Card gallery',
+  'account.menu.blog': 'Writing',
   'account.menu.signOut': 'Sign out',
 
   'locale.code.id': 'ID',

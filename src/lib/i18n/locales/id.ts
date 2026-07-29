@@ -523,6 +523,21 @@ const id = {
   'account.menu.details': 'Tentang kamu',
   'account.menu.language': 'Bahasa',
   'account.menu.history': 'Riwayat bacaan',
+  /*
+   * The two public pages, moved OUT of the public footer and INTO this sheet
+   * (Miftah's ruling, 2026-07-29 -- `AccountMenu`'s header has the argument).
+   *
+   * **THEIR OWN KEYS RATHER THAN A REUSE OF `public.footer.{gallery,blog}`**,
+   * whose Indonesian is today the identical word. V8's precedent for reuse is
+   * `history.home`, and it holds there because "Home" cannot drift; a footer
+   * label can. The footer's job is to name a destination to a stranger who has
+   * never seen the app, and this sheet's is to name it to somebody signed in --
+   * the day one of them wants "Lihat semua kartu" the other must not follow.
+   * `gallery.card.zoomAria` is in the catalog for the same reason, one release
+   * apart.
+   */
+  'account.menu.gallery': 'Galeri kartu',
+  'account.menu.blog': 'Tulisan',
   'account.menu.signOut': 'Keluar',
 
   // The SHORT tags, for the two-item toggle inside the menu (R1/VD12). The long
