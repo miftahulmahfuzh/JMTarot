@@ -29,10 +29,17 @@ import { NextResponse, after } from 'next/server';
 import { requireUser } from '@/lib/auth/server';
 import { getLocale } from '@/lib/i18n/t';
 import { parseLocalDate, SESSION_HEADER, validSessionId } from '@/lib/analytics/localdate';
-import { track, withAnalytics, type AnalyticsContext } from '@/lib/analytics/track';
+import { classifyStreamError } from '@/lib/analytics/tee';
+import {
+  bindAnalyticsScope,
+  track,
+  withAnalytics,
+  type AnalyticsContext,
+} from '@/lib/analytics/track';
 import { db } from '@/lib/db/client';
 import { getDailySummary, putDailySummary, readingsOnDay } from '@/lib/db/queries/summary';
 import { getProvider } from '@/lib/llm';
+import { recordCall, usageOrNulls } from '@/lib/llm/ledger';
 import { reserveModelCall } from '@/lib/llm/meter';
 import { isStale } from '@/lib/memory/summary';
 import { buildDaySummaryPrompt, echoToday, MEMORY_PROMPT_VERSION } from '@/lib/prompt/summary';
@@ -170,15 +177,43 @@ async function generate(args: {
   const quota = await reserveModelCall('deferred');
   if (!quota.ok) return NO_CONTENT;
 
+  /*
+   * A2. **THE STREAM OBJECT IS KEPT NOW, NOT JUST ITS ITERATOR**, because
+   * `LLMStream` is an intersection and `.usage` is the only place the token counts
+   * exist -- taking `[Symbol.asyncIterator]()` off it and dropping the rest is
+   * exactly how this call site threw its own cost away for three releases.
+   *
+   * **AND `bindAnalyticsScope()` IS CALLED SYNCHRONOUSLY HERE, WHILE STILL IN THE
+   * HANDLER.** The `after()` below runs after the response has flushed and is not
+   * guaranteed to be inside the ALS context that registered it, so `recordCall`
+   * from in there would miss `als.getStore()` and take its own `after()` branch --
+   * which is the V2 bug shape, measured live: every streamed translation lost its
+   * event and its repair pass, silently, for as long as V2 had shipped. Binding
+   * eagerly also registers the request's `after()` before anything needs one.
+   */
+  const inScope = bindAnalyticsScope();
+
+  let source: ReturnType<ReturnType<typeof getProvider>['streamReading']>;
   let iterator: AsyncIterator<string>;
   let first: IteratorResult<string>;
   try {
-    iterator = getProvider().streamReading(prompt)[Symbol.asyncIterator]();
+    source = getProvider().streamReading(prompt);
+    iterator = source[Symbol.asyncIterator]();
     // Pulled BEFORE the headers. See the file header: this is what keeps the
     // 204 fallback available for a call that dies before its first token.
     first = await iterator.next();
   } catch (err) {
     logFailure(err);
+    /*
+     * NO LEDGER ROW HERE, and it is the same rule as a ceiling refusal (A2-D6): the
+     * `catch` above is reachable from `streamReading` throwing before a request was
+     * ever made -- and if a request WAS made and died, the row would have to guess
+     * both the tokens and the wall time from a stream that never yielded. A refusal
+     * two lines up writes nothing for the same reason. This is a stated gap: a day
+     * summary that dies at connect is counted by `reserveModelCall`'s window and not
+     * by the ledger, which is the direction the notes record as "the ledger is a
+     * lower bound on the counter".
+     */
     return NO_CONTENT;
   }
 
@@ -186,6 +221,18 @@ async function generate(args: {
 
   let body = first.value;
   const encoder = new TextEncoder();
+
+  /*
+   * A2. `tee.ts`'s vocabulary, tracked by hand because this route builds its own
+   * stream rather than using `teeReading`.
+   *
+   * `'ok'` until something says otherwise, and both of the two things that can are
+   * below: a mid-stream throw is `'partial'` -- the querent has already read the
+   * opening -- and a client cancel is `'aborted'`. Never `'failed'` from here: the
+   * first chunk arrived before the response existed, so there is always something.
+   */
+  let status: 'ok' | 'partial' | 'aborted' = 'ok';
+  let errorKind: string | null = null;
 
   const stream = new ReadableStream<Uint8Array>({
     // The chunk already pulled above, handed straight out. Doing this in
@@ -210,12 +257,18 @@ async function generate(args: {
          * for this component by design (M14).
          */
         logFailure(err);
+        status = 'partial';
+        errorKind = classifyStreamError(err);
         controller.close();
       }
     },
     cancel() {
       // The querent navigated away. Stop pulling; the after() below still runs
       // and stores what arrived, which is a legitimate summary of the day.
+      status = 'aborted';
+      // `??=` and not `=`: a cancel that follows a mid-stream failure must not
+      // overwrite the real reason with the consequence. `tee.ts`'s rule.
+      errorKind ??= 'client_disconnected';
       void iterator.return?.();
     },
   });
@@ -227,6 +280,42 @@ async function generate(args: {
    * in this scope rather than inside the stream.
    */
   after(async () => {
+    /*
+     * A2's LEDGER ROW, FIRST IN THIS CALLBACK AND OUTSIDE THE `if (!trimmed)` GUARD.
+     *
+     * A summary that streamed nothing usable still made a model call, and the whole
+     * point of the ledger is that a call which produced nothing is exactly the call
+     * worth seeing. The early return below is about the SUMMARY; it must not also
+     * decide whether the cost was recorded.
+     *
+     * **THE ROW IS BUILT BEFORE THE `await`, AND THE TWO TOKEN FIELDS ARE FILLED
+     * LAST.** `status` and `errorKind` are mutable and `cancel()` can still fire
+     * while `usage` is pending -- `tee.ts`'s `finish()` read its fields after that
+     * await and recorded every abandoned reading as failing for an unknown reason.
+     * Snapshot, then await (invariant 3).
+     *
+     * `inScope(...)` because this callback is not guaranteed to run inside the ALS
+     * context that registered it, and `bufferCall` reads `als.getStore()`. Without
+     * the wrapper the row would take the unattributed branch on a request that has a
+     * querent -- which looks like nothing at all until somebody reads a per-user
+     * cost page.
+     */
+    const snapshot = { status, errorKind, totalMs: Math.round(performance.now() - startedAt) };
+    const usage = await usageOrNulls(source.usage);
+    inScope(() =>
+      recordCall({
+        op: 'day_summary',
+        model: process.env.LLM_MODEL ?? 'unknown',
+        // Reserved as `deferred` above: the fallback is a 204 and `DaySummary` has no
+        // error copy by design, so shedding it is invisible.
+        callClass: 'deferred',
+        streamed: true,
+        ...snapshot,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+      }),
+    );
+
     const trimmed = body.trim();
     if (!trimmed) return;
     try {
@@ -239,6 +328,27 @@ async function generate(args: {
         sourceReadingIds: args.ids,
         promptVersion: MEMORY_PROMPT_VERSION,
       });
+      /*
+       * ── OPEN ITEM, NOT A2's TO FIX (reconciliation R18) ─────────────────────
+       *
+       * **THIS `track()` IS PROBABLY BEING LOST TODAY, AND IT IS V2's BUG SHAPE
+       * EXACTLY.** It runs inside an `after()` that is not guaranteed to execute in
+       * the ALS context that registered it, so `als.getStore()` misses, `track()`
+       * takes its fallback branch, and that branch calls `after()` -- from inside an
+       * `after()`, where it throws and is swallowed. V2 measured the same thing on a
+       * `ReadableStream`'s `pull()`: every streamed translation lost its event and its
+       * repair pass, silently, for as long as V2 had shipped.
+       *
+       * **The remedy is one word:** `inScope` is already bound in this function for
+       * A2's ledger row, so `inScope(() => track(...))` is the whole fix.
+       *
+       * A2 does not make it. This is W5's file and W5's event, §6 assigns neither, and
+       * reconciliation R18 ruled it out of scope for v0.5.0 rather than let A2's diff
+       * span a sixth workstream. It is recorded here and in
+       * `docs/workstream-notes.md` under W5. **Whoever picks it up: verify by grepping
+       * a dev log for `outside a request scope` after a real day summary, rather than
+       * by reasoning about it -- that is how V2's was actually found.**
+       */
       track('memory.summary_generated', {
         reader_id: args.reader,
         source_count: args.readings.length,
