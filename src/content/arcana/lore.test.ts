@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CARDS, CARD_URL_SLUGS, cardById, cardUrlSlug, effectiveYesNo } from '@/data/deck';
 import { phrasingText } from '@/lib/content/doc';
-import { EN_TICS, MALAY, THERAPY_EN, THERAPY_ID } from '@/lib/copy/vocab';
+import { lintTexts, type LintRule, type LintText } from '@/lib/content/lint';
 import type { Block, LoreDoc } from '@/content/types';
 import { ARCANA_LORE, LORE_SLUGS, loreFor } from './index';
 
@@ -131,6 +131,44 @@ function noneOf(
 const bounded = (w: string) => new RegExp(`\\b${w.replace(/'/g, "['\u2019]")}\\b`, 'i');
 
 /**
+ * **THE THREE WORD-LIST CASES GO THROUGH `lintTexts`. v0.5.0 / A6, A-D13, R43.**
+ *
+ * They used to be three inline `noneOf(\u2026, MALAY | THERAPY_* | EN_TICS, bounded)`
+ * calls, which is where the lint lived before there was anywhere else to put it.
+ * A-D13 moved it: *"the lint is extracted before anything else happens"*, because
+ * once blog prose is a database row, `blog.content.test.ts`'s thirty-six cases lint
+ * nothing that ships. **The requirement is "same word lists, SAME FUNCTION"**, and
+ * this is where it is met -- there is one Malay grep in this repository and this
+ * file calls it rather than carrying a fourth copy of the regex.
+ *
+ * **WHAT DID NOT MOVE, AND WHY.** Everything below that is a fact about a `LoreDoc`
+ * rather than about prose: the `SECRETS` list (it names S4's own subjects), the
+ * `anchor` divergence table, `yesno` against `effectiveYesNo()`, `imageAlt`'s rule,
+ * and the two tics of SHAPE (`reach out`, `dear seeker`). Those are S4's and are not
+ * blog rules; folding them into `lint.ts` would make the CMS refuse articles for
+ * failing to be lore pages, which is R44's mistake in the other direction.
+ *
+ * `field` is the five-value blog union and `at` carries the real location, so a
+ * failure still prints `upright[3].items[2]` -- see `LintViolation.at`.
+ */
+function toLintTexts(doc: LoreDoc): LintText[] {
+  return textsOf(doc).map(({ field, text }) => ({
+    field: field === 'title' ? 'title' : field === 'description' ? 'description' : 'body',
+    at: field,
+    text,
+  }));
+}
+
+/** Every hit for `rules`, across all 44 documents, as printable lines. `[]` is clean. */
+function lintHits(rules: readonly LintRule[]): string[] {
+  return ALL.flatMap(({ slug, locale, doc }) =>
+    lintTexts(toLintTexts(doc), locale, rules).map(
+      (v) => `${slug}.${locale} ${v.at}: "${v.detail}"`,
+    ),
+  );
+}
+
+/**
  * The English words for each pair's INDONESIAN interpretation images, forbidden in
  * the English `upright` and `reversed`.
  *
@@ -185,8 +223,7 @@ describe('the lore documents', () => {
     // `## Copy constraints`. The eleven-word list, `id` ONLY -- running it against
     // English is theatre (`## Localization` rule 4). `\b` matters: `obat` is
     // inside `sobat`.
-    const id = ALL.filter((x) => x.locale === 'id');
-    expect(noneOf(id, MALAY, bounded)).toEqual([]);
+    expect(lintHits(['malay'])).toEqual([]);
   });
 
   it('has no therapy, diagnosis, treatment or healing language, in either locale', () => {
@@ -198,14 +235,23 @@ describe('the lore documents', () => {
      *
      * `anxiety` IS DELIBERATELY ABSENT from both lists and must stay absent; the
      * rule is against DIAGNOSIS, which is why `anxiety disorder`, `clinical` and
-     * `diagnosed` are the entries that are there.
+     * `diagnosed` are the entries that are there. `lint.test.ts` carries the named
+     * negative control; deleting it there deletes the argument here too.
      */
-    expect(noneOf(ALL, (l) => (l === 'id' ? THERAPY_ID : THERAPY_EN), bounded)).toEqual([]);
+    expect(lintHits(['therapy'])).toEqual([]);
   });
 
   it('has none of the English generic-mystic tics', () => {
-    const en = ALL.filter((x) => x.locale === 'en');
-    expect(noneOf(en, EN_TICS, bounded)).toEqual([]);
+    /*
+     * **STRICTER THAN THE `bounded` MATCHER THIS USED TO USE, AND MEASURED BEFORE IT
+     * CHANGED.** `lint.ts` matches a tic UNBOUNDED -- `blog.content.test.ts`'s form,
+     * kept exactly -- because the list is about REGISTER rather than about tokens:
+     * `manifesting` is the same tic as `manifest`. Run over all forty-four documents
+     * in both locales before the switch, it produced **zero hits**, so the
+     * strengthening cost S4 nothing. It is recorded because a future failure here
+     * will look like the lint being wrong rather than like the prose drifting.
+     */
+    expect(lintHits(['tics'])).toEqual([]);
     /*
      * And the two tics of SHAPE rather than of vocabulary, which `base.en.ts`
      * forbids in a reading for the same reason: the closing offer, and the
@@ -213,7 +259,9 @@ describe('the lore documents', () => {
      * in `vocab.ts`.
      */
     const shapes = ['let me know if', 'feel free to', 'reach out', 'dear seeker', 'my friend'];
-    expect(noneOf(en, shapes, (w) => new RegExp(w, 'i'))).toEqual([]);
+    expect(noneOf(ALL.filter((x) => x.locale === 'en'), shapes, (w) => new RegExp(w, 'i'))).toEqual(
+      [],
+    );
   });
 
   it('keeps CARD NAMES IN ENGLISH in both locales, and refuses an invented one', () => {
