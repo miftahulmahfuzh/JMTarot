@@ -253,6 +253,20 @@ const SECRET_ENV = [
    */
   'UPSTASH_REDIS_REST_TOKEN',
   'UPSTASH_REDIS_REST_URL',
+  /*
+   * v0.5.0 / A1, licensed by reconciliation R20. **An operator's email address is
+   * a better candidate for this list than either of the two above:** `toViewer()`
+   * drops `email` from every session on the stated ground that *"the email is the
+   * one field with a real disclosure cost if it leaks into a bundle or a
+   * screenshot"*, and `ADMIN_EMAILS` is that field for the one account that can
+   * read everybody's.
+   *
+   * A1's plan declined to make this edit and flagged it instead, because
+   * `audit-secrets.ts` was not in roadmap §6's table of shared files and an
+   * unlisted edit to one is itself a reconciliation defect. R20 added the file to
+   * §6 under A1 and licensed the line.
+   */
+  'ADMIN_EMAILS',
 ];
 
 /**

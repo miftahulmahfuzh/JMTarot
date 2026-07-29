@@ -139,13 +139,63 @@ export function PrivacyEn({ effective }: { effective: string }) {
             'Readings: so the app remembers what you have already asked.',
             'Analytics: so we know what is broken and what is used.',
             'Moderation: so a wrong refusal can be found and fixed.',
+            'Running the Service: so breakage can be fixed, a request about your own data can be answered, and the Terms can be enforced.',
           ]}
         />
         <P>In short: because you asked us to, and because the Service cannot work otherwise.</P>
+
+        {/*
+          3.1 — v0.5.0 / A1, decision A-D16. The SAME ANCHOR SET as the Indonesian
+          document or `legal.test.ts:266` goes red, which is what makes "both locales"
+          mechanical. The prose is rewritten rather than translated (S-D6's habit),
+          but every claim is the same claim, including the uncomfortable one about a
+          refused question.
+        */}
+        <SubClause id="3-1" n="3.1" title="Who on our side can see your data">
+          <P>
+            One person: the operator of this Service. Not a team, and not a door anybody can be
+            given &mdash; the list of permitted email addresses lives in the deployment
+            environment, and changing it means shipping the app again.
+          </P>
+          <P>
+            What can be seen without opening anything: your profile, which of the opening questions
+            you answered (not what you wrote), your readings and their cards, your share links, and
+            your moderation records.
+          </P>
+          <P>
+            The sensitive free-text answers and the text of a refused question are different. Both
+            are stored encrypted, and both are opened{' '}
+            <strong>one at a time, one request per answer</strong>. There is no button that opens
+            all six at once, and there is no export.
+          </P>
+          <P>
+            <strong>Every time one answer is opened, one record is written</strong>: who opened it,
+            whose it was, which answer, and when. That record never holds the answer itself. And if
+            that row cannot be written, the answer is not opened.
+          </P>
+          <P>
+            What cannot be done: changing your profile, your answers, your readings, or the
+            portrait written about you. The operator only reads.
+          </P>
+          <P>
+            If you want to know what has been opened about you, write to{' '}
+            <a href={`mailto:${OPERATOR.contactEmail}`}>{OPERATOR.contactEmail}</a>. Ask before you
+            ask for deletion &mdash; <Link href="#8-1">clause 8.1</Link> says why.
+          </P>
+        </SubClause>
       </Clause>
 
       <Clause id="4" n="4." title="Who else sees it">
-        <P>Three parties, and no others.</P>
+        {/*
+          **THIS LINE USED TO READ "Three parties, and no others."** Reconciliation
+          R31: it is an answer about THIRD parties and a reader takes it as the
+          exhaustive answer to "who sees my answers". Amending only 3 and 8 would
+          leave a policy that is technically amended and still misleading.
+        */}
+        <P>
+          Three parties outside us, and no others. Who inside us can see it is{' '}
+          <Link href="#3-1">clause 3.1</Link>.
+        </P>
 
         <SubClause id="4-1" n="4.1" title={`The language model provider (${PROVIDER.name})`}>
           <Callout>
@@ -233,6 +283,16 @@ export function PrivacyEn({ effective }: { effective: string }) {
           field encryption protects against a leaked copy of the database, not against a running
           application that has been compromised.
         </P>
+        {/*
+          R31 again. This is the one paragraph in the document about limits, so it is
+          the worst possible place to omit the second one.
+        */}
+        <P>
+          A second limit, and this one is a choice rather than a leak: field encryption does not
+          protect you from an operator who is entitled to open it.{' '}
+          <Link href="#3-1">Clause 3.1</Link>{' '}sets out what may be opened and what is recorded
+          each time it happens.
+        </P>
       </Clause>
 
       <Clause id="6" n="6." title="How long we keep things">
@@ -256,6 +316,17 @@ export function PrivacyEn({ effective }: { effective: string }) {
               Share links: for the life of your account.{' '}
               <strong>A link you turned off is kept revoked</strong> rather than deleted, so that
               address can never be issued again for something else.
+            </>,
+            /*
+              R31's third clause. **THE SWEEP IS FORBIDDEN FROM TOUCHING THIS TABLE**
+              (roadmap §6), so the honest row reads *kept indefinitely* -- unusual in a
+              retention list, which is precisely why it is written rather than inferred.
+            */
+            <>
+              The operator access log: <strong>kept indefinitely</strong>, never deleted. That
+              record is what makes &ldquo;what has been opened about me&rdquo; an answerable
+              question; deleting it would be the same as never having written it. It never holds
+              anything you typed.
             </>,
           ]}
         />
@@ -294,6 +365,33 @@ export function PrivacyEn({ effective }: { effective: string }) {
           &mdash; the user column is emptied, and a moderation record no longer holds any text. We
           say so because &ldquo;we delete all your data&rdquo; would not be true, and people check.
         </P>
+
+        {/*
+          8.1 — A-D16's second required amendment, and the cost is one a person can
+          feel: the link to them is the part that gets removed, so afterwards the
+          trail cannot answer the one question it exists for. The same bargain
+          `events` already pays, and an integration test asserts it rather than
+          leaving a policy sentence with nothing behind it.
+        */}
+        <SubClause id="8-1" n="8.1" title="The operator access log, after deletion">
+          <P>
+            The operator access log survives deletion too, exactly as the analytics and moderation
+            records do: the row stays, and its user columns are emptied.
+          </P>
+          <P>
+            We say so because the consequence is real and unpleasant.{' '}
+            <strong>
+              After your account is really gone, that log can no longer tell you what was read
+              about you
+            </strong>
+            , because the link to you is the part that was removed. If you want to know, ask before
+            you ask for deletion.
+          </P>
+          <P>
+            We do not delete that log and there is no button to delete it. A delete button on an
+            audit trail is the audit trail&rsquo;s absence.
+          </P>
+        </SubClause>
       </Clause>
 
       <Clause id="9" n="9." title="Children">

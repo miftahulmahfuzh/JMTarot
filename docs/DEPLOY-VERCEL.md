@@ -703,6 +703,38 @@ It binds to `127.0.0.1` inside WSL and is unreachable from Vercel by design. A
 `DATABASE_URL` set to it in the dashboard is a connection that times out, not
 one that fails loudly.
 
+### 6a. `ADMIN_EMAILS` IS PRODUCTION ONLY, AND THE REASON IS THIS FILE'S SUBJECT
+
+**v0.5.0 / A1, reconciliation R37.** Set `ADMIN_EMAILS` in **Production** and
+**nowhere else** — not Preview, not Development.
+
+**Because Preview shares `DATABASE_URL` with Production** (§2 says to set the same
+keys in both, and that is right for every other variable). So an `ADMIN_EMAILS` set
+on Preview gives **every push-triggered preview deployment a live `/admin` over real
+querent data** — including the audited PII reveal — on a URL that gets pasted into
+PR comments and is in nobody's threat model. The gate is the same gate, so this is
+not an authorisation hole; it is a surface-area increase nobody chose, and no plan
+was positioned to see it because each saw only its own half.
+
+Two consequences worth stating rather than discovering:
+
+- **Loop 5's admin flow runs locally**, against `E2E_BASE=http://localhost:3001`.
+  What it runs against a real deployment are the **signed-out and non-admin refusal
+  cases**, which need no admin identity — and those are the half that actually
+  needs a deployment, because `tools/admin/probe.sh` measures the refusal on the
+  real Vercel edge.
+- **An admin session cookie would not travel to a preview anyway.** It is
+  `Domain`-scoped to `www.jmtarot.site`, so a preview admin has to sign in there
+  separately — which means the residual risk is Google's consent screen accepting a
+  preview URL as a redirect target, **a configuration nobody has audited.** One more
+  reason the variable stays off Preview.
+
+Two smaller notes: **an empty or unset value means nobody is an admin**, never
+everybody (the `RATELIMIT_BACKEND` direction), so there is no `ADMIN_ENABLED` kill
+switch and none is wanted. And **if `/admin` redirects you to `/onboarding`, the
+allowlist is probably correct** — the onboarding gate runs above the admin check, so
+a fresh operator account presents exactly like a misspelt address here.
+
 ## 7. Search Console and the sitemap — REQUIRED once, after the first deploy
 
 ### 7a. `NEXT_PUBLIC_SITE_ORIGIN` — set it, and then look at the sitemap

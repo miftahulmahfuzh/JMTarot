@@ -311,6 +311,87 @@ describe('the privacy policy', () => {
     }
   });
 
+  /*
+   * ── v0.5.0 / A1: THE ADMIN AMENDMENT (A-D16, reconciliation R31) ────────────
+   *
+   * **A RELEASE BLOCKER, NOT A FOLLOW-UP.** `/admin` ships in this release, so a
+   * policy still describing a system in which nobody reads your answers would be a
+   * live legal document that is false in two languages.
+   *
+   * A-D16 named clauses 3 and 8. **R31 found five**: clause 4's "three parties, and
+   * no others", clause 5's honest-limit paragraph (which now has a second limit),
+   * and clause 6's retention list (which had no row for a table the sweep is
+   * forbidden to touch). Amending only two would leave a policy that is technically
+   * amended and still misleading, which is worse than one plainly out of date.
+   *
+   * The anchor-set equality above is what makes "both locales" mechanical, so the
+   * risk was never forgetting `en` -- it was amending too few clauses in both.
+   */
+  describe('the admin amendment (A-D16, R31)', () => {
+    it('describes admin access in BOTH locales', () => {
+      expect(PRIVACY['privacy.id']).toContain('satu per satu, satu permintaan untuk satu jawaban');
+      expect(PRIVACY['privacy.en']).toContain('one at a time, one request per answer');
+    });
+
+    it('promises the audit row is written or the answer is not opened', () => {
+      // A1-11/A1-12 as a sentence a person can hold us to, and
+      // `audit.integration.test.ts` is what makes it true rather than aspirational.
+      expect(PRIVACY['privacy.id']).toContain(
+        'Kalau baris itu gagal ditulis, jawabannya tidak dibuka',
+      );
+      expect(PRIVACY['privacy.en']).toMatch(
+        /if that row cannot be written, the answer is not opened/i,
+      );
+    });
+
+    it('says the operator only reads, and cannot edit', () => {
+      // Roadmap §1: "not a write surface over querent data". A policy that omits
+      // this leaves a reader assuming the worst available reading.
+      expect(PRIVACY['privacy.id']).toContain('Operator hanya membaca');
+      expect(PRIVACY['privacy.en']).toContain('The operator only reads');
+    });
+
+    it('admits a REFUSED question can be read too', () => {
+      // R31 calls this the least comfortable sentence in the amendment and the one
+      // most likely to be omitted. It is also the one W7's 30-day redaction makes
+      // survivable, so leaving it out would be the choice to look better than we are.
+      expect(PRIVACY['privacy.id']).toContain('teks pertanyaan yang pernah ditolak');
+      expect(PRIVACY['privacy.en']).toContain('the text of a refused question');
+    });
+
+    it('stops claiming three parties are the whole answer', () => {
+      expect(PRIVACY['privacy.id']).not.toContain('Tiga pihak, dan tidak ada yang lain.');
+      expect(PRIVACY['privacy.en']).not.toContain('Three parties, and no others.');
+    });
+
+    it('states the SECOND limit in the clause about limits', () => {
+      expect(PRIVACY['privacy.id']).toContain('Batas kedua');
+      expect(PRIVACY['privacy.en']).toContain('A second limit');
+    });
+
+    it('gives the access log a retention row and an after-erasure statement', () => {
+      // The sweep may never touch this table (roadmap §6), so `kept indefinitely`
+      // is the honest row -- unusual enough in a retention list that it has to be
+      // written rather than inferred from an absence.
+      expect(PRIVACY['privacy.id']).toContain('disimpan seterusnya');
+      expect(PRIVACY['privacy.en']).toContain('kept indefinitely');
+      expect(anchorsIn(PRIVACY_HTML['privacy.id'])).toContain('8-1');
+      expect(anchorsIn(PRIVACY_HTML['privacy.en'])).toContain('3-1');
+    });
+
+    it('leaves clause 4.4 and every other existing anchor untouched', () => {
+      /*
+       * `/privacy` §4.4 is cited by name in `src/middleware.ts` and in V7's notes,
+       * and the T&C precedent is that sub-numbering is an INTERFACE -- a refusal
+       * renders `/terms#6-2`. New anchors are free; renumbering is not.
+       */
+      for (const anchor of ['3', '4', '4-4', '5', '6', '8']) {
+        expect(anchorsIn(PRIVACY_HTML['privacy.id']), anchor).toContain(anchor);
+        expect(anchorsIn(PRIVACY_HTML['privacy.en']), anchor).toContain(anchor);
+      }
+    });
+  });
+
   it('says readings are NOT on the analytics clock, in those words', () => {
     // Reconciliation §7.9b asks for both facts stated explicitly rather than one
     // retention period implied to cover everything.

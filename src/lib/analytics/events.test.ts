@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ADMIN_PAGES } from '@/app/admin/pages';
 import { EVENT_NAMES, isEventName } from './events';
 
 describe('the event taxonomy', () => {
@@ -79,9 +80,50 @@ describe('the event taxonomy', () => {
    * guidance in this comment is what did the work. **The next person here should
    * expect to fold rather than add**, and should write down what they folded.
    */
+  /*
+   * **AND IT MOVED 67 -> 70 ON 2026-07-30, FOR v0.5.0 / A1, WITH THE SAME
+   * ACCOUNTING PERFORMED FIRST.** A-D18's register:
+   *
+   *   DRAFTED, six names:  `admin.page_viewed`, `admin.blog_saved`,
+   *                        `admin.blog_status_changed`, `admin.pii_revealed`,
+   *                        `admin.user_viewed`, `llm.call_recorded`.
+   *   LANDED, three:       the first three.
+   *
+   * `admin.pii_revealed` was dropped because `admin_access_log` is the record of
+   * truth for a reveal, and a second copy would put a resource key into the one
+   * table whose rows survive that subject's erasure. `admin.user_viewed` was
+   * dropped on the `revealed` argument. `llm.call_recorded` was dropped because it
+   * is a row in `llm_calls`: **a fact table and an event stream recording the same
+   * fact is how they drift**, and it is why A2 imports nothing from `events.ts`.
+   *
+   * Three of six, and the two that landed with a `blog` prefix are A6's
+   * declarations transcribed rather than narrowed (§11 seam 1).
+   */
   it('stays inside the fixed name budget', () => {
     expect(EVENT_NAMES.length).toBeGreaterThanOrEqual(44);
-    expect(EVENT_NAMES.length).toBeLessThanOrEqual(67);
+    expect(EVENT_NAMES.length).toBeLessThanOrEqual(70);
+  });
+
+  it("admin.page_viewed's pages are route TEMPLATES, not resolved paths (A1-18, R32)", () => {
+    /*
+     * A uuid-shaped segment here is a subject identifier in a table whose rows
+     * survive that subject's erasure with `user_id` nulled -- so the closed list
+     * is not a tidiness preference, it is what keeps `events` honest about the one
+     * promise it makes. `usePathname()` on `/admin/users/<uuid>` is the
+     * implementation this forbids.
+     */
+    for (const { path } of ADMIN_PAGES) {
+      expect(path, path).toMatch(/^\/admin(\/(\[[a-z]+\]|[a-z][a-z-]*))*$/);
+      expect(path, path).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}/);
+    }
+  });
+
+  it('gives every admin page a template and every nav item a label', () => {
+    // Not vacuous: a glob-free hardcoded list can go empty in a refactor, and an
+    // entry whose label is `null` is deliberately not in the nav (A5's user
+    // detail, A6's editor) rather than an omission.
+    expect(ADMIN_PAGES.length).toBeGreaterThanOrEqual(7);
+    expect(ADMIN_PAGES.filter((p) => p.label !== null).length).toBeGreaterThanOrEqual(4);
   });
 
   /*

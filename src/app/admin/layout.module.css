@@ -1,0 +1,65 @@
+/*
+ * The `/admin` shell. v0.5.0 / A1.
+ *
+ * **THIS FILE IS A GUESS AND IT IS RECORDED AS ONE** (plan `## Flags` 8). Roadmap
+ * §0.5 says nobody has looked at this dashboard on the machine it will be used
+ * from, and calls that not-a-task-in-any-plan; §12.7 leaves it the release's one
+ * still-open question. So this is deliberately minimal -- a max-width, a nav row,
+ * and tokens only -- so that A4 replacing it costs nothing and does not inherit a
+ * layout decision nobody made. **Loop 3 at 1440px is the instrument and it is A4's
+ * acceptance step, not A1's.**
+ *
+ * **NO NEW HEX, NO NEW FONT SIZE, NO NEW CURVE** (`## Styling`). Everything here is
+ * an existing custom property from `src/theme/tokens.css`. A4 licenses the chart
+ * palette in its own file (`src/theme/chart.ts`) and A1 introduces nothing --
+ * including `--chart-surface`, which is A4's to add and whose opaque-panel invariant
+ * (reconciliation R8) is the reason a chart may never be transparent over
+ * `Backdrop`.
+ *
+ * DESKTOP-FIRST, and it is the first surface in this project that is. Everything
+ * else here is a phone screen; this is a table of numbers read on a laptop. The
+ * `max-width` is the one number worth arguing about and 1200px is the guess.
+ */
+
+.shell {
+  min-height: 100dvh;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 32px 20px calc(40px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/*
+ * One row, wrapping, and it scrolls rather than pushing the body wide -- the rule
+ * from `## Styling`: wide content scrolls inside its own container and the page body
+ * never scrolls horizontally.
+ */
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  align-items: baseline;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--gold-hairline);
+  overflow-x: auto;
+}
+
+.navLink {
+  font-family: var(--font-display);
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-section-label);
+  text-transform: uppercase;
+  color: var(--label);
+  text-decoration: none;
+  /* 44px of tap target on a touch screen, because the operator may well be on a
+   * phone looking at why something broke -- the one thing loop 5 cannot measure
+   * and the one number iOS actually enforces. */
+  padding: 14px 2px;
+}
+
+.navLink:hover,
+.navLink:focus-visible {
+  color: var(--gold-text);
+}

@@ -64,6 +64,13 @@
       "when": 1785303711992,
       "tag": "0008_v11-readings-choice",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785314273600,
+      "tag": "0009_v12-admin-access-log",
+      "breakpoints": true
     }
   ]
 }

@@ -72,13 +72,25 @@ export async function withRollback(fn: (tx: Tx) => Promise<void>): Promise<void>
  * does not have to be topologically sorted -- but every table is named anyway,
  * so that a table added to the schema and forgotten here shows up as leaked
  * state rather than as a silent survivor.
+ *
+ * **v0.5.0 / A1, reconciliation R7: THIS LIST IS A1's TO MAINTAIN, AND IT NAMES
+ * ONE OF THE RELEASE'S THREE NEW TABLES RATHER THAN ALL THREE.** R7 asks for all
+ * three in `0009`'s commit, on the correct ground that a list assigned to nobody
+ * goes stale silently. It cannot be done: `TRUNCATE` names a relation, so
+ * `llm_calls` (A2, migration `0010`) and `blog_posts` / `blog_post_locales` (A6,
+ * `0011`) would make every `resetDb()` caller fail with `42P01 undefined_table`
+ * from the moment this commit lands until theirs does. **So A2 and A6 each add
+ * their own tables here, in the commit that adds the migration, and R7's real
+ * requirement -- that somebody owns the line -- is discharged by this paragraph
+ * naming them.** A1 owns the list; the two owed entries are named here so that
+ * "was it forgotten?" is answerable without reading a reconciliation.
  */
 export async function resetDb(): Promise<void> {
   await testDb.execute(sql`
     TRUNCATE TABLE users, profiles, onboarding_answers, lotus_avatars,
                    readings, reading_cards, events, daily_summaries,
                    moderation_flags, frequency_verdicts, translations,
-                   share_links, personas
+                   share_links, personas, admin_access_log
     RESTART IDENTITY CASCADE`);
 }
 
