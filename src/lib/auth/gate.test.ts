@@ -364,3 +364,115 @@ describe('decide -- V7 makes /s/ public', () => {
     expect(at('/history/abc', signedOut)).toEqual({ kind: 'redirect', to: '/login' });
   });
 });
+
+describe('v0.5.0 / A1 -- /admin is an ORDINARY GATED PATH, and isPublic() knows nothing', () => {
+  /*
+   * ── THIS BLOCK ASSERTS AN ABSENCE, AND IT PASSED THE DAY IT WAS WRITTEN ─────
+   *
+   * A-D2: **`isPublic()` MUST NEVER LEARN `/admin`.** Not as a convenience, not
+   * "so the 404 comes from Next". There is no safe version of the edit, because
+   * this function short-circuits `decide()` ABOVE the onboarding check and above
+   * the signed-out arm -- so `/admin` in the allowlist makes it reachable by a
+   * stranger, which is the whole surface this release is built to hide.
+   *
+   * What actually hides it is `requireAdmin()` in the handler and
+   * `requireAdminPage()` in the page (A-D2, plan §1.2). Middleware's job on this
+   * path is exactly what it already does for `/history` and `/account`: send a
+   * signed-out visitor to `/login`.
+   *
+   * So there is no production change to fence, and the fence is that a future
+   * "helpful" edit turns this block red. Reconciliation R1 is the ruling:
+   * `git diff --stat src/lib/auth/gate.ts src/middleware.ts` is EMPTY for A1.
+   */
+  it('never makes /admin public, under any spelling', () => {
+    expect(isPublic('/admin')).toBe(false);
+    expect(isPublic('/admin/')).toBe(false);
+    expect(isPublic('/admin/users')).toBe(false);
+    expect(isPublic('/admin/users/9f3c1d2e-0000-4000-8000-000000000000')).toBe(false);
+    expect(isPublic('/admin/tokens')).toBe(false);
+    expect(isPublic('/admin/blog')).toBe(false);
+  });
+
+  it('never makes /api/admin/** public', () => {
+    /*
+     * `/api/admin/users/<id>/answer/worst_thing` is the most sensitive endpoint
+     * this project has ever had. It is not in `isPublic()` and the `/api/auth/`
+     * and `/api/cron/` prefixes do not reach it -- which is worth an assertion,
+     * because `startsWith('/api/')` clauses live three lines apart in that file.
+     */
+    expect(isPublic('/api/admin')).toBe(false);
+    expect(isPublic('/api/admin/users')).toBe(false);
+    expect(isPublic('/api/admin/users/abc/answer/worst_thing')).toBe(false);
+    expect(isPublic('/api/admin/blog')).toBe(false);
+  });
+
+  it('NEVER OPENS /admin UNDER /en/ EITHER -- contract G2, the worst outcome', () => {
+    /*
+     * Only the CONTENT clause strips a locale prefix. `/admin` is not a content
+     * path, so `contentRewrite` returns `passthrough` and `decide()` receives
+     * `/en/admin` spelled exactly as requested -- where it matches nothing, and
+     * Next has no such route. The v0.4.0 assertion for `/en/history` is the
+     * precedent and this is the same fence one release later.
+     */
+    expect(isPublic('/en/admin')).toBe(false);
+    expect(isPublic('/en/admin/users')).toBe(false);
+    expect(isPublic('/en/api/admin/users')).toBe(false);
+  });
+
+  it('does not open anything that merely LOOKS like /admin', () => {
+    // The negative controls on the absence of a clause. They pass today, and
+    // they are what catches somebody writing `startsWith('/admin')` -- which
+    // would also open `/administrator` if such a route were ever added.
+    expect(isPublic('/adminx')).toBe(false);
+    expect(isPublic('/administrator')).toBe(false);
+    expect(isPublic('/admins')).toBe(false);
+  });
+
+  it('sends a signed-out visitor on /admin to /login (roadmap §10.2)', () => {
+    expect(at('/admin', signedOut)).toEqual({ kind: 'redirect', to: '/login' });
+    expect(at('/admin/users', { signedIn: false, onboarded: true })).toEqual({
+      kind: 'redirect',
+      to: '/login',
+    });
+  });
+
+  it('gives a signed-out API caller 401, not a redirect and not a 404', () => {
+    /*
+     * The 404 is `requireAdmin()`'s answer to a SIGNED-IN non-admin. Middleware
+     * answers a signed-out caller the way it answers every other gated endpoint,
+     * because making middleware 404 here would mean teaching the edge which paths
+     * are admin paths -- a second copy of the allowlist decision, on the one
+     * runtime that cannot read an environment secret safely.
+     *
+     * **RECONCILIATION R36: §10.2 NEEDS BOTH CODES AND A PROBE THAT CONFLATES
+     * THEM REDS ON CORRECT BEHAVIOUR.** 401 signed out, 404 signed in.
+     */
+    expect(at('/api/admin/users', signedOut)).toEqual({
+      kind: 'json',
+      status: 401,
+      error: 'Unauthorized',
+    });
+  });
+
+  it('still sends a signed-in, UN-ONBOARDED user to /onboarding', () => {
+    // R34, documented and deliberately not fixed: for an ADMIN this redirect
+    // reads exactly like a misspelt ADMIN_EMAILS. Exempting /admin would mean
+    // `isOnboardingExempt` learning an admin path, and S-D5's argument is that
+    // this chain must not acquire special cases.
+    expect(at('/admin', halfway)).toEqual({ kind: 'redirect', to: '/onboarding' });
+    expect(isOnboardingExempt('/admin')).toBe(false);
+  });
+
+  it('lets a signed-in, onboarded NON-ADMIN through the gate -- AND THAT IS CORRECT', () => {
+    /*
+     * **`next` HERE IS NOT ACCESS.** The gate's job ends at "this request has a
+     * session and a completed profile". `requireAdminPage()` is what turns this
+     * querent into a 404, in the page, one layer down. Written out because a
+     * reader who sees `next` for `/admin` will otherwise conclude the gate is
+     * broken and will "fix" it in `isPublic()` -- the one edit that opens the
+     * surface to a stranger.
+     */
+    expect(at('/admin', settled)).toEqual({ kind: 'next' });
+    expect(at('/api/admin/users', settled)).toEqual({ kind: 'next' });
+  });
+});
