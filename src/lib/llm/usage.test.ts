@@ -12,12 +12,14 @@ type RawEvent = Record<string, unknown>;
 
 /** Whatever the SDK is told to return from `client.messages.stream`. */
 let scripted: () => AsyncIterable<RawEvent>;
+/** And from `client.messages.create` -- the BUFFERED path, which has its own rule. */
+let scriptedCreate: () => Promise<RawEvent>;
 
 vi.mock('@anthropic-ai/sdk', () => ({
   default: class {
     messages = {
       stream: () => scripted(),
-      create: async () => ({ content: [], usage: {} }),
+      create: () => scriptedCreate(),
     };
   },
 }));
@@ -47,6 +49,7 @@ async function drain(stream: LLMStream): Promise<string> {
 beforeEach(() => {
   process.env.LLM_API_KEY = 'test-key';
   process.env.LLM_MODEL = 'test-model';
+  scriptedCreate = async () => ({ content: [], usage: {} });
 });
 
 afterEach(() => {
@@ -151,5 +154,46 @@ describe('streamReading usage', () => {
     expect(started).toBe(false);
     await drain(stream);
     expect(started).toBe(true);
+  });
+});
+
+/**
+ * The BUFFERED path's usage, which for one release recorded the same provider fact
+ * differently from the streamed one (A2-D5, reconciliation R16).
+ *
+ * The first case here FAILS against the code as it shipped before A2: `0 ?? null` is
+ * `0`, so a buffered z.ai call stored a literal zero while a streamed one stored
+ * NULL. Six ledger consumers now read this column, and a zero understates every
+ * average without ever looking wrong.
+ */
+describe('complete() usage', () => {
+  const COMPLETION = { system: 's', user: 'u', maxTokens: 100 };
+  const OP = { op: 'gist' } as const;
+
+  it('THE z.ai CASE ON THE BUFFERED PATH: input_tokens 0 is null, and a real output count survives', async () => {
+    scriptedCreate = async () => ({
+      content: [{ type: 'text', text: 'ok' }],
+      usage: { input_tokens: 0, output_tokens: 40 },
+    });
+
+    const out = await createAnthropicProvider().complete(COMPLETION, OP);
+    expect(out.usage).toEqual({ inputTokens: null, outputTokens: 40 });
+  });
+
+  it('reports both counts when the provider reports both', async () => {
+    scriptedCreate = async () => ({
+      content: [{ type: 'text', text: 'ok' }],
+      usage: { input_tokens: 1200, output_tokens: 64 },
+    });
+
+    const out = await createAnthropicProvider().complete(COMPLETION, OP);
+    expect(out.usage).toEqual({ inputTokens: 1200, outputTokens: 64 });
+  });
+
+  it('an absent usage object is two nulls, not two zeroes', async () => {
+    scriptedCreate = async () => ({ content: [{ type: 'text', text: 'ok' }] });
+
+    const out = await createAnthropicProvider().complete(COMPLETION, OP);
+    expect(out.usage).toEqual({ inputTokens: null, outputTokens: null });
   });
 });

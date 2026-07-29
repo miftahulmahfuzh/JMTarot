@@ -145,10 +145,22 @@ export function createAnthropicProvider(): LLMProvider {
        * `input_tokens: 0` and honours no caching, so these are recorded as
        * nullable rather than trusted -- do not build a cost model on them while
        * pointed at that provider.
+       *
+       * **`nonZero()` HERE TOO, AND FOR ONE RELEASE IT WAS ONLY ON THE STREAM**
+       * (A2-D5, reconciliation R16). One adapter recorded one provider fact two
+       * ways: a streamed call stored NULL for z.ai's absent input count and a
+       * buffered call stored `0`, from the same provider, for the same absence.
+       * Nothing read the buffered value, which is exactly why this was the moment
+       * to fix it rather than the reason to leave it -- A2's ledger gives it six
+       * consumers, and `0` is indistinguishable from a real zero in a dump and
+       * makes every average silently wrong. **Absence is NULL, never 0.**
+       *
+       * `openai.ts` deliberately does NOT copy this and its comment says why: a
+       * zero from OpenAI would be a fact worth seeing. Preserve that asymmetry.
        */
       const usage: ReadingUsage = {
-        inputTokens: message.usage?.input_tokens ?? null,
-        outputTokens: message.usage?.output_tokens ?? null,
+        inputTokens: nonZero(message.usage?.input_tokens),
+        outputTokens: nonZero(message.usage?.output_tokens),
       };
 
       return { text, usage };
