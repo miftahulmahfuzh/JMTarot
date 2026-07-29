@@ -4,8 +4,8 @@ import { sql } from 'drizzle-orm';
 import { ERASURE_GRACE_DAYS } from '@/lib/db/queries/profile';
 
 /**
- * **ONE CRON JOB, FOUR DELETES** (reconciliation §7.8 and §7.9b; V2 §8 added the
- * fourth).
+ * **ONE CRON JOB, FIVE DELETES** (reconciliation §7.8 and §7.9b; V2 §8 added the
+ * fourth; A3, v0.5.0, added the fifth).
  *
  * Not four jobs. Vercel's free plan allows a small number of cron
  * invocations, they all want the same daily cadence, and four routes doing one
@@ -31,6 +31,37 @@ import { ERASURE_GRACE_DAYS } from '@/lib/db/queries/profile';
  *      answer. The statement lives in `queries/translations.ts` rather than
  *      inline here, because unlike the three above it is an ordinary query
  *      function with its own integration test.
+ *   5. **The `llm_calls` ledger TTL** (A3, v0.5.0, reconciliation R19).
+ *      `LLM_CALLS_RETENTION_DAYS`, default **400**.
+ *
+ *      **NOT `events`' 180, and the difference between the two tables IS the
+ *      argument.** `events` is a behavioural firehose whose value decays in weeks
+ *      and which the privacy policy commits to deleting. `llm_calls` is a **cost
+ *      ledger**, it holds no querent text at all, and the one question it exists
+ *      to answer -- *"what did this cost, and is that growing"* -- needs a
+ *      year-over-year comparison to be answerable. 400 is `HISTORY_DAY_LIMIT`'s
+ *      number and `series.ts`'s `MAX_RANGE_DAYS`: **the retention window and the
+ *      maximum queryable range are the same number on purpose**, so the dashboard
+ *      can never offer a range whose data has already been swept -- which would
+ *      look like a bug in the chart rather than like a retention policy.
+ *
+ *      **The binding input is Neon free's 0.5 GB, not a row rate that does not
+ *      exist yet.** At ~450 B/row all-in (five indexes roughly double a ~200 B
+ *      heap tuple), 400 days at 1,000 calls/day is ~400k rows ≈ 180 MB, 36% of
+ *      the plan; at a realistic early 50/day it is ~9 MB. **Revisit at 100 MB or
+ *      25% of the plan's storage, whichever comes first** -- and the options, in
+ *      order, are a shorter window, then dropping `llm_calls_op_created_idx`
+ *      (whose query is monthly, not per-request), then a daily rollup table for
+ *      rows older than 90 days, which is a v0.6.0 schema and is named here only
+ *      so nobody invents it in an emergency.
+ *
+ * **`admin_access_log` IS NEVER SWEPT, AND ITS ABSENCE IS A TESTED PROPERTY.**
+ * §9.14: an audit trail with a delete path is the audit trail's absence, and a
+ * retention policy is a delete path with a timer on it. `/privacy` clause 6's row
+ * for it therefore reads *kept indefinitely*, which is the honest one.
+ * `sweep.retention.integration.test.ts` reads this file and asserts the string
+ * does not appear in it -- the `callClass.test.ts` grep precedent, a negative
+ * control named for the outcome rather than for the mechanism.
  *
  * **THE ORDER MATTERS AND IS NOT ALPHABETICAL.** Erasure runs FIRST so that a
  * purged user's rows are gone before the other sweeps walk the same tables;
@@ -68,6 +99,20 @@ function eventsRetentionDays(): number {
 function moderationRetentionDays(): number {
   const raw = Number(process.env.MODERATION_QUESTION_RETENTION_DAYS);
   return Number.isFinite(raw) && raw > 0 ? raw : 30;
+}
+
+/**
+ * How long an `llm_calls` row lives. A3, v0.5.0, reconciliation R19.
+ *
+ * **THE `> 0` IS NOT HYGIENE HERE, IT IS THE WHOLE GUARD.** `Number('abc')` is
+ * `NaN` and `Number('')` is `0`; without both halves of the test a typo in the
+ * Vercel dashboard becomes `make_interval(days => 0)` and **the fifth delete
+ * empties the table on its first run**, silently, at 03:17. `auth/ttl.ts`'s
+ * defensiveness, with a sharper consequence.
+ */
+function llmCallsRetentionDays(): number {
+  const raw = Number(process.env.LLM_CALLS_RETENTION_DAYS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 400;
 }
 
 /**
@@ -119,6 +164,7 @@ export async function GET(request: Request) {
     redactedFlags: 0,
     deletedEvents: 0,
     orphanedTranslations: 0,
+    deletedLlmCalls: 0,
   };
   const failures: string[] = [];
 
@@ -200,10 +246,72 @@ export async function GET(request: Request) {
   }
 
   /*
-   * **V9 ADDS ONE SELECT AND NO FOURTH JOB.** This file's header is emphatic that
-   * there is ONE cron job with THREE deletes, because Vercel's free plan allows a
-   * small number of invocations -- so the ceiling's early warning rides along on
-   * the job that is already running rather than asking for one of its own.
+   * **THE FIFTH DELETE, AND IT RUNS LAST FOR THE FOURTH'S REASON EXTENDED ONE HOP.**
+   * The user purge above CASCADEs `readings` away, and both `llm_calls.user_id` and
+   * `llm_calls.reading_id` are `on delete set null` -- so rows *become* partially
+   * unattributed DURING this invocation. Sweeping last means the same night's
+   * arithmetic is done against the state the night leaves behind. (Those rows survive
+   * as unattributed cost, which is correct and which M12 already states on the page:
+   * the tokens were spent.)
+   */
+  try {
+    const rows = await db.execute(sql`
+      delete from llm_calls
+       where created_at < now() - make_interval(days => ${llmCallsRetentionDays()}::int)
+    `);
+    result.deletedLlmCalls = (rows as unknown as { count?: number }).count ?? 0;
+  } catch (err) {
+    /*
+     * The error's CLASS only. This table holds no querent text -- nine scalars, a
+     * model name and two ids -- but the rule is *never log a driver error from any
+     * path that runs a query*, and **a `catch` that is an exception to the rule is a
+     * `catch` somebody copies** into one that is not.
+     */
+    failures.push('llm_calls');
+    console.error('[cron] llm_calls TTL failed', err instanceof Error ? err.name : 'unknown');
+  }
+
+  /*
+   * **THE SIZE PROBE, WHICH IS THE ACTUAL DELIVERABLE OF R19 AND IS LOGGED EVERY
+   * NIGHT WHETHER OR NOT ANYTHING HAPPENED.**
+   *
+   * The retention number above is a calculation, not a measurement: nobody has a real
+   * row rate for this table and nobody will before it ships. This is what makes the
+   * missing input start existing tonight -- **a size series is only useful as a
+   * series**, so unlike the ceiling warning below it fires unconditionally. One line a
+   * night in a Vercel log is the cheapest time series this project can have.
+   *
+   * `pg_total_relation_size` and not `pg_relation_size`: it includes the indexes,
+   * which is the number that matters here -- five of them roughly double the heap, so
+   * a heap-only figure understates this table by half.
+   *
+   * NOT a `failures` entry: a diagnostic that could not run must not turn a successful
+   * sweep red. Same rule as the ceiling report.
+   */
+  try {
+    const rows = await db.execute(sql`
+      select count(*)                            as rows,
+             pg_total_relation_size('llm_calls') as bytes,
+             min(created_at)::text               as oldest
+        from llm_calls
+    `);
+    const row = (rows as unknown as Array<Record<string, unknown>>)[0];
+    const bytes = Number(row?.bytes ?? 0);
+    console.log(
+      `[llm_calls] rows=${Number(row?.rows ?? 0)} bytes=${bytes} ` +
+        `mb=${(bytes / 1_048_576).toFixed(1)} oldest=${row?.oldest ?? 'none'} ` +
+        `retention_days=${llmCallsRetentionDays()}`,
+    );
+  } catch (err) {
+    console.error('[cron] llm_calls size probe failed', err instanceof Error ? err.name : 'unknown');
+  }
+
+  /*
+   * **V9 ADDS ONE SELECT AND NO SECOND JOB.** This file's header is emphatic that
+   * there is ONE cron job -- five deletes now, three when V9 wrote this -- because
+   * Vercel's free plan allows a small number of invocations, so the ceiling's early
+   * warning rides along on the job that is already running rather than asking for
+   * one of its own. A3's size probe above joined it on the same terms.
    *
    * It is the ONLY thing in V9's design that fires on a day when nobody visits,
    * and it is still only a log line. **Nothing here pages anybody**, and pretending
