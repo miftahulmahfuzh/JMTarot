@@ -621,6 +621,25 @@ const en: Catalog = {
   'arcana.modality.cardinal': 'Cardinal',
   'arcana.modality.fixed': 'Fixed',
   'arcana.modality.mutable': 'Mutable',
+
+  /*
+   * S5. REWRITTEN, not translated (§8.2 / `## Localization` rule 3).
+   *
+   * `Take the artwork with you` rather than a translated `Download the image`,
+   * because a heading is the cheapest place to prove the rule — and it is what a
+   * person is actually doing. The Indonesian `Unduh gambarnya` is the plain verb,
+   * which is what that register wants.
+   */
+  'wallpaper.heading': 'Take the artwork with you',
+  'wallpaper.card': 'The card image',
+  'wallpaper.phone': 'Phone wallpaper',
+  'wallpaper.cardAria': 'Download the {card} card image, 1024 by 1536 pixels',
+  'wallpaper.phoneAria': 'Download the {card} phone wallpaper, 1440 by 3120 pixels',
+  'wallpaper.saveHint': 'On iPhone: open the image, press and hold, then choose Add to Photos.',
+  'wallpaper.licence':
+    'This artwork belongs to JMTarot. You may keep it and set it as your own wallpaper. ' +
+    'Not for resale, not on merchandise, and not for commercial use.',
+  'wallpaper.licenceLink': 'Terms & Conditions, clause 9',
 };
 
 export default en;

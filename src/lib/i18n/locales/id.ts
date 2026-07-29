@@ -1010,6 +1010,45 @@ const id = {
   // catalog.test.ts reads, correctly, as a key pasted across to make the typecheck
   // go green. 'Berubah' is the ordinary word and says the same thing.
   'arcana.modality.mutable': 'Berubah',
+
+  /**
+   * ── S5: the wallpaper download control ────────────────────────────────────
+   *
+   * CHROME ONLY (S-D6). Eight keys, declared in
+   * `docs/plans/2026-07-28-wallpapers.md`'s `## Deltas requested` D4 for S1 to
+   * fold in; **S1 landed without them, so S5 wrote them itself** — the
+   * single-owner rule exists to stop six agents editing this file in parallel,
+   * and there is no longer a parallel agent to collide with.
+   *
+   * **THERE IS DELIBERATELY NO `wallpaper.failed`.** Every branch of the control
+   * ends in a download — the share path falls back to the browser's own, and the
+   * browser's own is the default — so the only string that could render there is
+   * one that never legitimately does. The one outcome that produces no file is
+   * the person tapping Cancel on the share sheet, which is not a failure and must
+   * not be announced as one.
+   *
+   * `wallpaper.saveHint` NAMES iPhone EXPLICITLY, which is unusual for this app's
+   * copy and is the point: iOS is the platform where `<a download>` lands the file
+   * in Files while *Set Wallpaper* reads only from Photos, so this sentence IS the
+   * fallback mechanism when the Web Share sheet is unavailable.
+   *
+   * The dimensions are in the aria labels rather than only in the `<span>` because
+   * a screen reader user choosing between two downloads needs the same fact the
+   * sighted label carries; `1024 kali 1536` rather than `1024x1536` because that
+   * is how the number is read aloud.
+   */
+  'wallpaper.heading': 'Unduh gambarnya',
+  'wallpaper.card': 'Gambar kartu',
+  'wallpaper.phone': 'Wallpaper ponsel',
+  'wallpaper.cardAria': 'Unduh gambar kartu {card}, 1024 kali 1536 piksel',
+  'wallpaper.phoneAria': 'Unduh wallpaper ponsel {card}, 1440 kali 3120 piksel',
+  'wallpaper.saveHint':
+    'Di iPhone: buka gambarnya, tekan agak lama, lalu pilih Tambahkan ke Foto.',
+  'wallpaper.licence':
+    'Gambar kartu ini milik JMTarot. Kamu boleh menyimpannya dan memakainya sebagai ' +
+    'wallpaper pribadi. Bukan untuk dijual, ditempel ke barang dagangan, atau dipakai ' +
+    'secara komersial.',
+  'wallpaper.licenceLink': 'Syarat & Ketentuan bagian 9',
 } as const satisfies Record<string, string>;
 
 export default id;

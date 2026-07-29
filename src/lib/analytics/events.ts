@@ -643,16 +643,43 @@ export type EventMap = {
   'public.card_zoomed':        { card_id: number; surface: 'gallery' | 'arcana' };
 
   /*
-   * S5 fires it, S1 declares it. `variant` is the closed set S5's pipeline produces,
-   * and `card_id` is the integer.
+   * S5 fires it. `variant` is the closed set S5's pipeline produces, and `card_id`
+   * is the integer (rule 3).
    *
    * NO FILENAME, NO BYTE COUNT AND NO USER AGENT. A filename is derivable from
    * `(card_id, variant)`, a byte count is a fact about the pipeline rather than about
    * a person's choice, and a user agent is free text with unbounded cardinality --
    * rules 1 and 2 together. If "which variant do phones take" is ever the question,
    * the honest answer is a second closed prop, not a UA string.
+   *
+   * **THIS SHAPE WAS FOLDED IN NARROWER THAN S5 DECLARED IT, AND THE TWO MISSING
+   * PROPS ARE RESTORED HERE (S5, 2026-07-29).** S-D13 makes S1 the single owner of
+   * this file and every other workstream a declarer; folding a declaration in means
+   * transcribing it, and this one lost `method` and `from` and renamed the variant
+   * `card` to `native`:
+   *
+   *   `variant` IS `'card'`, NOT `'native'`, because the file on disk is
+   *   `<slug>-card.jpg` and `WALLPAPER_VARIANTS` in `@/lib/wallpaper` is the union
+   *   the component actually holds. A prop spelled differently from the asset it
+   *   describes is a query written against a value that never appears.
+   *
+   *   `method` IS THE ANSWER TO A QUESTION THE COUNTS CANNOT SETTLE. The control is
+   *   an `<a download>` upgraded to `navigator.share` on a touch device, because on
+   *   iOS a download lands in Files and *Set Wallpaper* reads only from Photos. If
+   *   `share` never appears in production, that upgrade is not running and the
+   *   feature is worse on its target platform than it looks here.
+   *
+   *   `from` mirrors `public.card_zoomed`'s `surface` for the same reason: the same
+   *   gesture exists on two pages and the prop is what makes one query possible
+   *   without renaming an event. It is spelled `from` because that is the word
+   *   `public.link_clicked` uses and the prop the component takes.
+   *
+   * A CANCELLED SHARE SHEET FIRES NOTHING. `navigator.share` rejecting with
+   * AbortError means the person tapped Cancel, and recording it would make every
+   * "download" figure an "intent" figure.
    */
-  'wallpaper.downloaded':      { card_id: number; variant: 'native' | 'phone' };
+  'wallpaper.downloaded':      { card_id: number; variant: 'card' | 'phone';
+                                 method: 'share' | 'link'; from: 'gallery' | 'arcana' };
 
   'app.launched':              { standalone: boolean; referrer_kind: 'direct' | 'internal' | 'external' };
 
