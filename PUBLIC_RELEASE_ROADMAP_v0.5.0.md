@@ -44,16 +44,85 @@ the copy lint while doing it, because `src/content/types.ts` says in capitals th
 
 ## 0. How to execute this roadmap
 
+### 0.0 `execute PUBLIC_RELEASE_ROADMAP_v0.5.0.md A1` — what that means, exactly
+
+**That sentence is the intended way to start a session, and this section is the whole
+dispatch table. `A1` through `A6` are the only valid arguments.** Unlike v0.4.0 — whose
+§0.3 existed because `execute S1` was ambiguous across two half-workstreams — **every
+v0.5.0 workstream is one plan file and one argument. There is nothing to disambiguate.**
+
+**Given `execute … <WS>`, read exactly these five things, in this order, and nothing
+else:**
+
+| # | Read | Why it is not optional |
+|---|---|---|
+| 1 | **`CLAUDE.md`** | The invariants. It is loaded for you; do not skim it |
+| 2 | **`docs/plans/2026-07-30-RECONCILIATION-v0.5.0.md`** | **IT OUTRANKS THIS FILE AND YOUR PLAN.** §8 tells you in one row which rulings bind your workstream. **Four of its rulings are defects that would otherwise have shipped** |
+| 3 | **This file** — §2 (every `A-D`), §3 (the schema), §4 (the routes), §6 (**who may touch which shared file**), §9, §10 | §6 is the one that stops you editing another workstream's file. §2 is the contract |
+| 4 | **Your plan**, from the table below | It opens with a header naming the rulings that bind it |
+| 5 | **Each `docs/workstream-notes.md` section for every workstream whose files you touch** | Named in your plan's §Seams. A2 touches files owned by W4, W5, W7, V2, V8 and W3; A6 touches S1, S2 and S6 |
+
+**THE DISPATCH TABLE**
+
+| Argument | Read this plan | Tasks | Depends on | First task is |
+|---|---|---|---|---|
+| **`A1`** | `docs/plans/2026-07-30-admin-foundation.md` | **16** | **nothing — start here** | `allowlist.ts`, zero imports |
+| **`A2`** | `docs/plans/2026-07-30-llm-ledger.md` | **15** | nothing at runtime (`[R47]`); migration order only | the `op` type + `prices.ts` |
+| **`A3`** | `docs/plans/2026-07-30-analytics-aggregation.md` | **11** | A2's table + `LLM_OPS` | pure modules — tasks 1–3 need no A2 |
+| **`A4`** | `docs/plans/2026-07-30-chart-primitives.md` | **22** | A1's shell, A3's shapes | `chart.ts` + the palette test |
+| **`A5`** | `docs/plans/2026-07-30-admin-user-detail.md` | **20** | A1's audit primitive, A2, A3 | the list query + payload fence |
+| **`A6`** | `docs/plans/2026-07-30-blog-cms.md` | **26** | A1 only | `lint.ts` — before any prose can be stored without it |
+
+**110 tasks across the six.**
+
+**DO NOT READ THE OTHER FIVE PLANS.** They total ~490KB. Reading them all is how a session
+exhausts its context before writing a line, and **every cross-plan fact you actually need
+is already in §6 (file ownership), §11 (the seams) and the reconciliation's §8.** If you
+believe you need another plan, you have found a seam — say so and check §11 first.
+
+**Before writing code, verify three things and stop if any fails:**
+
+1. **`node -v` reports 24.x.** `export PATH=~/tools/node-v24.18.0-linux-x64/bin:$PATH`
+   first, every time. The default is 20.11.1 and too old, and the failure looks like a
+   code problem.
+2. **Your dependencies are merged.** A4 and A5 against an unmerged A3 means writing against
+   an imagined signature. **Ask rather than guess** — a guessed signature is the seam
+   defect §11 exists to prevent.
+3. **`npm run db:up` has run** if your plan has integration tests.
+
+**Definition of done for any workstream**, and all four are required:
+
+```sh
+export PATH=~/tools/node-v24.18.0-linux-x64/bin:$PATH
+npm run typecheck
+npm test                  # unit. RUN SEPARATELY -- see §0.3
+npm run test:integration   # needs db:up. RUN SEPARATELY
+npm run build             # DO NOT SKIP. A green typecheck is not a green build
+```
+
+**Never `npm run test:all`** — it fails ~12–22 of V9's limiter tests as a harness race and
+its red means nothing (§0.3).
+
+**Two things no workstream may do**, restated here because this is the section a fresh
+session reads first: **do not edit `CLAUDE.md`** (new traps go to
+`docs/workstream-notes.md`), and **do not edit a shared file §6 does not assign you** —
+flag it instead. A1 correctly declined to touch `scripts/audit-secrets.ts` for exactly
+that reason, and the reconciliation then granted it (`[R20]`).
+
 ### 0.1 The plan index
 
-| WS | Plan file | Owns | Depends on |
-|---|---|---|---|
-| **A1** | `docs/plans/2026-07-30-admin-foundation.md` | `requireAdmin()`, the `/admin` gate, the shell, `admin_access_log`, the audit primitive, `/privacy` §3+§8, `events.ts` for this release | — |
-| **A2** | `docs/plans/2026-07-30-llm-ledger.md` | `llm_calls`, the `op` identity, all 9 call sites, the price table, the cost model | **— `[R47]`** (A-D18 dropped `llm.call_recorded`, so A2 declares no event and never imports the taxonomy; only migration ordering binds) |
-| **A3** | `docs/plans/2026-07-30-analytics-aggregation.md` | `src/lib/db/queries/admin/**`, bucketing, rollups, trajectory + forecast, the sweep additions | A2 |
-| **A4** | `docs/plans/2026-07-30-chart-primitives.md` | `src/components/chart/**`, the chart tokens, `/admin` overview | A1, A3 |
-| **A5** | `docs/plans/2026-07-30-admin-user-detail.md` | `/admin/users`, `/admin/users/[id]`, the audited PII reveal | A1, A2, A3 |
-| **A6** | `docs/plans/2026-07-30-blog-cms.md` | `blog_posts`, `blog_post_locales`, the lint move, the editor, publish/unpublish | A1 |
+**All six plans are written, reconciled, and committed. Each opens with a header naming
+the reconciliation rulings that bind it** — so a session that reads only its own plan
+still cannot miss a ruling that changes its work.
+
+| WS | Plan file | Tasks | Owns | Depends on |
+|---|---|---|---|---|
+| **A1** | `docs/plans/2026-07-30-admin-foundation.md` | 16 | `requireAdmin()`, the `/admin` gate, the shell, `admin_access_log`, the audit primitive, `/privacy` §§3–6+8 (`[R31]`), `events.ts` for this release | — |
+| **A2** | `docs/plans/2026-07-30-llm-ledger.md` | 15 | `llm_calls`, the `op` identity, all 9 call sites, the price table, the cost model | **— `[R47]`** (A-D18 dropped `llm.call_recorded`, so A2 declares no event and never imports the taxonomy; only migration ordering binds) |
+| **A3** | `docs/plans/2026-07-30-analytics-aggregation.md` | 11 | `src/lib/db/queries/admin/**`, bucketing, rollups, trajectory + forecast, the sweep additions | A2 |
+| **A4** | `docs/plans/2026-07-30-chart-primitives.md` | 22 | `src/components/chart/**`, the chart tokens, `/admin` overview | A1, A3 |
+| **A5** | `docs/plans/2026-07-30-admin-user-detail.md` | 20 | `/admin/users`, `/admin/users/[id]`, the audited PII reveal | A1, A2, A3 |
+| **A6** | `docs/plans/2026-07-30-blog-cms.md` | 26 | `blog_posts`, `blog_post_locales`, the lint move, the editor, publish/unpublish | A1 |
 
 **Reconciliation is `docs/plans/2026-07-30-RECONCILIATION-v0.5.0.md` and it outranks
 every plan above.** v0.4.0's reconciliation found six defects in the roadmap it was
@@ -62,14 +131,16 @@ reconciliation is where that is recorded.
 
 ### 0.2 The read order, every time
 
-1. `CLAUDE.md` — the invariants. Not optional and not skimmable.
-2. **This file, §2 and §3.** §2 is the decisions; §3 is the schema and it is the only
-   place a new table is described.
-3. `docs/plans/2026-07-30-RECONCILIATION-v0.5.0.md` where it exists.
-4. Your own plan.
-5. **The section of `docs/workstream-notes.md` for every workstream whose files you
-   touch.** A2 touches nine call sites owned by W4, W5, W7, V2, V8 and W3. A6 touches
-   S1, S2 and S6. Neither may be written from this file alone.
+**It is the five-row table in §0.0 and it is written there once.** Two read orders in one
+file is how they diverge — this section existed before §0.0 did and said item 3 was to read
+the reconciliation *"where it exists"*, which is now stale in the way that matters: **it
+exists, it outranks this file, and it is item 2, not item 3.**
+
+The one thing worth repeating out of §0.0, because it is the step most often skipped:
+**read `docs/workstream-notes.md` for every workstream whose files you touch.** A2 touches
+nine call sites owned by W4, W5, W7, V2, V8 and W3; A6 touches S1, S2 and S6. **Neither can
+be written from this file alone**, and both proved it — A2 found `drain()`'s orphaning
+(`[R17]`) and A6 found the `sitemap.ts` LEAF fence (`[R39]`) only by reading those notes.
 
 ### 0.3 Four things that are true of every workstream
 
@@ -970,6 +1041,11 @@ of them is a reconciliation defect.**
 
 ### A1 — Admin foundation, the gate, and the audit trail
 
+> **PLAN: `docs/plans/2026-07-30-admin-foundation.md` — 16 tasks. Depends on nothing — start here.**
+> `execute PUBLIC_RELEASE_ROADMAP_v0.5.0.md A1` dispatches here (§0.0).
+> The plan's own header names the reconciliation rulings that bind it.
+
+
 **The security-relevant one.** Everything else mounts inside what this builds.
 
 Builds: **`[R23]` TWO files, not one** — `src/lib/admin/allowlist.ts` (**ZERO imports**:
@@ -990,6 +1066,11 @@ false and `isPublic('/en/admin')` is false; `contentAlternates('/admin')` throws
 audit write fails the reveal.
 
 ### A2 — The LLM call ledger
+
+> **PLAN: `docs/plans/2026-07-30-llm-ledger.md` — 15 tasks. Depends on nothing at runtime (`[R47]`).**
+> `execute PUBLIC_RELEASE_ROADMAP_v0.5.0.md A2` dispatches here (§0.0).
+> The plan's own header names the reconciliation rulings that bind it.
+
 
 **Nine call sites, one of which is already done.** The provider layer is correct and
 must not change.
@@ -1015,6 +1096,11 @@ shipped.
 
 ### A3 — Aggregation, trajectory, and the query layer
 
+> **PLAN: `docs/plans/2026-07-30-analytics-aggregation.md` — 11 tasks. Depends on A2 (tasks 1–3 do not).**
+> `execute PUBLIC_RELEASE_ROADMAP_v0.5.0.md A3` dispatches here (§0.0).
+> The plan's own header names the reconciliation rulings that bind it.
+
+
 Builds: `src/lib/db/queries/admin/{metrics,users,rollup}.ts` — **handle first, always**
 — **plus `[R22]` `src/lib/analytics/rollup.ts` for the PURE folds**, because
 `queries/contract.test.ts` enforces handle-first on every export in a `/queries/` module
@@ -1038,6 +1124,11 @@ Forecast: n below the minimum renders the empty state, never a line; a degenerat
 
 ### A4 — Chart primitives and the overview
 
+> **PLAN: `docs/plans/2026-07-30-chart-primitives.md` — 22 tasks. Depends on A1, A3.**
+> `execute PUBLIC_RELEASE_ROADMAP_v0.5.0.md A4` dispatches here (§0.0).
+> The plan's own header names the reconciliation rulings that bind it.
+
+
 Builds: `src/theme/chart.ts` + the `tokens.css` mirror; `chart.palette.test.ts`;
 `src/components/chart/**` (hand-rolled SVG: stat tile, KPI row, hero figure, line, area,
 stacked bar, meter, heatmap, sparkline, table view, legend, tooltip layer); `/admin` and
@@ -1052,6 +1143,11 @@ checks; **no dual-axis chart exists** — a grep-based test is appropriate here,
 this is the project's first desktop-first surface and loop 5 cannot give a width.
 
 ### A5 — The per-user everything page
+
+> **PLAN: `docs/plans/2026-07-30-admin-user-detail.md` — 20 tasks. Depends on A1, A2, A3.**
+> `execute PUBLIC_RELEASE_ROADMAP_v0.5.0.md A5` dispatches here (§0.0).
+> The plan's own header names the reconciliation rulings that bind it.
+
 
 Builds: `/admin/users`, `/admin/users/[id]`, `/api/admin/users/**`, the audited reveal
 components, per-user token series, **`[R28]` `GET /api/admin/users/[id]/reading/[readingId]`**
@@ -1091,6 +1187,11 @@ supplied.** An admin page is a fourth surface for a component whose header says 
 invariant list wrong.
 
 ### A6 — The blog CMS
+
+> **PLAN: `docs/plans/2026-07-30-blog-cms.md` — 26 tasks. Depends on A1.**
+> `execute PUBLIC_RELEASE_ROADMAP_v0.5.0.md A6` dispatches here (§0.0).
+> The plan's own header names the reconciliation rulings that bind it.
+
 
 Builds: migration `0011`; `blog_posts` + `blog_post_locales`;
 `src/lib/content/lint.ts` (PURE, two callers); `src/lib/db/queries/admin/blog.ts`;
