@@ -8,6 +8,7 @@ import { MAX_QUESTION_LENGTH, sanitizeQuestion } from '@/lib/prompt/sanitize';
 import { tFor } from '@/lib/i18n/catalog';
 import { getLocale } from '@/lib/i18n/t';
 import { hit, hitGlobal, hitRefusal, refusalsExhausted } from '@/lib/ratelimit';
+import { recordCall } from '@/lib/llm/ledger';
 import { reserveModelCall } from '@/lib/llm/meter';
 import { gateReading } from '@/lib/moderation/gate';
 import { recordModerationFlag } from '@/lib/moderation/log';
@@ -432,6 +433,21 @@ export async function POST(request: Request) {
      */
     const cleanQuestion = sanitizeQuestion(question);
 
+    /*
+     * **A2's `total_ms`, AND IT IS TAKEN HERE RATHER THAN REUSING `startedAt`.**
+     * `llm_calls.total_ms` times THE CALL; `startedAt` is the top of the handler and
+     * includes four rate-limit round trips, the Lotus read and the chain read. The
+     * classifier that `gateReading` races is not the model either, but it begins on the
+     * very next line and cannot be excluded without unpicking the priming that makes it
+     * concurrent -- so this timestamp is as close to "the reading call started" as this
+     * route can honestly get.
+     *
+     * **Expect `llm_calls.total_ms < reading.completed.total_ms` for the same reading**
+     * (A2-D4, reconciliation R5). That is two columns being honest about two different
+     * subjects, and A3 must NOT reconcile them.
+     */
+    const modelStartedAt = performance.now();
+
     let gated;
     try {
       gated = await gateReading({
@@ -715,6 +731,43 @@ export async function POST(request: Request) {
         },
         picks.map((p, i) => ({ cardId: p.id, reversed: p.reversed, position: i })),
       );
+
+      /*
+       * A2's LEDGER ROW, AFTER `persistReading` AND NOT BEFORE IT.
+       *
+       * The same ordering argument the gist below makes, and the same one the Lotus
+       * repair above makes: deferred work runs in registration order inside one
+       * callback, so anything ahead of `persistReading` delays the row every memory
+       * feature depends on and loses it outright if the platform cuts the invocation
+       * short. **A dashboard row may never be in front of the querent's own history.**
+       *
+       * `recordCall` cannot throw and this one is `void` rather than awaited, so it
+       * cannot delay `extractGist` either. It buffers onto `store.calls`, which
+       * `drain()` splices AFTER this whole loop -- which is exactly why the gist's own
+       * row, recorded from inside `extractGist` one line below, is not orphaned.
+       *
+       * **Every field comes off `outcome`, which was snapshotted before its `await` on
+       * `usage`** (tee.ts's `finish`). Reading mutable state after that await is the bug
+       * that recorded every abandoned reading as failing for an unknown reason.
+       *
+       * `readingId` is set here and at the gist. It is NOT set on the moderation call
+       * and cannot be (R51): the classifier runs before the `readings` row exists, so
+       * the figure A5 renders from this is generation cost and not the reading's total.
+       */
+      void recordCall({
+        op: 'reading',
+        readingId,
+        model: process.env.LLM_MODEL ?? 'unknown',
+        // Reserved at the top of the handler as `interactive`; the decorator is not in
+        // this path, so the value is stated rather than defaulted.
+        callClass: 'interactive',
+        streamed: true,
+        status: outcome.status,
+        errorKind: outcome.errorKind,
+        inputTokens: outcome.usage.inputTokens,
+        outputTokens: outcome.usage.outputTokens,
+        totalMs: Math.round(performance.now() - modelStartedAt),
+      });
 
       /*
        * W5's gist, AFTER the row and never before it.
