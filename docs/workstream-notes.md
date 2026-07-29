@@ -2909,3 +2909,243 @@ what the cookie is for.
   exists to prevent. The half that still binds after S2 lands is that the shell mounts and
   does not implement: exactly one `<ContentLocaleLink>`, and still no bare `<a>` of its
   own.
+
+---
+
+## Card lore pages (S4), v0.4.0
+
+Forty-four authored documents at twenty-two permanent addresses. `CLAUDE.md`'s
+`## Card lore pages (v0.4.0 / S4)` holds the rules; this holds the evidence.
+
+### The twelve-card element invariant, and how it was checked
+
+`Card.glyph` had been in `cards.json` since the first release and **nothing had
+ever read it** — before `src/lib/arcana/correspondence.ts`, `grep -rn glyph src`
+found the type declaration and nothing else. Twenty-two committed astrological
+attributions, unused.
+
+The join is worth having because it is checkable. For the **twelve sign cards**,
+`SIGNS[sign].element` in `astrology.ts` equals `card.element` in `cards.json`,
+for all twelve, with no exceptions:
+
+```
+Aries/fire  Taurus/earth  Gemini/air     Cancer/water
+Leo/fire    Virgo/earth   Libra/air      Scorpio/water
+Sagittarius/fire  Capricorn/earth  Aquarius/air  Pisces/water
+```
+
+That single assertion is what makes the whole glyph table trustworthy: a glyph is
+one non-ASCII character in a source file, so the realistic failure is a key
+mangled by an editor, and a mangled key almost certainly disagrees with the card's
+own element. `correspondence.test.ts` names the card when it does.
+
+**The nine planetary cards and The Fool are deliberately unasserted**, and
+Judgement is why: `cards.json` gives it `water` while the Golden Dawn attributes
+the twentieth trump to Fire. Both are true. Asserting the planetary elements would
+force a choice between failing the suite and editing generated data S4 does not
+own.
+
+### `LORE_ANCHORS` is what makes §8.2 mechanical rather than promised
+
+"English is rewritten, not translated" is checked three ways, and the cheapest is
+the hardest to fake: the `id` and `en` documents for one card must not share an
+`anchor`. It forces the divergence to be **planned** instead of discovered
+afterwards. The other two are the DIVERGENCE table and a positional Q&A
+comparison.
+
+**And it caught real translation twice, in the first two pairs written.** The Fool
+and The Magician each came out with an English half that made the SAME argument in
+English — "priced waiting higher" against `menghitung bahwa menunggu lebih mahal`,
+and an identical check question in both halves. Both were rewritten before the
+table was filled in. The lesson: **design the two halves to make different
+arguments, not the same argument in two languages** — the anchor forces a
+different door and does not, on its own, force a different room.
+
+### The DIVERGENCE table's direction, which the first draft got backwards
+
+The row lists **the English words for the INDONESIAN half's images**, forbidden in
+the English `upright` and `reversed`. The first three rows listed the English
+half's own words instead, which is a table that cannot fail. Filling it correctly
+immediately failed The High Priestess: both halves had reached for a full diary as
+the reversed mechanism, so the English one became noise instead.
+
+**Scoped to `upright` and `reversed` only; `lore` is exempt and the exemption is
+principled.** Both documents describe ONE painting and must share its nouns —
+towers, wolf, dog, crayfish, skull. `glosses.ts` exempts its element glosses from
+its own table for the same shape of reason.
+
+### THE ASSERTION SHAPE, which is the finding most worth carrying forward
+
+`lore.test.ts` was written as
+
+```ts
+expect({ slug, field, word, hit }).toMatchObject({ hit: false })
+```
+
+and it fires correctly. **Then it prints `hit: true` and nothing else** — vitest
+omits the three MATCHING properties, which are exactly the three that say which
+card, which field and which word. Across forty-four documents that is a failure
+you cannot act on.
+
+Found by **breaking the lint on purpose and reading the output**, which is the only
+way this class of defect surfaces: the test is not wrong, it is useless. Rewritten
+to collect into an array and compare against `[]`:
+
+```
+[ 'the-moon.id standfirst: "tempoh"' ]
+[ 'the-moon.en upright[0]: "abundance"' ]
+[ 'strength.id lore: 16 (want 6-14)' ]
+```
+
+The block-count case had the identical defect in a different costume — `expected
+16 to be less than or equal to 14`, with no way to tell which of forty-four
+documents — and was rewritten the same way after it fired for real.
+
+The three deliberate breaks, run and read:
+
+| break | output |
+|---|---|
+| `tempoh` in the-moon.id's standfirst | `the-moon.id standfirst: "tempoh"` |
+| `yesno.reversed` flipped to `no` | `reversed: "no"` against `effectiveYesNo`'s `yes` |
+| `abundance` in the-moon.en's upright | `the-moon.en upright[0]: "abundance"` |
+
+### Three near-misses where the lint refused CORRECT prose
+
+Each is the `sobat`/`obat` shape, and each was resolved by rewording rather than by
+exempting — because an exemption would be the first on these lists and forty-four
+permanent documents is the wrong surface to open that door on.
+
+- **`dokter` is on `THERAPY_ID`, and Death's first Q&A sent a health question to
+  one.** That is the correct and safe sentence, and the list is also right: it
+  exists so no reader-facing copy sounds medical, and "ask a doctor" is medical
+  vocabulary whichever direction it points. Reworded to `layanan kesehatan`
+  (`kesehatan mental` is the banned PHRASE and does not match). **The English half
+  says `doctor` and passes**, because `THERAPY_EN` has no such entry — the two
+  lists are different scopes, not translations of each other.
+- **`temperature` is on the product-secret list** and Strength's English lore used
+  it to mean heat. Reworded. Recorded because the next writer will hit it too.
+- **`the Universe` is on `EN_TICS` and appears inside a genuine Waite quotation**
+  about The World. The excerpt was cut at the clause before it rather than
+  exempted: a quotation is still the word landing on the page.
+
+**And one block deleted rather than reworded.** Judgement's English half carried a
+`quote` whose `source` read *"A. E. Waite, paraphrased"*. A reworded sentence under
+a real author's name is VD4's fabricated-fact rule at small scale, and the
+block-count ceiling made the choice for free.
+
+### `/arcana` — the roadmap contradiction, and why the file exists
+
+§3.1 said a real 404; §6.1's negative-control list said non-public, and a
+non-public path inside the matcher is a **302 to `/login`**. R6 resolved it in
+S4's favour: `/arcana` is the parent of twenty-two indexed URLs, and Google reads
+a login redirect on a content path as a soft 404.
+
+**S4's own plan asserted the ABSENCE of `src/app/arcana/page.tsx`**, because Next
+404s an absent route anyway. That assertion is **inverted, not deleted**. R6
+answered S1's objection — widening the allowlist for a path with no page is how
+`isPublic` stops being readable — by giving the path a page, so the file existing
+is the record of the ruling and its absence would read as the ruling being undone.
+
+Measured on the wire:
+
+```
+/arcana            404, no Location header
+/en/arcana         404
+/arcana/not-a-card 404   (dynamicParams = false, before the module runs)
+/arcanax           307   -> /login          (the negative control)
+/en/history        307   -> /login          (the one that must never move)
+```
+
+### The signed-out crawl, and the head of the document
+
+No cookie jar, dev server, 2026-07-29:
+
+```
+44/44 lore URLs        200      (22 slugs x 2 locales)
+Set-Cookie             0        on every one sampled
+<h1> per page          1
+<link rel=alternate>   3        id, en, x-default -- reciprocal both directions
+noindex                0
+FAQPage                0
+@type                  Article, ImageObject, CreativeWork, BreadcrumbList, ItemList, ListItem
+sitemap /arcana/ lines 176      (44 entries x 1 url + 3 xhtml:link)
+```
+
+**`hreflang` is emitted by Next as `hrefLang`**, camel-cased in the HTML. HTML
+attribute names are case-insensitive so this is correct, and a crawl script
+grepping `hreflang="` finds nothing. Grep case-insensitively.
+
+### Complete with JavaScript disabled
+
+The property a crawler actually depends on, checked on the raw HTML of
+`/en/arcana/the-devil` rather than on a rendered DOM:
+
+```
+h1 1   h2 12   h3 4
+8 unique /en/arcana/ links + /en/gallery      (the 8-12 band)
+disclaimer, share control, both cardMeaning glosses, both verdict words,
+the keyword chips and all four Q&A pairs -- all present
+1100 words of visible text
+```
+
+Loop 5 confirms the same page renders `lang=en` with the English `<h1>` and one
+`ld+json` block in the DOM.
+
+### Loop 4, and the widths that were expected to fail
+
+`tools/seo/fit.sh` at 320 / 360 / 390. **NOT a screenshot** — neither Chrome here
+gives a phone width and both floor at ~500px.
+
+```
+/arcana/the-moon               320,360,390  rootOverflows false, offenders []
+/arcana/the-high-priestess     320,360,390  clean   (18 characters in a fact value)
+/en/arcana/the-high-priestess  320,360,390  clean
+/arcana/temperance             320          clean
+/en/arcana/temperance          320,360,390  clean   (Sagittarius + its modality)
+```
+
+The plan predicted the fact strip would be the first thing to overflow. It does
+not, because `.factValue` carries `overflow-wrap: anywhere` and the grid is
+`auto-fit, minmax(140px, 1fr)` — one column at 320 rather than a fixed count.
+
+### The build
+
+`npm run build` exit 0, `audit-secrets: clean`, 42 files scanned.
+**`/arcana/[slug]` builds as `ƒ`** — flag 2 predicted exactly this and it is the
+symptom of `## Localization` rule 5 working, not a defect. `●` would mean the root
+layout had stopped awaiting `getLocale()`.
+
+### What S4 did NOT write, and where it went instead
+
+- **The share control is S1's `PublicShare`**, mounted with the canonical as a
+  prop. S4's plan specified an `ArcanaShare` of its own; the single-definition
+  register put it with S1, and a second control would be two answers to "what does
+  sharing a public page do".
+- **The events are `public.*`, not `arcana.*`** (R18). S4's plan declared
+  `arcana.viewed` / `arcana.shared` / `arcana.link_clicked`; S1 folded all of it
+  into `public.page_viewed` with `page: 'arcana'`, `public.link_clicked` and
+  `public.link_shared`. Three near-duplicate families is the failure S-D13 exists
+  to prevent.
+- **`imageObject()` is in `src/lib/seo/jsonld.ts` and S4 wrote it**, though R9
+  assigns it to S3. S3 is blocked on S4a and therefore lands after; a second
+  definition of one node type is the reconciliation failure whichever order they
+  arrive in.
+
+### Still open
+
+- **Miftah reading four pages, one per stage plus Death, in both locales, on a
+  phone.** No lint can tell whether a page is worth reading — every mechanical
+  check passes on twenty-two documents of atmospheric nothing, and that is the
+  release's first risk. This is the acceptance test and it is not automatable.
+- **The Golden Dawn titles and Hebrew letters are single-sourced.** Each document
+  cites `angelorum.co`'s correspondence table in its header. VD4 binds a public
+  page harder than it binds `/account`; a second independent source per card would
+  be the honest next pass, and **Judgement's row is the one most likely to be
+  wrong** because the modern outer planets are not in the original system.
+- **The lore pages are the first surface where a stranger looks at the art
+  closely**, and `docs/art-inconsistency.md` measures the deck as three
+  inconsistent generations. Twenty-two pages in sequence is exactly the
+  presentation that makes it visible. Regenerating is out of scope (S-D9) and this
+  release is what will prompt somebody to ask.
+- **The `s-maxage` on `/arcana/:path*` is still unmeasured against a real CDN**
+  (R21). S1 owns that check and it needs a Vercel preview.

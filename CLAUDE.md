@@ -1051,7 +1051,9 @@ sheet, and the first sign-out control this app has ever had (V4)**, **the reader
 `/s/<slug>`, its OG preview, and the share sheet (V7)**, **`/account` — the deletion button, the
 editable facts, per-answer clearing, and the Inner Heavenly Lotus persona (V8)**,
 **the public surface and the technical SEO foundation -- a signed-out homepage, the
-gate change, a sitemap, JSON-LD, canonicals and cache headers (v0.4.0 S1)**, plus the reader picker, service
+gate change, a sitemap, JSON-LD, canonicals and cache headers (v0.4.0 S1)**,
+**locale-addressable public content -- `/en/`, the rewrite and the hreflang set (S2)**,
+**the twenty-two card lore pages, forty-four authored documents (S4)**, plus the reader picker, service
 picker, the draw (fan, pick, flip, reduced-motion grid), the card detail overlay, the
 streaming reading endpoint, the prompt layer, and the web app manifest.
 
@@ -1657,6 +1659,92 @@ header, the outer deletes every `Set-Cookie` and then the marker. Three rules on
 (R21) — and it is only now that the measurement can mean anything, because until this
 landed no content response was cacheable at all.
 
+
+## Card lore pages (v0.4.0 / S4)
+
+**Forty-four documents, twenty-two addresses, two languages.** `/arcana/<slug>` is
+the largest indexable surface this release adds and the one a competitor cannot
+copy, because the art and the voice are ours. The traps, the near-misses and the
+measurements are in `docs/workstream-notes.md`.
+
+```
+src/data/deck.ts                  +cardUrlSlug, +cardByUrlSlug, +CARD_URL_SLUGS.
+                                  NO NEW IMPORT -- `Card` and `CARDS` were in scope.
+src/lib/arcana/correspondence.ts  PURE, client-importable. The glyph table and the
+                                  bridge to @/lib/numerology. NOT in @/data (cycle)
+                                  and NOT in @/content (client-fenced).
+src/content/types.ts              PURE, client-importable. Block + LoreDoc. S6
+                                  appends BlogDoc below the marker.
+src/content/arcana/index.ts       the registry. NO PROSE. Card order is asserted.
+src/content/arcana/<slug>.<loc>.ts  44 documents. Server-imported only.
+src/content/arcana/lore.test.ts   THE COPY LINT. The release's only quality gate.
+src/components/Prose.tsx          the ONE block renderer. Server, exhaustive switch.
+src/app/arcana/page.tsx           notFound(). Four lines, an honest 404 (R6).
+src/app/arcana/[slug]/            page, ArcanaFacts, jsonld, page.contract.test.
+```
+
+### The five things a future session will otherwise undo
+
+1. **PROSE IS DATA BECAUSE THE LINT NEEDS STRINGS.** `terms.id.tsx` is the
+   precedent for long-form bilingual prose and it settles a DIFFERENT question
+   (MDX is not added). In a `.tsx` document a sentence is split across text nodes
+   by `{' '}`, punctuation arrives as `&ldquo;`, and `\btempoh\b` can straddle a
+   JSX boundary and never match. **Converting these files to TSX for authoring
+   comfort switches the release's only quality gate off, silently.** Typographic
+   characters go in the source literally; a test forbids a tag or an entity in any
+   `text` field.
+2. **`doc.yesno` IS ASSERTED AGAINST `effectiveYesNo()` AND IS NEVER WHAT IS
+   RENDERED.** The page takes the verdict from the engine plus
+   `reading.verdict.*`, so the words on screen are the words the app prints after
+   a real yes/no reading, by construction. The field exists because the flip is
+   counter-intuitive — **The Moon and The Hermit both answer `no` upright and
+   `yes` reversed** — and a writer following the artwork gets it backwards.
+   `page.contract.test.ts` fences both halves.
+3. **`EN_TICS` BANS THE EMPRESS'S OWN ENGLISH KEYWORD, AND THE LINT'S SCOPE IS
+   `src/content/**` ONLY.** `abundance` is on the tic list and is card 3's keyword
+   in generated `cards.json`; the chip on the page is unaffected and the lore has
+   to say what the thing IS. Same shape for `sacred` (The Hierophant),
+   `heal`/`healing` (Temperance, The Star) and `shadow work` (The Devil).
+   **Anyone who widens the lint to the rendered page fails on data S4 does not
+   own, concludes the lint is broken, and switches it off.**
+4. **`/arcana` HAS A PAGE THAT CALLS `notFound()`, AND THE FILE EXISTING IS THE
+   RULING** (R6). S4's own plan asserted its ABSENCE — Next 404s an absent route
+   anyway. The reconciliation answered S1's objection ("widening the allowlist for
+   a path with no page is how `isPublic` stops being readable") by giving the path
+   a page, so deleting the file reads as the ruling being undone. The negative
+   controls are `/arcanax` and `/arcana-foo`, never `/arcana`.
+5. **THE SITEMAP TAKES `LORE_SLUGS`, NEVER `CARD_URL_SLUGS`.** The deck has 22
+   cards whatever is written; the registry has the ones with a document. The two
+   lists are identical now, which is exactly when somebody simplifies it and
+   nothing fails until the next partial release. `contentAlternates` likewise
+   takes `localesFor(slug)` and not `LOCALES` (R2).
+
+**`Article`, NOT `CreativeWork`** (roadmap §13's open question, S4's call).
+`CreativeWork` is `Article`'s parent, and Google's documented eligibility is
+defined over `Article` and its subtypes. The argument for `CreativeWork` is
+correct and points at `about` rather than at the page type — a tarot card IS an
+artefact — so the graph nests both, and the painting is the `image`. **The
+breadcrumb's middle rung is `/gallery`, never `/arcana`**, because naming a
+deliberate 404 in markup is a machine-readable claim that a page exists.
+
+**Justice has no root card and it is a tautology, not a gap.** `reduce(11)` is 11,
+so `arcanaFor(11)` is Justice; `rootCardFor` suppresses it in the MODULE so every
+future consumer inherits the suppression. Anyone who "restores" the block renders
+*"Justice reduces to Justice"*; anyone who instead changes `reduce` silently
+rewrites every stored `frequency_verdicts` and `personas` row.
+
+**`generateStaticParams` DOES NOT MAKE THIS PAGE STATIC**, and the build output
+showing `ƒ` is the symptom of `## Localization` rule 5 working. What it buys with
+`dynamicParams = false` is a 404 at the routing layer for any slug outside the
+twenty-two. The TTFB story is entirely S1's cache headers.
+
+**Judgement's element is `water` in `cards.json` while the Golden Dawn attributes
+the trump to Fire.** Both are true, the page renders ours, and that disagreement is
+the Indonesian document's own anchor. **Do not "fix" `cards.json`** — it is
+generated, S4 does not own the generator, and the reading prompt has consumed
+`element` since the first release. `correspondence.test.ts` asserts the element
+join for the **twelve sign cards only**, all of which agree exactly; the nine
+planetary ones are editorial and deliberately unasserted.
 
 ## /account and the persona (V8)
 
