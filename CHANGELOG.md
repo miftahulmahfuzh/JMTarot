@@ -1121,6 +1121,7 @@ app as it now stands. The iOS tree is preserved on `feat/ios` and
 - Two superseded design exports; the Clickable export is the single visual
   reference. Both remain in history at `d7fdd89`.
 
+[v0.4.0]: https://github.com/miftahulmahfuzh/JMTarot/releases/tag/v0.4.0
 [v0.3.0]: https://github.com/miftahulmahfuzh/JMTarot/releases/tag/v0.3.0
 [v0.2.0]: https://github.com/miftahulmahfuzh/JMTarot/releases/tag/v0.2.0
 [v0.1.0]: https://github.com/miftahulmahfuzh/JMTarot/releases/tag/v0.1.0
