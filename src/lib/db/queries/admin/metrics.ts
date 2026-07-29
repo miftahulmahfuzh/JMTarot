@@ -429,3 +429,231 @@ export async function ttftByService(db: DbOrTx, range: Range): Promise<TtftRow[]
     p95Ms: numOrNull(r.p95_ms),
   }));
 }
+
+// ---------------------------------------------------------------------------
+// M6 -- readingsByLocalDate: readings and actives
+// ---------------------------------------------------------------------------
+
+export type ReadingDayRow = {
+  bucket: string;
+  readings: number;
+  /** **DISTINCT users on that day.** Never sum this column -- see `activeUsers`. */
+  users: number;
+  ok: number;
+  partial: number;
+  failed: number;
+  aborted: number;
+  blocked: number;
+};
+
+/**
+ * Readings per querent day, with the status breakdown.
+ *
+ * **FROM `readings`, NOT FROM THE LEDGER, AND THAT IS THE POINT.** A blocked reading
+ * makes no model call and still happened: W7's classifier refused it, the querent saw
+ * a refusal, and the ledger has nothing to say about any of it. A "readings per day"
+ * series built from `llm_calls` would silently exclude exactly the population the
+ * moderation gate exists for.
+ *
+ * ── NO INDEX *SEEKS* THIS, AND THE PLAN SAYS SOMETHING MORE PRECISE THAN A3's ─
+ *
+ * A3's §9.1 says `readings_user_local_date_idx (user_id, local_date)` *"cannot use"* a
+ * fleet-wide `local_date` range because the leading column is absent. **Measured on the
+ * local Postgres 16, 2026-07-30, that is not quite right and the difference matters:**
+ *
+ *     set enable_seqscan = off;
+ *     explain select count(*) from readings
+ *      where local_date >= '2026-07-20' and local_date <= '2026-07-25';
+ *
+ *     Aggregate
+ *       ->  Index Only Scan using readings_user_local_date_idx on readings
+ *             Index Cond: ((local_date >= ...) AND (local_date <= ...))
+ *
+ * The planner **can** use it -- as a FULL index-only scan with the range applied as a
+ * filter on the second column, never as a seek. So the honest statement is *"no index
+ * seeks this"*: the work is proportional to the whole index rather than to the range,
+ * which is exactly the same complexity as the seq scan the planner actually prefers at
+ * this size, minus the heap.
+ *
+ * **A3 STILL DOES NOT ADD ONE**: `schema.ts` has one owner and §6 assigns it to A1 for
+ * this release, and `readings` is the second hottest write table in the schema. The
+ * candidate `readings_local_date_idx` is declared unbuilt in A3's §9.1 with its trigger
+ * stated -- `readings` past ~100k rows, or M6 at a 400-day range past 500ms against
+ * Neon. `reading_cards_user_date_card_idx` already refused the same trade.
+ *
+ * **A SOFT-DELETED USER'S READINGS ARE INCLUDED**, unlabelled here and labelled by A5.
+ * `allTime.ts`'s ruling: the account is restorable for `ERASURE_GRACE_DAYS`, so
+ * filtering would make this page disagree with every other query in the app during the
+ * grace window.
+ */
+export async function readingsByLocalDate(
+  db: DbOrTx,
+  range: Range,
+): Promise<ReadingDayRow[]> {
+  if (!usable(range)) return [];
+  const rows = await db.execute(sql`
+    select local_date::text                              as bucket,
+           count(*)                                      as readings,
+           count(distinct user_id)                       as users,
+           count(*) filter (where status = 'ok')         as ok,
+           count(*) filter (where status = 'partial')    as partial,
+           count(*) filter (where status = 'failed')     as failed,
+           count(*) filter (where status = 'aborted')    as aborted,
+           count(*) filter (where status = 'blocked')    as blocked
+      from readings
+     where local_date >= ${range.from}
+       and local_date <= ${range.to}
+     group by 1
+     order by 1
+  `);
+
+  const mapped = (rows as unknown as Array<Record<string, unknown>>).map((r) => ({
+    bucket: String(r.bucket),
+    readings: num(r.readings),
+    users: num(r.users),
+    ok: num(r.ok),
+    partial: num(r.partial),
+    failed: num(r.failed),
+    aborted: num(r.aborted),
+    blocked: num(r.blocked),
+  }));
+
+  return zeroFill(mapped, enumerateDays(range.from, range.to), (r) => r.bucket, (bucket) => ({
+    bucket,
+    readings: 0,
+    users: 0,
+    ok: 0,
+    partial: 0,
+    failed: 0,
+    aborted: 0,
+    blocked: 0,
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// M7 -- activeUsers: a distinct count over a range, never a sum
+// ---------------------------------------------------------------------------
+
+/**
+ * Distinct querents who took a reading in the range.
+ *
+ * **ITS OWN FUNCTION PRECISELY SO NOBODY SUMS M6's `users` COLUMN.** WAU is not
+ * `sum(DAU)`: a user who reads every day would be counted seven times. The failure
+ * produces a number that is plausible, monotone and wrong, which is the kind that
+ * survives review -- so the two live side by side and `metrics.integration.test.ts`
+ * asserts the difference in one test.
+ */
+export async function activeUsers(db: DbOrTx, range: Range): Promise<number> {
+  if (!usable(range)) return 0;
+  const rows = await db.execute(sql`
+    select count(distinct user_id) as users
+      from readings
+     where local_date >= ${range.from}
+       and local_date <= ${range.to}
+  `);
+  return num((rows as unknown as Array<Record<string, unknown>>)[0]?.users);
+}
+
+// ---------------------------------------------------------------------------
+// M9 -- tokenLedgerDrift: the A-D17 consistency check, which must return 0 rows
+// ---------------------------------------------------------------------------
+
+export type DriftRow = {
+  readingId: string;
+  readingInput: number | null;
+  callInput: number | null;
+  readingOutput: number | null;
+  callOutput: number | null;
+};
+
+/**
+ * **A-D17's consistency check. IT MUST RETURN AN EMPTY ARRAY.**
+ *
+ * `readings.token_input`/`token_output` stay, and `llm_calls` records the same call.
+ * Two copies of one fact is how they drift, so the check lives beside the schema with
+ * a stated expected answer -- the `onboarding_answers` encryption-audit precedent,
+ * where the query is in `schema.ts` and must return 0.
+ *
+ * ── `IS DISTINCT FROM`, NEVER `<>`, AND THE TRAP IS IN THE CHECK ITSELF ──────
+ *
+ * Both columns are nullable and z.ai makes NULL the common case for `input_tokens`.
+ * `where r.token_input <> c.input_tokens` is **NULL-blind**: it evaluates to NULL
+ * wherever either side is NULL, NULL is not true, the row is filtered out, and **the
+ * query returns 0 rows whether or not the ledger agrees with anything.** A check that
+ * cannot fail is indistinguishable from a check that passes, and the roadmap said only
+ * *"must return 0 rows"* (R15). The integration test rewrites the predicate with `<>`
+ * and confirms all three cases go quiet -- a check that cannot fail must be *seen* to
+ * be unable to fail.
+ *
+ * **THE `NULL vs 0` CASE IS THE ONE THAT MATTERS**, and it is roadmap §12.6 arriving
+ * as data: `anthropic.ts`'s buffered path used to store `0` where the streamed path
+ * stored NULL, so a buffered z.ai call and its streamed twin disagreed by construction.
+ * A2 fixed it (R16). This is the check that would catch it coming back.
+ */
+export async function tokenLedgerDrift(db: DbOrTx, range: Range): Promise<DriftRow[]> {
+  if (!usable(range)) return [];
+  const rows = await db.execute(sql`
+    select r.id::text     as reading_id,
+           r.token_input  as reading_input,
+           c.input_tokens as call_input,
+           r.token_output as reading_output,
+           c.output_tokens as call_output
+      from readings r
+      join llm_calls c on c.reading_id = r.id and c.op = 'reading'
+     where r.local_date >= ${range.from}
+       and r.local_date <= ${range.to}
+       and (r.token_input  is distinct from c.input_tokens
+         or r.token_output is distinct from c.output_tokens)
+     order by r.created_at
+  `);
+
+  return (rows as unknown as Array<Record<string, unknown>>).map((r) => ({
+    readingId: String(r.reading_id),
+    readingInput: numOrNull(r.reading_input),
+    callInput: numOrNull(r.call_input),
+    readingOutput: numOrNull(r.reading_output),
+    callOutput: numOrNull(r.call_output),
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// M10 -- modelsSeen: the unpriced denominator
+// ---------------------------------------------------------------------------
+
+export type ModelRow = { model: string; calls: number; firstSeen: string };
+
+/**
+ * Which models actually ran in the range. **Returns models, NOT prices.**
+ *
+ * A3 does not import `prices.ts` into SQL: the pricing fold is pure
+ * (`priceRollup` in `@/lib/analytics/rollup`) and takes A2's `priceFor` as an
+ * argument, so it is testable at a price table the test invents -- `PRICES` ships one
+ * row per model, and a test against the shipped table could never reach the
+ * missing-model branch at all.
+ *
+ * This is the list that answers *"what could we not price, and since when"* in one
+ * look, so the fix is five minutes on a pricing page rather than an investigation.
+ *
+ * `min(created_at)::text` because a bare `min()` on a timestamp inside a raw template
+ * is the `sql<T>` trap again -- there is no mapper, so it arrives as a driver-rendered
+ * string wearing whatever type you asserted.
+ */
+export async function modelsSeen(db: DbOrTx, range: Range): Promise<ModelRow[]> {
+  if (!usable(range)) return [];
+  const rows = await db.execute(sql`
+    select model,
+           count(*)            as calls,
+           min(created_at)::text as first_seen
+      from llm_calls
+     where created_at >= ${range.from}::date
+       and created_at <  (${range.to}::date + 1)
+     group by 1
+     order by calls desc, model
+  `);
+
+  return (rows as unknown as Array<Record<string, unknown>>).map((r) => ({
+    model: String(r.model),
+    calls: num(r.calls),
+    firstSeen: String(r.first_seen),
+  }));
+}

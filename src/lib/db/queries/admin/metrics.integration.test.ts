@@ -9,7 +9,7 @@
  * `personaStaleness` judge every answer edit wrongly with a green typecheck and a
  * green unit suite.
  */
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterAll, describe, expect, it } from 'vitest';
 import { llmCalls, readings, users, type NewLlmCall } from '@/lib/db/schema';
 import { closeTestDb, withRollback } from '@/lib/db/testing/harness';
@@ -18,7 +18,11 @@ import {
   callsByLocalDate,
   callsByOp,
   callsByUtcDay,
+  activeUsers,
+  modelsSeen,
   peakWindow5h,
+  readingsByLocalDate,
+  tokenLedgerDrift,
   tokensByBucketAndModel,
   ttftByService,
 } from './metrics';
@@ -500,5 +504,249 @@ describe('M8 -- the two latencies never merge', () => {
         },
       ]);
       expect(await ttftByService(tx, { from: '2026-07-20', to: '2026-07-20' })).toEqual([]);
+    }));
+});
+
+/** A reading, with whatever the test needs pinned. */
+async function seedReading(
+  tx: Tx,
+  userId: string,
+  over: Partial<typeof readings.$inferInsert> = {},
+): Promise<string> {
+  const [reading] = await tx
+    .insert(readings)
+    .values({
+      userId,
+      readerId: 'thessaly',
+      serviceId: 'spread3',
+      locale: 'id',
+      localDate: '2026-07-20',
+      model: 'glm-4.6',
+      promptVersion: 'id-v1.testtest',
+      ...over,
+    })
+    .returning({ id: readings.id });
+  return reading.id;
+}
+
+describe('M6 / M7 -- readings, and the distinct count nobody may sum', () => {
+  it('partitions the total across the five statuses', () =>
+    withRollback(async (tx) => {
+      const userId = await seedUser(tx);
+      for (const status of ['ok', 'partial', 'failed', 'aborted', 'blocked'] as const) {
+        await seedReading(tx, userId, { status });
+      }
+
+      const [day] = await readingsByLocalDate(tx, { from: '2026-07-20', to: '2026-07-20' });
+      expect(day.readings).toBe(5);
+      expect(day.ok + day.partial + day.failed + day.aborted + day.blocked).toBe(day.readings);
+      expect(typeof day.readings).toBe('number');
+      expect(day.bucket).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    }));
+
+  it('counts a BLOCKED reading, which the ledger cannot see at all', () =>
+    withRollback(async (tx) => {
+      // A blocked reading makes no model call and still happened. A "readings per day"
+      // series built from `llm_calls` would silently exclude exactly the population
+      // W7's gate exists for.
+      const userId = await seedUser(tx);
+      await seedReading(tx, userId, { status: 'blocked' });
+      const [day] = await readingsByLocalDate(tx, { from: '2026-07-20', to: '2026-07-20' });
+      expect(day.blocked).toBe(1);
+      const utc = await callsByUtcDay(tx, { from: '2026-07-20', to: '2026-07-20' });
+      expect(utc[0].calls).toBe(0);
+    }));
+
+  it('WAU IS NOT sum(DAU): one user over three days is M7 = 1 and M6 = three 1s', () =>
+    withRollback(async (tx) => {
+      /*
+       * **BOTH ASSERTIONS IN ONE TEST, BECAUSE THE TEST'S SUBJECT IS THE DIFFERENCE.**
+       * Summing M6's `users` column gives 3 -- plausible, monotone and wrong, which is
+       * the kind of number that survives review.
+       */
+      const userId = await seedUser(tx);
+      for (const localDate of ['2026-07-20', '2026-07-21', '2026-07-22']) {
+        await seedReading(tx, userId, { localDate });
+      }
+
+      const days = await readingsByLocalDate(tx, { from: '2026-07-20', to: '2026-07-22' });
+      expect(days.map((d) => d.users)).toEqual([1, 1, 1]);
+      expect(days.reduce((n, d) => n + d.users, 0)).toBe(3); // the wrong answer
+
+      expect(await activeUsers(tx, { from: '2026-07-20', to: '2026-07-22' })).toBe(1);
+    }));
+
+  it("INCLUDES a soft-deleted user's readings", () =>
+    withRollback(async (tx) => {
+      /*
+       * `allTime.ts`'s ruling, and R29 one directory over: the account is restorable
+       * for `ERASURE_GRACE_DAYS`, so filtering here would make this page disagree with
+       * every other query in the app during the grace window -- and hiding them is how
+       * a thirty-day restore window becomes invisible.
+       */
+      const userId = await seedUser(tx);
+      await seedReading(tx, userId);
+      await tx.update(users).set({ deletedAt: new Date() }).where(eq(users.id, userId));
+
+      const [day] = await readingsByLocalDate(tx, { from: '2026-07-20', to: '2026-07-20' });
+      expect(day.readings).toBe(1);
+      expect(await activeUsers(tx, { from: '2026-07-20', to: '2026-07-20' })).toBe(1);
+    }));
+
+  it('RECORDS the plan: the index is usable as a full scan, never as a seek', () =>
+    withRollback(async (tx) => {
+      /*
+       * V8's technique and its lesson: *"an assertion that fails for a reason that is
+       * not a defect is an assertion people delete."* So this asserts the SHAPE with
+       * `enable_seqscan` off rather than the planner's real choice, which at this row
+       * count is correctly a seq scan.
+       *
+       * **AND IT CORRECTED A3's PLAN.** §9.1 says `readings_user_local_date_idx
+       * (user_id, local_date)` *"cannot use"* a fleet-wide `local_date` range. It can
+       * -- as a full Index Only Scan with the range applied to the second column --
+       * it just cannot SEEK, so the work is proportional to the whole index rather
+       * than to the range. The declared unbuilt `readings_local_date_idx` stands for
+       * the same reason either way.
+       */
+      const userId = await seedUser(tx);
+      await seedReading(tx, userId);
+
+      await tx.execute(sql`set local enable_seqscan = off`);
+      const explained = await tx.execute(
+        sql`explain select count(*) from readings where local_date >= '2026-07-20' and local_date <= '2026-07-25'`,
+      );
+      const plan = (explained as unknown as Array<Record<string, unknown>>)
+        .map((r) => String(r['QUERY PLAN']))
+        .join('\n');
+
+      expect(plan).toContain('readings_user_local_date_idx');
+      expect(plan).toContain('Index Cond');
+      // No seek: `user_id` is absent from the predicate, so the whole index is walked.
+      expect(plan).not.toContain('user_id =');
+    }));
+});
+
+describe('M9 -- tokenLedgerDrift, the A-D17 check', () => {
+  /** The same predicate spelled the wrong way, for the negative control. */
+  async function driftWithNotEquals(tx: Tx, from: string, to: string) {
+    const rows = await tx.execute(sql`
+      select r.id::text as reading_id
+        from readings r
+        join llm_calls c on c.reading_id = r.id and c.op = 'reading'
+       where r.local_date >= ${from}
+         and r.local_date <= ${to}
+         and (r.token_input <> c.input_tokens or r.token_output <> c.output_tokens)
+    `);
+    return rows as unknown as Array<Record<string, unknown>>;
+  }
+
+  async function pair(
+    tx: Tx,
+    reading: { input: number | null; output: number | null },
+    call: { input: number | null; output: number | null },
+  ): Promise<string> {
+    const userId = await seedUser(tx);
+    const readingId = await seedReading(tx, userId, {
+      tokenInput: reading.input,
+      tokenOutput: reading.output,
+    });
+    await tx.insert(llmCalls).values([
+      row({
+        op: 'reading',
+        localDate: '2026-07-20',
+        userId,
+        readingId,
+        inputTokens: call.input,
+        outputTokens: call.output,
+      }),
+    ]);
+    return readingId;
+  }
+
+  it('AGREEMENT returns 0 rows -- the expected answer', () =>
+    withRollback(async (tx) => {
+      await pair(tx, { input: 1200, output: 400 }, { input: 1200, output: 400 });
+      expect(await tokenLedgerDrift(tx, { from: '2026-07-20', to: '2026-07-20' })).toEqual([]);
+    }));
+
+  it('a real disagreement, 5 vs 7, returns 1 row', () =>
+    withRollback(async (tx) => {
+      await pair(tx, { input: 5, output: 400 }, { input: 7, output: 400 });
+      const rows = await tokenLedgerDrift(tx, { from: '2026-07-20', to: '2026-07-20' });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].readingInput).toBe(5);
+      expect(rows[0].callInput).toBe(7);
+    }));
+
+  it('NULL vs 0 IS REPORTED -- the case the whole ruling is about', () =>
+    withRollback(async (tx) => {
+      /*
+       * Roadmap §12.6 arriving as data. `anthropic.ts`'s buffered path stored `0`
+       * where the streamed path stored NULL, so a buffered z.ai call and its streamed
+       * twin disagreed by construction; A2 fixed it under R16. This is the check that
+       * catches it coming back, and it is the case a `<>` implementation gets wrong.
+       */
+      await pair(tx, { input: null, output: 400 }, { input: 0, output: 400 });
+      const rows = await tokenLedgerDrift(tx, { from: '2026-07-20', to: '2026-07-20' });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].readingInput).toBeNull();
+      expect(rows[0].callInput).toBe(0);
+    }));
+
+  it('THE NEGATIVE CONTROL: the `<>` spelling finds nothing in ALL THREE cases', () =>
+    withRollback(async (tx) => {
+      /*
+       * **A CHECK THAT CANNOT FAIL MUST BE SEEN TO BE UNABLE TO FAIL.** `a <> b` is
+       * NULL -- not true -- when either side is NULL, so the row is filtered out and
+       * the query returns 0 rows whether or not the ledger agrees with anything. The
+       * `5 vs 7` case is the only one it catches, and z.ai makes NULL the common case
+       * for `input_tokens`, so in production it would be silently vacuous.
+       */
+      await pair(tx, { input: null, output: 400 }, { input: 0, output: 400 });
+      expect(await driftWithNotEquals(tx, '2026-07-20', '2026-07-20')).toHaveLength(0);
+      // ...while the shipped spelling reports it.
+      expect(await tokenLedgerDrift(tx, { from: '2026-07-20', to: '2026-07-20' })).toHaveLength(1);
+    }));
+
+  it('ignores the gist row, which carries a reading_id and different tokens', () =>
+    withRollback(async (tx) => {
+      // `c.op = 'reading'` is load-bearing: A2 sets `reading_id` on the gist call too
+      // (R51), and the gist's tokens are its own.
+      const userId = await seedUser(tx);
+      const readingId = await seedReading(tx, userId, { tokenInput: 1200, tokenOutput: 400 });
+      await tx.insert(llmCalls).values([
+        row({ op: 'reading', localDate: '2026-07-20', userId, readingId, inputTokens: 1200, outputTokens: 400 }),
+        row({ op: 'gist', localDate: '2026-07-20', userId, readingId, inputTokens: 900, outputTokens: 30 }),
+      ]);
+      expect(await tokenLedgerDrift(tx, { from: '2026-07-20', to: '2026-07-20' })).toEqual([]);
+    }));
+});
+
+describe('M10 -- modelsSeen', () => {
+  it('lists the models that ran, with a first_seen STRING', () =>
+    withRollback(async (tx) => {
+      await tx.insert(llmCalls).values([
+        row({ op: 'reading', localDate: '2026-07-20' }),
+        row({ op: 'reading', localDate: '2026-07-20' }),
+        row({ op: 'moderation', localDate: '2026-07-20', model: 'glm-4.5-flash' }),
+      ]);
+
+      const rows = await modelsSeen(tx, { from: '2026-07-20', to: '2026-07-20' });
+      expect(rows.map((r) => r.model)).toEqual(['glm-4.6', 'glm-4.5-flash']);
+      expect(rows[0].calls).toBe(2);
+      expect(typeof rows[0].calls).toBe('number');
+      // `min(created_at)::text`: a bare `min()` inside a raw template has no mapper.
+      expect(typeof rows[0].firstSeen).toBe('string');
+      expect(rows[0].firstSeen).toMatch(/^2026-07-20/);
+    }));
+
+  it('breaks the count tie on the model name, so the order is total', () =>
+    withRollback(async (tx) => {
+      await tx.insert(llmCalls).values([
+        row({ op: 'reading', localDate: '2026-07-20', model: 'zzz' }),
+        row({ op: 'reading', localDate: '2026-07-20', model: 'aaa' }),
+      ]);
+      const rows = await modelsSeen(tx, { from: '2026-07-20', to: '2026-07-20' });
+      expect(rows.map((r) => r.model)).toEqual(['aaa', 'zzz']);
     }));
 });
