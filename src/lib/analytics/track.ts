@@ -57,6 +57,22 @@ type Store = {
    */
   calls: LlmCallRecord[];
   registered: boolean;
+  /**
+   * **`drain()` HAS ALREADY RUN FOR THIS REQUEST, SO NOTHING WILL DRAIN IT AGAIN.**
+   *
+   * A2, and it was MEASURED rather than reasoned about (`docs/workstream-notes.md`).
+   * `bindAnalyticsScope()` registers the drain `after()` eagerly, so on a route that
+   * ALSO registers its own `after()` later -- `/api/memory/summary` does -- Next runs
+   * the drain FIRST. A `recordCall` from inside the route's own callback then pushes
+   * onto `store.calls` that nothing visits again, and the row is lost silently.
+   *
+   * That is R17's trap in a shape R17 did not cover: not a `defer()` from inside a
+   * deferred job, but a write from inside a SECOND `after()`. Measured live: the day
+   * summary's body was written and its ledger row was not, with nothing logged.
+   * `bufferCall` reads this flag and inserts directly instead -- provably off the
+   * request path, because the response has already flushed.
+   */
+  drained: boolean;
 };
 
 const als = new AsyncLocalStorage<Store>();
@@ -161,6 +177,13 @@ async function drain(store: Store): Promise<void> {
     }
   }
 
+  /*
+   * SET BEFORE THE EVENT FLUSH AND IN A `finally`, so it is true however that flush
+   * ends. Anything recorded after this point cannot ride the buffer, and `bufferCall`
+   * needs to know that whether or not the last insert succeeded.
+   */
+  store.drained = true;
+
   const rows = store.buffer.splice(0);
   if (rows.length === 0) return;
 
@@ -189,7 +212,14 @@ async function drain(store: Store): Promise<void> {
  */
 export function withAnalytics<T>(ctx: AnalyticsContext, fn: () => Promise<T>): Promise<T> {
   if (!enabled()) return fn();
-  const store: Store = { ctx, buffer: [], deferred: [], calls: [], registered: false };
+  const store: Store = {
+    ctx,
+    buffer: [],
+    deferred: [],
+    calls: [],
+    registered: false,
+    drained: false,
+  };
   return als.run(store, fn);
 }
 
@@ -381,10 +411,32 @@ export function defer(fn: () => Promise<void>): void {
  */
 export function bufferCall(row: LlmCallRecord): Promise<void> {
   const store = als.getStore();
-  if (store) {
+
+  if (store && !store.drained) {
     store.calls.push(row);
     ensureRegistered(store);
     return Promise.resolve();
+  }
+
+  if (store) {
+    /*
+     * **THE STORE EXISTS AND HAS ALREADY BEEN DRAINED, SO THE BUFFER IS A HOLE.**
+     * MEASURED, not reasoned about: `bindAnalyticsScope()` registers the drain
+     * `after()` eagerly, so a route that registers its OWN `after()` afterwards --
+     * `/api/memory/summary` -- has the drain run FIRST. A row pushed here would sit in
+     * `store.calls` with nothing left to visit it. Live evidence: the day summary's
+     * body was written and its ledger row was not, with nothing logged.
+     *
+     * R17's trap in a shape R17 did not cover: not a `defer()` from inside a deferred
+     * job, but a write from inside a second `after()`.
+     *
+     * Inserting directly is safe HERE and only here -- the response has already
+     * flushed, so there is no byte left to delay. **And it uses `store.ctx`, which is
+     * the whole reason this is a separate branch rather than a fall-through to the
+     * anonymous one below**: the querent's id, locale and calendar day are known, and
+     * a row that lost them would be a silently unattributed cost.
+     */
+    return insertNow(store.ctx, row);
   }
 
   /*
@@ -401,23 +453,32 @@ export function bufferCall(row: LlmCallRecord): Promise<void> {
     localDate: utcDateString(),
   };
 
-  const insert = async (): Promise<void> => {
-    try {
-      await flushCalls(ctx, [row]);
-    } catch (err) {
-      logAnalyticsFailure('calls', err);
-    }
-  };
-
   try {
-    after(insert);
+    after(() => insertNow(ctx, row));
     return Promise.resolve();
   } catch {
     /*
-     * BRANCH 3: `after()` REFUSED, so this is inside another `after()` callback or in
-     * a script -- provably off any request path. Awaiting the insert here is the only
-     * way the row survives at all, and the alternative is losing it silently.
+     * `after()` REFUSED, so there is no request left to delay. **In a script that is
+     * what happens; inside another `after()` callback this Next version does NOT throw
+     * -- it silently drops the work.** Measured, in Task 13 and again on the day
+     * summary. That is exactly why the `store.drained` branch above exists rather than
+     * this catch being relied on to cover it.
      */
-    return insert();
+    return insertNow(ctx, row);
+  }
+}
+
+/**
+ * Insert one row now, and swallow. Shared by all three direct-insert branches.
+ *
+ * **NEVER REACHED ON A REQUEST PATH.** Each caller has already established that the
+ * response has flushed: the store was drained, or `after()` refused, or there is no
+ * request at all.
+ */
+async function insertNow(ctx: AnalyticsContext, row: LlmCallRecord): Promise<void> {
+  try {
+    await flushCalls(ctx, [row]);
+  } catch (err) {
+    logAnalyticsFailure('calls', err);
   }
 }

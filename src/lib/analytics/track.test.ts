@@ -26,7 +26,8 @@ vi.mock('./flush', () => ({
   flushCalls: (...args: unknown[]) => flushCalls(...(args as [])),
 }));
 
-const { analyticsContext, bufferCall, defer, track, withAnalytics } = await import('./track');
+const { analyticsContext, bindAnalyticsScope, bufferCall, defer, track, withAnalytics } =
+  await import('./track');
 const { recordCall } = await import('@/lib/llm/ledger');
 type CallRow = Parameters<typeof bufferCall>[0];
 type Ctx = Parameters<typeof withAnalytics>[0];
@@ -43,6 +44,7 @@ async function runAfter(): Promise<void> {
   const callbacks = registered.splice(0);
   for (const cb of callbacks) await cb();
 }
+
 
 beforeEach(() => {
   registered.length = 0;
@@ -310,6 +312,50 @@ describe('the ledger buffer (A2, R17)', () => {
       afterThrows = false;
       err.mockRestore();
     }
+  });
+
+  it('INSERTS DIRECTLY WHEN THE STORE HAS ALREADY BEEN DRAINED, keeping attribution', async () => {
+    /*
+     * ── THE BUG THIS EXISTS FOR, MEASURED LIVE ──────────────────────────────────
+     *
+     * `bindAnalyticsScope()` registers the drain `after()` EAGERLY, so a route that
+     * also registers its own `after()` afterwards -- `/api/memory/summary` does -- has
+     * the drain run FIRST. A row recorded from inside the route's own callback then
+     * pushed onto `store.calls` with nothing left to visit it, and was lost silently.
+     *
+     * **Observed on a real day summary before the fix: `daily_summaries` had its row,
+     * `llm_calls` had none, and nothing was logged.** This is R17's trap in a shape
+     * R17 did not cover -- not a `defer()` from inside a deferred job, but a write
+     * from inside a SECOND `after()`.
+     *
+     * It is NOT covered by the `after()`-throws catch, because in this Next version
+     * `after()` inside an `after()` does not throw -- it silently drops the work.
+     */
+    let inScope!: <T>(fn: () => T) => T;
+    await withAnalytics(CTX, async () => {
+      // Exactly what `/api/memory/summary` does: bind synchronously in the handler,
+      // which registers the drain `after()` EAGERLY -- ahead of the route's own.
+      inScope = bindAnalyticsScope();
+      track('reader.chosen', { reader_id: 'adrian' });
+    });
+
+    await runAfter(); // the eagerly-registered drain runs and completes
+    expect(flushCalls).not.toHaveBeenCalled();
+
+    // Now the route's OWN after() fires, re-entering the store through the wrapper it
+    // captured -- and records a row into a store that has already been drained.
+    await inScope(() => recordCall(ROW));
+
+    expect(flushCalls).toHaveBeenCalledTimes(1);
+    const [ctx, rows] = flushCalls.mock.calls[0] as unknown as [Ctx, CallRow[]];
+    expect(rows).toEqual([ROW]);
+    /*
+     * **ATTRIBUTED, and this is why the drained branch reads `store.ctx` rather than
+     * falling through to the anonymous branch.** A row that lost the querent's id,
+     * locale and calendar day would be a silently unattributed cost on a request that
+     * had all three.
+     */
+    expect(ctx).toEqual(CTX);
   });
 
   it('ANALYTICS_ENABLED=0 writes nothing and does not throw', async () => {
