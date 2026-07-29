@@ -46,6 +46,13 @@ PATHS=(
   /en/arcana/the-moon
   /blog
   /en/blog
+  # S6, in the commit that added the pages. ONE article rather than both: this list is
+  # a per-route-shape sample, not an inventory -- `/blog/[slug]` is one route and the
+  # sitemap is what enumerates its instances. `what-tarot-is` is the one chosen because
+  # it is the article the public orientation links point at, so a 302 here is the
+  # failure a stranger meets first.
+  /blog/what-tarot-is
+  /en/blog/what-tarot-is
   /terms
   /privacy
   /sitemap.xml
