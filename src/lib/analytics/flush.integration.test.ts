@@ -8,10 +8,11 @@
  */
 import { eq } from 'drizzle-orm';
 import { afterAll, describe, expect, it, vi } from 'vitest';
-import { events, readingCards, readings, users } from '@/lib/db/schema';
+import { events, llmCalls, readingCards, readings, users } from '@/lib/db/schema';
 import type { DbOrTx } from '@/lib/db/types';
 import { closeTestDb, withRollback } from '@/lib/db/testing/harness';
-import { flushEvents, persistReading, type ReadingRow } from './flush';
+import type { LlmCallRecord } from '@/lib/llm/ledger';
+import { flushCalls, flushEvents, persistReading, type ReadingRow } from './flush';
 import type { AnalyticsContext } from './track';
 
 afterAll(closeTestDb);
@@ -243,6 +244,165 @@ describe('flushEvents', () => {
       }) as DbOrTx;
       await flushEvents(ctx(null), [], counting);
       expect(inserts).toBe(0);
+    });
+  });
+});
+
+/**
+ * A2's third writer. The rows themselves are `calls.integration.test.ts`'s subject;
+ * what is under test HERE is the fold from `LlmCallRecord` to `NewLlmCall` -- which is
+ * where the request's attribution is applied, and the one place it could be applied
+ * wrongly.
+ */
+describe('flushCalls', () => {
+  const ctx = (userId: string | null): AnalyticsContext => ({
+    userId,
+    sessionId: SESSION_ID,
+    locale: 'en',
+    localDate: LOCAL_DATE,
+  });
+
+  const record = (over: Partial<LlmCallRecord> = {}): LlmCallRecord => ({
+    op: 'moderation',
+    model: 'glm-4.5-flash',
+    callClass: 'interactive',
+    streamed: false,
+    status: 'ok',
+    errorKind: null,
+    inputTokens: null,
+    outputTokens: 12,
+    totalMs: 903,
+    ...over,
+  });
+
+  it('TAKES user_id, locale AND local_date OFF THE CONTEXT, never off the row', async () => {
+    await withRollback(async (tx) => {
+      const userId = await seedUser(tx);
+      /*
+       * A2-D3, and it is what makes A-D5's "no caller edits beyond passing `op`"
+       * literally true. It also means `local_date` is the querent's own calendar day,
+       * sent by the client -- the Jakarta trap, where a value recomputed from
+       * `created_at` is a day out between midnight and 07:00.
+       *
+       * `locale: 'en'` in the context while every row is silent about locale: the
+       * assertion is that the stored value came from the context and could not have
+       * come from anywhere else.
+       */
+      await flushCalls(ctx(userId), [record()], tx);
+
+      const stored = await tx.select().from(llmCalls);
+      expect(stored).toHaveLength(1);
+      expect(stored[0]).toMatchObject({
+        userId,
+        locale: 'en',
+        localDate: LOCAL_DATE,
+        op: 'moderation',
+        model: 'glm-4.5-flash',
+        callClass: 'interactive',
+        streamed: false,
+        status: 'ok',
+        inputTokens: null,
+        outputTokens: 12,
+        totalMs: 903,
+        errorKind: null,
+        readingId: null,
+      });
+    });
+  });
+
+  it('writes every row of the buffer in ONE insert', async () => {
+    await withRollback(async (tx) => {
+      const userId = await seedUser(tx);
+
+      // Counting `insert()` calls and not rows, for `flushEvents`'s reason: the claim
+      // is one STATEMENT, and a loop over the array would pass a row count either way.
+      let inserts = 0;
+      const counting = new Proxy(tx, {
+        get(target, prop, receiver) {
+          if (prop === 'insert') inserts += 1;
+          return Reflect.get(target, prop, receiver);
+        },
+      }) as DbOrTx;
+
+      await flushCalls(
+        ctx(userId),
+        [record({ op: 'moderation' }), record({ op: 'reading', streamed: true }), record({ op: 'gist' })],
+        counting,
+      );
+
+      expect(inserts).toBe(1);
+      expect(await tx.select().from(llmCalls)).toHaveLength(3);
+    });
+  });
+
+  it('carries reading_id when the row has one, for op reading and gist only', async () => {
+    await withRollback(async (tx) => {
+      const userId = await seedUser(tx);
+      await flushEvents(ctx(userId), [], tx); // no-op; keeps the seed honest
+      const [reading] = await tx
+        .insert(readings)
+        .values({
+          userId,
+          readerId: 'adrian',
+          serviceId: 'spread3',
+          locale: 'id',
+          localDate: LOCAL_DATE,
+          model: 'glm-4.6',
+          promptVersion: 'id-v1.3f9a2c71',
+        })
+        .returning({ id: readings.id });
+
+      await flushCalls(
+        ctx(userId),
+        [record({ op: 'reading', streamed: true, readingId: reading.id }), record({ op: 'moderation' })],
+        tx,
+      );
+
+      const stored = await tx.select().from(llmCalls);
+      expect(stored.find((r) => r.op === 'reading')?.readingId).toBe(reading.id);
+      // R51: the classifier ran before the `readings` row existed and can never
+      // carry one, which is why the figure on screen is "generation cost".
+      expect(stored.find((r) => r.op === 'moderation')?.readingId).toBeNull();
+    });
+  });
+
+  it('accepts a NULL user id, which is the R49 Lotus case', async () => {
+    await withRollback(async (tx) => {
+      // Three W3 onboarding routes have a real querent and no `withAnalytics` scope,
+      // so their Lotus rows land unattributed. Reconciliation accepted that rather
+      // than spending A2's diff on three W3 handlers; the query that names them is in
+      // `docs/analytics-queries.md`.
+      await flushCalls(ctx(null), [record({ op: 'lotus' })], tx);
+      const stored = await tx.select().from(llmCalls);
+      expect(stored).toHaveLength(1);
+      expect(stored[0].userId).toBeNull();
+    });
+  });
+
+  it('writes nothing for an empty buffer, and runs no statement', async () => {
+    await withRollback(async (tx) => {
+      let inserts = 0;
+      const counting = new Proxy(tx, {
+        get(target, prop, receiver) {
+          if (prop === 'insert') inserts += 1;
+          return Reflect.get(target, prop, receiver);
+        },
+      }) as DbOrTx;
+      await flushCalls(ctx(null), [], counting);
+      expect(inserts).toBe(0);
+    });
+  });
+
+  it('writes nothing when ANALYTICS_ENABLED=0, and does not throw', async () => {
+    await withRollback(async (tx) => {
+      const userId = await seedUser(tx);
+      vi.stubEnv('ANALYTICS_ENABLED', '0');
+      try {
+        await expect(flushCalls(ctx(userId), [record()], tx)).resolves.toBeUndefined();
+        expect(await tx.select().from(llmCalls)).toHaveLength(0);
+      } finally {
+        vi.unstubAllEnvs();
+      }
     });
   });
 });

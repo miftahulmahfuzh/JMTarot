@@ -20,9 +20,15 @@ vi.mock('next/server', () => ({
 }));
 
 const flushEvents = vi.fn(async () => {});
-vi.mock('./flush', () => ({ flushEvents: (...args: unknown[]) => flushEvents(...(args as [])) }));
+const flushCalls = vi.fn(async () => {});
+vi.mock('./flush', () => ({
+  flushEvents: (...args: unknown[]) => flushEvents(...(args as [])),
+  flushCalls: (...args: unknown[]) => flushCalls(...(args as [])),
+}));
 
-const { analyticsContext, defer, track, withAnalytics } = await import('./track');
+const { analyticsContext, bufferCall, defer, track, withAnalytics } = await import('./track');
+const { recordCall } = await import('@/lib/llm/ledger');
+type CallRow = Parameters<typeof bufferCall>[0];
 type Ctx = Parameters<typeof withAnalytics>[0];
 
 const CTX: Ctx = {
@@ -41,6 +47,7 @@ async function runAfter(): Promise<void> {
 beforeEach(() => {
   registered.length = 0;
   flushEvents.mockClear();
+  flushCalls.mockClear();
   // The unit project runs with ANALYTICS_ENABLED=0 (reconciliation R20), so
   // every test that wants the real path says so explicitly.
   process.env.ANALYTICS_ENABLED = '1';
@@ -157,6 +164,162 @@ describe('defer', () => {
 
     expect(err).toHaveBeenCalled();
     err.mockRestore();
+  });
+});
+
+/**
+ * A2's ledger buffer, and the whole of reconciliation R17.
+ *
+ * `drain()` iterates a SPLICED COPY of `store.deferred`, so a `defer()` called from
+ * inside a deferred job pushes onto an array nothing drains again -- and
+ * `ensureRegistered` returns early, so no second `after()` is registered either. Three
+ * of A2's nine ops (`gist`, `translation_repair`, the `frequency` regeneration) record
+ * from inside that loop, so **the ledger rides its own buffer, spliced AFTER the loop.**
+ *
+ * **THE FIRST TEST BELOW IS THE ONE THAT FAILS IF THAT BLOCK MOVES ABOVE THE LOOP**,
+ * which is the edit somebody makes while tidying `drain()` into "flush everything, then
+ * run the deferred work". Verified by moving it: `flushCalls` is not called at all.
+ */
+describe('the ledger buffer (A2, R17)', () => {
+  const ROW: CallRow = {
+    op: 'gist',
+    model: 'glm-4.6',
+    callClass: 'deferred',
+    streamed: false,
+    status: 'ok',
+    errorKind: null,
+    inputTokens: 1200,
+    outputTokens: 40,
+    totalMs: 900,
+  };
+
+  it('FLUSHES A ROW RECORDED FROM INSIDE A DEFERRED JOB -- the one `defer()` cannot do', async () => {
+    const order: string[] = [];
+    flushCalls.mockImplementation(async () => {
+      order.push('calls');
+    });
+    flushEvents.mockImplementation(async () => {
+      order.push('events');
+    });
+
+    await withAnalytics(CTX, async () => {
+      track('reader.chosen', { reader_id: 'adrian' });
+      defer(async () => {
+        order.push('deferred');
+        // This is `extractGist` -> `complete()` -> `metered()` -> `recordCall`,
+        // three frames down and inside the loop that has already been spliced.
+        await recordCall(ROW);
+      });
+    });
+
+    await runAfter();
+
+    expect(order).toEqual(['deferred', 'calls', 'events']);
+    expect(flushCalls).toHaveBeenCalledTimes(1);
+    const [ctx, rows] = flushCalls.mock.calls[0] as unknown as [Ctx, CallRow[]];
+    expect(rows).toEqual([ROW]);
+    // Attribution comes off the CONTEXT at flush time (A2-D3), never from the call
+    // site -- which is what keeps `local_date` the querent's own calendar day.
+    expect(ctx).toEqual(CTX);
+  });
+
+  it('batches every row of a request into ONE flush, beside the one event flush', async () => {
+    await withAnalytics(CTX, async () => {
+      await recordCall({ ...ROW, op: 'moderation' });
+      await recordCall({ ...ROW, op: 'reading', streamed: true });
+      defer(async () => {
+        await recordCall({ ...ROW, op: 'gist' });
+      });
+      track('reader.chosen', { reader_id: 'adrian' });
+    });
+
+    await runAfter();
+
+    expect(registered).toHaveLength(0);
+    expect(flushCalls).toHaveBeenCalledTimes(1);
+    const [, rows] = flushCalls.mock.calls[0] as unknown as [Ctx, CallRow[]];
+    expect(rows.map((r) => r.op)).toEqual(['moderation', 'reading', 'gist']);
+  });
+
+  it('registers an after() for a request whose ONLY analytics is a ledger row', async () => {
+    // A `/api/translate` request that hits no event but makes a model call. Without
+    // `ensureRegistered` here the row would sit in the buffer and never be drained.
+    await withAnalytics(CTX, async () => {
+      await recordCall(ROW);
+    });
+    expect(registered).toHaveLength(1);
+    await runAfter();
+    expect(flushCalls).toHaveBeenCalledTimes(1);
+    expect(flushEvents).not.toHaveBeenCalled();
+  });
+
+  it('swallows a flushCalls failure and still flushes the events', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    flushCalls.mockRejectedValueOnce(new Error('database is on fire'));
+
+    await withAnalytics(CTX, async () => {
+      await recordCall(ROW);
+      track('reader.chosen', { reader_id: 'adrian' });
+    });
+    await expect(runAfter()).resolves.toBeUndefined();
+
+    // THE TWO FAILURES ARE INDEPENDENT. A busy ledger insert must not cost an event.
+    expect(flushEvents).toHaveBeenCalledTimes(1);
+    expect(err).toHaveBeenCalled();
+    err.mockRestore();
+  });
+
+  it('outside a scope, schedules its own after() rather than losing the row', async () => {
+    await recordCall(ROW);
+    expect(registered).toHaveLength(1);
+    await runAfter();
+    expect(flushCalls).toHaveBeenCalledTimes(1);
+    const [ctx] = flushCalls.mock.calls[0] as unknown as [Ctx, CallRow[]];
+    // The R49 case: unattributed, UTC date. A row with no querent behind it, or one
+    // of W3's three onboarding routes that has one and no scope.
+    expect(ctx.userId).toBeNull();
+    expect(ctx.localDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('BRANCH 3: awaits the insert when after() itself refuses', async () => {
+    /*
+     * Reachable only from inside another `after()` callback or from a script -- the
+     * real `after()` throws exactly where there is no request left to delay. So the
+     * one branch that performs I/O in its caller's `await` is provably off the request
+     * path, and the alternative to it is losing the row.
+     */
+    afterThrows = true;
+    try {
+      await recordCall(ROW);
+      expect(flushCalls).toHaveBeenCalledTimes(1);
+      expect(registered).toHaveLength(0);
+    } finally {
+      afterThrows = false;
+    }
+  });
+
+  it('never throws, on a hostile row or on a failing insert with no after()', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    afterThrows = true;
+    flushCalls.mockRejectedValueOnce(new Error('nope'));
+    try {
+      // A ledger that can fail a reading is worse than no ledger.
+      await expect(recordCall(ROW)).resolves.toBeUndefined();
+      await expect(recordCall({} as CallRow)).resolves.toBeUndefined();
+    } finally {
+      afterThrows = false;
+      err.mockRestore();
+    }
+  });
+
+  it('ANALYTICS_ENABLED=0 writes nothing and does not throw', async () => {
+    process.env.ANALYTICS_ENABLED = '0';
+    await withAnalytics(CTX, async () => {
+      await recordCall(ROW);
+    });
+    await runAfter();
+    expect(flushCalls).not.toHaveBeenCalled();
+    expect(registered).toHaveLength(0);
   });
 });
 

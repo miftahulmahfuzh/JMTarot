@@ -30,8 +30,9 @@
 import { after } from 'next/server';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Locale } from '@/data/types';
+import type { LlmCallRecord } from '@/lib/llm/ledger';
 import type { EventName, EventProps, EventPropValue, PendingEvent, TrackFn } from './events';
-import { flushEvents } from './flush';
+import { flushCalls, flushEvents } from './flush';
 import { utcDateString } from './localdate';
 
 export type AnalyticsContext = {
@@ -48,6 +49,13 @@ type Store = {
   ctx: AnalyticsContext;
   buffer: PendingEvent[];
   deferred: Array<() => Promise<void>>;
+  /**
+   * A2's ledger rows. **ITS OWN BUFFER, AND THE REASON IS `drain()`'s ORDERING**
+   * (reconciliation R17) -- see the comment on the flush block in `drain`. It is not
+   * folded into `buffer`, because these are rows in a different table with a
+   * different shape and a different statement.
+   */
+  calls: LlmCallRecord[];
   registered: boolean;
 };
 
@@ -127,6 +135,32 @@ async function drain(store: Store): Promise<void> {
     }
   }
 
+  /*
+   * ── A2's LEDGER, AND THIS BLOCK'S POSITION IS THE FEATURE ────────────────────
+   *
+   * **AFTER THE DEFERRED LOOP, FOR THE SAME REASON THE EVENT BUFFER IS** (roadmap
+   * §6, reconciliation R17). The loop above iterates a SPLICED COPY, so anything a
+   * deferred job pushes onto a live array lands after the iteration has already been
+   * fixed -- which is why `track()` from inside a deferred job works and `defer()`
+   * from inside one is silently orphaned. `gist`, `translation_repair` and the
+   * `frequency` regeneration all record their ledger rows from in there, so **moving
+   * this block above the loop loses three of the nine ops with a green suite.**
+   * `track.test.ts` has a case that fails if it moves.
+   *
+   * BEFORE the event flush rather than after it, so the two failure modes stay
+   * independent: a busy `events` insert must not cost a cost row, and vice versa.
+   */
+  const calls = store.calls.splice(0);
+  if (calls.length > 0) {
+    try {
+      await flushCalls(store.ctx, calls);
+    } catch (err) {
+      // Same policy as the events flush: a missing ledger row breaks a dashboard,
+      // and a 500 because the ledger was busy breaks a reading.
+      logAnalyticsFailure('calls', err);
+    }
+  }
+
   const rows = store.buffer.splice(0);
   if (rows.length === 0) return;
 
@@ -155,7 +189,7 @@ async function drain(store: Store): Promise<void> {
  */
 export function withAnalytics<T>(ctx: AnalyticsContext, fn: () => Promise<T>): Promise<T> {
   if (!enabled()) return fn();
-  const store: Store = { ctx, buffer: [], deferred: [], registered: false };
+  const store: Store = { ctx, buffer: [], deferred: [], calls: [], registered: false };
   return als.run(store, fn);
 }
 
@@ -310,5 +344,76 @@ export function defer(fn: () => Promise<void>): void {
     });
   } catch (err) {
     logAnalyticsFailure('defer', err);
+  }
+}
+
+/**
+ * Buffer one `llm_calls` row onto this request. A2, v0.5.0.
+ *
+ * **CALL IT THROUGH `recordCall()` IN `@/lib/llm/ledger`, NEVER DIRECTLY** -- that is
+ * where the contract and the whole argument for the three branches below live, and
+ * where `ANALYTICS_ENABLED` is checked. This function is the mechanism; that one is
+ * the interface.
+ *
+ * ── WHY IT IS NOT `defer()` AND NOT A BARE `after()` ────────────────────────────
+ *
+ * Not `defer()`: `drain()` iterates a spliced copy of `store.deferred`, so a
+ * `defer()` from inside a deferred job is orphaned -- and `gist`,
+ * `translation_repair` and the `frequency` regeneration all record from in there.
+ * `store.calls` is spliced *after* that loop, exactly as the event buffer is, so it
+ * catches rows produced by deferred work by construction (reconciliation R17).
+ *
+ * Not a bare `after()` per row: it throws inside a `ReadableStream`'s `pull()` --
+ * V2 measured `` `after` was called outside a request scope `` there -- and probably
+ * inside another `after()` too, which is exactly branch 3 below.
+ *
+ * Not an `await` inside `metered()`: that is a database round trip on the moderation
+ * classifier's path, which A-D6 forbids in words.
+ *
+ * **RETURNS A PROMISE THAT IS ALREADY RESOLVED ON BRANCHES 1 AND 2.** Only branch 3
+ * awaits I/O, and it is reachable only where `after()` refuses -- i.e. where there is
+ * no request left to delay.
+ */
+export async function bufferCall(row: LlmCallRecord): Promise<void> {
+  const store = als.getStore();
+  if (store) {
+    store.calls.push(row);
+    ensureRegistered(store);
+    return;
+  }
+
+  /*
+   * OUTSIDE ANY SCOPE. Three of W3's onboarding routes are here on purpose:
+   * reconciliation R49 accepted unattributed Lotus rows rather than spending A2's
+   * diff on three W3 handlers, so those rows get a null `user_id`, a null `locale`
+   * and a UTC `local_date`. `docs/analytics-queries.md` carries the query that names
+   * them, and A5's per-user cost page must say Lotus distillations are unattributed.
+   */
+  const ctx: AnalyticsContext = {
+    userId: null,
+    sessionId: null,
+    locale: 'id',
+    localDate: utcDateString(),
+  };
+
+  try {
+    after(async () => {
+      try {
+        await flushCalls(ctx, [row]);
+      } catch (err) {
+        logAnalyticsFailure('calls', err);
+      }
+    });
+  } catch {
+    /*
+     * BRANCH 3: `after()` REFUSED, so this is inside another `after()` callback or in
+     * a script -- provably off any request path. Awaiting the insert here is the only
+     * way the row survives at all, and the alternative is losing it silently.
+     */
+    try {
+      await flushCalls(ctx, [row]);
+    } catch (err) {
+      logAnalyticsFailure('calls', err);
+    }
   }
 }

@@ -18,10 +18,12 @@
  * an optional handle.
  */
 import { events } from '@/lib/db/schema';
+import { insertCalls } from '@/lib/db/queries/admin/calls';
 import { insertReading, type ReadingCardInput } from '@/lib/db/queries/history';
 import { touchLastSeen as touchLastSeenQuery } from '@/lib/db/queries/profile';
 import type { DbOrTx } from '@/lib/db/types';
 import type { NewReading } from '@/lib/db/schema';
+import type { LlmCallRecord } from '@/lib/llm/ledger';
 import type { EventPropValue, PendingEvent } from './events';
 import type { AnalyticsContext } from './track';
 
@@ -260,6 +262,57 @@ export async function flushEvents(
       sessionId: ctx.sessionId,
       name: row.name,
       props: sanitizeProps(row.props),
+      locale: ctx.locale,
+      localDate: ctx.localDate,
+    })),
+  );
+}
+
+/**
+ * A2's ledger rows, in one multi-row insert per request.
+ *
+ * **NOT RETRIED, and the failure policy is `flushEvents`'s rather than
+ * `persistReading`'s.** This file's two policies exist because the two writes cost
+ * different things: a missing `readings` row breaks a user-facing memory feature, and
+ * a missing ledger row breaks a dashboard. A ledger that can fail a reading is worse
+ * than no ledger, and the acceptance test is W4's verbatim -- stop the database and
+ * take a reading; nothing but `[analytics]` lines.
+ *
+ * `user_id`, `locale` and `local_date` come off `ctx` at THIS moment and not from the
+ * call site (A2-D3), which is what makes A-D5's *"no caller edits beyond passing
+ * `op`"* literally true. It also means `local_date` is the querent's own calendar day,
+ * sent by the client -- **never recomputed from `created_at`**, which is a day out for
+ * anyone in Jakarta between midnight and 07:00.
+ *
+ * **`sanitizeProps()` DOES NOT AND MUST NOT REACH THIS TABLE.** It exists because
+ * `events.props` is free-shaped jsonb and *"an object is where free text hides"*. Every
+ * column here is a real typed column and none of them is prose: nine scalars, a model
+ * name and two ids. Running the sanitizer over them would truncate a model string at
+ * 120 characters for no reason and would suggest this table holds something it does
+ * not. **The guarantee here is the schema, not a function.**
+ */
+export async function flushCalls(
+  ctx: AnalyticsContext,
+  rows: LlmCallRecord[],
+  injected?: DbOrTx,
+): Promise<void> {
+  if (!enabled() || rows.length === 0) return;
+
+  const db = await handle(injected);
+  await insertCalls(
+    db,
+    rows.map((row) => ({
+      userId: ctx.userId,
+      readingId: row.readingId ?? null,
+      op: row.op,
+      model: row.model,
+      callClass: row.callClass,
+      streamed: row.streamed,
+      inputTokens: row.inputTokens,
+      outputTokens: row.outputTokens,
+      totalMs: row.totalMs,
+      status: row.status,
+      errorKind: row.errorKind,
       locale: ctx.locale,
       localDate: ctx.localDate,
     })),
