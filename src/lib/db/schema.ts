@@ -1041,6 +1041,64 @@ export const personas = pgTable('personas', {
 });
 
 // ---------------------------------------------------------------------------
+// admin_access_log  (v0.5.0 / A1, roadmap §3.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * One row per privileged read of another person's data. APPEND-ONLY.
+ *
+ * **THERE IS NO `updated_at` AND THAT IS THE ENFORCEMENT, NOT AN OVERSIGHT.**
+ * Every other mutable table here carries one; a column that exists invites a
+ * write, and A-D16 plus roadmap §9.14 say this table has no update path and no
+ * delete path. `queries/admin/audit.ts` exports no writer other than the insert,
+ * and `audit.contract.test.ts` asserts the absence of `.update(` and `.delete(`.
+ * The sweep must never learn this table either (roadmap §6), and `/privacy`
+ * clause 6 now promises *kept indefinitely* in both locales.
+ *
+ * **BOTH FOREIGN KEYS ARE NULLABLE WITH `on delete set null`, AND ROADMAP §3.1
+ * ORIGINALLY SAID `admin_user_id` IS NOT NULL. IT WAS WRONG AND THE FAILURE IS
+ * NOT COSMETIC** (plan §1.1, resolving open question §12.1; reconciliation R3
+ * patched §3.1). `ON DELETE SET NULL` against a NOT NULL column raises `23502`
+ * *at delete time*, so the hard delete of any user an admin had ever looked at
+ * would abort -- the erasure `/privacy` clause 8 promises, failing for exactly
+ * the population most likely to have asked for it, visible only in a cron log.
+ * `events.user_id` is the precedent for the shape and for the cost: a deleted
+ * admin's rows lose their attribution, and a deleted subject's rows can no longer
+ * tell that subject what was read about them. Clause 8.1 says the second half out
+ * loud. `audit.integration.test.ts` proves the delete SUCCEEDS, which is the
+ * assertion that fails against §3.1's original text.
+ *
+ * `resource` and `resource_key` are BARE `text`, per this file's rule: A1 owns the
+ * value set and exports it from `queries/admin/audit.ts` as `ADMIN_RESOURCES`, so
+ * narrowing it here would make schema.ts depend on a module that depends on
+ * schema.ts. The set is:
+ *   `onboarding_answer` | `moderation_question` | `user_detail` | `reading_body`
+ *
+ * **`resource_key` IS A QUESTION KEY OR A FLAG ID AND NEVER A DECRYPTED VALUE.**
+ * A plaintext answer in an append-only table that survives account erasure would
+ * be the worst row in this database. `audit.contract.test.ts` fences the module
+ * away from `@/lib/db/crypto` for exactly this.
+ */
+export const adminAccessLog = pgTable(
+  'admin_access_log',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    adminUserId: uuid('admin_user_id').references(() => users.id, { onDelete: 'set null' }),
+    subjectUserId: uuid('subject_user_id').references(() => users.id, { onDelete: 'set null' }),
+    resource: text('resource').notNull(),
+    resourceKey: text('resource_key'),
+    createdAt: tsCol('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    /** "What has been read about this person" -- the query a subject access
+     *  request needs, and the only reason the subject column is indexed first. */
+    index('admin_access_log_subject_created_idx').on(t.subjectUserId, t.createdAt.desc()),
+    /** "What has this admin read" -- the review query. */
+    index('admin_access_log_admin_created_idx').on(t.adminUserId, t.createdAt.desc()),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Row types
 //
 // `X` is what a select returns; `NewX` is what an insert accepts (columns with
@@ -1075,3 +1133,8 @@ export type ShareLink = typeof shareLinks.$inferSelect;
 export type NewShareLink = typeof shareLinks.$inferInsert;
 export type Persona = typeof personas.$inferSelect;
 export type NewPersona = typeof personas.$inferInsert;
+/** `AdminAccessLogRow`, not `AdminAccessLog` -- the `EventRow` precedent above.
+ *  `AdminAccessLog` reads like a service, and the suffix makes every call site
+ *  say which of the two it means. */
+export type AdminAccessLogRow = typeof adminAccessLog.$inferSelect;
+export type NewAdminAccessLogRow = typeof adminAccessLog.$inferInsert;
