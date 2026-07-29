@@ -1,6 +1,6 @@
 import { Fragment } from 'react';
 
-import { LOCALES } from '@/lib/i18n/locale';
+import { LOCALES, type Locale } from '@/lib/i18n/locale';
 import { localePath } from '@/lib/i18n/prefix';
 import { localeSwitcherEnabled } from '@/lib/i18n/resolve';
 import { getLocale, getT } from '@/lib/i18n/t';
@@ -65,17 +65,55 @@ import styles from './LocaleSwitch.module.css';
  * still serves and `hreflang` still names it to a crawler -- which is now the
  * whole point rather than a side effect.
  *
+ * ── `locales` — v0.5.0 / A6, reconciliation R45 ─────────────────────────────
+ *
+ * **IT USED TO LOOP `LOCALES` UNCONDITIONALLY, AND A6 IS WHAT MAKES THAT A
+ * READER-FACING 404.** Roadmap §1 has always permitted an Indonesian-only article,
+ * but both committed ones shipped in both languages, so the sibling URL always
+ * existed. **An admin can now unpublish `en` between two page views** — and the
+ * footer of the Indonesian article would still offer *English*, to a page that
+ * answers 404.
+ *
+ * That is a reader cost rather than an `hreflang` cost — `contentAlternates()` takes
+ * the same derived set and gets it right either way — and it is arguably tolerable.
+ * **A6 thinks not, and R45 agreed:** the one control on the page whose entire job is
+ * *"read this in your language"* must not be a dead link, and this is the kind of
+ * defect a signed-out crawl only finds if the crawl includes a one-locale article.
+ *
+ * **IT DEFAULTS TO `LOCALES`, WHICH IS THE OPPOSITE OF `contentAlternates()`'s RULE
+ * AND IS CORRECT HERE.** R2 forbids defaulting there because *"a pair naming a URL
+ * that 404s makes Google discard the whole set silently"* — a wrong answer is
+ * invisible and permanent. Here a wrong answer is a visible dead link on one page,
+ * and the default is right for the four callers whose two addresses are ONE ROUTE
+ * FILE (`/`, `/gallery`, `/blog`, and `/blog`'s not-found), which cannot 404 in
+ * either language. Only an ARTICLE has to pass its own set.
+ *
  * @param path the BARE content path this page renders: `/`, `/gallery`,
  *             `/arcana/the-moon`. Never a prefixed form.
+ * @param locales the locales this path is actually served in. Omit only where the
+ *                two addresses are one route file.
  */
-export async function ContentLocaleLink({ path }: { path: string }) {
+export async function ContentLocaleLink({
+  path,
+  locales = LOCALES,
+}: {
+  path: string;
+  locales?: readonly Locale[];
+}) {
   if (!localeSwitcherEnabled()) return null;
 
   const [locale, t] = await Promise.all([getLocale(), getT()]);
 
+  /*
+   * A one-entry group is a control that offers only the language you are reading, so
+   * it renders nothing at all -- the same judgement `entriesFor` makes about a
+   * one-locale `hreflang` set being *"noise a validator flags"*.
+   */
+  if (!locales.includes(locale) || locales.length < 2) return null;
+
   return (
     <div className={styles.row} role="group" aria-label={t('locale.switch.aria')}>
-      {LOCALES.map((option, i) => (
+      {locales.map((option, i) => (
         <Fragment key={option}>
           {i > 0 ? (
             <span className={styles.sep} aria-hidden="true">

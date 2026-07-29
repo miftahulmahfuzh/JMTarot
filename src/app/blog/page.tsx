@@ -4,9 +4,11 @@ import { JsonLd } from '@/components/JsonLd';
 import { PublicPageViewed } from '@/components/PublicPageViewed';
 import { PublicShell } from '@/components/PublicShell';
 import { TrackLink } from '@/components/TrackLink';
-import { blogEntries } from '@/content/blog';
 import { LOCALES } from '@/lib/i18n/locale';
+import type { Block } from '@/content/types';
 import { readingMinutes, wordCount } from '@/lib/content/doc';
+import { db } from '@/lib/db/client';
+import { publishedArticles } from '@/lib/db/queries/blog';
 import { formatLocalDate } from '@/lib/i18n/format';
 import { localePath } from '@/lib/i18n/prefix';
 import { getLocale, getT } from '@/lib/i18n/t';
@@ -21,12 +23,26 @@ import styles from './page.module.css';
  * Every fence in `[slug]/page.tsx`'s header binds here identically and
  * `blog.contract.test.ts` walks this whole subtree. Two things specific to this page:
  *
- * **THE LIST IS FILTERED BY LOCALE, NOT MERELY LABELLED.** Roadmap §1 permits an
- * Indonesian-only article; listing one on `/en/blog` would be a link to a 404 in the one
- * place a crawler is most likely to follow every link on the page. It filters on
- * `entry.locales` — the same field `blogIndexNode` filters on and the same field
- * `hreflang` enumerates — so the visible list, the JSON-LD and the tag set cannot
- * disagree.
+ * **THE LIST IS FILTERED BY LOCALE, NOT MERELY LABELLED — AND SINCE v0.5.0 / A6 THE
+ * FILTER IS A `WHERE` CLAUSE.** Roadmap §1 permits an Indonesian-only article; listing
+ * one on `/en/blog` would be a link to a 404 in the one place a crawler is most likely
+ * to follow every link on the page.
+ *
+ * It used to filter `blogEntries()` on `entry.locales` here, and `blogIndexNode`
+ * filtered the same field again in `seo/blog.ts` — two places, one predicate. **Now
+ * there is one `publishedArticles(db, locale)` call and BOTH the visible list and the
+ * `blogPost` array are built from the array it returned**, so they cannot disagree
+ * because they are the same array (A6-6). *"A caller that forgets the filter is exactly
+ * the shape that ships."*
+ *
+ * ── ONE DATABASE MODULE, NAMED (§9.4, fence 3) ─────────────────────────────
+ *
+ * `@/lib/db/queries/blog` and `@/lib/db/client`. Everything else under `@/lib/db/**` —
+ * `schema`, `queries/admin/**` — stays forbidden and `blog.contract.test.ts` names the
+ * exception by path rather than loosening the rule. **The admin query module is the one
+ * that matters**: a page importing it reads as if a public route had admin capability,
+ * and the real cost is one edit later, when somebody adds `status` to a shared
+ * projection and a draft becomes reachable here (A6-25).
  *
  * **`LOCALES` IS CORRECT IN `generateMetadata` HERE AND NOWHERE ELSE ON THIS ROUTE.**
  * `contentAlternates` takes the locales that actually have a document (R2), and for the
@@ -61,7 +77,12 @@ export default async function BlogIndexPage() {
   const locale = await getLocale();
   const t = await getT();
   const origin = siteOrigin();
-  const entries = blogEntries().filter((entry) => entry.locales.includes(locale));
+  /*
+   * **ONE READ. `null` IS NOT A CASE HERE AND A DRIVER ERROR PROPAGATES** (A6-24): an
+   * empty index is a legitimate answer and an outage is a 500 that gets retried, never
+   * a page that quietly lists nothing.
+   */
+  const articles = await publishedArticles(db, locale);
 
   return (
     <PublicShell surface="blog_index" path="/blog">
@@ -73,11 +94,10 @@ export default async function BlogIndexPage() {
         <p className={styles.lede}>{t('blog.index.lede')}</p>
 
         <ul className={styles.list}>
-          {entries.map((entry) => {
-            const doc = entry.docs[locale]!;
-            const href = localePath(locale, `/blog/${entry.slug}`);
+          {articles.map((article) => {
+            const href = localePath(locale, `/blog/${article.slug}`);
             return (
-              <li key={entry.slug} className={styles.item}>
+              <li key={article.slug} className={styles.item}>
                 {/*
                   `<h2>` inside the link, not a `<div>` styled large: the list of articles
                   IS the index's structure, and a heading used for size is a heading lying.
@@ -87,15 +107,15 @@ export default async function BlogIndexPage() {
                   discoverable one.
                 */}
                 <a className={styles.itemLink} href={href}>
-                  <h2 className={styles.itemTitle}>{doc.title}</h2>
+                  <h2 className={styles.itemTitle}>{article.title}</h2>
                 </a>
                 <p className={styles.itemMeta}>
                   {t('blog.published', {
-                    date: formatLocalDate(entry.datePublished, locale, true),
+                    date: formatLocalDate(article.datePublished, locale, true),
                   })}
-                  {` · ${t.plural('blog.readingTime', readingMinutes(wordCount(doc.body)))}`}
+                  {` · ${t.plural('blog.readingTime', readingMinutes(wordCount(article.body as Block[])))}`}
                 </p>
-                <p className={styles.itemDescription}>{doc.description}</p>
+                <p className={styles.itemDescription}>{article.description}</p>
                 <a className={styles.more} href={href}>
                   {t('blog.readMore')}
                 </a>
@@ -158,7 +178,7 @@ export default async function BlogIndexPage() {
             locale,
             name: t('blog.index.title'),
             description: t('blog.index.description'),
-            entries,
+            articles,
             homeLabel: t('public.crumb.home'),
             homeUrl: `${origin}${localePath(locale, '/')}`,
           })}
