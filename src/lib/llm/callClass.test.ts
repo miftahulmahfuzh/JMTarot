@@ -1,9 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
+import type { LLMOp } from './types';
 
 /**
- * Every model call in the app, and which half of the window ceiling it draws on.
+ * Every model call in the app: which half of the window ceiling it draws on, and
+ * **since A2, which `op` it records itself as.**
  *
  * **A GREP OVER THE SOURCE, IN THE `clientBoundary.test.ts` IDIOM, AND THAT IS
  * THE POINT.** `meter.test.ts` proves what the tiers do and `metered.test.ts`
@@ -15,6 +17,23 @@ import { describe, expect, it } from 'vitest';
  * forgetting is "shed too late", never "shed a reading early" -- but a *deferred*
  * call that forgets to say costs real headroom, silently, and that is what this
  * catches.
+ *
+ * ── THE `op` HALF (A2, v0.5.0) ──────────────────────────────────────────────
+ *
+ * `op` has no safe default: it is REQUIRED on `CompleteOpts`, so a buffered site that
+ * forgets it is a compile error. What the compiler cannot catch is a site that
+ * declares the WRONG one, or a tenth value appearing in `llm_calls.op` -- **and A3
+ * groups its whole cost breakdown by that column** (roadmap seam 3: nine, closed, no
+ * tenth and no alias). So this file asserts three things the type system does not:
+ *
+ *   1. every call site's `op` marker is present in its own source;
+ *   2. the `op` values used anywhere under `src/**` are exactly `LLMOp`'s nine;
+ *   3. a value in `LLMOp` with NO call site is a failure too -- a dead `op` reads as a
+ *      cost category that exists and is permanently empty, which is worse than absent.
+ *
+ * **`translate.ts`'s marker is an EXPRESSION, not a literal**, because that one site
+ * serves two ops. Same trick its `callClass` marker already uses, and the same reason:
+ * a test that guessed the form would pass on a file that merely mentioned the word.
  */
 
 /** Every `complete()` call site outside this directory, and its expected class. */
@@ -26,28 +45,40 @@ const COMPLETE_CALLS: Array<{
    *  literal at the call site -- and a test that guessed the form would pass on a
    *  file that had merely mentioned the word. */
   marker: string;
+  /** A2. The `op`s this site records, and the exact source text that declares them --
+   *  `translate.ts`'s is an expression serving two, not a literal. */
+  op: LLMOp[];
+  opMarker: string;
   why: string;
 }> = [
   {
     file: 'src/lib/moderation/classify.ts',
+    op: ['moderation'],
+    opMarker: "op: 'moderation'",
     expect: 'interactive',
     marker: "callClass: 'interactive'",
     why: 'gates a reading a person is waiting for; shedding it early is blocklist-only moderation arrived at by accident',
   },
   {
     file: 'src/lib/memory/gist.generate.ts',
+    op: ['gist'],
+    opMarker: "{ op: 'gist', callClass: 'deferred' }",
     expect: 'deferred',
     marker: "callClass: 'deferred'",
     why: "runs in the reading's after(); a shed gist falls through to the reading's own last sentence",
   },
   {
     file: 'src/app/api/memory/frequency/route.ts',
+    op: ['frequency'],
+    opMarker: "op: 'frequency'",
     expect: 'deferred',
     marker: "callClass: 'deferred'",
     why: 'FrequencyLine renders nothing until there is something and has no error copy (M14), so a 204 is invisible',
   },
   {
     file: 'src/lib/prompt/lotus.generate.ts',
+    op: ['lotus'],
+    opMarker: "{ op: 'lotus', model, callClass }",
     expect: 'interactive',
     marker: "callClass: CallClass = 'interactive'",
     why: 'threads a callClass parameter defaulting to interactive; only scheduleLotusRefresh passes deferred',
@@ -65,6 +96,8 @@ const COMPLETE_CALLS: Array<{
      * cache that stays empty for one more view.
      */
     file: 'src/lib/translate/translate.ts',
+    op: ['translation', 'translation_repair'],
+    opMarker: "op: repairing ? 'translation_repair' : 'translation'",
     expect: 'interactive',
     marker: "repairing || !spec.stream ? 'deferred' : 'interactive'",
     why: 'a body translation is watched; the gist and the deferred repair pass are not',
@@ -83,6 +116,8 @@ const COMPLETE_CALLS: Array<{
      * just renamed themselves and the whole point is that the persona moves.
      */
     file: 'src/lib/persona/generate.ts',
+    op: ['persona'],
+    opMarker: "{ op: 'persona', model, callClass }",
     expect: 'interactive',
     marker: "callClass: CallClass = 'interactive'",
     why: "the first /account visit has nothing to show instead; only the serve-stale branch passes deferred",
@@ -93,14 +128,26 @@ const COMPLETE_CALLS: Array<{
  * `streamReading()` call sites, which the decorator does NOT wrap -- so each must
  * reserve for itself or it is a model call outside the ceiling altogether.
  */
-const STREAM_CALLS: Array<{ file: string; reserves: string; why: string }> = [
+const STREAM_CALLS: Array<{
+  file: string;
+  reserves: string;
+  /** A2. A stream writes its OWN row -- the decorator does not -- so the marker is a
+   *  `recordCall({ op: ... })` and not an options key. */
+  op: LLMOp;
+  opMarker: string;
+  why: string;
+}> = [
   {
     file: 'src/app/api/reading/route.ts',
+    op: 'reading',
+    opMarker: "op: 'reading',",
     reserves: "reserveModelCall('interactive')",
     why: 'the querent is watching a spinner, and this is the only place that can turn a refusal into a 429',
   },
   {
     file: 'src/app/api/memory/summary/route.ts',
+    op: 'day_summary',
+    opMarker: "op: 'day_summary',",
     reserves: "reserveModelCall('deferred')",
     why: 'DaySummary has a 204 path and no error copy, so shedding it is indistinguishable from no summary yet',
   },
@@ -112,6 +159,8 @@ const STREAM_CALLS: Array<{ file: string; reserves: string; why: string }> = [
      * really is in the other language.
      */
     file: 'src/lib/translate/translate.ts',
+    op: 'translation',
+    opMarker: "op: 'translation',",
     reserves: "reserveModelCall('interactive')",
     why: 'a viewer is waiting for it; a refusal falls back to the untranslated source',
   },
@@ -145,9 +194,15 @@ describe('every complete() call site declares its class', () => {
     );
   });
 
-  for (const { file, expect: cls, marker, why } of COMPLETE_CALLS) {
+  for (const { file, expect: cls, marker, opMarker, op, why } of COMPLETE_CALLS) {
     it(`${file} is ${cls} -- ${why}`, () => {
       expect(read(file)).toContain(marker);
+    });
+
+    it(`${file} declares op ${op.join(' | ')}`, () => {
+      // A2. The marker is the exact source text, so deleting the `op` from the call
+      // site turns this red rather than leaving a row with no purpose.
+      expect(read(file)).toContain(opMarker);
     });
   }
 
@@ -184,9 +239,106 @@ describe('every streamReading() call site reserves for itself', () => {
     );
   });
 
-  for (const { file, reserves, why } of STREAM_CALLS) {
+  for (const { file, reserves, op, opMarker, why } of STREAM_CALLS) {
     it(`${file} calls ${reserves} -- ${why}`, () => {
       expect(read(file)).toContain(reserves);
     });
+
+    it(`${file} records its own row as op ${op}`, () => {
+      /*
+       * A2. **A STREAM WRITES ITS OWN ROW AND THE DECORATOR DOES NOT**, which is the
+       * same asymmetry this table already exists for one level up: the decorator cannot
+       * know a stream's outcome, so a `streamReading` site that never calls
+       * `recordCall` is a model call absent from the ledger entirely -- invisible, in
+       * the table whose whole purpose is that nothing is.
+       */
+      const src = read(file);
+      expect(src).toContain('recordCall(');
+      expect(src).toContain(opMarker);
+    });
   }
+});
+
+/**
+ * THE `op` SET IS CLOSED, IN BOTH DIRECTIONS.
+ *
+ * A3 groups its entire cost breakdown by `llm_calls.op` and roadmap seam 3 says: nine
+ * values, closed, no tenth and no alias. The compiler enforces that for a `CompleteOpts`
+ * literal; it enforces nothing about a `recordCall` at a streaming site, and nothing at
+ * all about a value that exists in the union with no producer.
+ */
+describe('the op set is exactly LLMOp, in both directions', () => {
+  /** Kept as a literal, NOT derived from the tables -- a set derived from the thing it
+   *  checks cannot disagree with it. This is the ninth value's only home. */
+  const LLM_OPS: LLMOp[] = [
+    'reading',
+    'moderation',
+    'gist',
+    'day_summary',
+    'frequency',
+    'lotus',
+    'persona',
+    'translation',
+    'translation_repair',
+  ];
+
+  it('the union in types.ts is exactly these nine', () => {
+    // Parsed off the source, so widening `LLMOp` without touching this list is red.
+    const src = read('src/lib/llm/types.ts');
+    const block = src.slice(src.indexOf('export type LLMOp'));
+    const declared = [...block.slice(0, block.indexOf(';')).matchAll(/'([a-z_]+)'/g)].map(
+      (m) => m[1],
+    );
+    expect(declared.sort()).toEqual([...LLM_OPS].sort());
+  });
+
+  it('every declared op has at least one call site', () => {
+    /*
+     * **A DEAD `op` IS WORSE THAN A MISSING ONE.** It reads as a cost category that
+     * exists and is permanently empty, so an operator concludes the feature is unused
+     * rather than that the value is unreachable -- and A3 renders a row of zeroes with
+     * no way to tell the two apart.
+     */
+    const declared = new Set([
+      ...COMPLETE_CALLS.flatMap((c) => c.op),
+      ...STREAM_CALLS.map((c) => c.op),
+    ]);
+    expect([...declared].sort()).toEqual([...LLM_OPS].sort());
+  });
+
+  it('no op string appears at ANY ledger-writing site that is not one of the nine', () => {
+    /*
+     * The grep half, and the one that catches a tenth value invented at a NEW site --
+     * including one added by A3 or A5, who read this column and do not own it. The two
+     * "set of call sites is exactly this table" assertions above cannot: a file that
+     * calls `recordCall` without calling `getProvider()` is invisible to both.
+     *
+     * **SCOPED TO FILES THAT DECLARE A LEDGER `op`, NOT TO ALL OF `src/**`.** The first
+     * version grepped every file and failed on `src/lib/ratelimit/index.ts`'s
+     * `op: 'consume' | 'peek'` -- an unrelated property in a type annotation. A check
+     * that fires on a field that merely shares a name is a check somebody widens the
+     * allowlist for, and then it is asserting nothing.
+     */
+    const files = execSync(
+      `grep -rlE "recordCall\\(|getProvider\\(\\)" src --include=*.ts --include=*.tsx || true`,
+      { encoding: 'utf8' },
+    )
+      .split('\n')
+      .filter(Boolean)
+      // Not the declaration, and not this file's own list of the nine.
+      .filter((f) => f !== 'src/lib/llm/types.ts' && !f.includes('.test.'));
+
+    expect(files.length).toBeGreaterThan(5);
+
+    const used = new Set<string>();
+    for (const f of files) {
+      for (const m of read(f).matchAll(/\bop: '([a-z_]+)'/g)) used.add(m[1]);
+    }
+
+    // Every value written at a site that can reach the ledger must be one of the nine.
+    // The reverse direction is the test above; this one is about strangers.
+    expect([...used].filter((v) => !LLM_OPS.includes(v as LLMOp)).sort()).toEqual([]);
+    // And the scan must have found real values, or it is vacuous.
+    expect(used.size).toBeGreaterThan(5);
+  });
 });
