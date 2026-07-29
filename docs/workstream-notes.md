@@ -3149,3 +3149,213 @@ layout had stopped awaiting `getLocale()`.
   release is what will prompt somebody to ask.
 - **The `s-maxage` on `/arcana/:path*` is still unmeasured against a real CDN**
   (R21). S1 owns that check and it needs a Vercel preview.
+
+---
+
+## The Gallery (S3), v0.4.0
+
+`/gallery` is 22 artworks as a 2×11 grid, complete at every phone width, with a
+zoom sheet that teaches both glosses and 22 crawlable links into S4's lore pages.
+The rules are in `CLAUDE.md`'s `## The Gallery (v0.4.0 / S3)`; this is the evidence.
+
+### The two cross-page defects, and neither was visible to the suite
+
+Both came from S3's own decision to share an `@id` with the lore page's
+`ImageObject`, which is the right decision and has a cost the plan did not name:
+**a shared `@id` means a consumer MERGES the two nodes, so every field they both
+carry has to agree.** Google picks one value for a duplicated field and does not
+report which.
+
+1. **`url` was the lore PAGE on `/gallery` and the image FILE on
+   `/arcana/<slug>`.** S3's plan argues for the page ("it is the landing page for
+   that artwork, and a gallery of 22 images all pointing at `/gallery` gives Google
+   Images nothing to rank per card") and S4's node had been shipped with the file,
+   which is what Google documents for an `Article`'s `image`. Both are defensible
+   in isolation; only one can be true of one node. **Found by reading the JSON off
+   the wire** with `curl … | python3 -c 'json.load…'`, after the whole unit suite
+   was green.
+2. **`caption` was the keyword sentence on `/gallery` and the painting's
+   description on the lore page.** Same shape, found by the test written for the
+   first one. The resolution is by FIELD rather than by precedence: the lore page
+   keeps `caption` (it describes the picture), the gallery carries `description`
+   (the upright gloss), and the merged node ends up with one of each — both true.
+   `ImageObjectArgs.caption` became optional to allow it.
+
+**The fix that matters is structural.** The 22 image nodes moved out of the page
+component into a pure `src/app/gallery/images.ts`, so `imageJoin.test.ts` can build
+BOTH graphs from one card and assert the shared fields match, in both locales. That
+test imports `arcanaGraph` — S4's module — deliberately: the objection to reading
+another workstream's file is that the fence goes red when they edit their code, and
+that is exactly the desired behaviour for an assertion whose whole subject is the
+agreement between two owners.
+
+**The generalisation worth keeping: a shared `@id` is an interface between pages,
+and it needs a test that spans them.** Nothing else in this project has one.
+
+### `referrer_kind: 'direct'` was a literal on two public surfaces
+
+`public.page_viewed`'s `referrer_kind` is the prop that separates an organic
+arrival from a reader who was already on the site — §1's whole question — and both
+S1's `Landing.tsx` and S4's `/arcana/[slug]` passed the string `'direct'`. **A
+constant is worse than a missing field, because it reads as data.**
+
+The cause is structural rather than carelessness: `TrackView` takes its props from
+whatever renders it, and on a content page that is a server component where
+`document.referrer` does not exist. `ShareViewed` hit the same wall on `/s/` in
+v0.3.0. `src/components/PublicPageViewed.tsx` is `TrackView`'s shape with one value
+computed on the client, and all three surfaces now mount it.
+
+### The grid, measured (loop 4), and the negative control that took two attempts
+
+`tools/seo/galleryfit.sh` + `galleryfit.js`, committed. Every number S3's plan
+predicted came out exactly, identically in both locales:
+
+```
+  w    col     cardH    gridH   rows perRow loreH nameLines overflow offenders
+  320  138.0   207.0    3009    11   [2]    44    [1]       false    []
+  360  158.0   237.0    3339    11   [2]    44    [1]       false    []
+  375  165.5   248.25   3463    11   [2]    44    [1]       false    []
+  390  173.0   259.5    3587    11   [2]    44    [1]       false    []
+```
+
+Plus 22 distinct lore hrefs, 22 distinct `alt` sentences and exactly one disclaimer
+at every width. **The plan expected `The High Priestess` to wrap to two lines at
+320 and it does not** — `CardFace`'s name plate is sized in `cqw`, so it scales with
+the column instead of overflowing it.
+
+**The negative control (`min-width: 260px` on `.tile`) reported GREEN the first
+time, and that was the harness being lied to rather than the harness being wrong.**
+The line went in at the top of the `.tile` block and the rule's own `min-width: 0`,
+four declarations later, won. `getComputedStyle(li).minWidth` returning `0px` is how
+it was caught. Placed after that declaration the control gives
+`overflow: true` at all four widths with `offenders: ["ul.grid 410>288"]` at 320.
+**Check the control actually applied before believing a green control** — a harness
+that cannot fail looks exactly like a page that cannot break.
+
+Two things the harness itself had to get right:
+
+- **The JavaScript lives in a `.js` file, not in a double-quoted bash argument.**
+  The first version hung `tools/e2e/run.sh eval` with no error and no output for
+  three minutes — and every fragment of it worked when sent alone. Passing JS with
+  backticks, `??`, regex literals and `${}` through bash quoting is a class of bug
+  with no diagnostics. One `sed` substitution of `__WIDTH__` instead.
+- **`nameLines` is counted with a `Range`'s line boxes, never
+  `height / lineHeight`.** The division reported THREE lines for every card at
+  every width, because `.name` carries padding — a confidently wrong metric that
+  would have failed a check on a page where nothing wraps.
+- **`.srOnly` is excluded from `offenders` by computed style, not by class name.**
+  It is a 1px box with `white-space: nowrap`, so `scrollWidth > clientWidth` is true
+  by design for all 22; counting them would put 22 permanent offenders in every run
+  and hide the real one.
+
+### Loop 5 reproduced the Safari focus bug in WSL Chrome, which CLAUDE.md said it could not
+
+`CardDetail` had the latent version of the `document.activeElement` opener bug for
+two releases, with the recorded consequence "smaller, because its opener is a card
+in a long list". On a 3000–3600px grid it is not smaller. S3 gave it a
+`returnFocusTo` prop filled from the click event's `currentTarget`.
+
+The plan expected loop 5 to prove only that the ref path works, because "this
+Chrome *does* focus a button on click". **It does not, for a programmatic
+`.click()`** — measured:
+
+```
+activeBeforeTap  BODY
+activeAfterTap   BODY          <- the fallback would have restored <body>
+restoredTo       "Lihat The Moon lebih besar"   <- the tile's own button
+```
+
+So the ref path is proven and the fallback is proven insufficient, in WSL, without
+a phone. **A synthetic click is a faithful model of Safari's refusal to focus a
+tapped button** — which `_accountshot.html` noticed for `PointerEvent`s in v0.3.0
+and nobody connected to this bug.
+
+Also confirmed on the real page: tile 19 opens The Moon (`h2` The Moon, numeral
+XVIII, two labelled glosses, three keywords, artwork upright, `body.overflow`
+hidden), its lore link and the sheet's lore link both point at `/arcana/the-moon`,
+Escape closes and restores the scroll lock, and clicking through lands on
+`/arcana/the-moon` (`lang=id`, `Arti Kartu The Moon (XVIII)`) from `/gallery` and on
+`/en/arcana/the-moon` (`lang=en`, `The Moon (XVIII): Tarot Card Meaning`) from
+`/en/gallery`.
+
+### The signed-out crawl, no cookie jar
+
+```
+/gallery, /en/gallery      200, NO Set-Cookie, no x-robots-tag
+locale pin                 accept-language en-GB -> lang="id"
+                           cookie jmt_locale=en  -> lang="id"
+                           /en/gallery under accept-language id-ID -> lang="en"
+internal links             22 distinct href="/arcana/…" on the id page
+                           22 distinct href="/en/arcana/…" on the en page
+                           0 cross-locale leak in either direction
+canonical + hreflang       reciprocal both ways, x-default on the id URL
+ld+json                    ImageGallery, numberOfItems 22, 22 distinct @id,
+                           no query string, no `license`, no `null`
+sitemap.xml                50 urls, /gallery and /en/gallery once each
+negative controls          /arcana 404 with no Location; /arcanax still 307;
+                           /s/<slug> still noindex, nofollow, noarchive
+```
+
+**The locale pin is the check with the highest severity and the least visibility.**
+If middleware left the bare path to `resolveForMiddleware`'s chain, `/gallery` would
+be viewer-variant: an `en-GB` browser gets English chrome at the Indonesian
+canonical URL, and a CDN serves whichever language warmed the cache to everybody
+under a canonical tag and an `hreflang` pair that both claim otherwise. It needs a
+hostile cookie AND a hostile `Accept-Language`; no unit test can see it.
+
+### What S3 did NOT build, and why each is a decision
+
+- **No wallpaper download.** S5 has not landed, so `WallpaperDownload` and
+  `wallpaperPath` do not exist. S3's plan names omitting the two lines as the
+  correct temporary state: a committed `<a href>` to `/wallpapers/…` is a 404 on a
+  public page, and a local `wallpaperPath()` would be a second definition of an
+  address S5 owns. The placement decisions S3 *does* own are recorded in
+  `GalleryGrid.tsx` so S5 does not re-derive them.
+- **No `licenseUrl` in the structured data.** `/terms#9` reserves rights rather
+  than granting any until S5 writes the wallpaper clause. A licence claim for a
+  page that states no terms is the `SearchAction` mistake with legal consequences.
+- **No `deps.contract.test.ts`.** The plan's Task 1 asserts S1/S2/S4/S5's exports
+  before writing a line. S1, S2 and S4 have landed — so every assertion is also
+  made by the code compiling — and S5's absence is a deliberate, documented gap
+  rather than something to fail a suite over. The plan itself says that file
+  deletes itself at reconciliation.
+- **No share control.** S-D8 permits one; the artifact worth sharing is a card, and
+  S4's lore page has `PublicShare`. A share button on the index shares the least
+  interesting of the 23 URLs.
+- **No `openGraph` block.** A gallery-specific preview means a satori route, and 24
+  of those across `/`, `/gallery`, `/blog` and 22 lore pages is 24 lambda
+  invocations drawing nearly the same picture.
+
+### The 240px thumb is upscaled on every phone, and it is intrinsic to 2×11
+
+The grid draws cards at 138–173 CSS px, so a DPR-2 phone wants 276–346 device px and
+gets 240: a **1.15×–1.44× upscale**. A 2-column phone grid cannot be served
+losslessly by a 240px source at any column width — it would need ≤ 120 CSS px, and
+288px of content minus a 12px gap cannot produce that. The alternatives are the
+800×1200 art (3.7MB for 22 cards, on the page whose Core Web Vitals a crawler
+measures) or a new 480×720 variant (~1MB more committed, out of scope). At DPR 1 and
+≥ 552px the column is 238px and the existing thumb is very nearly 1:1.
+`tools/normalize_cards.py`'s `THUMB_W` comment says so.
+
+### Gallery and Writing moved into the account menu (Miftah, 2026-07-29)
+
+Not S3's plan; a phone report against what S1 shipped. `Galeri / Arti kartu /
+Tulisan` rendered in the public footer on the landing page and under all 22 lore
+pages. The ruling: **the homepage and the card pages should look clean.**
+
+- `AccountMenu` gains `Galeri kartu` / `Card gallery` and `Tulisan` / `Writing`
+  below Reading History. Its header said *"DO NOT ADD A FIFTH without a decision
+  recorded against VD12"*; this is that decision, inverted rather than deleted.
+- `PublicShell`'s `LINKS` table is deleted, not emptied. One link is left, `/`.
+- **Deleting the filter with the table let the landing page's footer grow a link to
+  itself**, caught by `PublicShell.test.ts`'s "never links to the page it is
+  mounted on" — a test whose mechanism-level assertion looked like a tautology
+  until the day it fired. The suppression is now `surface === 'landing'`.
+- **The crawl was re-measured rather than reasoned about.** Outbound links per
+  page: `/` → gallery, arcana/the-moon, blog, login, legal, `/en` (its own body
+  sections, which are content); `/gallery` → 22 lore pages, `/`, `/en/gallery`,
+  legal; `/arcana/the-moon` → `/`, `/gallery`, neighbours, `/en` twin, legal.
+  Nothing is orphaned and no page is a leaf.
+- The landing's three body sections stay: they are the homepage's content — what
+  closed Google's "an app homepage that is not a login page" blocker — and the only
+  public path into `/blog`.

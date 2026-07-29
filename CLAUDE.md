@@ -1053,7 +1053,8 @@ editable facts, per-answer clearing, and the Inner Heavenly Lotus persona (V8)**
 **the public surface and the technical SEO foundation -- a signed-out homepage, the
 gate change, a sitemap, JSON-LD, canonicals and cache headers (v0.4.0 S1)**,
 **locale-addressable public content -- `/en/`, the rewrite and the hreflang set (S2)**,
-**the twenty-two card lore pages, forty-four authored documents (S4)**, plus the reader picker, service
+**the twenty-two card lore pages, forty-four authored documents (S4)**,
+**the gallery -- 22 artworks, 2x11, measured at four phone widths (S3)**, plus the reader picker, service
 picker, the draw (fan, pick, flip, reduced-motion grid), the card detail overlay, the
 streaming reading endpoint, the prompt layer, and the web app manifest.
 
@@ -1746,6 +1747,93 @@ generated, S4 does not own the generator, and the reading prompt has consumed
 join for the **twelve sign cards only**, all of which agree exactly; the nine
 planetary ones are editorial and deliberately unasserted.
 
+## The Gallery (v0.4.0 / S3)
+
+**Twenty-two artworks as a 2x11 grid, and twenty-two crawlable links into S4's lore
+pages.** The grid is the shape roadmap §8.1 ruled; the links are half the reason the
+page exists. The measurements, the two cross-page defects and the negative controls
+are in `docs/workstream-notes.md`.
+
+```
+src/app/gallery/page.tsx          SERVER. No session, no DB, no model, no cookie.
+src/app/gallery/images.ts         PURE. The 22 ImageObject args -- OUT of the page
+                                  so the cross-page @id join is testable.
+src/app/gallery/alt.ts            PURE. 22 localised alt sentences from ONE key.
+src/app/gallery/GalleryGrid.tsx   'use client'. One open card, one opener ref,
+                                  every track() call.
+src/app/gallery/GalleryTile.tsx   'use client'. PRESENTATIONAL. Always upright.
+src/app/gallery/imageJoin.test.ts THE CROSS-PAGE ASSERTION. Reads S4's module.
+src/components/PublicPageViewed.tsx  public.page_viewed with a REAL referrer_kind.
+src/lib/seo/jsonld.ts             GAINED imageGallery + eight optional ImageObject
+                                  fields. S4's four-field call is byte-identical.
+src/data/deck.ts                  GAINED cardImagePath / cardThumbPath.
+tools/seo/galleryfit.sh + .js     Loop 4, committed. The grid, measured.
+```
+
+### The six things a future session will otherwise undo
+
+1. **`/gallery` AND `/arcana/<slug>` SHARE AN `@id` FOR EACH ARTWORK, SO EVERY FIELD
+   THEY BOTH CARRY MUST AGREE.** A shared `@id` makes a consumer MERGE the two
+   nodes and pick one value for any duplicated field, silently. That broke twice
+   before it shipped -- `url` (the lore page vs the image file) and `caption` (the
+   keyword sentence vs the painting's description) -- and **both were found by
+   reading the JSON off the wire with a green suite.** The resolution is by field:
+   the lore page keeps `caption`, the gallery carries `description`, and `url` is
+   the image FILE on both. `imageJoin.test.ts` builds both graphs and asserts it;
+   it imports S4's `arcanaGraph` **on purpose**, because its subject IS the
+   agreement between two owners.
+2. **NO `?v=` IN STRUCTURED DATA.** `cardImage`/`cardThumb` append
+   `?v=${ART_VERSION}` for the browser cache; `cardImagePath`/`cardThumbPath` are
+   the unversioned twins and are what an `ImageObject` may name. Google Images
+   treats a changed URL as a NEW image with no history, so a version there orphans
+   22 indexed images on every art regeneration and reports nothing.
+3. **EVERY CARD IS UPRIGHT AND THE ZOOM SHEET LABELS BOTH GLOSSES.** `reversed` in
+   this app means the card came out of the deck that way, and no card here came out
+   of a deck (`/account` passes an orientation the card EARNED). `CardDetail`'s
+   `bothMeanings` is what makes an upright-only catalogue honest rather than half a
+   card -- and **the LABELS are what make it legal**: an unlabelled pair under
+   upright art is the contradiction `cardMeaning()` exists to prevent.
+4. **`CardDetail`'s `returnFocusTo` IS THE SAFARI FIX AND IT IS PROVEN, NOT
+   ASSUMED.** A programmatic `.click()` in WSL Chrome does NOT focus the button, so
+   loop 5 reproduced Safari's behaviour: `document.activeElement` was `<body>`
+   before AND after the tap, and focus still returned to the tile. The old
+   `activeElement` fallback would have dropped a keyboard user from row nine to the
+   top of a 3500px page. **CLAUDE.md said loop 5 could not test this.** It can.
+5. **THE 22 LORE HREFS ARE BUILT ON THE SERVER AND THE TILE IS `prefetch={false}`.**
+   A client component cannot compute a locale-prefixed path (no locale prop is
+   drilled anywhere), and 22 default-prefetching `<Link>`s in one grid would be 22
+   RSC payloads for `ƒ` pages nobody asked for, on the page whose Core Web Vitals a
+   crawler measures. The `<a href>` in the HTML is unaffected, which is the point.
+6. **THE 240px THUMB IS UPSCALED 1.15x-1.44x ON EVERY PHONE AND THAT IS INTRINSIC
+   TO 2x11.** The grid draws at 138-173 CSS px; a 2-column phone grid cannot be
+   served losslessly by a 240px source at ANY column width. Accepted -- the
+   alternatives are 3.7MB of full art or a new variant. `tools/normalize_cards.py`'s
+   `THUMB_W` comment carries the arithmetic.
+
+**`gallery.card.alt` IS THE ONE CATALOG VALUE WHOSE OUTPUT IS INDEXED CONTENT**, and
+`alt.ts` derives 22 distinct sentences per locale from it plus `cards.json` -- 44
+hand-written sentences in the catalog would ship to every visitor of every page
+(S-D6/I9). The word ORDER differs per locale on purpose: `kartu tarot the moon`
+against `the moon tarot card`.
+
+**`arcana.upright` / `arcana.reversed` ARE DELETED.** The two orientation words are
+`card.upright` / `card.reversed`, because THREE surfaces render them -- the draw
+screen's overlay, this zoom sheet and the lore page's section headings. S3's delta 18
+asked S4 for that before either shipped; S4 minted its own pair while `card.reversed`
+had existed since W6, and the gallery would have been the third spelling.
+
+**`referrer_kind` WAS THE LITERAL `'direct'` ON TWO PUBLIC SURFACES.** It is the prop
+separating an organic arrival from a reader already on the site -- §1's whole
+question -- and a constant reads as data. `TrackView` could not have got it right:
+its props come from a server component, where `document.referrer` does not exist.
+`PublicPageViewed` is the fix and all three surfaces mount it.
+
+**Still open:** no wallpaper download is mounted (S5 has not landed -- the placement
+decisions are recorded in `GalleryGrid.tsx` so S5 does not re-derive them, and when
+it lands `contentUrl` should move to the 1024x1536 wallpaper and `licenseUrl` to
+`/terms#9` **only if** clause 9 gains the grant); the `s-maxage` on this route is
+measured locally and not against a Vercel CDN (R21).
+
 ## /account and the persona (V8)
 
 **The button `/privacy` §8 described for a whole release now exists**, and so do the four blocks
@@ -1805,6 +1893,20 @@ PHONE, AND FOUR OF THEM REVERSE A DECISION THIS FILE OR THAT CODE ARGUED FOR.**
   reader should call them.* `.label` is `text-transform: uppercase`, so that rendered as
   `WHAT YOU ARE CALLED` over TWO ROWS beside a one-word value. The Indonesian
   `Nama panggilan` never had the problem and is unchanged.
+- **THE ACCOUNT MENU HAS SIX ITEMS SINCE 2026-07-29, AND `AccountMenu`'s HEADER
+  USED TO FORBID A FIFTH.** `Galeri kartu` and `Tulisan` sit **below Reading
+  History**; v0.4.0's public footer had rendered them on the landing page and under
+  all 22 lore pages, and Miftah's ruling on a phone was that the homepage and the
+  card pages should look clean. The comment saying *"DO NOT ADD A FIFTH without a
+  decision recorded against VD12"* is **inverted rather than deleted** -- it is
+  still right about the case it was made for, which is a SHARE control. Their own
+  `account.menu.*` keys, never a reuse of `public.footer.{gallery,blog}`: a footer
+  names a destination to a stranger and this sheet names it to somebody signed in.
+  **`PublicShell`'s `LINKS` table is DELETED, not emptied**, and deleting the filter
+  with it let the landing page's footer grow a link to ITSELF -- caught by
+  `PublicShell.test.ts`, not by eye. The crawl was re-measured: nothing is orphaned,
+  because `sitemap.xml`, `hreflang`, `/gallery`'s 22 links and each lore page's own
+  `arcana.gallery` were always what a crawler follows.
 - **THE PAGE HAS A WAY OUT.** `history.home` and not a new key — the same gap `/history`
   closed one release earlier, and in a standalone home-screen instance there is no
   visible back button at all.
