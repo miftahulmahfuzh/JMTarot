@@ -1,0 +1,158 @@
+/*
+ * The weekday x hour heatmap. v0.5.0 / A4. **CSS grid, not SVG** -- a cell has an
+ * intrinsic size and a hit target (§3).
+ *
+ * ── THE ORIENTATION FLIPS AT 520px, BY ONE CONTAINER QUERY ──────────────────
+ *
+ * 24 columns at 320px would give 11px cells: unreadable and untappable. So the phone
+ * orientation is **7 columns x 24 rows** (hours down the side, days across) and the desktop
+ * one is **24 x 7**, switched by one container query on the card's inline size -- never a
+ * media query, so a card behaves the same 1-up and 3-up.
+ *
+ * At a 288px content box, 7 columns with 2px gaps gives ~39px cells, which is a real
+ * target. Loop 4 measures exactly that number.
+ *
+ * ── AN EMPTY CELL IS OUTLINED, NEVER PAINTED THE LOWEST STEP ────────────────
+ *
+ * `bucketFor(0)` returns `null`, and a `null` cell is the surface with a 1px outline. **A
+ * cell painted `--chart-seq-1` claims data.** On a weekday x hour grid most cells are
+ * genuinely empty, so the difference between "quiet" and "nothing" is the chart's whole
+ * information content.
+ *
+ * ── EVERY CELL IS A BUTTON, AND ITS READOUT IS CSS ──────────────────────────
+ *
+ * I-17 caps this directory at one client component and it is spent on the crosshair, so the
+ * per-cell readout is a `:hover` / `:focus-visible` box with no JavaScript at all. A
+ * `<button>` rather than a `<div>` because it must be reachable by keyboard for
+ * `:focus-visible` to fire -- which is what makes I-19's *"keyboard shows what hover shows"*
+ * true here without a line of script.
+ */
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.grid {
+  display: grid;
+  /* Phone: 7 columns (one per weekday). `minmax(0, 1fr)` so a track cannot refuse to
+     shrink -- the `min-width: 0` lesson from `galleryfit.sh`'s negative control. */
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+}
+
+@container (min-width: 520px) {
+  .grid {
+    /* Desktop: 24 columns (one per hour). */
+    grid-template-columns: repeat(24, minmax(0, 1fr));
+  }
+}
+
+.cell {
+  position: relative;
+  aspect-ratio: 1;
+  border: 0;
+  padding: 0;
+  border-radius: var(--radius-chip);
+  cursor: default;
+  /* A cell has no text, so its accessible name is its `aria-label` -- which carries the
+     same string the readout shows. */
+  appearance: none;
+}
+
+/* An empty cell: the surface, outlined. NOT the lowest sequential step. */
+.empty {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--chart-axis);
+}
+
+.cell:focus-visible {
+  outline: 2px solid var(--gold-border);
+  outline-offset: 1px;
+}
+
+/*
+ * The readout. CSS-only, so it costs no JavaScript, and it appears on BOTH hover and
+ * keyboard focus -- I-19's parity rule, discharged by a selector.
+ *
+ * `pointer-events: none` so the box cannot itself capture the pointer and flicker, and it
+ * is anchored above the cell with a translate rather than positioned per-cell, so no cell
+ * needs to know where it is in the grid.
+ */
+.readout {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: none;
+  padding: 4px 8px;
+  border: 1px solid var(--card-edge);
+  border-radius: var(--radius-chip);
+  /* OPAQUE, for the same reason the panel is (I-4): a translucent readout over a chart
+     mark is unreadable, and over the radial it is a contrast failure. */
+  background: var(--chart-surface);
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.cell:hover .readout,
+.cell:focus-visible .readout {
+  display: block;
+}
+
+/* The row and column labels. `--muted` at 11px, per I-12. Selective: every third hour on
+   the phone axis, because 24 stacked labels at 11px do not fit 39px rows. */
+.axisRow {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+}
+
+@container (min-width: 520px) {
+  .axisRow {
+    grid-template-columns: repeat(24, minmax(0, 1fr));
+  }
+}
+
+.axisLabel {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--muted);
+  text-align: center;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* ── The scale legend ──────────────────────────────────────────────────────── */
+
+/*
+ * REQUIRED beside the heatmap, not optional: a sequential scale with no legend is
+ * colour-only encoding on a continuous scale, which is the one case where the table view
+ * alone is not enough relief -- a reader cannot even tell which end is more.
+ */
+.scale {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.swatches {
+  display: flex;
+  gap: 2px;
+}
+
+.swatch {
+  width: 14px;
+  height: 10px;
+  border-radius: var(--radius-chip);
+}

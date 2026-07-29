@@ -1,0 +1,102 @@
+/*
+ * The fuel gauge: calls in the worst rolling five hours against `LLM_WINDOW_CALL_CEILING`.
+ * v0.5.0 / A4. **CSS, not SVG** -- a 12px track is a pixel count (§3).
+ *
+ * ── §1.8's DEPARTURE FROM "same-hue track", AND ITS REASON ──────────────────
+ *
+ * §5.3 asks for a *"meter, same-hue track"*, and `marks-and-anatomy.md` spells it out:
+ * *"the fill carries severity (accent -> warning -> danger); the unfilled track is a
+ * lighter step of the same ramp."*
+ *
+ * On this canvas the severity ramp's lightest step is `#e0a49c`, a pale pink. **An empty
+ * track painted `#e0a49c` announces mild alarm at 0% utilisation** -- the gauge would look
+ * worried when nothing is happening, which is precisely backwards for the one number on
+ * this dashboard that means "you are about to lose the app". And §5.2 proves there is no
+ * green-to-red hue ramp to reach for instead: amber<->orange is ΔE 2.3 under protanopia.
+ *
+ * So the track is `--chart-deemph` (`--label`, 4.11:1 on the surface -- legal as a mark,
+ * and it spends no palette slot) and the fill starts at `--chart-good` and steps into the
+ * severity ramp as utilisation rises.
+ *
+ * ── COLOUR NEVER CARRIES THE STATE ALONE ────────────────────────────────────
+ *
+ * The severity ramp's adjacent normal-vision ΔE is **7.5** -- half the 15 floor -- so
+ * `#cd8078` and `#b85c52` are not reliably distinguishable. `color-formula.md` requires
+ * status colour be *"always paired with an icon + label"*, and `Meter` takes both as
+ * REQUIRED props. The used/ceiling pair is rendered as text beside the bar, so the ratio is
+ * readable with every colour stripped -- which is also how loop 4 checks it.
+ */
+
+.meter {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.track {
+  position: relative;
+  height: 12px;
+  border-radius: 6px;
+  /* The empty channel. See the header: NOT the lightest severity step. */
+  background: var(--chart-deemph);
+  overflow: hidden;
+}
+
+.fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 6px;
+  /* A minimum so a non-zero value is always visible: at 1/280 the fill is 0.36% of the
+     track, which rounds to nothing. A gauge reading empty while calls are being made is
+     the same class of lie as `bucketFor(0)` painting a cell. */
+  min-width: 3px;
+}
+
+.readout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+/* The icon and the word. Both required props; both carry the state without colour. */
+.state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  /* TEXT WEARS A TEXT TOKEN (I-11). `#a3423a` is 3.04:1 -- a legal mark and illegal text
+     -- so the state's colour lives on the icon glyph, never on the word. */
+  color: var(--text);
+}
+
+.icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+/* `238 / 280`. Proportional: one figure, read once, beside a word -- not a column. The
+   split is stated in `StatTile.module.css`'s header and asserted by the contract test. */
+.ratio {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/*
+ * The optimism note. **It goes on the page, not only in the plan** (R26): the ledger is a
+ * LOWER BOUND on the Redis counter -- `after()` is not a guarantee, `reserveModelCall`
+ * charges the window before the call so a call that then throws charged it anyway, and this
+ * can only see windows that ended inside the range. Every headroom figure derived from it is
+ * optimistic, and a gauge that does not say so is a gauge that will be trusted at 279.
+ */
+.caveat {
+  margin: 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--label);
+}

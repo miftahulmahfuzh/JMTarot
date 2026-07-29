@@ -1,0 +1,105 @@
+/*
+ * The crosshair and its readout. v0.5.0 / A4. The stylesheet of THE ONE client component
+ * in `src/components/chart/**` (I-17).
+ *
+ * The hairline is 1px in `--chart-axis` -- the same recessive stroke as the grid, because a
+ * crosshair is furniture and not a mark. `anti-patterns.md`'s ban on dashed rules applies
+ * here as much as to the grid: this is solid.
+ *
+ * THE READOUT IS OPAQUE, for I-4's reason applied one level in: a translucent box over a
+ * chart mark is unreadable, and there is nothing behind it worth seeing.
+ *
+ * `pointer-events: none` on both, so the layer that LISTENS is the transparent surface and
+ * the things it draws can never intercept the pointer they are following.
+ */
+
+.surface {
+  position: absolute;
+  inset: 0;
+  /* The listening surface. It must be the topmost thing in the plot, which is why it is
+     rendered last, and it must not paint -- a background here would cover the marks. */
+  cursor: crosshair;
+}
+
+.surface:focus-visible {
+  outline: 2px solid var(--gold-border);
+  outline-offset: 2px;
+}
+
+.hairline {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--chart-axis);
+  pointer-events: none;
+}
+
+.readout {
+  position: absolute;
+  top: 0;
+  z-index: 2;
+  min-width: 120px;
+  padding: 6px 8px;
+  border: 1px solid var(--card-edge);
+  border-radius: var(--radius-chip);
+  background: var(--chart-surface);
+  pointer-events: none;
+}
+
+/* Flipped to the left of the hairline when the pointer is past the middle, so the readout
+   never leaves the card. A card is 288px wide at a 320px viewport and this box is 120px
+   minimum, so without the flip the right third of every chart is unreadable. */
+.readoutLeft {
+  transform: translateX(-100%);
+  margin-left: -8px;
+}
+
+.readoutRight {
+  margin-left: 8px;
+}
+
+.heading {
+  display: block;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 4px;
+  white-space: nowrap;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/*
+ * VALUES LEAD AND LABELS FOLLOW -- the legend's hierarchy inverted, and deliberately.
+ * In a legend the reader has a colour and wants the name; here the reader already has the
+ * series and wants the number, so the number is what the eye should land on first.
+ */
+.value {
+  font-variant-numeric: tabular-nums;
+  min-width: 3ch;
+  text-align: right;
+}
+
+.label {
+  color: var(--muted);
+}
+
+/* A SHORT STROKE, not a filled box: this keys a LINE, so the swatch mirrors the mark --
+   the same rule the legend follows, one component over. */
+.stroke {
+  display: inline-block;
+  width: 10px;
+  height: 2px;
+  flex: 0 0 auto;
+}

@@ -1,0 +1,52 @@
+/*
+ * The legend. v0.5.0 / A4.
+ *
+ * THE SWATCH MIRRORS THE MARK, which is why there are two shapes and not one: a
+ * `10x10` rounded square for a fill (bar, area, heat) and a `12x2` rule for a line.
+ * A square swatch beside a 2px line is a legend describing a chart that is not there,
+ * and the reader's eye does the matching by SHAPE before it does it by colour --
+ * which matters most for the reader who cannot do it by colour at all.
+ *
+ * TEXT NEVER WEARS THE SERIES COLOUR (I-11). Identity comes from the coloured mark
+ * BESIDE the text. `--chart-cat-*` are validated as MARKS at 3:1 and several of them
+ * fail 4.5:1 as text -- `#a3423a` measures 3.04:1 -- so a coloured label would be a
+ * contrast failure dressed as a design choice.
+ *
+ * `--muted` (6.47:1 on the surface) and not `--label` (4.11:1), for the same reason
+ * I-12 governs axis ticks: this is 11px type.
+ */
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* A fill's swatch: `--radius-chip` is the existing 2px, so this introduces nothing. */
+.rect {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-chip);
+  flex: 0 0 auto;
+}
+
+/* A line's swatch: the same 2px stroke the chart draws. */
+.line {
+  width: 12px;
+  height: 2px;
+  flex: 0 0 auto;
+}

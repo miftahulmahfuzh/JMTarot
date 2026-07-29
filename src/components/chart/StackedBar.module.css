@@ -1,0 +1,107 @@
+/*
+ * The stacked bar. v0.5.0 / A4. **CSS, not SVG** -- a bar's thickness is a pixel count
+ * (§3), and inside a scaled viewBox a 20px bar becomes 31-50px on a desktop container.
+ *
+ * ── HORIZONTAL ONLY, AND THE NAMES ARE WHY ──────────────────────────────────
+ *
+ * The categories here are `translation_repair`, `Margaret Thornbury`, `spread3`. Vertical
+ * bars would need those rotated, truncated or wrapped under a 60px column; horizontal
+ * gives every label a full line at any width. There is no `vertical` variant to reach for.
+ *
+ * ── THE 2px FLEX GAP **IS** THE SURFACE GAP ─────────────────────────────────
+ *
+ * `marks-and-anatomy.md` asks for a 2px surface gap between adjacent stacked segments.
+ * `gap: var(--chart-ring)` on the flex row is that gap, and **no border is ever drawn
+ * around a segment** -- a border would add its own width inside the segment's box and the
+ * separation would come out 2px in some places and 4px in others. One consistent width,
+ * one mechanism, and it is the same custom property the marker ring uses.
+ *
+ * ── ONLY THE LAST SEGMENT IS ROUNDED ────────────────────────────────────────
+ *
+ * `marks-and-anatomy.md`: *4px rounded data-ends anchored to the baseline.* The baseline
+ * end of a stack is square because it is anchored, and the free end is rounded because it
+ * is the data end. Rounding both would make the bar read as a pill -- a shape that says
+ * "capsule", not "measurement" -- and rounding every segment would put four rounded ends
+ * inside one bar.
+ *
+ * ── NO IN-SEGMENT LABELS, EVER ──────────────────────────────────────────────
+ *
+ * Four segments at 320px will not fit text with padding, and `overflow: hidden` cropping
+ * characters is worse than no label at all. The legend, the per-segment `title` readout
+ * and the table view carry it -- three routes to the same number, none of which depends on
+ * a segment being wide enough.
+ */
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/*
+ * `[label] [bar] [value]`, and the label column is CAPPED at 40% rather than sized to its
+ * content. `max-content` alone lets `translation_repair` eat half a 320px card and squeeze
+ * the bar into 90px; the cap keeps the bar the widest thing in the row, which is what the
+ * row is for. `minmax(0, …)` on the bar track is what stops a flex child from refusing to
+ * shrink -- the failure `galleryfit.sh`'s header records, where a later `min-width: 0` was
+ * the thing that mattered.
+ */
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 40%) minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 10px;
+}
+
+.label {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 13px;
+  color: var(--text);
+  /* Wraps rather than clips. A clipped category name is a chart that cannot be read;
+     two lines in a 20px row grows the row, which is fine, because the card's height is
+     content-driven. */
+  overflow-wrap: anywhere;
+}
+
+.bar {
+  display: flex;
+  gap: var(--chart-ring);
+  /* 20px, under the 24px cap. The band's leftover is AIR, never a filled slot -- a bar
+     stretched to fill its row is a bar whose thickness encodes nothing. */
+  height: var(--chart-bar);
+  min-width: 0;
+}
+
+.segment {
+  min-width: 0;
+  /* No border. See the header: the gap is the flex gap and nothing else. */
+  border: 0;
+}
+
+.segment:last-child {
+  border-radius: 0 var(--chart-end) var(--chart-end) 0;
+}
+
+.value {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/*
+ * An empty row -- a category with no calls in the range -- draws the track and no
+ * segments, so the row is visibly present and visibly empty. The alternative, dropping
+ * the row, makes a reader think the category does not exist; V5's M14 rule is that an
+ * empty panel wearing a dot IS the empty state, and the inverse holds here.
+ */
+.empty {
+  height: var(--chart-bar);
+  border-radius: 0 var(--chart-end) var(--chart-end) 0;
+  border: 1px solid var(--chart-axis);
+  /* Not `--chart-seq-1`: an outlined empty track claims nothing, and a filled one at the
+     lowest step would claim data. Same rule as `bucketFor(0) === null`. */
+  background: transparent;
+  width: 100%;
+}

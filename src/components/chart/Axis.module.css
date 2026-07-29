@@ -1,0 +1,111 @@
+/*
+ * The axes. v0.5.0 / A4. **HTML, not SVG `<text>`** -- §3 is the derivation.
+ *
+ * An 11px `<text>` inside a `viewBox` scaled to a desktop container renders at 14-23px,
+ * and inside a desktop-sized viewBox on a phone at 2.7px. A chart whose tick labels
+ * change size with their container cannot honour I-12 and cannot be measured by loop 4.
+ * So every tick is a `<span>` positioned by PERCENT in the plot's own box, which is exact
+ * because the box is known: `left: at*100%` / `bottom: at*100%` of the same element the
+ * SVG fills. No `ResizeObserver`, no measurement, no hydration.
+ *
+ * ── `--muted`, NOT `--label` (I-12) ─────────────────────────────────────────
+ *
+ * Measured on `--chart-surface`: `--label` is **4.11:1** and FAILS 4.5:1 for normal-size
+ * text; `--muted` is **6.47:1**. `--label` stays legal as a MARK -- the meter's empty
+ * track, a de-emphasised series -- and as large type. An 11px tick is neither.
+ *
+ * ── THE RULE IS SOLID. NEVER DASHED ─────────────────────────────────────────
+ *
+ * `anti-patterns.md` bans dashed gridlines and axis rules outright: *"dashing … reads as
+ * 'projection' or 'threshold' when it's just a grid."* The only dashed stroke anywhere in
+ * A4 is `Trajectory`'s projection, where it means exactly that (§1.9).
+ *
+ * `tabular-nums` here and in `TableView.module.css` only. A y-axis is a column of figures
+ * that must align; a stat tile's value is proportional (§1.10).
+ */
+
+.plotFrame {
+  position: relative;
+  /* Room for the y ticks on the left and the x band below. Both are content, not
+     decoration: the card's height INCLUDES the axis band, or the axis ends up in a
+     nested scroller (`anti-patterns.md`). */
+  padding-left: 38px;
+  padding-bottom: 20px;
+}
+
+.plot {
+  position: relative;
+  /* One container query, read from a descendant of the element that DECLARES
+     `container-type` (`ChartFrame`'s `.figure`) -- CLAUDE.md's trap is that an element
+     is not its own container. 200px on a phone-width card, 240px above, so a card
+     behaves the same 1-up and 3-up. */
+  height: 200px;
+}
+
+@container (min-width: 520px) {
+  .plot {
+    height: 240px;
+  }
+}
+
+/* The baseline. The one axis rule that is always drawn, because I-8 makes 0 always part
+   of the domain and a count needs a floor to be read against. */
+.plot::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--chart-axis);
+}
+
+/* Gridlines: the same stroke one step more recessive, per §4.2's furniture note. No new
+   hex; `--chart-axis` is `--card-edge`, whose whole job is already "the outermost
+   millimetre". */
+.gridline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--chart-axis);
+  opacity: 0.5;
+}
+
+.yTick {
+  position: absolute;
+  right: calc(100% + 6px);
+  transform: translateY(50%);
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.xTick {
+  position: absolute;
+  top: calc(100% + 6px);
+  transform: translateX(-50%);
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The ends of a range are the two labels a reader actually looks for, and at 320px a
+   centred first or last tick would hang off the plot. Anchoring them inward is what
+   makes `tickIndices` always include both ends safe to render. */
+.xTick.first {
+  transform: none;
+  left: 0;
+}
+
+.xTick.last {
+  transform: none;
+  right: 0;
+  left: auto;
+}
