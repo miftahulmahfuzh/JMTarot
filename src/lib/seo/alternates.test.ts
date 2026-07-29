@@ -259,3 +259,39 @@ describe('sitemapLanguages', () => {
     expect(entry.alternates?.languages?.en).toBe('https://www.jmtarot.site/en/gallery');
   });
 });
+
+describe('v0.5.0 / A1 -- no canonical and no hreflang for /admin (A-D3)', () => {
+  /*
+   * Behaviour that already exists; the assertion is what makes it a property of
+   * the release. A canonical on a gated page is a claim to a search engine that a
+   * URL is a document -- and `contentAlternates` throwing is what stops somebody
+   * copying an `arcana` page's metadata block into an admin page and shipping a
+   * canonical for `/admin` with no test to notice.
+   */
+  it('throws for /admin and for a nested admin path', () => {
+    for (const path of ['/admin', '/admin/users', '/admin/tokens', '/admin/blog']) {
+      expect(() =>
+        contentAlternates({ origin: 'https://x.test', path, locale: 'id', locales: ['id'] }),
+      ).toThrow(/not a content path/);
+    }
+  });
+
+  it('throws for the prefixed spelling too, by the earlier guard', () => {
+    expect(() =>
+      contentAlternates({
+        origin: 'https://x.test',
+        path: '/en/admin',
+        locale: 'en',
+        locales: ['en', 'id'],
+      }),
+    ).toThrow(/already-prefixed/);
+  });
+
+  it('gives /admin no sitemap language set either, because it is the same function', () => {
+    // `sitemapLanguages()` and `contentAlternates()` are one function on purpose,
+    // which is what makes the two hreflang sets unable to disagree (S-D15).
+    expect(() => sitemapLanguages('https://x.test', '/admin', ['id'])).toThrow(
+      /not a content path/,
+    );
+  });
+});

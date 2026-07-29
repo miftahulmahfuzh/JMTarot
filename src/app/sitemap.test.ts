@@ -191,4 +191,17 @@ describe('sitemap.xml', () => {
     }
     expect(code).toContain("from '@/lib/seo/origin'"); // not vacuous
   });
+
+  it('lists no admin URL (v0.5.0 / A1, A-D3)', () => {
+    /*
+     * A sitemap entry for a gated page is a sitemap full of 302s, and for THIS
+     * subtree it is also publication of a surface whose whole property is that
+     * nobody knows it is there. The `EXCLUDES` test above is an exact-set check
+     * over today's routes; this one is the substring fence that survives A4, A5
+     * and A6 each adding a page.
+     */
+    for (const url of urls()) {
+      expect(url).not.toContain('/admin');
+    }
+  });
 });

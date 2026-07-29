@@ -479,3 +479,35 @@ describe('contentRewrite', () => {
     }
   });
 });
+
+describe('v0.5.0 / A1 -- /admin is not content, and CONTENT_EXACT must never learn it', () => {
+  /*
+   * Adding `/admin` to `CONTENT_EXACT` does two things, and only the first is
+   * visible in the diff: it makes `/en/admin` a rewrite target, AND it puts
+   * `/admin` inside `isPublicContentPath`, i.e. inside `isPublic()`, from a file
+   * whose header never mentions the gate. That is the S1/S2 seam running
+   * backwards.
+   *
+   * A-D3's third bullet in one line: `/en/admin` is not a route and must not
+   * become one. It reaches `decide()` spelled as requested and matches nothing.
+   */
+  it('answers false for every admin spelling', () => {
+    expect(isContentPath('/admin')).toBe(false);
+    expect(isContentPath('/admin/users')).toBe(false);
+    expect(isContentPath('/admin/tokens')).toBe(false);
+    expect(isPublicContentPath('/admin')).toBe(false);
+    expect(isPublicContentPath('/en/admin')).toBe(false);
+  });
+
+  it('does not honour an /en/ prefix on it -- passthrough, never rewrite', () => {
+    expect(contentRewrite('/en/admin', true)).toEqual({ kind: 'passthrough' });
+    expect(contentRewrite('/en/admin', false)).toEqual({ kind: 'passthrough' });
+    expect(contentRewrite('/admin', true)).toEqual({ kind: 'passthrough' });
+  });
+
+  it('does not 301 /id/admin to /admin, because /admin is not an address we publish', () => {
+    // The `/id/` -> bare 301 is for CONTENT paths only. A redirect here would
+    // hand a prober a positive signal that `/admin` is a route.
+    expect(contentRewrite('/id/admin', false)).toEqual({ kind: 'passthrough' });
+  });
+});
