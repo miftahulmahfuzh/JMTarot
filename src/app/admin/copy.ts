@@ -74,11 +74,6 @@ export const OVERVIEW = {
     2: { icon: '▲', label: 'Perlu dilihat' },
     3: { icon: '■', label: 'Kritis' },
   },
-  windowTitle: 'Kuota panggilan model',
-  windowSubtitle:
-    'Dibandingkan langsung dengan LLM_WINDOW_CALL_CEILING. Satu-satunya angka di app ini ' +
-    'yang bukan hari kalender penanya.',
-
   kpi: {
     spend: 'Biaya notional',
     /**
@@ -105,8 +100,18 @@ export const OVERVIEW = {
   callsSeries: 'Panggilan',
   callsHoverLabel: 'Geser untuk membaca angka per hari',
 
-  serviceTitle: 'Panggilan per layanan',
-  readerTitle: 'Panggilan per pembaca',
+  /**
+   * §6.1 row 4, retitled for what it actually counts: `ttftByService` counts rows in
+   * `readings`, not model calls, and the two differ in both directions -- a blocked reading
+   * makes no call at all, and one reading makes several.
+   *
+   * **THERE IS NO `readerTitle`, AND ITS ABSENCE IS THE RECORD.** §6.1 row 5 asked for
+   * "which reader is consuming the calls"; A3's catalogue has no per-reader aggregate --
+   * `readings.reader_id` exists and nothing groups by it -- and `queries/admin/**` is A3's by
+   * §7. A copy key for a card that does not exist is how a future session concludes one
+   * shipped and goes looking for the bug.
+   */
+  serviceTitle: 'Bacaan per layanan',
   /**
    * R25 reaching the screen: a fleet-wide `local_date` bucket **sums two calendar systems**,
    * because a call with no querent behind it stores the UTC date. Stated on the chart and not
@@ -123,9 +128,8 @@ export const OVERVIEW = {
    * unbuildable on this canvas. So this is a TABLE and takes no colour at all.
    */
   statusSubtitle: 'Tabel, bukan grafik: lima status tidak punya lima warna yang bisa dibedakan.',
-  statusColumns: { op: 'Op', ok: 'Selesai', failed: 'Gagal', aborted: 'Ditinggalkan', calls: 'Total' },
+  statusColumns: { op: 'Op', failed: 'Gagal', aborted: 'Ditinggalkan', calls: 'Total' },
 
-  readingsTitle: 'Bacaan per hari',
   readingsSubtitle:
     'Dari tabel readings, bukan dari ledger: bacaan yang ditolak moderasi tidak memanggil model ' +
     'dan tetap terjadi.',
