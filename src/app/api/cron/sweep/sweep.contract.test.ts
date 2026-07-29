@@ -22,13 +22,30 @@ const ROUTE = readFileSync(
   'utf8',
 );
 
+/**
+ * The route with every comment removed.
+ *
+ * **TWO ASSERTIONS HERE HAVE TO USE THIS AND THE REASON IS THIS FILE'S OWN
+ * PRECEDENT.** `queries/contract.test.ts` records it in one line -- *"a rule that
+ * fires on prose describing the rule is a rule people delete"* -- and A3 walked
+ * into it twice in one commit: the header explains why `admin_access_log` is never
+ * swept (so the string appears), and the retention parser's comment quotes the
+ * `make_interval(days => 0)` disaster it prevents (so the count was 5, not 4).
+ *
+ * Everything else still matches the whole file, deliberately: a commented-out
+ * `delete from readings` is worth failing on.
+ */
+const CODE = ROUTE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+
 describe('the cron sweep route', () => {
-  it('does all three deletes, not one', () => {
-    // Reconciliation §7.8: ONE job, THREE deletes. Three separate cron entries
-    // would be three things to notice have stopped working.
+  it('does all five deletes, not one', () => {
+    // Reconciliation §7.8: ONE job, FIVE deletes now. Five separate cron entries
+    // would be five things to notice have stopped working.
     expect(ROUTE).toContain('delete from users');
     expect(ROUTE).toContain('update moderation_flags');
     expect(ROUTE).toContain('delete from events');
+    expect(ROUTE).toContain('deleteOrphanTranslations');
+    expect(ROUTE).toContain('delete from llm_calls');
   });
 
   it('casts every interval parameter to int', () => {
@@ -44,9 +61,9 @@ describe('the cron sweep route', () => {
      * `${moderationRetentionDays(` as uncast against a route that is fine.
      */
     const intervals = [
-      ...ROUTE.matchAll(/make_interval\(days => ((?:[^()]|\([^()]*\))*)\)/g),
+      ...CODE.matchAll(/make_interval\(days => ((?:[^()]|\([^()]*\))*)\)/g),
     ].map((m) => m[1]);
-    expect(intervals.length).toBe(3);
+    expect(intervals.length).toBe(4);
     for (const arg of intervals) {
       expect({ arg, cast: arg.includes('::int') }).toEqual({ arg, cast: true });
     }
@@ -119,7 +136,7 @@ describe('vercel.json', () => {
   });
 
   it('schedules exactly one job', () => {
-    // §7.8: one job, three deletes. Not three jobs.
+    // §7.8: one job, five deletes. Not five jobs.
     expect(config.crons).toHaveLength(1);
   });
 });
@@ -150,8 +167,71 @@ describe('the fourth delete (V2)', () => {
   });
 
   it('keeps the header’s numbered list in step with the number of deletes', () => {
-    // The header opens with a stated count. It said THREE, and V2 makes it four.
-    expect(ROUTE).toMatch(/FOUR DELETES/);
+    // The header opens with a stated count. It said THREE, V2 made it four, and
+    // A3 makes it five. **A header that miscounts its own body is how the next
+    // person concludes the file is untrustworthy**, so the sentence is EDITED
+    // rather than appended to.
+    expect(ROUTE).toMatch(/FIVE DELETES/);
+    expect(ROUTE).not.toMatch(/FOUR DELETES/);
     expect(ROUTE).toMatch(/^\s*\*\s*4\.\s/m);
+    expect(ROUTE).toMatch(/^\s*\*\s*5\.\s/m);
+  });
+});
+
+describe('the fifth delete (A3, v0.5.0)', () => {
+  it('deletes llm_calls by created_at, on its own variable, defaulting to 400', () => {
+    expect(ROUTE).toContain('LLM_CALLS_RETENTION_DAYS');
+    expect(ROUTE).toMatch(/delete from llm_calls[^`]*created_at < now\(\)/);
+    expect(ROUTE).toContain(': 400');
+  });
+
+  it('GUARDS THE PARSE WITH BOTH HALVES, or a typo empties the table', () => {
+    /*
+     * `Number('abc')` is NaN and `Number('')` is 0. Without `> 0` a blank value in
+     * the Vercel dashboard becomes `make_interval(days => 0)` and the first run at
+     * 03:17 deletes everything. `auth/ttl.ts`'s defensiveness with a sharper
+     * consequence.
+     */
+    expect(ROUTE).toMatch(/Number\.isFinite\(raw\) && raw > 0 \? raw : 400/);
+  });
+
+  it('runs LAST, after the orphaned-translation reap', () => {
+    // The user purge CASCADEs `readings` away and both of `llm_calls`' FKs are
+    // `set null`, so rows become partially unattributed DURING this invocation.
+    expect(ROUTE.indexOf('deleteOrphanTranslations')).toBeLessThan(
+      ROUTE.indexOf('delete from llm_calls'),
+    );
+  });
+
+  it('logs the size probe UNCONDITIONALLY, because a size series is only useful as a series', () => {
+    // Unlike the ceiling warning, which fires only when there is something to say.
+    // This is the measurement R19's number was calculated without.
+    expect(ROUTE).toContain('pg_total_relation_size');
+    expect(ROUTE).toContain('[llm_calls] rows=');
+    // Not inside an `if`: the log call sits directly in the try block.
+    expect(ROUTE).toMatch(/console\.log\(\s*`\[llm_calls\]/);
+  });
+
+  it('NEVER SWEEPS admin_access_log -- the negative control, named for the outcome', () => {
+    /*
+     * §9.14: an audit trail with a delete path is the audit trail's absence, and a
+     * retention policy is a delete path with a timer on it. `/privacy` clause 6's
+     * row for it reads *kept indefinitely* and this is what keeps that true.
+     *
+     * Asserted on the COMMENT-STRIPPED source, because the header has to be able to
+     * say why the table is not swept -- see `CODE` above. The plan asked for the
+     * whole file; the whole file cannot carry its own reasoning if it does.
+     */
+    expect(CODE).not.toContain('admin_access_log');
+    // And the prose IS there, so the rule is explained where somebody would look.
+    expect(ROUTE).toContain('admin_access_log');
+  });
+
+  it('leaves the other four tables off any new clock', () => {
+    // A3 adds ONE delete and touches none of the others.
+    expect(ROUTE).not.toContain('delete from readings');
+    expect(ROUTE).not.toContain('delete from reading_cards');
+    expect(ROUTE).not.toContain('delete from personas');
+    expect(ROUTE).not.toContain('delete from share_links');
   });
 });

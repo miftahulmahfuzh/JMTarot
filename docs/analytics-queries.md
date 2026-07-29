@@ -321,9 +321,18 @@ large gap means server-side events are being lost, which is query 1's alarm.
 
 ### How close the window is running
 
-There is no counter to read — the ceiling lives in Redis, not in Postgres — so
-this is the closest thing to a fuel gauge, and it is a lower bound: it counts the
-model calls that produced an `events` row, not the ones that did not.
+**SUPERSEDED BY QUERY 14, AND THE SENTENCE THAT USED TO BE HERE IS NOW FALSE.** It
+said *"there is no counter to read — the ceiling lives in Redis, not in Postgres —
+so this is the closest thing to a fuel gauge."* Since A2 (v0.5.0) there **is** a
+ledger, and **query 14 reconstructs the counter properly**: a rolling five-hour
+window over `llm_calls.created_at`, which is the same quantity Redis holds rather
+than a proxy for it.
+
+This one still works and is kept, because it counts a different thing — *events*
+per hour, which survives a night when the ledger write was lost. Read it as a
+cross-check on 14, not as the gauge. **Both are lower bounds**, and this one is
+the looser of the two: it counts the model calls that produced an `events` row,
+not the ones that did not.
 
 ```sql
 select
@@ -528,3 +537,339 @@ connection string, and the table only starts being meaningful from 2026-07-28 wh
 `bindAnalyticsScope()` landed — so expect very few rows and do not read a rate off them
 either. Run it after the app has served real translations for a while; that is the
 number the `invalid > 2%` decision needs.
+
+---
+
+# The ledger (A2 + A3, v0.5.0)
+
+**Six queries over `llm_calls`, the fact table v0.5.0 exists for.** Before A2 this
+application made nine distinct LLM calls and recorded the token cost of exactly one
+of them.
+
+**PROVENANCE OF THE PASTED OUTPUT BELOW, STATED PLAINLY BECAUSE THIS FILE'S OPENING
+RULE DEMANDS IT.** Every query here was executed against the local Postgres 16 on
+2026-07-30 and the output is real. **The ROWS are not**: the dev ledger was empty, so
+44 rows were hand-seeded across the nine `op` values, two models and ten days to give
+the queries something to answer. So the *shapes*, the *types* and the *SQL* are
+measured; **no rate, ratio or percentile below is a fact about traffic.** A2 verified
+all nine ops live against the running app and read them out of psql; this is the
+reporting layer over that, and the production read is owed the same way query 12's is.
+
+Two things to have in mind, both of which change how these read:
+
+- **`input_tokens` is structurally half-blind on z.ai.** The provider reports
+  `input_tokens: 0`, which both adapters store as NULL (A2-D5 fixed the buffered
+  path so the two agree). So `null_input_calls` is very nearly every row and a
+  cost figure built on `input_tokens` alone is missing the prompt side entirely.
+  **Every query below that touches tokens carries that count beside them.**
+- **A fleet-wide `group by local_date` sums two calendar systems** (R25). A call
+  with no querent behind it — a cron-driven repair pass, or one of the three W3
+  onboarding routes R49 left unattributed — stores the **UTC** date, while every
+  other row stores the querent's own day. Filter `user_id is not null` where the
+  number has to be homogeneous.
+
+## 13. Calls, tokens and status by `op`, over 30 days
+
+**The nine-value table.** Roadmap §5.3 renders this as a *table* rather than a chart
+on purpose: nine categories exceeds the >7-classes rule, and a pie of nine `op`
+values is unreadable.
+
+```sql
+select op,
+       count(*)                                                      as calls,
+       coalesce(sum(input_tokens),  0)                                as input_tokens,
+       coalesce(sum(output_tokens), 0)                                as output_tokens,
+       count(*) filter (where input_tokens is null)                   as null_input,
+       count(*) filter (where status = 'failed')                      as failed,
+       count(*) filter (where status = 'aborted')                     as aborted,
+       round(percentile_cont(0.5)  within group (order by total_ms))  as p50_ms,
+       round(percentile_cont(0.95) within group (order by total_ms))  as p95_ms
+  from llm_calls
+ where created_at >= now() - interval '30 days'
+ group by 1
+ order by calls desc, op;
+```
+
+```
+         op         | calls | input_tokens | output_tokens | null_input | failed | aborted | p50_ms | p95_ms
+--------------------+-------+--------------+---------------+------------+--------+---------+--------+--------
+ reading            |    13 |            0 |          5246 |         13 |      0 |       1 |   5740 |   6226
+ gist               |    12 |            0 |           336 |         12 |      0 |       0 |    984 |   1049
+ moderation         |    12 |            0 |           144 |         12 |      0 |       0 |    712 |    766
+ day_summary        |     2 |            0 |            96 |          2 |      1 |       0 |   2300 |   3020
+ frequency          |     1 |            0 |            74 |          1 |      0 |       0 |   2400 |   2400
+ lotus              |     1 |            0 |           210 |          1 |      0 |       0 |   4100 |   4100
+ persona            |     1 |         1840 |           190 |          0 |      0 |       0 |   3800 |   3800
+ translation        |     1 |            0 |           320 |          1 |      0 |       0 |   2900 |   2900
+ translation_repair |     1 |            0 |           310 |          1 |      0 |       0 |   3300 |   3300
+```
+
+**How to read it.**
+
+- **`input_tokens: 0` with `null_input` equal to `calls` is the z.ai signature, not a
+  free prompt.** The one row with a real input figure is on `gpt-5.6-luna`, because
+  that provider reports it. Do not divide by `input_tokens` here.
+- **`ORDER BY calls desc, op` — the `op` tiebreak makes the order TOTAL.** Without it
+  the five one-row `op`s swap places between runs and it reads as the data changing.
+  Same reason `topCardAllTime` breaks its tie on `card_id`.
+- **`p95_ms` IS TOTAL TIME, NOT TIME TO FIRST TOKEN.** `readings.latency_ms` is TTFT
+  and query 3 is the one that reads it. One word, two meanings, one schema — and
+  `llm_calls.total_ms` for a reading is timed from above `gateReading` rather than
+  from the top of the handler, so **expect it to be smaller than
+  `reading.completed.total_ms` and do not reconcile the two** (R5).
+- **A `reading` row and a `moderation` row and a `gist` row are ONE reading.** Three
+  ops per reading is the expected shape; `calls` is not a reading count.
+
+## 14. The worst rolling five-hour window, and how close it came to 280
+
+**THIS IS THE FUEL GAUGE, AND IT REPLACES QUERY 9's VERSION.** `llm:window` is
+**calls per rolling five hours, fleet-wide** — z.ai meters prompts per rolling
+5-hour cycle and there is deliberately no date in the Redis key. This query
+reconstructs exactly that quantity from the ledger, which nothing could do before A2.
+
+```sql
+with w as (
+  select created_at,
+         count(*) over (order by created_at
+                        range between interval '5 hours' preceding and current row) as in_window
+    from llm_calls
+   where created_at >= now() - interval '7 days'
+     and status <> 'refused'
+)
+select to_char(created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as window_end,
+       in_window                                                             as calls,
+       280                                                                   as ceiling,
+       round(100.0 * in_window / 280, 1)                                     as pct_of_ceiling
+  from w
+ order by in_window desc, created_at
+ limit 1;
+```
+
+```
+      window_end      | calls | ceiling | pct_of_ceiling
+----------------------+-------+---------+----------------
+ 2026-07-29T10:58:23Z |    24 |     280 |            8.6
+```
+
+**A WINDOW FRAME, NOT A BUCKET, AND THAT IS THE DESIGN.** A five-hour window
+straddles midnight, so any daily bucketing splits the worst window in the range and
+hides it. `RANGE BETWEEN INTERVAL ... PRECEDING` is plain Postgres 11+ and runs
+identically on the Docker 16 and on Neon 16 — the two are the same major on purpose.
+
+**Four caveats, and every one of them makes this OPTIMISTIC**, which is the direction
+that matters:
+
+1. **The ledger is a lower bound on the counter.** The write is inside `after()`,
+   which is not a guarantee — query 1 exists because Vercel can end an invocation.
+2. **`reserveModelCall` charges the window BEFORE the call**, so a call that then
+   threw charged the counter whether or not it left a row.
+3. **This can only see windows that ENDED inside the range.**
+4. **280 is not the provider's limit; it is 70% of it, with a soft tier at 196.**
+   `meter.ts`: *"we could not observe what quota exhaustion looks like on the wire
+   without causing it."* So crossing 280 is a *degradation* — deferred work is shed
+   first — before it is an outage.
+
+**DO NOT COMPARE A CALLS-PER-DAY FIGURE TO 280.** 280 per 5h is **1344/day** if
+traffic were perfectly flat, so a day with 300 calls reads as "at the ceiling" while
+sitting at 22% of it — wrong by 4.8× in the alarmist direction. Dividing by 4.8
+instead assumes uniform traffic, which a consumer app with an evening certainly is
+not, and *that* one is wrong in the dangerous direction. The honest bridge is a
+**measured** burstiness `k = peak5h / (meanCallsPerDay × 5/24)`, then
+`dailyEquivalentCeiling = 1344 / k`; `burstiness()` and `dailyEquivalentCeiling()` in
+`src/lib/analytics/rollup.ts` are that arithmetic, unit-tested.
+
+## 15. Tokens by day and model, with the unpriced count
+
+**PER MODEL, AND THAT IS A CONSTRAINT RATHER THAN A CONVENIENCE.** `prices.ts` is
+keyed by model **and** `effective_from`, so a single `sum(output_tokens)` for a day
+that spanned two models is **unpriceable** — and the number that would be produced
+anyway is the one that silently understates the bill.
+
+```sql
+select local_date::text                              as day,
+       model,
+       count(*)                                      as calls,
+       coalesce(sum(input_tokens),  0)                as input_tokens,
+       coalesce(sum(output_tokens), 0)                as output_tokens,
+       count(*) filter (where input_tokens  is null)  as null_input_calls,
+       count(*) filter (where output_tokens is null)  as null_output_calls
+  from llm_calls
+ where local_date >= current_date - 7
+ group by 1, 2
+ order by 1 desc, 2;
+```
+
+```
+    day     |     model     | calls | input_tokens | output_tokens | null_input_calls | null_output_calls
+------------+---------------+-------+--------------+---------------+------------------+-------------------
+ 2026-07-29 | glm-4.5-flash |     9 |            0 |           108 |                9 |                 0
+ 2026-07-29 | glm-4.6       |    18 |            0 |          3987 |               18 |                 0
+ 2026-07-28 | glm-4.5-flash |     2 |            0 |            24 |                2 |                 0
+ 2026-07-28 | glm-4.6       |     5 |            0 |          1059 |                5 |                 0
+ 2026-07-27 | glm-4.5-flash |     1 |            0 |            12 |                1 |                 0
+ 2026-07-27 | glm-4.6       |     3 |            0 |           566 |                3 |                 0
+ 2026-07-26 | glm-4.6       |     2 |            0 |           630 |                2 |                 0
+ 2026-07-26 | gpt-5.6-luna  |     1 |         1840 |           190 |                0 |                 0
+ 2026-07-24 | glm-4.6       |     2 |            0 |           140 |                2 |                 1
+```
+
+- **`::text` ON `local_date` IS REQUIRED WHENEVER YOU SLICE IT.** `dateCol` is
+  `date(name, { mode: 'string' })` and **`mode: 'string'` is a Drizzle-side mapping —
+  the Postgres column is still `date`** — so `substring(local_date, 1, 7)` fails with
+  *"function substring(date, integer, integer) does not exist"*. It fails loudly,
+  which makes it the friendliest member of this family of bugs.
+- **The comparison above needs no cast** because `current_date - 7` is already a
+  `date`; comparing to a `'YYYY-MM-DD'` *string* works too, since Postgres coerces the
+  literal and the comparison is exact for zero-padded ISO.
+- **`null_output_calls` non-zero means a stream that failed before reporting**, which
+  is the `aborted` row on 2026-07-24 here. A ledger row with null tokens is a fact; a
+  request held open for a token count would be a bug.
+
+## 16. The A-D17 consistency check — **expected: 0 rows**
+
+`readings.token_input` / `token_output` **stay**, and `llm_calls` records the same
+call. Two copies of one fact is how they drift, so the check lives beside the schema
+with a stated expected answer — the `onboarding_answers` encryption-audit precedent.
+
+```sql
+select r.id                as reading_id,
+       r.token_input,  c.input_tokens,
+       r.token_output, c.output_tokens
+  from readings r
+  join llm_calls c on c.reading_id = r.id and c.op = 'reading'
+ where r.token_input  is distinct from c.input_tokens
+    or r.token_output is distinct from c.output_tokens;
+```
+
+```
+ reading_id | token_input | input_tokens | token_output | output_tokens
+------------+-------------+--------------+--------------+---------------
+(0 rows)
+```
+
+### **`IS DISTINCT FROM`, NEVER `<>`, AND THE TRAP IS IN THE CHECK ITSELF**
+
+Both columns are nullable and z.ai makes NULL the common case for `input_tokens`.
+`where r.token_input <> c.input_tokens` is **NULL-blind**: it evaluates to NULL
+wherever either side is NULL, NULL is not true, the row is filtered out, and **the
+query returns 0 rows whether or not the ledger agrees with anything.** A check that
+cannot fail is indistinguishable from a check that passes, and the roadmap said only
+*"must return 0 rows"*. R15 is the ruling; this is the demonstration.
+
+**Measured, in a rolled-back transaction, with ONE `NULL vs 0` disagreement injected
+— which is exactly the shape roadmap §12.6 described, a buffered z.ai call storing
+`0` where its streamed twin stored NULL:**
+
+```
+=== IS DISTINCT FROM ===        === the SAME data, with <> ===
+ rows_found                      rows_found
+------------                    ------------
+          1                               0
+```
+
+`c.op = 'reading'` is load-bearing: A2 sets `reading_id` on the **gist** call too
+(R51), and the gist's tokens are its own. Dropping the predicate makes every reading
+look inconsistent.
+
+**And the figure this pair protects is "biaya generasi" — generation cost — not "what
+this reading cost."** The moderation classifier runs *before* the `readings` row
+exists, so it can never carry a `reading_id`; a true per-reading total would need a
+request id threaded through both, which nobody asked for.
+
+## 17. Cost league: tokens per user per model
+
+Roadmap §5.3 renders this as a **table with an inline bar**, not a chart: it has as
+many classes as there are users. Per `(user, model)` for query 15's reason.
+
+```sql
+select coalesce(user_id::text, '(deleted or system)') as user_id,
+       model,
+       count(*)                                        as calls,
+       coalesce(sum(input_tokens),  0)                  as input_tokens,
+       coalesce(sum(output_tokens), 0)                  as output_tokens
+  from llm_calls
+ where created_at >= now() - interval '30 days'
+ group by 1, 2
+ order by output_tokens desc, user_id, model
+ limit 20;
+```
+
+```
+               user_id                |     model     | calls | input_tokens | output_tokens
+--------------------------------------+---------------+-------+--------------+---------------
+ c5f98d79-f2e2-4107-895a-823fd4eff399 | glm-4.6       |    22 |         3819 |          1887
+ 32df3c74-e67e-491f-83b8-a1aa4dbc6e16 | glm-4.6       |     4 |            0 |           446
+ 8e777084-d17e-4f43-bcb0-436c94a1c0c2 | glm-4.6       |     2 |            0 |           394
+ (deleted or system)                  | glm-4.6       |     1 |            0 |           310
+ e2f710e1-f10b-424c-b74d-e4c0e44bbff8 | glm-4.6       |     2 |            0 |           245
+ 8e777084-d17e-4f43-bcb0-436c94a1c0c2 | gpt-5.6-luna  |     1 |         1840 |           190
+ c5f98d79-f2e2-4107-895a-823fd4eff399 | glm-4.5-flash |    11 |            0 |           132
+ e2f710e1-f10b-424c-b74d-e4c0e44bbff8 | glm-4.5-flash |     1 |            0 |            12
+```
+
+- **`(deleted or system)` IS A REAL ROW, NOT A GAP, AND IT MUST NEVER BE DROPPED.**
+  `llm_calls.user_id` is `on delete set null`, so a hard-deleted user's cost history
+  survives with the attribution gone — **the tokens were spent.** The same row appears
+  for a cron-driven repair pass, which never had a querent.
+- **THE DENOMINATOR SHIFTS OVER TIME AND THE PAGE HAS TO SAY SO.** Every hard delete
+  moves history from an attributed row into that one, so a "cost per user" figure
+  falls monotonically with no change in behaviour. **A metric that only ever improves
+  is a metric that gets trusted**, which is the failure worth naming.
+- **R49's unattributed rows land here too.** Three W3 onboarding routes have a real
+  querent and no `withAnalytics` scope, so their `lotus` calls arrive with a NULL
+  `user_id` — accepted for v0.5.0 rather than spending A2's diff on three W3 handlers.
+  This is the query that names them:
+
+```sql
+select op, count(*) as unattributed
+  from llm_calls
+ where user_id is null and created_at >= now() - interval '30 days'
+ group by 1 order by 2 desc;
+```
+
+A `lotus` row in that result is R49; a `translation_repair` row is a genuine
+cron-driven pass with no querent and is correct.
+
+## 18. Ledger size and age — the retention probe, by hand
+
+The sweep logs this **every night** as `[llm_calls] rows= bytes= mb= oldest=`. This is
+the same numbers on demand.
+
+```sql
+select count(*)                                            as rows,
+       pg_total_relation_size('llm_calls')                 as bytes,
+       pg_size_pretty(pg_total_relation_size('llm_calls')) as total_with_indexes,
+       pg_size_pretty(pg_relation_size('llm_calls'))       as heap_only,
+       min(created_at)::text                               as oldest,
+       round((100.0 * pg_total_relation_size('llm_calls') / (0.5 * 1024^3))::numeric, 4)
+                                                           as pct_of_neon_free
+  from llm_calls;
+```
+
+```
+ rows | bytes  | total_with_indexes | heap_only |            oldest            | pct_of_neon_free
+------+--------+--------------------+-----------+------------------------------+------------------
+   44 | 147456 | 144 kB             | 16 kB     | 2026-07-20 11:49:02.51194+00 |           0.0275
+```
+
+- **`pg_total_relation_size`, NOT `pg_relation_size`.** It includes the indexes, and
+  there are five of them; a heap-only figure understates this table. **At 44 rows the
+  ratio is 9×, not the ~2× the retention arithmetic assumes** — every index costs at
+  least a page whether or not it holds anything, so the small-table figure is
+  overhead-dominated and says nothing about the steady state. Both are printed above
+  so nobody reads one for the other.
+- **`LLM_CALLS_RETENTION_DAYS=400`, and the binding input is Neon free's 0.5 GB**, not
+  a row rate that does not exist yet. At ~450 B/row all-in, 400 days at 1,000
+  calls/day is ~400k rows ≈ 180 MB, 36% of the plan; at a realistic early 50/day it is
+  ~9 MB.
+- **400 equals `HISTORY_DAY_LIMIT` and `MAX_RANGE_DAYS` on purpose**, so the dashboard
+  can never offer a range whose data has already been swept — which would look like a
+  bug in the chart rather than like a retention policy.
+- **REVISIT AT 100 MB, or at 25% of the plan's storage, whichever comes first.** The
+  options in order: a shorter window; then dropping `llm_calls_op_created_idx` (query
+  13 is monthly, not per-request); then a daily rollup table for rows older than 90
+  days, which is a v0.6.0 schema and is named here only so nobody invents it in an
+  emergency.
+- **`admin_access_log` HAS NO EQUIVALENT AND MUST NOT ACQUIRE ONE.** An audit trail
+  with a delete path is the audit trail's absence, and a retention policy is a delete
+  path with a timer on it. `/privacy` clause 6's row for it reads *kept indefinitely*.
