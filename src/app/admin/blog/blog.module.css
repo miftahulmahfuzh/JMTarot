@@ -1,0 +1,456 @@
+/*
+ * `/admin/blog`. v0.5.0 / A6.
+ *
+ * **NO NEW HEX, NO NEW FONT SIZE, NO NEW CURVE** (`## Styling`). Everything here is an
+ * existing custom property from `src/theme/tokens.css` or one A4 licensed in
+ * `src/theme/chart.ts`. The one thing this surface needs that the dashboard did not is
+ * a form vocabulary, and it is built from the same three colours.
+ *
+ * DESKTOP-FIRST, like the rest of `/admin` — a two-pane editor read on a laptop, not a
+ * phone. The panes stack below 1100px rather than shrinking, because a 40-character
+ * textarea beside a 40-character preview is two unusable columns.
+ *
+ * **THE STRIP IS MONOSPACE AND IT IS NOT DECORATION** (A6-31). A boundary space is
+ * invisible in a proportional font and load-bearing in the output; `·` marks it and the
+ * monospace is what makes the mark line up with the character it describes.
+ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.h1 {
+  font-family: var(--font-display);
+  font-size: 24px;
+  color: var(--gold);
+  margin: 4px 0 0;
+}
+
+.h2 {
+  font-family: var(--font-display);
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--gold-dim);
+  margin: 20px 0 8px;
+}
+
+.lede,
+.note,
+.empty {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 4px 0 0;
+  max-width: 68ch;
+}
+
+.link {
+  color: var(--gold-dim);
+  font-size: 13px;
+  text-decoration: underline;
+}
+
+.primary {
+  display: inline-flex;
+  align-items: center;
+  /* 44px, the iOS minimum. `PublicShare`'s 36px control is a known defect, not a model. */
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--gold-hairline);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--gold);
+  font-family: var(--font-display);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* ── the list ─────────────────────────────────────────────────────────────── */
+
+/* Wide content scrolls inside its own container; the page body never scrolls. */
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 12px 14px 12px 0;
+  border-bottom: 1px solid var(--gold-hairline);
+}
+
+.table thead th {
+  font-family: var(--font-display);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--label);
+}
+
+.slugCell code {
+  color: var(--gold);
+  font-size: 13px;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.localeCell {
+  min-width: 260px;
+}
+
+.statusCell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--gold-hairline);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.chip[data-status='published'] {
+  color: var(--gold);
+  border-color: var(--gold);
+}
+
+.chip[data-status='unpublished'] {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+/*
+ * A6-22. The row says `published` and the URL 404s, because reachability is DERIVED from
+ * `id` rather than cascaded. Without this label nobody understands why the page 404s.
+ */
+.unreachable {
+  font-size: 11px;
+  color: var(--danger);
+  line-height: 1.4;
+}
+
+.statusButton {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--gold-hairline);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--gold-dim);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.refusal,
+.refusalList {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--danger);
+  margin: 2px 0 0;
+  max-width: 40ch;
+}
+
+.refusalList {
+  padding-left: 16px;
+}
+
+.meta {
+  font-size: 11px;
+  color: var(--label);
+  margin: 0;
+}
+
+.meta[data-lint='error'] {
+  color: var(--danger);
+}
+
+/* ── the editor ───────────────────────────────────────────────────────────── */
+
+.localeTabs {
+  display: flex;
+  gap: 4px;
+}
+
+.tab {
+  padding: 8px 14px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--gold-hairline);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.tab[data-active='true'] {
+  color: var(--gold);
+  border-color: var(--gold);
+}
+
+.twoPane {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+}
+
+@media (min-width: 1100px) {
+  .twoPane {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+.editor,
+.pane {
+  min-width: 0;
+}
+
+.field,
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 14px;
+  min-width: 0;
+}
+
+.inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.label {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--label);
+}
+
+.hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+  max-width: 62ch;
+}
+
+.hint[data-warn='true'] {
+  color: var(--danger);
+}
+
+.input,
+.textarea,
+.small {
+  width: 100%;
+  padding: 10px 12px;
+  min-height: 44px;
+  border: 1px solid var(--gold-hairline);
+  border-radius: 8px;
+  background: var(--bg-panel, transparent);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.small {
+  width: auto;
+  min-width: 100px;
+}
+
+.textarea {
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.blockList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.block {
+  border: 1px solid var(--gold-hairline);
+  border-radius: 10px;
+  padding: 12px 14px;
+  min-width: 0;
+}
+
+.blockHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.kindBadge {
+  font-family: var(--font-display);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gold-dim);
+}
+
+.blockControls,
+.addRow,
+.saveRow,
+.item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.item {
+  align-items: flex-start;
+  flex-direction: column;
+  margin-bottom: 10px;
+}
+
+.blockControls button,
+.addRow button,
+.spanRow button,
+.fields > button {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 10px;
+  border: 1px solid var(--gold-hairline);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.addRow {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--gold-hairline);
+}
+
+.spanRow {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+  min-width: 0;
+}
+
+/* A pair that would render as one word. Marked where it happens, not only in the strip. */
+.spanRow[data-glued='true'] {
+  outline: 1px solid var(--danger);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/*
+ * A6-31. **THE STRIP IS THE DIFF.** Monospace so `·` lines up with the character it
+ * describes, and it wraps rather than scrolling: a boundary space at the end of a long
+ * paragraph is exactly the one nobody would scroll to find.
+ */
+.strip {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px dashed var(--gold-hairline);
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.saveRow {
+  margin-top: 18px;
+}
+
+.ok {
+  color: var(--gold);
+  font-size: 13px;
+}
+
+.warn {
+  color: var(--gold-dim);
+  font-size: 13px;
+}
+
+.bad {
+  color: var(--danger);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.lint {
+  margin-top: 20px;
+}
+
+.lintList {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+.lintList li[data-cls='error'] code {
+  color: var(--danger);
+}
+
+.lintList li[data-cls='warning'] code {
+  color: var(--gold-dim);
+}
+
+.excerpt {
+  color: var(--label);
+}
+
+.preview {
+  border: 1px solid var(--gold-hairline);
+  border-radius: 10px;
+  padding: 18px 20px;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.previewTitle {
+  font-family: var(--font-display);
+  font-size: 20px;
+  color: var(--gold);
+  margin: 0 0 6px;
+}
+
+.previewDesc {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 0 16px;
+}

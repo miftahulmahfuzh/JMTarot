@@ -45,7 +45,27 @@ describe('A-D12 -- no translation machinery anywhere in either tree', () => {
     [/\bgetT\(/, 'getT()'],
     [/\buseT\(/, 'useT()'],
     [/\btFor\(/, 'tFor()'],
-    [/@\/lib\/i18n\//, 'an @/lib/i18n import'],
+    /*
+     * **ONE NAMED EXCEPTION SINCE v0.5.0 / A6: `@/lib/i18n/locale`.**
+     *
+     * A-D12 is about the CATALOG -- ~150 strings in two locales for a surface with one
+     * reader, and `id.ts` owning the key set so every admin string forces an English
+     * twin. `locale.ts` is none of that: it is a LEAF whose only imports are types from
+     * `@/data/**`, it holds no prose, no key set and no `t`, and what it exports is the
+     * two locale CODES and `isLocale`.
+     *
+     * A6's blog surface edits per-locale documents, so it needs to name the locales. The
+     * alternative is a hardcoded `['id', 'en']` under `src/app/admin/**`, which is a
+     * SECOND DEFINITION of `LOCALES` in the tree least likely to be updated when a third
+     * locale lands -- strictly worse than the import.
+     *
+     * **EXCLUDED BY NAME RATHER THAN BY LOOSENING THE PATTERN**, which is
+     * `queries/contract.test.ts`'s move with `client.ts`: `@/lib/i18n/t`,
+     * `@/lib/i18n/catalog`, `@/lib/i18n/locales` and every other specifier still fail,
+     * so a SECOND exception is a test failure and not a shrug. R33 stands -- this grep is
+     * the whole enforcement, and it is narrowed rather than weakened.
+     */
+    [/@\/lib\/i18n\/(?!locale['"])/, 'an @/lib/i18n import other than locale'],
     [/\bLocaleProvider\b/, 'LocaleProvider'],
     [/\bLocaleSwitch\b/, 'LocaleSwitch'],
     [/\bContentLocaleLink\b/, 'ContentLocaleLink'],
@@ -58,6 +78,19 @@ describe('A-D12 -- no translation machinery anywhere in either tree', () => {
       }
     });
   }
+
+  it('keeps the `locale` exception EARNED: nothing else from @/lib/i18n gets in', () => {
+    /*
+     * The exception above is worth having only while it stays one module. This asserts
+     * the shape of every i18n specifier in the tree, so `@/lib/i18n/locales` (the
+     * CATALOGS, one letter apart from the leaf) cannot arrive by autocomplete.
+     */
+    const specs = new Set<string>();
+    for (const f of ALL) {
+      for (const m of code(f).matchAll(/from '(@\/lib\/i18n\/[^']+)'/g)) specs.add(m[1]);
+    }
+    expect([...specs].sort()).toEqual(['@/lib/i18n/locale']);
+  });
 
   it('formats numbers with a hardcoded id-ID, not the shared formatter', () => {
     // I-25. `Intl` is in the platform, so this adds no dependency -- and `@/lib/i18n/format`
