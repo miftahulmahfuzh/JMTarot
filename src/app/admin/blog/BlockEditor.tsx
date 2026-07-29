@@ -323,7 +323,14 @@ function BlockFields({
             </select>
           </label>
           <label className={styles.field}>
-            <span className={styles.label}>{BLOG.editor.articleTitle}</span>
+            {/*
+              **ITS OWN LABEL, NOT `articleTitle`.** At 1440 the heading block read
+              `TINGKAT` / `JUDUL` directly under the document's own `JUDUL` field, and
+              the two are different things — one is the `<h1>` and the `<title>`, the
+              other is an `<h2>` inside the prose. Reusing a label because the word fits
+              is how a form teaches somebody the wrong model of its data.
+            */}
+            <span className={styles.label}>{BLOG.editor.headingText}</span>
             <input
               className={styles.input}
               value={block.text}
@@ -526,12 +533,30 @@ function PhrasingEditor({
                   </option>
                 ))}
               </select>
-              <input
-                className={styles.input}
+              {/*
+                **A `<textarea>`, NOT AN `<input>`, AND A 1440px SCREENSHOT IS WHY.** The
+                launch articles are mostly ONE span per paragraph, three hundred
+                characters long — and a single-line field showed the first sixty of them
+                with the rest scrolled out of sight. The strip below rendered the whole
+                string correctly the entire time, which is exactly the shape of defect
+                only a look can find: nothing was wrong, and the control was unusable.
+                Two rows, growing, `overflow-wrap` from the shared style.
+
+                **NEWLINES ARE STRIPPED ON THE WAY IN.** A `text` span is a run of words
+                and the union has no line-break kind; a newline pasted here renders as
+                one space in HTML while sitting in the stored JSON as `\n` — so
+                `plainText()` and the rendered page would disagree about a string the
+                copy lint reads, which is the one guarantee R16 granted `Inline[]` on.
+              */}
+              <textarea
+                className={styles.spanText}
+                rows={2}
                 value={span.text}
                 onChange={(e) =>
                   onChange(
-                    spans.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)),
+                    spans.map((x, j) =>
+                      j === i ? { ...x, text: e.target.value.replace(/[\r\n]+/g, ' ') } : x,
+                    ),
                   )
                 }
               />

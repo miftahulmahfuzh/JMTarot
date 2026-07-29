@@ -5605,6 +5605,356 @@ than an exception to it.
 8. **Nobody has read the fourteen sections on a phone.** The tables scroll inside themselves at 320
    by measurement, which is not the same claim as "an operator can use this on a phone".
 
+
+## The blog CMS (A6), v0.5.0
+
+Plan: `docs/plans/2026-07-30-blog-cms.md`, 26 tasks. **The reconciliation outranks it and
+nine of its rulings bind A6** — R6, R39, R40, R41, R42, R43, R44, R45 and R46. Task 26,
+the deletion of `src/content/blog/**`, is **deliberately not done**: the plan gates it on
+the import having run in production, and nothing here has been deployed.
+
+### The acceptance test, run: byte-identical on all six URLs and on the sitemap
+
+§13.3 layer 3 is *"`curl` before and after… an empty diff on all six is the workstream's
+done condition"*, and it is the cheap one. Both captures are **production builds** —
+`npm run build` then `npx next start -p 3001` — because a dev server injects HMR script
+tags that differ per boot and would make the diff meaningless.
+
+```
+before/  captured at HEAD~5, files still the source
+after/   captured after the rewire, rows the source
+
+IDENTICAL  /blog                        IDENTICAL  /en/blog
+IDENTICAL  /blog/what-tarot-is          IDENTICAL  /en/blog/what-tarot-is
+IDENTICAL  /blog/how-to-read-tarot      IDENTICAL  /en/blog/how-to-read-tarot
+IDENTICAL  /sitemap.xml
+```
+
+The sitemap being in that list is worth as much as the six pages: it means the four
+article URLs, their `hreflang` sets and their `lastModified` all came out the same from a
+query as they did from a committed array. `lastModified` matching is not luck —
+`scripts/blog-import.ts` writes the committed `2026-07-29` rather than the clock (A6-33),
+which is also what keeps `dateModified` from telling every crawler that four articles
+changed on migration day.
+
+### `jsonb` REORDERS KEYS, so the four committed hashes cannot be a row-level oracle
+
+**The obvious form of §13.3 layer 2 is to hash `[title, description, hero, body]` off the
+row and compare against `fd66e5580bbb` and its three siblings. Run that way it fails on
+all four — including three documents that were never touched by anything.**
+
+```
+what-tarot-is.id      row=4656c4f51eb1  committed=fd66e5580bbb  *** DIFFERS ***
+what-tarot-is.en      row=cf2d135c94b8  committed=79b11b6ed3d9  *** DIFFERS ***
+how-to-read-tarot.id  row=3cc24c5f1f35  committed=dd979b02e6e4  *** DIFFERS ***
+how-to-read-tarot.en  row=3550d555025f  committed=9063906f8f97  *** DIFFERS ***
+```
+
+`jsonb` is not text. Postgres parses it, **normalises object key order** (by key length,
+then bytewise), drops duplicate keys and canonicalises numbers — so
+`JSON.stringify(row.body)` is a different STRING from `JSON.stringify(doc.body)` while
+being the same VALUE. Deep equality, checked the same afternoon against the same rows,
+holds on all four:
+
+```
+what-tarot-is.id      DEEP-EQUAL     how-to-read-tarot.id  DEEP-EQUAL
+what-tarot-is.en      DEEP-EQUAL     how-to-read-tarot.en  DEEP-EQUAL
+```
+
+**This is why layer 1 is a UNIT test over the transform, with no database on its path,
+and layer 2 is `toEqual`.** It is recorded because the hash is the obvious thing to reach
+for, it fails, and what somebody concludes from a failing oracle is that the migration
+was lossy. It was not — layer 3 proves the render is byte-identical, and `Prose` reads
+fields by name. `blog.oracle.integration.test.ts` carries the warning in its header: a
+future check over `body` must canonicalise key order first, at which point it is a slower
+`toEqual`.
+
+### The sitemap was STATIC, and the build had baked the article list into it
+
+**The largest defect A6 found, and it is in nobody's plan.** `npm run build` printed
+`○ /sitemap.xml` after the file grew a database read: a `sitemap.ts` with no async work is
+a static route, and Next kept prerendering it. The build ran the query and wrote
+fifty-six URLs into `.next/server/app/sitemap.xml.body`.
+
+```
+$ grep -o "blog/[a-z-]*" .next/server/app/sitemap.xml.body | sort -u
+blog/how-to-read-tarot
+blog/what-tarot-is
+$ grep -c "<loc>" .next/server/app/sitemap.xml.body
+56
+```
+
+So an article published through the editor would not have appeared in `sitemap.xml` until
+the next deploy — **precisely the failure R41 identified in the other direction**
+(*"the build-time slug closure is exactly what would prevent publishing without a
+deploy"*), arriving through a route the reconciliation examined only for its LEAF rule.
+It would have looked like everything working: the article's own URL 200s, both indexes
+list it, `hreflang` is right, and only the crawler's entry point is a release behind. On
+Vercel it is worse than stale — the build has `DATABASE_URL`, so it would have frozen
+PRODUCTION's article set at deploy time and kept serving it.
+
+`export const dynamic = 'force-dynamic'` in `sitemap.ts`. **`ƒ` in the build output is the
+symptom of it working**, exactly as `## Localization` rule 5 says of the root layout.
+
+### `AND` does not short-circuit in SQL, and the guard that looked like one did not guard
+
+`A6-6`'s predicate needs *"published AND has a body"*, and `jsonb_array_length` raises
+`22023 cannot get array length of a non-array`. The obvious spelling is:
+
+```sql
+jsonb_typeof(body) = 'array' and jsonb_array_length(body) > 0
+```
+
+**It does not work.** SQL does not promise left-to-right evaluation of `AND` operands, and
+the planner evaluated the length first. The integration case written to prove a non-array
+body is invisible failed with exactly the error it was defending against, from the query
+that was supposed to be defended:
+
+```
+PostgresError: cannot get array length of a non-array
+  code: 22023  routine: jsonb_array_length
+  at publishedArticles src/lib/db/queries/blog.ts:115
+```
+
+**A `CASE` expression is the one construct Postgres guarantees short-circuits** — only the
+selected branch is evaluated, and the documentation says so while warning that `AND` and
+`OR` do not. Same class as R15's `IS DISTINCT FROM` and the `moderation_flags` partial
+index: the obvious spelling is silently wrong, except that this one is loudly wrong on
+exactly the row it was written for.
+
+### `$onUpdate()` FIRES inside `onConflictDoUpdate` on drizzle-orm 0.45.2
+
+CLAUDE.md states the opposite in capitals, and `schema.ts` repeats it at `translations`
+and at `personas`. **Measured 2026-07-30 by printing `.toSQL()`, with the by-hand
+`updatedAt` line deleted:**
+
+```
+insert into "blog_post_locales" (…) values (…)
+  on conflict ("post_id","locale") do update set "title" = $7, "updated_at" = $8
+
+insert into "translations" (…) on conflict (…) do update set "body" = $9, "updated_at" = $10
+insert into "personas"     (…) on conflict (…) do update set "body" = $7, "updated_at" = $8
+```
+
+All three emit the column with no by-hand line. **So the freeze test's negative control
+PASSED with the line removed** — the same shape of defect A5 reported one workstream ago:
+*an instrument that cannot distinguish two causes proves neither.* The test's claim about
+itself was corrected rather than the test deleted, and a second case now reads the emitted
+SQL — an honest, weaker fence that fails only if BOTH mechanisms go, which is the
+combination that actually freezes the column.
+
+**The by-hand line stays**, for reasons that do not depend on the library: three PUBLIC
+claims rest on this column (`BlogPosting.dateModified`, `sitemap.xml`'s per-URL
+`lastModified`, and V2's `translations.updated_at < source.updated_at` staleness, which
+has **no `source_hash` column** behind it), and none of them should rest on an
+undocumented behaviour of a pinned dependency. An explicit value in the `set` also WINS
+over `$onUpdate`, which the import script depends on: it writes `2026-07-29`, twice, and
+the row still says `2026-07-29`.
+
+**Amending CLAUDE.md's trap is the reconciliation's, not A6's** (§9.12, non-negotiable 12).
+
+### R39's arithmetic is one entry out: fifty-six URLs, fifty-two from pure leaves
+
+R39 says *"a sitemap that 500s costs the crawl of 54 URLs"* and *"50 of which come from
+pure leaves"*. Counted: `/` + `/en`, `/terms`, `/privacy`, `/gallery` ×2, `/blog` ×2 and
+44 lore pages is **52**, and the two articles in two locales bring the file to **56**. The
+ruling is unaffected — the point was always the ratio — but the number appears in three
+places and `sitemap.test.ts` is the one with an assertion behind it.
+
+### The lint reports eight warnings on prose that is live in production
+
+Every hero `alt` in the four committed documents is the bare card name — `The World`,
+`The Hermit`, `The High Priestess` twice. `LoreDoc.imageAlt`'s rule says why that is
+wrong: the name is already in the `<h1>`, the prose and the fact strip, and a fourth copy
+is noise to a screen reader and to a crawler.
+
+```
+[warning] hero-pair hero: "alt is 9 chars"                — The World
+[warning] hero-pair hero: "alt opens with the card name"  — The World
+… ×4 documents
+```
+
+**Zero errors**, so `scripts/blog-import.ts` accepts all four and the sweep's nightly pass
+stays quiet. What it costs is stated rather than worked around: **re-publishing one of
+these after an unpublish asks the operator to write a real `alt` first**, because the
+publish gate takes both classes (A6-17). That is the gate doing its job, not a
+mis-calibration — and the alt cannot be fixed in `src/content/blog/**` without changing
+the four committed hashes, which are the migration oracle.
+
+### R44 in practice: `word-floor` is a launch rule, and the plan had it in both sets
+
+§6.2's table lists `word-floor` as a warning binding every row; R44 lists it among *"facts
+about the two committed articles"*. **The reconciliation outranks the plan and the
+reconciliation is right**: a warning refuses a publish, so a 600-word article about one
+card would be unpublishable forever. It is in `LAUNCH_ARTICLE_RULES` with the three
+orientation anchors, and `rulesFor(slug)` is the only place the two slugs are named.
+
+**The divergence proof cannot be a lint rule at all** and A6-15 half-noticed it: it is a
+predicate over TWO documents and `lintDocument` sees one. It is `divergenceAdvisory()` —
+surfaced, never blocking, because the `en` document is legitimately empty for an hour —
+and a hard assertion over the launch pair in the integration suite.
+
+### The tic matcher got stricter, and that was measured before it changed
+
+`lint.ts` matches `EN_TICS` **unbounded** (`blog.content.test.ts`'s form, kept exactly),
+while `lore.test.ts` used a word-bounded matcher. Repointing lore at the shared function
+therefore strengthened it. Run over all 44 lore documents in both locales before the
+switch: **zero hits.** Recorded because a future failure there will look like the lint
+being wrong rather than like the prose drifting.
+
+### Three fences pushed back, all correctly, and one that walked into its own trap
+
+1. **`contentLocale.contract.test.ts` caught `badPath()` spelling `'/en/'`.** The segment
+   is fenced to `prefix.ts` and `alternates.ts`. `badPath` now calls
+   `stripLocalePrefix()` — the same call `contentAlternates()` makes — so the lint and the
+   canonical builder answer *"is this prefixed"* identically by construction.
+2. **`adminCopy.test.ts` bans every `@/lib/i18n/` import** and A6 needs the locale CODES.
+   `locale.ts` is a leaf with no catalog, no key set and no `t`; the alternative is a
+   hardcoded `['id','en']` in the tree least likely to be updated when a third locale
+   lands. Excluded BY NAME, plus a case asserting the exception stays one module so
+   `@/lib/i18n/locales` cannot arrive by autocomplete. R33 stands: narrowed, not weakened.
+3. **A5's `page.contract.test.ts` asserted `ROUTES.length === 4`.** Its rules are the
+   `/api/admin/**` SURFACE's rather than A5's and correctly bind A6's two new routes, so
+   the count is replaced by the list — strictly stronger, and an unowned seventh route now
+   fails loudly, which is R21's whole lesson.
+
+And the one that did not: `admin.blog.contract.test.ts`'s first draft grepped
+`/\bhapus\b/i` for a delete control and **fired on `copy.ts`'s own `noDelete` line** —
+the sentence that exists BECAUSE of the no-delete rule. Comment stripping does not help a
+string literal. Its header names that trap three paragraphs above the assertion that fell
+into it, which is worth leaving on the record: **a fence over prose fires on the prose
+that explains the fence.** It greps for an identifier now.
+
+### The preview cannot be live, and A6-32 did not notice why
+
+A6-32 reasons only about hrefs: `Prose` calls `getLocale()` itself, so an `en` document
+previewed by an Indonesian-locale admin shows `/arcana/the-moon` where the live page shows
+`/en/arcana/the-moon`. **That is accepted unchanged and the line of admin copy saying so
+is on screen.**
+
+What the plan missed is that **`Prose` is a SERVER component and the block editor is a
+client one** — it imports `@/lib/i18n/t`, which `clientBoundary.test.ts` calls the thing
+that makes the content fence permanent. A client editor cannot hand it live state.
+Options and the choice:
+
+1. **Render the SAVED row through the real `Prose`, server-side.** One save behind while
+   typing. **Chosen.**
+2. Reimplement the renderer client-side. A second definition of the component A6-35's
+   whole byte-identity argument rests on being single — *"checkable precisely because
+   `Prose.tsx` is unchanged"*.
+3. A preview endpoint returning HTML. `dangerouslySetInnerHTML` on an admin page, which
+   A-D10's CSP argument refuses on prose we wrote.
+
+What the preview is FOR survives option 1: the structure, the emphasis, the list semantics
+and the span joining are exactly what will ship. The span strip (A6-31) covers the one
+thing that must be immediate.
+
+### Loop 3 at 1440, and the two defects only a look could find
+
+Roadmap §0.5 assigns loop 3 to A4 and does not extend it to A6's editor; §17 claims it,
+and it earned the claim. The instrument was **loop 5 at `--width 1440`** rather than
+`tools/shot.sh`, because `/admin` needs a session — `innerWidth` measured 1440 on a fresh
+launch, and a dev session was planted through `POST /api/auth/dev-session`.
+
+1. **A three-hundred-character span in a sixty-character `<input>`.** The launch articles
+   are mostly one span per paragraph; the field showed the first sixty characters with the
+   rest scrolled out. **The strip below was rendering the whole string correctly the entire
+   time**, which is exactly the shape of defect only a look finds: nothing was wrong, and
+   the control was unusable. It is a two-row `<textarea>` now, with newlines stripped on
+   the way in — a `\n` in a span renders as one space in HTML while sitting in the JSON,
+   so `plainText()` and the rendered page would disagree about a string the copy lint
+   reads, which is the guarantee R16 granted `Inline[]` on.
+2. **`JUDUL` labelled both the document title and a heading block's text**, one under the
+   other. Reusing a label because the word fits is how a form teaches somebody the wrong
+   model of its data.
+
+### Loop 4: `blogfit.sh` reproduces S6's numbers to the pixel
+
+§17: *"it is the only loop that can prove the rewire changed nothing about the rendered
+measure — `contentPx` and `chars` are a function of the container and the font, never of
+the content, so identical numbers across the four documents is the assertion."* Sixteen
+measurements against DB-backed articles, unchanged script:
+
+```
+  w   contentPx  chars   chWidth   identical across all four documents?
+ 320     288       32      9.06     YES
+ 360     328       36      9.06     YES
+ 375     343       38      9.06     YES
+ 390     358       40      9.06     YES
+
+ overflow false, offenders [], tocDead [], proseDead [] in all sixteen.
+ smallTargets = 1 everywhere: PublicShare's 36px button. Known defect, unchanged.
+ pageH 12524 at 320 for how-to.id.
+```
+
+**Every one of those numbers is byte-for-byte what S6 recorded before the rewire** — the
+table two sections up in this file, including the 12524. That is a stronger result than
+the assertion asked for: not merely internally consistent, but identical to a measurement
+taken against committed files by a different workstream. `chars` 32 against the 45–75
+guideline is S6 F4's arithmetic and is not A6's to fix.
+
+### Loop 5: the editor's POST agrees with what the editor shows
+
+The technique's home ground — patch the page's `fetch`, click *Simpan*, diff the body
+against the DOM:
+
+```
+sentTitle   "Apa Itu Tarot: Mitos, Fakta, dan Manfaatnya"
+uiTitle     "Apa Itu Tarot: Mitos, Fakta, dan Manfaatnya"   titleMatches true
+sentBlocks  34    uiBlocks 34    blocksMatch true
+sentSlug    what-tarot-is    sentLocale id    firstBlockKind heading
+hero        { cardUrlSlug: "the-world", alt: "The World" }
+```
+
+And the round trip is lossless: the row saved **through the editor** is still deep-equal
+to the committed document, alongside the three that were not.
+
+### Nine deviations, each with its reason
+
+1. **Task 26 is not done.** The plan gates it on the production import; nothing is
+   deployed. `src/content/blog/**`, `blog.import.test.ts`, `scripts/blog-import.ts` and
+   its `package.json` line all survive, and §15's DELETED list is the checklist.
+2. **`word-floor` is a launch rule, not a universal warning** — R44 over §6.2. Above.
+3. **The divergence proof is an advisory function, not a lint rule** — it is a pair
+   predicate. Above.
+4. **`dead-anchor` is a rule the plan did not list.** `blog.content.test.ts` had the case
+   (*"points every in-page anchor at a heading in the same document"*) and §6.2's table
+   dropped it; it resolves inside the document, so it belongs to the lint rather than to
+   `blogResolve.ts`.
+5. **`blogResolve.ts` is a module §15 does not name.** `bare-path`'s resolution half needs
+   `@/data/deck`, which `lint.ts` may not import (A6-3). Putting it in the route handler
+   as §7 suggests would have left `scripts/blog-import.ts` and the sweep unable to ask the
+   same question.
+6. **`blogSave.ts` is a module §15 does not name either.** A5's `reveal.ts` precedent: task
+   9's acceptance is *"422 **and stores nothing**"*, which only a database can check.
+7. **The status control is a server action, not the API route.** §11.4 requires it to work
+   with JavaScript off and a plain form cannot POST to a JSON route. Both call
+   `changeStatus()`.
+8. **The admin list is not paged.** Two articles. A5-13's ceiling logic in reverse;
+   revisit past ~50.
+9. **The preview is one save behind.** Above.
+
+### Still open
+
+1. **Task 26, and it is a real dependency rather than a deferral.** The import must run in
+   production first (`npm run blog:import`), and the deletion commit must check §6.5's two
+   cases by name — `doc.test.ts`'s joining assertion and `lint.test.ts`'s adjacency case.
+   **If either is missing, R16 says revert `paragraph.text` to `text: string`.**
+2. **Nobody has used this editor to write an article.** It has been driven — a save
+   round-tripped 34 blocks losslessly — but writing two thousand words through a span row
+   list is a different claim, and it is the one the workstream exists for.
+3. **The four hero `alt`s are wrong and cannot be fixed before task 26.** Changing them
+   changes the committed hashes, which are the oracle. Fix them through the editor after
+   the import, which is exactly the workflow this release is for.
+4. **`ContentLocaleLink`'s `locales` prop is unexercised on a one-locale article** in a
+   browser. R45 asks §10.2's crawl list to gain such an article; there is none to add
+   until somebody writes one.
+5. **The sweep's blog-lint pass has never run against production rows.** It is exercised
+   by `blog.published.integration.test.ts` against seeded ones.
+6. **No RSS, no per-article `lastmod` in `robots.txt`, no redirect table.** A published
+   slug is permanent (A6-30) and the editor says so; the day one has to change, the
+   redirect table is the missing piece.
+
 ---
 
 ---

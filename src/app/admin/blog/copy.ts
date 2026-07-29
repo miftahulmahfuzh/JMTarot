@@ -77,6 +77,8 @@ export const BLOG = {
     slugHint: 'Huruf kecil dan tanda hubung. Sama di kedua bahasa, dan dalam bahasa Inggris.',
     localeTab: (l: string) => (l === 'id' ? 'Bahasa Indonesia' : 'English'),
     articleTitle: 'Judul',
+    /** The heading BLOCK's own text. Not the document's title — see `BlockFields`. */
+    headingText: 'Teks judul bagian',
     description: 'Deskripsi (meta)',
     chars: (n: number) => `${n} karakter`,
     heroCard: 'Gambar utama',

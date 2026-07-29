@@ -283,9 +283,29 @@
   min-width: 100px;
 }
 
-.textarea {
+.textarea,
+.spanText {
   line-height: 1.6;
   resize: vertical;
+}
+
+/*
+ * The span's own text field. **A TEXTAREA BECAUSE A 1440px SCREENSHOT SHOWED A
+ * THREE-HUNDRED-CHARACTER SPAN IN A SIXTY-CHARACTER SLOT** — the strip below it was
+ * rendering the whole string the entire time, which is why nothing looked wrong.
+ * `flex: 1` so it takes the row's spare width beside the kind picker and the remove
+ * button.
+ */
+.spanText {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--gold-hairline);
+  border-radius: 8px;
+  background: var(--bg-panel, transparent);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
 }
 
 .blockList {
@@ -360,7 +380,7 @@
 .spanRow {
   display: flex;
   gap: 6px;
-  align-items: center;
+  align-items: flex-start;
   margin-bottom: 6px;
   min-width: 0;
 }
