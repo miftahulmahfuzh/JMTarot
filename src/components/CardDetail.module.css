@@ -150,3 +150,35 @@
   color: var(--button-text);
   border-color: var(--gold-border);
 }
+
+/*
+ * S3. The catalogue variant: both glosses, each labelled.
+ *
+ * ONE CSS BLOCK FOR BOTH LINES, WHICH IS WHY `bothMeanings` IS A PROP HERE RATHER
+ * THAN TWO PARAGRAPHS PASSED AS `children`. Rendering the upright line from this
+ * file and the reversed one from `GalleryGrid` would put two copies of
+ * `.meaning`'s type treatment in two stylesheets, and the first person to adjust
+ * the italic in one of them would leave the sheet with two registers in it.
+ */
+.meanings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/*
+ * `font-style: normal` IS THE LOAD-BEARING LINE. `.meaning` is italic Cormorant,
+ * and a small-caps label in italic reads as the first clause of the sentence
+ * rather than as a label on it -- which on a reversed gloss is exactly the
+ * ambiguity the label was added to remove.
+ */
+.orientation {
+  display: block;
+  margin-bottom: 3px;
+  font-family: var(--font-display), serif;
+  font-style: normal;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-slot-label);
+  text-transform: uppercase;
+  color: var(--label);
+}
