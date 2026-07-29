@@ -71,6 +71,13 @@
       "when": 1785314273600,
       "tag": "0009_v12-admin-access-log",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785317432775,
+      "tag": "0010_v12-llm-calls",
+      "breakpoints": true
     }
   ]
 }

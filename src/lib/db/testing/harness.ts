@@ -84,13 +84,17 @@ export async function withRollback(fn: (tx: Tx) => Promise<void>): Promise<void>
  * requirement -- that somebody owns the line -- is discharged by this paragraph
  * naming them.** A1 owns the list; the two owed entries are named here so that
  * "was it forgotten?" is answerable without reading a reconciliation.
+ *
+ * **`llm_calls` PAID ITS ENTRY IN A2's MIGRATION COMMIT (`0010`), exactly as the
+ * paragraph above asked.** One of the two owed entries is now discharged; A6's
+ * `blog_posts` / `blog_post_locales` remain owed, in `0011`'s commit.
  */
 export async function resetDb(): Promise<void> {
   await testDb.execute(sql`
     TRUNCATE TABLE users, profiles, onboarding_answers, lotus_avatars,
                    readings, reading_cards, events, daily_summaries,
                    moderation_flags, frequency_verdicts, translations,
-                   share_links, personas, admin_access_log
+                   share_links, personas, admin_access_log, llm_calls
     RESTART IDENTITY CASCADE`);
 }
 

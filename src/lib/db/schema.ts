@@ -1099,6 +1099,168 @@ export const adminAccessLog = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// llm_calls  (v0.5.0 / A2, roadmap §3.2 with amendments A2-D4 and A2-D6)
+// ---------------------------------------------------------------------------
+
+/**
+ * ONE ROW PER MODEL CALL. The fact table v0.5.0 exists for.
+ *
+ * Before A2 this application made nine distinct LLM calls and recorded the token
+ * cost of exactly one of them: `/api/reading` threaded `usage` into
+ * `readings.token_input` / `token_output` and the other eight destructured it away.
+ * Until this table existed there was no answer to *"what does a user cost"*, which
+ * is the question a public release starts asking every day -- and no answer to
+ * *"which user burned the rolling five-hour window"*, which is the one that precedes
+ * a key revocation.
+ *
+ * **IT IS NOT `events`, AND THE REASONS ARE STRUCTURAL** (A-D4). `events.props` is
+ * `jsonb` behind `sanitizeProps()`, which drops non-scalars, caps at 24 keys and
+ * truncates strings to 120 characters -- so `sum((props->>'token_input')::int)` over
+ * millions of rows is a cast per row on an unindexed field. `events.user_id` is
+ * `on delete set null` because events survive erasure, and that bargain is only
+ * honest because props are provably scalar. And `events.name` is a closed 70-name
+ * taxonomy people read as a data dictionary; a row per model call is not an event in
+ * that sense, it is a fact. **A-D18 dropped `llm.call_recorded` for the same reason:
+ * a fact table and an event stream recording the same fact is how they drift.**
+ *
+ * **THERE IS NO `cost_usd` COLUMN AND THERE MUST NOT BE** (A-D7). It would be a lie
+ * the day a price changed, and back-filling it would rewrite history. Tokens and the
+ * resolved model are the facts; `src/lib/llm/prices.ts` is a committed, versioned,
+ * zero-import price table read at query time, and **an unknown model prices as
+ * `null`, never as zero** -- a zero silently understates the bill where a null shows
+ * up on screen as "unpriced" and gets fixed.
+ *
+ * **NO `updated_at`.** A ledger row is a fact about a moment. The column would
+ * invite an update, and `$onUpdate()` not firing inside `onConflictDoUpdate` is a
+ * trap this table has no reason to be anywhere near.
+ *
+ * **THE DUPLICATION WITH `readings.token_input` / `token_output` IS DELIBERATE**
+ * (A-D17). Those columns are read by `docs/analytics-queries.md` and by the
+ * `reading.completed` event; removing them is a destructive migration for no gain.
+ * `reading_cards.user_id` and `readings.shared_at` are the precedents. The
+ * consistency check between them lives in `docs/analytics-queries.md` and **must use
+ * `IS DISTINCT FROM`** (R15): both sides are nullable and `a <> b` is NULL rather
+ * than true when either is, so a `<>` spelling returns zero rows unconditionally and
+ * is indistinguishable from a passing check.
+ */
+export const llmCalls = pgTable(
+  'llm_calls',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /**
+     * NULL for a call with no querent behind it -- a cron-driven repair pass -- and
+     * also, in v0.5.0, for the three W3 onboarding routes that have a real querent
+     * and no `withAnalytics` scope (reconciliation R49 accepted that gap rather than
+     * spending A2's diff on three W3 handlers). `docs/analytics-queries.md` carries
+     * the query that names it.
+     */
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    /**
+     * `op: 'reading'` and `op: 'gist'` only, and the second half is R51's doing:
+     * **a per-reading TOTAL including moderation is not achievable**, because the
+     * classifier runs before the `readings` row exists and can never carry this.
+     * The figure on screen is therefore "generation cost", not "this reading's cost".
+     */
+    readingId: uuid('reading_id').references(() => readings.id, { onDelete: 'set null' }),
+    /**
+     * WHICH CALL THIS WAS. Bare `text`, per this file's rule: **A2 owns the value
+     * set** and exports it as `LLMOp` from the import-free `@/lib/llm/types`, so
+     * narrowing it here would make schema.ts depend on a module that depends on
+     * schema.ts -- the `events.name` / `frequency_verdicts.window_key` precedent.
+     *
+     *   `reading` | `moderation` | `gist` | `day_summary` | `frequency`
+     *   `lotus` | `persona` | `translation` | `translation_repair`
+     *
+     * **NINE VALUES, CLOSED.** A3 groups by this column and must not invent a tenth
+     * or an alias (roadmap seam 3); `callClass.test.ts` makes that mechanical.
+     */
+    op: text('op').notNull(),
+    /**
+     * The RESOLVED model string, never an env var name. `MODERATION_MODEL`,
+     * `LOTUS_MODEL`, `PERSONA_MODEL` and `TRANSLATION_MODEL` land here as whatever
+     * they resolved to, because pricing is keyed on the model that ran.
+     */
+    model: text('model').notNull(),
+    /** `'interactive' | 'deferred'`, mirroring `CallClass`. Bare, same rule as `op`. */
+    callClass: text('call_class').notNull(),
+    /** No default: the caller knows, and a default would let a site not say. */
+    streamed: boolean('streamed').notNull(),
+    /**
+     * **NULL, NEVER 0, WHEN THE PROVIDER REPORTS NOTHING** -- on the buffered path
+     * too, which is what A2-D5 fixed in `anthropic.ts`. z.ai reports
+     * `input_tokens: 0`, and a literal zero here is indistinguishable from a real
+     * zero in a dump and makes every average silently wrong.
+     */
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    /**
+     * **`total_ms`, AND IT TIMES THE CALL RATHER THAN THE REQUEST** (A2-D4,
+     * reconciliation R5). `readings.latency_ms` is time to FIRST TOKEN; two columns
+     * named `latency_ms` meaning two different measurements in one schema is the
+     * trap, and `reading.completed` already distinguishes the two words. Six of the
+     * nine ops are buffered and have no TTFT at all.
+     *
+     * For `op: 'reading'` it is measured from a timestamp taken immediately above
+     * `gateReading`, **not** from `outcome.totalMs`, which starts at the top of the
+     * handler and includes four budget round trips plus the classifier. **Expect
+     * `llm_calls.total_ms < reading.completed.total_ms` for the same reading, and A3
+     * must NOT reconcile them** -- they are honest about two different subjects.
+     */
+    totalMs: integer('total_ms'),
+    /**
+     * `'ok' | 'partial' | 'failed' | 'aborted'` -- `tee.ts`'s vocabulary verbatim.
+     * Bare, same rule as `op`.
+     *
+     * **`'refused'` WAS IN ROADMAP §3.2 AND IS STRUCK** (A2-D6, reconciliation R4).
+     * A `reserveModelCall()` refusal never reaches a provider, so there is no call
+     * to record -- and a row for it would destroy `count(*)` as "calls made", which
+     * is the quantity `LLM_WINDOW_CALL_CEILING=280` is expressed in and the one A3's
+     * meter reconstructs. Every A3 query would need `where status <> 'refused'` and
+     * the first to forget it under-reports headroom. The refusal is already recorded
+     * by `llm.ceiling_reached`, with a user id and a tier.
+     */
+    status: text('status').notNull(),
+    /**
+     * `classifyStreamError()`'s output: `aborted`, `timeout`, `connect`,
+     * `disconnected`, `upstream_5xx`, `upstream_429`, `upstream_4xx`, `unknown`.
+     *
+     * **NEVER A MESSAGE AND NEVER A DRIVER ERROR.** An `error_kind` with unbounded
+     * cardinality makes every `group by` useless, and a message can carry a URL, a
+     * prompt fragment or a key.
+     */
+    errorKind: text('error_kind'),
+    locale: text('locale').$type<Locale>(),
+    /**
+     * **THE QUERENT'S CALENDAR DAY, sent by the client, never recomputed from
+     * `created_at`** -- the Jakarta trap, which is why `dateCol` is a string. For a
+     * call with no querent it is the UTC date, so **a fleet-wide daily bucket over
+     * this column sums two calendar systems** and R25 requires A3 to say so on
+     * screen rather than leave it to be discovered.
+     */
+    localDate: dateCol('local_date').notNull(),
+    createdAt: tsCol('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    /** The fleet time series, and the `where created_at > now() - interval '5 hours'`
+     *  reconstruction of the rolling window Redis holds. */
+    index('llm_calls_created_idx').on(t.createdAt.desc()),
+    /** A5's per-user cost page. */
+    index('llm_calls_user_created_idx').on(t.userId, t.createdAt.desc()),
+    /** Cost by purpose -- the whole reason `op` exists. */
+    index('llm_calls_op_created_idx').on(t.op, t.createdAt.desc()),
+    /** The day bucket A3 groups on. */
+    index('llm_calls_local_date_idx').on(t.localDate),
+    /**
+     * **AN FK IS NOT AN INDEX AND POSTGRES WILL NOT MAKE ONE FOR YOU.** The
+     * `reading_cards_reading_idx` lesson: without it, the referential action
+     * performs one sequential scan PER deleted parent row. `set null` scans exactly
+     * as `cascade` does.
+     */
+    index('llm_calls_reading_idx').on(t.readingId),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Row types
 //
 // `X` is what a select returns; `NewX` is what an insert accepts (columns with
@@ -1138,3 +1300,5 @@ export type NewPersona = typeof personas.$inferInsert;
  *  say which of the two it means. */
 export type AdminAccessLogRow = typeof adminAccessLog.$inferSelect;
 export type NewAdminAccessLogRow = typeof adminAccessLog.$inferInsert;
+export type LlmCall = typeof llmCalls.$inferSelect;
+export type NewLlmCall = typeof llmCalls.$inferInsert;
