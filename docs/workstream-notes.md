@@ -4785,6 +4785,219 @@ onboarding handlers (R49), W5's `track()` call (R18), `events.ts` (A-D18 dropped
 7. **`llm_calls` has no retention policy yet.** A3's, in the sweep, at
    `LLM_CALLS_RETENTION_DAYS=400` (R19). **Never `admin_access_log`.**
 
+## Aggregation, trajectory, and the query layer (A3), v0.5.0
+
+**A3 renders nothing and owns no route.** It is the read layer between A2's fact table and
+A4's charts: bucketing, aggregates over an arbitrary range, per-user rollups, a forecast, a
+retention policy, and six queries an operator runs by hand. Eleven tasks, all landed.
+
+```
+src/lib/analytics/series.ts         PURE, ZERO imports. Bucket keys, day enumeration,
+                                    zero-fill, MAX_RANGE_DAYS, isUsableRange.
+src/lib/analytics/forecast.ts       PURE. OLS, T95, the prediction band, crossing().
+src/lib/analytics/rollup.ts         PURE. OP_ORDER, foldOps, priceRollup, periodDelta,
+                                    meanCallsPerDay, burstiness, dailyEquivalentCeiling.
+src/lib/db/queries/admin/timeout.ts withAdminRead + the three numbers.
+src/lib/db/queries/admin/metrics.ts M1-M10, fleet-wide.
+src/lib/db/queries/admin/users.ts   M11-M13 + adminUserById/adminUserList (R29).
+src/lib/db/queries/admin/rollup.ts  fleetRollup -- the composite, eight statements.
+src/app/api/cron/sweep/route.ts     EDITED: a fifth delete and a nightly size probe.
+docs/analytics-queries.md           EDITED: queries 13-18, and query 9 corrected.
+.env.example                        EDITED: LLM_CALLS_RETENTION_DAYS, handed over by A1.
+```
+
+### The five things measured here that contradicted something written down
+
+**1. postgres.js NEVER ISSUES `RELEASE SAVEPOINT`, and that made `withAdminRead` leak.**
+`scope()` in `node_modules/postgres/src/index.js` emits `savepoint sN` and, on the error
+path only, `rollback to sN`. On success it simply returns. So a `SET LOCAL` made inside a
+**nested** Drizzle transaction persists to the end of the OUTER transaction — and the
+integration suite is one big rolled-back transaction, so it went read-only after its first
+admin read and failed with `cannot execute INSERT in a read-only transaction` on a line
+nowhere near this file, naming no cause.
+
+My psql check had said the opposite, because I wrote the `RELEASE` by hand — **which is
+exactly what the driver does not do.** The lesson generalises past this file: *a savepoint
+experiment in psql does not model this driver's nested transactions.*
+
+It cannot be undone by setting the GUC back either: `set local transaction_read_only = off`
+inside a read-only transaction raises *"cannot set transaction read-write mode inside a
+read-only transaction"* **and aborts the transaction**, which is worse than the leak.
+Measured 2026-07-30. So `withAdminRead` opens its **own** savepoint and releases it, which
+is what pops both settings, and there is a regression test named for the outcome.
+
+**2. `set transaction read only` does NOT have to come first in the block.** A3's plan §1.5
+said it *"comes before any other statement in the block or it errors"*. Measured on Postgres
+16: the access mode may be set after a query. The "must be first" rule is the **isolation
+level's**. The `SET LOCAL transaction_read_only` spelling is used anyway, because it is
+explicit about the scope that matters.
+
+**3. The `::int` cast on `make_interval` does not reproduce, and the cast stays anyway.**
+Since W7 the sweep route, both its tests and its comments have said
+`make_interval(days => $1)` fails without an explicit `::int` because *"a bound parameter
+arrives as `text` and there is no `text` overload"* — and `sweep.contract.test.ts` fails a
+build over it. **Measured against the local Postgres 16 with the shipped postgres.js on
+2026-07-30: neither `${400}` nor `${'400'}` raises anything.** The driver describes the
+parameter and the server infers `integer` from the signature.
+
+**The cast is kept and its justification is REWRITTEN**, on CLAUDE.md's own rule — framework
+behaviour is measured here, never recalled, and parameter type inference is an unspecified
+implementation detail of a driver plus a server version. A `DELETE` that runs unattended at
+03:17, whose failure would first appear a month after launch, must not rest on one. That is
+the `JsonLd.tsx` argument, and it is a different argument from the one the comment used to
+make. **Deleting the tripwire because its stated reason turned out to be wrong would have
+been the mistake available here.**
+
+**4. `readings_user_local_date_idx` CAN serve a fleet-wide `local_date` range — it just
+cannot seek.** A3's §9.1 says it *"cannot use"* the index because the leading column is
+absent. Measured:
+
+```
+set enable_seqscan = off;
+explain select count(*) from readings
+ where local_date >= '2026-07-20' and local_date <= '2026-07-25';
+
+Aggregate  (cost=1664.15..1664.16 rows=1 width=8)
+  ->  Index Only Scan using readings_user_local_date_idx on readings  (cost=0.14..1664.10)
+        Index Cond: ((local_date >= '2026-07-20'::date) AND (local_date <= '2026-07-25'::date))
+```
+
+A **full** index-only scan with the range applied to the second column. The work is
+proportional to the whole index rather than to the range, which is the same complexity as
+the seq scan the planner actually prefers at this size, minus the heap. **The plan's reason
+was wrong and its conclusion was right**: the candidate `readings_local_date_idx` stays
+declared and unbuilt, with the trigger stated (`readings` past ~100k rows, or M6 at a
+400-day range past 500ms against Neon).
+
+**5. At 44 rows `pg_total_relation_size` is 9× the heap, not the ~2× the retention
+arithmetic assumes.** 144 kB total against 16 kB heap, because five indexes each cost a page
+whether or not they hold anything. The small-table ratio is overhead-dominated and says
+nothing about a steady state; query 18 prints both so nobody reads one for the other.
+
+### R15, demonstrated rather than believed
+
+The ruling says a `<>` spelling of the A-D17 check *"can never fail"*. That is now a paste
+in `docs/analytics-queries.md` §16 rather than a claim. In a rolled-back transaction with
+**one** `NULL vs 0` disagreement injected — the exact shape roadmap §12.6 described, a
+buffered z.ai call storing `0` where its streamed twin stored NULL:
+
+```
+=== IS DISTINCT FROM ===        === the SAME data, with <> ===
+ rows_found                      rows_found
+------------                    ------------
+          1                               0
+```
+
+`metrics.integration.test.ts` runs the same pair as a test, with the `<>` predicate written
+out beside the shipped one. **A check that cannot fail must be *seen* to be unable to fail**,
+because the alternative is a green check that has never been able to go red.
+
+### Two prose-fires-the-rule traps, in one commit
+
+`queries/contract.test.ts` records the class in one line — *"a rule that fires on prose
+describing the rule is a rule people delete"* — and A3 hit it twice on the same afternoon:
+
+- **`forecast.test.ts` asserting the module reads no `process.env`** failed, because the
+  file's own header says the words *"no `process.env`"*.
+- **`sweep.contract.test.ts` counted 5 `make_interval` calls instead of 4**, because the new
+  retention parser's comment quotes the `make_interval(days => 0)` disaster it prevents. And
+  the `admin_access_log` negative control failed for the same reason: the route's header now
+  explains **why** that table is not swept.
+
+All three now match a **comment-stripped** copy of the source. The generalisation is worth
+having: **any grep-based fence over a file whose header explains the fence has to strip
+comments, or the file cannot carry its own reasoning.** The alternative people reach for is
+deleting the explanation.
+
+### The decisions A3 took that the plan did not settle
+
+**`OP_ORDER` lives in `src/lib/analytics/rollup.ts`, not in A2's `types.ts`.** A3's §12
+asked A2 for `LLM_OPS` as a **value**; A2 shipped `LLMOp` as a type only, and the nine values
+exist as a value nowhere outside `callClass.test.ts`. **§6 assigns `src/lib/llm/types.ts` to
+A2 and an unlisted edit to a shared file is a reconciliation defect**, so A3 declared the
+order locally behind a **type-level exhaustiveness guard**:
+
+```ts
+type AssertNever<T extends never> = T;
+type _MissingOps = AssertNever<Exclude<LLMOp, (typeof OP_ORDER)[number]>>;
+```
+
+Deleting `'persona'` from the array gives `Type '"persona"' does not satisfy the constraint
+'never'` at that line — **stronger than `callClass.test.ts`'s runtime `includes()`, and free
+at runtime.** Negative control run.
+
+**`foldOps` cannot promise what A-D11 asks for, and the header says so.** Colour follows the
+entity, never its rank — but with nine entities and four slots there is no fixed
+entity→slot map, so a folded `op` chart's colours are **positional** and stable only while
+the top-3 set is. That is why §5.3 makes the nine ops a **table**. `slotFor(entity, order)`
+is the fixed-slot half and is what A4 uses for the sets that fit: three readers, three
+services, two token directions.
+
+**`adminUserById`/`adminUserList` were built here rather than by A5.** R29 binds A3 and names
+both functions; the plan's task list does not. Roadmap §13 already said *"A5 must not write
+its own per-user aggregates"*, and one metric with two owners is the seam §11 does not list.
+
+**`priceRollup` counts unpriced calls TWO ways and does not conflate them.** An unknown
+*model* means "we cannot price this"; null *tokens* mean "the provider told us nothing", and
+on z.ai the second is nearly every row. `unpricedCalls` is the union, `unpricedModelCalls`
+and `untokenizedCalls` are the parts, and an untokenized call inside an unpriced model is
+counted once — a denominator larger than its own population is the wrong kind of honest.
+
+### The things the integration suite caught that nothing else could
+
+- **Four M4 tests failed for a reason that was not their subject.** Half the catalogue filters
+  `created_at` (M1, M4, M5, M10) and half `local_date` (M2, M3); a seeded row left at the
+  column default lands on *today*, so the `created_at` half returned nothing. The seed helper
+  now pins both and says why — *an assertion that fails for a reason that is not a defect is
+  an assertion people delete.*
+- **A backtick inside a SQL `--` comment ends the JavaScript template literal it lives in.**
+  The parse error points at the opening `` sql` `` and names nothing useful. Twenty minutes.
+- **`typeof peak.calls === 'number'` is the most load-bearing assertion in A3**, because that
+  value is compared with `>=` against 280. `'300' >= 280` is `true` by coercion and
+  `'30' >= 280` is `false`, so a string would be **right most of the time**.
+
+### The measured verification
+
+All four gates, run separately, 2026-07-30:
+
+```
+npm run typecheck        clean
+npm test                 132 files, 2350 tests passed
+npm run test:integration  22 files,  341 tests passed
+npm run build            passed; audit-secrets clean, 59 files / 51 needles
+```
+
+### Still open after A3
+
+1. **§1.5's three numbers are unverified against real hardware.**
+   `statement_timeout 10s < maxDuration 30s < client abort 15s`, and **every admin request is
+   a COLD one** — one admin, no warm instance, so the first query of a session also wakes a
+   suspended Neon compute. Roadmap §4.2 calls that the single most likely live failure in
+   v0.5.0, and **loop 6 is the only instrument**; 1348ms warm from WSL told us nothing when
+   `POST /api/locale` had the same shape.
+2. **Nobody has stopped the database and opened `/admin`.** A3's plan §11 asks for it and the
+   acceptance is different from a reading's: **an admin page with no database must SAY so,
+   not render zeroes.** A dashboard of zeroes is indistinguishable from a quiet day, which is
+   the worst available failure for a surface whose whole job is early warning. That check
+   belongs to A4, which owns the page.
+3. **The pasted output in `analytics-queries.md` §§13-18 is over a hand-seeded ledger.** The
+   SQL, the shapes and the types are measured; **no rate or percentile there is a fact about
+   traffic.** The production read is owed the same way query 12's is.
+4. **`readings_local_date_idx` is declared and unbuilt** (§9.1), with the trigger stated.
+5. **`llm_calls` retention is still a calculation, not a measurement** (R19). The nightly
+   `[llm_calls] rows= bytes=` line is what makes the measurement start existing. Revisit at
+   100 MB or 25% of the plan.
+6. **`notionalUsd()` still returns `null`**, so every cost figure A4 renders is currently
+   empty by design. R14 already makes the hero a call count, so this blocks nothing — but
+   `priceRollup`'s `costUsd` will be `null` on every real range until somebody reads a
+   fallback pricing page.
+7. **`k` is assumed stationary and is the first thing to change.** One abusive script shifts
+   burstiness with no visible change in the daily series at all, so the ceiling arrives early
+   while the trajectory chart looks unchanged. **`k` must be a displayed number** — A3
+   exports `burstiness()` and roadmap §13 makes rendering it A4's obligation.
+
+---
+
 ---
 
 # Part II — the full prior text of CLAUDE.md's sections, moved 2026-07-29
