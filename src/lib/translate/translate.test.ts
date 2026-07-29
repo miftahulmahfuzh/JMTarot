@@ -61,6 +61,7 @@ let scopeDepth = 0;
 const tracked: Array<{ name: string; props: Record<string, unknown>; inScope: boolean }> = [];
 const deferred: Array<Promise<void>> = [];
 const deferredInScope: boolean[] = [];
+const calls: Array<{ row: Record<string, unknown>; inScope: boolean }> = [];
 vi.mock('@/lib/analytics/track', () => ({
   track: (name: string, props: Record<string, unknown>) => {
     tracked.push({ name, props, inScope: scopeDepth > 0 });
@@ -86,6 +87,18 @@ vi.mock('@/lib/analytics/track', () => ({
         }
       })(),
     );
+  },
+  /**
+   * A2's ledger sink, recorded with the SAME `inScope` flag as `track` and `defer`.
+   *
+   * It belongs in this mock rather than a separate one for a specific reason: the
+   * ledger row is written from the same place `settle()` is, so it is exposed to
+   * **exactly** the bug this file's harness was rebuilt to catch. A mock that only
+   * recorded the row would report a passing test for a row that, in production, is
+   * written from outside the request scope and therefore lands unattributed.
+   */
+  bufferCall: async (row: Record<string, unknown>) => {
+    calls.push({ row, inScope: scopeDepth > 0 });
   },
   bindAnalyticsScope: () => {
     bindCalls += 1;
@@ -188,6 +201,7 @@ beforeEach(() => {
   tracked.length = 0;
   deferred.length = 0;
   deferredInScope.length = 0;
+  calls.length = 0;
   bindCalls = 0;
   scopeDepth = 0;
   vi.stubEnv('ANALYTICS_ENABLED', '1');
@@ -562,6 +576,86 @@ describe('translateStream', () => {
     /* And the repair pass was registered from inside the scope too -- the `defer`
        half of the same bug, and the half with a user-visible consequence. */
     expect(deferredInScope).toEqual([true]);
+
+    /*
+     * A2. **THE LEDGER ROWS ARE IN THE SCOPE TOO, and this is the third instance of
+     * one bug.** `bufferCall` reads `als.getStore()`; outside the scope it falls
+     * through to a bare `after()`, which throws here -- and if it did not throw, the
+     * row would land with a null `user_id`, which is worse: a silently unattributed
+     * cost row on a request that has a querent. **Negative control: drop the
+     * `inScope(...)` around `recordCall` in `translateStream` and this line fails
+     * while everything else in the file stays green.**
+     */
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.map((c) => c.inScope)).toEqual(calls.map(() => true));
+  });
+
+  it('splits the ops: a streamed body is `translation`, its repair is `translation_repair`', async () => {
+    /*
+     * **A REPAIR PASS IS A SECOND CALL THE QUERENT NEVER WAITED FOR**, and folding it
+     * into `translation` would hide the cost of the whole repair architecture -- the
+     * one thing this file's header asks to be able to measure. So it is its own `op`,
+     * and this is the test that the expression at the buffered call site
+     * (`repairing ? 'translation_repair' : 'translation'`) actually resolves both ways.
+     *
+     * `bufferCall` is mocked, so the STREAMED row is recorded here directly; the
+     * repair's row would come through `metered()`, which this file mocks away at the
+     * provider. So the assertion is on the streamed row's `op` plus the buffered call
+     * site's own marker, which `callClass.test.ts` greps.
+     */
+    streams('What has passed: something else entirely.');
+
+    const stream = translateStream(args(), DB);
+    for await (const _ of stream) void _;
+    await stream.result;
+    await Promise.all(deferred);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].row).toMatchObject({
+      op: 'translation',
+      streamed: true,
+      // The whole body arrived; it just failed verification, which is not a call
+      // failure. `outcome: 'invalid'` is prose that WAS translated.
+      status: 'ok',
+      errorKind: null,
+      callClass: 'interactive',
+    });
+    expect(typeof calls[0].row.totalMs).toBe('number');
+  });
+
+  it('records `partial` with a classified kind when the stream dies mid-way', async () => {
+    // The viewer has already read the opening, so it is never `'failed'` -- there is
+    // always something on screen. `tee.ts`'s vocabulary, applied to a different stream.
+    streamReading.mockImplementation(() =>
+      fakeStream(CLEAN.match(/.{1,24}/gs) ?? [], { failAfter: 2 }),
+    );
+
+    const stream = translateStream(args(), DB);
+    for await (const _ of stream) void _;
+    await stream.result;
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].row).toMatchObject({ op: 'translation', status: 'partial' });
+    expect(calls[0].row.errorKind).toBe('unknown');
+    // NOT the error's message, at any length.
+    expect(JSON.stringify(calls[0].row)).not.toContain('upstream died');
+  });
+
+  it('records NOTHING when the ceiling refuses or the stream dies before a token', async () => {
+    /*
+     * A2-D6 for the refusal: it reached no provider, so there is no call to record and
+     * `llm.ceiling_reached` already has it. And for a stream that closed before its
+     * first token, the gap is stated rather than papered over -- there are no tokens
+     * and no honest wall time to record. **Both make the ledger a LOWER BOUND on the
+     * window counter**, which A3 must say on the page rather than only in a plan.
+     */
+    streamReading.mockImplementation(() => fakeStream([]));
+
+    const stream = translateStream(args(), DB);
+    for await (const _ of stream) void _;
+    await expect(stream.result).resolves.toMatchObject({ outcome: 'failed', fellBack: true });
+
+    expect(calls).toEqual([]);
   });
 
   /*

@@ -39,9 +39,12 @@ import 'server-only';
  * would have justified buffering.
  */
 import type { Locale, ReaderId, ServiceId } from '@/data/types';
+import { classifyStreamError } from '@/lib/analytics/tee';
 import { bindAnalyticsScope, defer, track } from '@/lib/analytics/track';
 import type { DbOrTx } from '@/lib/db/types';
 import { getProvider } from '@/lib/llm';
+import { recordCall, usageOrNulls } from '@/lib/llm/ledger';
+import type { ReadingUsage } from '@/lib/llm/types';
 import {
   buildTranslationPrompt,
   verifyTranslation,
@@ -268,6 +271,15 @@ export function translateStream(
       let body = streamed.first;
       yield streamed.first;
 
+      /*
+       * A2. `tee.ts`'s vocabulary, tracked by hand because this generator is its own
+       * stream. `'ok'` unless the loop below breaks on a throw -- and then
+       * `'partial'`, never `'failed'`, because the first chunk reached the viewer
+       * before the response existed and there is always something on screen.
+       */
+      let status: 'ok' | 'partial' = 'ok';
+      let errorKind: string | null = null;
+
       for (;;) {
         let next: IteratorResult<string>;
         try {
@@ -281,12 +293,69 @@ export function translateStream(
            * NOT persisted, which is exactly right.
            */
           logFailure(err);
+          status = 'partial';
+          errorKind = classifyStreamError(err);
           break;
         }
         if (next.done) break;
         body += next.value;
         yield next.value;
       }
+
+      /*
+       * A2's LEDGER ROW, **INSIDE `inScope(...)` FOR THE REASON THIS WHOLE FILE
+       * ALREADY PAID FOR** (invariant 4). Everything from here down runs inside the
+       * `ReadableStream`'s `pull()`, which Next runs outside any request scope -- so
+       * `bufferCall`'s `als.getStore()` would miss, it would fall through to a bare
+       * `after()`, and that throws here. The measured evidence is in this file's own
+       * header: `at report → settle → iterate → Object.pull`.
+       *
+       * **BUILT BEFORE THE AWAIT ON `usage`, tokens filled last** (invariant 3), even
+       * though `status` cannot change after the loop today. `tee.ts`'s `finish()` had
+       * exactly that property until a `cancel()` handler was added, and then every
+       * abandoned reading was recorded as failing for an unknown reason.
+       */
+      const snapshot = {
+        status,
+        errorKind,
+        totalMs: Math.round(performance.now() - streamed.startedAt),
+      };
+      const usage = await usageOrNulls(streamed.usage);
+      inScope(() =>
+        recordCall({
+          op: 'translation',
+          /*
+           * ── `LLM_MODEL`, AND **NOT** `TRANSLATION_MODEL`. READ THIS BEFORE
+           *    "FIXING" IT TO MATCH `persist()` TWENTY LINES DOWN ────────────────
+           *
+           * `persist()` writes `TRANSLATION_MODEL || LLM_MODEL` into
+           * `translations.model` -- but **nothing in this file ever passes a `model`
+           * to the provider.** `openStream` calls `streamReading(prompt)` with no
+           * opts, and `generate()` calls `complete(prompt, { op, callClass })` with
+           * none either. So setting `TRANSLATION_MODEL` today changes what
+           * `translations.model` CLAIMS and not what actually ran. That is a
+           * pre-existing V2 defect and A2 is not fixing it: this is V2's file, §6
+           * assigns A2 one-line reads here and no behaviour change, and altering
+           * which model serves every translation is not that. It is recorded in
+           * `docs/workstream-notes.md` under V2.
+           *
+           * **But this column may not inherit the lie.** `llm_calls.model` is what
+           * `prices.ts` is keyed on, so a row naming a model that did not run prices
+           * the wrong rate -- silently, in a table whose entire purpose is cost. The
+           * ledger records the model the call USED. If somebody later threads
+           * `TRANSLATION_MODEL` through to the provider, this line moves with it and
+           * the two become the same value honestly.
+           */
+          model: process.env.LLM_MODEL || 'unknown',
+          // Reserved as `interactive` in `openStream`: a viewer is watching this
+          // arrive, and a refusal falls back to the untranslated source.
+          callClass: 'interactive',
+          streamed: true,
+          ...snapshot,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+        }),
+      );
 
       /*
        * THE ONE THAT WAS ACTUALLY BROKEN. `settle()` both reports and `defer()`s the
@@ -313,9 +382,19 @@ export function translateStream(
  * Null means "nothing usable started": the ceiling refused, the call threw, or the
  * stream closed before a token. All three are the caller's `failed` path.
  */
-async function openStream(
-  args: TranslateArgs,
-): Promise<{ iterator: AsyncIterator<string>; first: string } | null> {
+async function openStream(args: TranslateArgs): Promise<{
+  iterator: AsyncIterator<string>;
+  first: string;
+  /**
+   * A2. **THE STREAM'S `usage`, WHICH THIS FUNCTION USED TO THROW AWAY.** `LLMStream`
+   * is an intersection and the token counts exist nowhere else, so returning only the
+   * iterator is how a call site loses its own cost -- the same omission the day
+   * summary had.
+   */
+  usage: Promise<ReadingUsage>;
+  /** `performance.now()` at the moment the reservation cleared. `total_ms` times the CALL. */
+  startedAt: number;
+} | null> {
   const spec = specFor(args);
   try {
     /*
@@ -325,7 +404,15 @@ async function openStream(
      */
     const { reserveModelCall } = await import('@/lib/llm/meter');
     const quota = await reserveModelCall('interactive');
+    /*
+     * A REFUSAL WRITES NO LEDGER ROW (A2-D6): it reached no provider, so there is no
+     * call to record, and `llm.ceiling_reached` already has it with a user id.
+     */
     if (!quota.ok) return null;
+
+    // After the reservation, for `metered()`'s reason: a Redis round trip is not the
+    // model thinking, and this column times the call rather than the request.
+    const startedAt = performance.now();
 
     const prompt = buildTranslationPrompt({
       source: args.source,
@@ -356,8 +443,15 @@ async function openStream(
     const iterator = stream[Symbol.asyncIterator]();
 
     const first = await iterator.next();
+    /*
+     * NULL HERE MEANS "NOTHING USABLE STARTED" AND WRITES NO ROW EITHER, and the gap
+     * is stated rather than papered over: a stream that closed before its first token
+     * has no tokens and no honest wall time to record, and this is the same branch a
+     * throw below lands in. The consequence is that **the ledger is a lower bound on
+     * the window counter**, which A3 must say on the page rather than in a plan.
+     */
     if (first.done || !first.value) return null;
-    return { iterator, first: first.value };
+    return { iterator, first: first.value, usage: stream.usage, startedAt };
   } catch (err) {
     logFailure(err);
     return null;
