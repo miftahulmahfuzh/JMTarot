@@ -4998,6 +4998,312 @@ npm run build            passed; audit-secrets clean, 59 files / 51 needles
 
 ---
 
+## Chart primitives and the dashboard overview (A4), v0.5.0
+
+**A4 renders. It owns no query, writes no row and adds no dependency.** Plan:
+`docs/plans/2026-07-30-chart-primitives.md`, with R8, R9, R10, R11, R12, R13, R14, R21 and R33
+binding it.
+
+```
+src/theme/chart.ts                  PURE. The palette, the slot maps, slotColor(). ONE import
+                                    (`color` from tokens.ts) so two identities are compiler-
+                                    enforced: CHART_SURFACE === color.bgRadial[1] and
+                                    DIVERGING.mid === color.label.
+src/theme/chart.palette.test.ts     All six §4.3 runs + §5.2's four negatives + the I-4 control
+                                    + the vendored validator's own five thresholds.
+tools/dataviz/validate_palette.js   VENDORED VERBATIM from the dataviz skill. Dev-only.
+src/components/chart/**             18 components, geometry.ts, three fence tests. ONE
+                                    'use client' file (ChartHover).
+src/app/admin/{page,tokens/page}.tsx    The two pages.
+src/app/admin/{range,format,metrics,copy}.ts   The pure layer between A3 and the charts.
+src/app/admin/RangeFilter.tsx       SERVER. <form method="get">; a range change is a NAVIGATION.
+tools/seo/chartfit.{sh,js}          Loop 4.
+public/cards/_adminfit.html         Loop 4's session planter. GITIGNORED.
+public/cards/_adminshot.html        Loop 3 at 1440. GITIGNORED.
+```
+
+### The architecture: SVG only where a path is diagonal
+
+§3 of the plan is the derivation and it is the decision everything else falls out of. **The naive
+design — one `<svg viewBox>` per chart at `width: 100%` — has one fatal property: everything
+inside a uniformly-scaled SVG scales, including things whose specification IS a pixel count.**
+
+Measured consequences at a ~1.3–2.1× scale factor: an 11px tick renders at 14–23px (or 2.7px with
+a desktop viewBox on a phone); a bar capped at 24px becomes 31–50px; an 8px marker becomes 10–17px
+and its 2px ring 2.6–4.2px; a 4px rounded data-end becomes 5–8px. `preserveAspectRatio="none"`
+fixes the box and shears circles; `vector-effect="non-scaling-stroke"` rescues strokes and nothing
+else. **There is no `vector-effect` for a radius.**
+
+So: **paths and polygons in SVG; everything with an intrinsic size in HTML/CSS.** Four components
+emit any SVG (`Line`, `Area`, `Sparkline`, `Trajectory`); the other fourteen are CSS. Three
+consequences worth stating:
+
+1. **Positioning HTML over the plot is exact**, because the box is known — index `i` at
+   `left: (i/(n-1))*100%`, value at `top: (1 - v/yMax)*100%` of the same element. No
+   `ResizeObserver`, no measurement, no hydration.
+2. **The hover layer needs no SVG hit-testing.** The crosshair is a `<div>`; a heat cell is a
+   real `<button>` with real focus.
+3. **`tickPx` is a constant, and loop 4 measures it as one.** `[11]` at 320, 360, 390 and 1200.
+   That single value existing at all is the architecture being right — under the naive design it
+   would be four different numbers.
+
+### Eight defects the two visual loops found, and nothing else could
+
+**Loop 4** (`getBoundingClientRect` in a constrained container):
+
+1. **`repeat(auto-fit, minmax(380px, 1fr))` does not shrink below 380px.** `auto-fit` collapses
+   EMPTY tracks, not narrow ones: a 280px content box got a 380px track (`div.grid 380>280`). It
+   also made the KPI row report TWO columns instead of one, because the row was inside an
+   over-wide track — **one CSS defect, two wrong numbers**, and a screenshot hides it because the
+   crop hides the overflow. Fixed with `minmax(min(380px, 100%), 1fr)`.
+2. **`StackedBar` overflowed by its own gaps.** `flex: 0 0 <pct>%` with percentages summing to
+   100, plus `(n-1) × 2px` of flex gap: `span.bar 179>175`. The code comment claimed basis *"lets
+   flex subtract the gaps for us"*, which is **false with `flex-shrink: 0`** — flex subtracts gaps
+   only when it has permission to shrink. Fixed with `flex: 0 1 <pct>%`.
+3. **A 44px ROW does not make a 16px ANCHOR a 44px target.** The league's links measured 16px
+   inside rows with `min-height: 44px`. The thing a thumb hits is the anchor.
+
+**Loop 3** (`tools/shot.sh` at 1440, PNGs actually opened and read):
+
+4. **The KPI row had no panel — an R8 violation in the one place R8 names.** The row sits at the
+   TOP of the viewport, where `Backdrop`'s radial is `#221a3a`, and every tile carries a
+   SPARKLINE, which is a `--chart-cat-*` mark validated against `#130f22`. The tiles' TEXT was
+   fine, so nothing looked wrong. **This is R8's own failure mode restated: green while the mark
+   was under-contrast on screen.** It took a screenshot to notice the marks had no surface at all.
+5. **"Biaya notional" was rendering z.ai's REAL cost, `US$0,00`.** The page passed A2's `priceFor`
+   into `priceRollup`, which prices each model at its own rate — and every z.ai row is priced
+   **zero on purpose**, because the Coding Plan is a fixed subscription with no per-token charge.
+   So the tile read *we are spending nothing* under a label promising a counterfactual. It now
+   prices every model at `NOTIONAL_MODEL`'s rate, which is `null` today, so the tile renders the
+   honest empty state plus the reason.
+6. **The heatmap's labels named the wrong axis.** It flipped to 24 columns above 520px — inherited
+   from §5.3's weekday × HOUR design — so **seven weekday labels sat over twenty-four columns of
+   WEEKS**, and 98 cells wrapped into rows of 24 so the calendar stopped being a calendar and
+   looked like missing data. Now seven columns at every width, capped at 46px cells, and the
+   labels can only ever name the dimension they sit over.
+7. **The meter's track read as a full bar.** At the real 15/280 = 5.4%, a full-width 12px
+   `--chart-deemph` channel is the loudest thing in the card and the 5% of green reads as an
+   anomaly on it — the gauge said "critical" in shape while saying "Aman" in words. §1.8 was right
+   that the severity ramp's light end announces alarm at 0%; **it did not anticipate the opposite
+   failure.** The track is `--chart-axis` now: an empty channel, with the fill the only mark.
+8. **A table's `<caption>` is the chart's title, so a first column also labelled with that title
+   printed it twice.** `COMMON.dayColumn` is the fix.
+
+### Two things A4's own plan got wrong, both measured
+
+- **The harness precondition names the wrong email.** Task 20 and §10 say `ADMIN_EMAILS` must
+  contain `miftah@dev.local` — which is what `scripts/db-seed.ts` creates. But
+  `POST /api/auth/dev-session` upserts and signs **`<username>@localhost`**, and the allowlist is
+  compared against the SESSION's email. With `@dev.local` alone, every `/admin` URL answers 404 —
+  the A-D2 refusal working correctly on a session that is not an admin. **Both harnesses now probe
+  for that 404 and print which address is needed**, because the alternative is every measurement
+  coming back empty and reading as a broken harness.
+- **The suggested negative control does not fire.** Task 20 says to put `min-width: 200px` on
+  `.tile` and expect overflow at 320. The KPI row spans the full grid width, so 200px fits a 280px
+  box and `overflow` stays false. At 400px it fires, naming
+  `div.page 417>280 / div.grid 417>280 / div.wide 400>280 / div.row 400>280`. **`getComputedStyle`
+  read `200px`, so the rule WAS winning** — which is what distinguishes this from
+  `galleryfit.sh`'s recorded control that did nothing because a later `min-width: 0` won. **A
+  control that does nothing has two possible causes and they need telling apart.**
+
+### CLAUDE.md is wrong about loop 5's width, and it is a floor not a clamp
+
+`## How to verify things here` says of loop 5: *"IT DOES NOT GIVE YOU A PHONE WIDTH … `innerWidth`
+and `outerWidth` are both 500 whatever `--width` says."*
+
+**Measured 2026-07-30: `tools/e2e/run.sh launch --width 1440` gives `innerWidth === outerWidth ===
+1440`.** The sentence is true BELOW 500 and false above it — ~500px is a floor, not a clamp.
+
+**And the 500 reading reproduces exactly once: against an ALREADY-RUNNING Chrome**, where `launch`
+prints `already running: Chrome/…` and silently ignores `--width`. That is the trap, and it is the
+likelier explanation of the original measurement than a clamp. So **loop 5 can answer a desktop
+width question** and still cannot answer a phone one. A4 used `shot.sh` for the 1440 capture
+anyway, because it renders at `--force-device-scale-factor=2` and a 2× PNG of 11px ticks is the
+difference between judging legibility and guessing at it.
+
+**This is CLAUDE.md's sentence to narrow and reconciliation's to narrow it.** A4 does not edit that
+file (non-negotiable 12).
+
+### The loop-4 numbers, measured
+
+| w | content | kpiCols | plotH | heatCols | heatCell | tickPx | overflow | panelBg |
+|---|---|---|---|---|---|---|---|---|
+| 320 | 280 | 1 | 200 | 7 | 33.42 | [11] | false | `rgb(19, 15, 34)` |
+| 360 | 320 | 1 | 200 | 7 | 39.14 | [11] | false | ″ |
+| 390 | 350 | **2** | 200 | 7 | 43.42 | [11] | false | ″ |
+| 1200 | 1160 | 5 | **240** | 7 | 46.00 | [11] | false | ″ |
+
+`barH` 20, `meterH` 12, `labelClip` 0, `offenders` [] throughout. **`kpiCols` at 390 is 2, not the
+1 the plan implied** — a 350px content box fits two 169px tiles and that is `minmax(150px, 1fr)`
+working; the "one column at 320" claim holds where it was made. **`heatCell` at 320 is 33.42
+against a stated ≥36**, which is arithmetic rather than a defect: a heat cell is one of ~35
+readouts with a CSS hover/focus tooltip, not a control, so neither 44 nor 36 governs it.
+
+**`markBleed` is reported separately from `overflow`, and that distinction is the harness's own
+correctness.** An end-dot is `--chart-mark` (8px) centred ON its data point, so at the last x half
+of it sits outside the plot by 4px BY DESIGN. It makes `scrollWidth > clientWidth` true for
+`.plot`, `.plotFrame` and `.body` by exactly 4 and nothing scrolls. Counting those would put three
+permanent offenders in every run and **the real one becomes invisible** — `galleryfit.js`'s
+`.srOnly` reason, applied.
+
+### A3's open item #2 is discharged: the database was stopped and `/admin` opened
+
+A3's plan asked for it and stated the acceptance, which differs from a reading's: **an admin page
+with no database must SAY so, not render zeroes.** *"A dashboard of zeroes is indistinguishable
+from a quiet day, which is the worst available failure for a surface whose whole job is early
+warning."*
+
+Run 2026-07-30, `docker stop jmtarot-pg`, both pages, with a session minted beforehand:
+
+```
+/admin        ⚠ Angka ini tidak bisa dibaca sekarang.
+              Kueri melewati batas waktu atau basis data tidak menjawab. Muat ulang halaman.
+/admin/tokens (identical)
+```
+
+Three things that run also proves, none of which was the point of it:
+
+- **`requireAdminPage()` works with the database down**, because A-D1 puts admin identity in an env
+  allowlist compared against a JWT claim and there is no per-request DB read. The gate held while
+  every query failed.
+- **The `catch` logs nothing from the driver.** CLAUDE.md's rule — *a postgres error quotes the
+  failing statement AND its bound parameters*, and *every `catch` that touches the database is a
+  potential PII sink* — is honoured by catching without inspecting. The page's parameters are two
+  dates today; the rule is absolute because the next query added there may not be.
+- **The harness cannot mint a session with the database down**, because `dev-session` does a real
+  upsert. The session has to be established first, then the database stopped. Worth writing down:
+  the obvious order fails with `dev-session 500` and reads like a harness fault.
+
+### What A4 did not build, and why each is a stated gap rather than a silent one
+
+Both are A3-shaped, and both follow R24's form — *the honest form of a known gap is preferred to a
+silent one* — and A1's precedent of declining an unlisted shared-file edit and flagging it.
+
+1. **No weekday × HOUR heatmap.** §1.7 established the querent's local hour is not derivable from
+   `llm_calls` (`local_date` has no time, `created_at` is UTC); R12 ruled it ships Jakarta-pinned
+   and LABELLED, or not at all; §10 asked A3 for `heatCells(db, range)` doing
+   `created_at AT TIME ZONE 'Asia/Jakarta'`. **A3 shipped no such query, and
+   `src/lib/db/queries/admin/**` is A3's by §7.** So what ships is the axis §1.7 itself calls
+   exact — *"weekday comes from `local_date`, correct, no zone involved"* — crossed with the ISO
+   week, folded in `metrics.ts` from A3's dense daily series. **No new query, no approximation, and
+   no label narrowing a claim.** It answers "which days are busy" truthfully instead of "which
+   hours" with a caveat.
+2. **No per-reader card.** §6.1 row 5 wants a stacked bar over three readers. `readings.reader_id`
+   exists and **nothing in A3's catalogue groups by it.** The SERVICE dimension is answerable from
+   `ttftByService` and ships **labelled as readings rather than as calls**, because that is what it
+   counts — a blocked reading makes no model call at all, and one reading makes several. There is
+   deliberately **no `readerTitle` in `copy.ts`**: a copy key for a card that does not exist is how
+   a future session concludes one shipped and goes looking for the bug.
+
+### `adminCopy.test.ts`'s I-16 fence took four drafts, and each was wrong in a way worth keeping
+
+The fence forbids a user-visible string literal in `src/components/chart/**`. Getting it right is
+the same problem `queries/contract.test.ts` solved by parsing rather than grepping, and it took the
+same route:
+
+1. **Filtered candidates by prefix, then grew one exclusion per false positive** — CSS-module class
+   composition, SVG path builders, an `aria-label` composed from two props. **A fence maintained
+   that way is a list of the things somebody happened to write**, and it fails on the next correct
+   line.
+2. **Found the right discriminator — *what is left when the interpolations are gone* — but applied
+   it per literal, after a regex had extracted them.** That regex cannot parse a nested template:
+   in `` `${styles.cell}${b === null ? ` ${styles.empty}` : ''}` `` the inner backtick ends the
+   outer match early, leaving a fragment with a dangling `${`.
+3. **Lexed with a regex at all.** In `deltaKind === 'good' ? STATUS.good : deltaKind === 'bad'` it
+   paired the CLOSING quote of one literal with the OPENING quote of the next and reported
+   ` ? STATUS.good : deltaKind === ` as prose. **Every quote-pairing regex has that failure.**
+   Replaced with a 20-line scanner that tracks quote state and escapes.
+4. **Stripped interpolations and therefore could not see prose INSIDE one.** The negative control
+   injected `aria-label={`${stateLabel ?? "Kuota hampir habis sekarang"} …`}` — a hardcoded
+   27-character Indonesian sentence in a chart primitive — and **the fence stayed GREEN.** Now the
+   candidates for one literal are *the literal with interpolations removed* plus *every string
+   literal found inside those interpolations*, and both controls fire naming the string.
+
+The generalisation, which is this project's own twice over: **a fence whose red state has never
+been produced is a fence nobody can trust**, and the cheapest way to find out is to break the code
+on purpose rather than to reason about the regex.
+
+### `audit-secrets` fails the build on an env var NAME inside `public/`
+
+Both harnesses failed `npm run build` on their first commit, and the finding was correct:
+
+```
+audit-secrets: 3 FINDING(S)
+  [env name] DATABASE_URL   public/cards/_adminfit.html @ byte 1735
+  [env name] ADMIN_EMAILS   public/cards/_adminfit.html @ byte 736
+  [env name] ADMIN_EMAILS   public/cards/_adminshot.html @ byte 1831
+```
+
+They were **names in a comment**, in gitignored files, explaining a precondition — no value
+anywhere. But `scripts/audit-secrets.ts` scans `public/`, A1 added `ADMIN_EMAILS` to `SECRET_ENV`
+(R20), and being strict about a directory whose contents can be served is right. **The script's own
+message says not to add a suppression**, and the alternative — an exclusion for `_*.html` — would
+have been an edit to `audit-secrets.ts`, which §6 assigns to A1.
+
+So the variables are **described rather than named** in both harnesses, with a header saying why and
+pointing at `.env.example`. Worth writing down because the failure is surprising: a documentation
+comment in a dev-only file can fail a production build, and the fix is not to weaken the scanner.
+
+`DEV_PASSWORD_LOGIN` is named freely in every harness under `public/cards/` and always has been —
+it is not in `SECRET_ENV`, and that asymmetry is what makes the finding legible rather than
+arbitrary.
+
+### Six other things that were nearly wrong
+
+- **`niceTicks` printed half a model call.** The textbook 1-2-5 progression scales by
+  `10^floor(log10(raw))`, which goes below 1 for a small max: `max = 1` over four ticks gives a step
+  of **0.5**, so a count axis reads `0 · 0,5 · 1`. **One call on one day is the commonest series a
+  fresh deployment has.** The step is floored at 1, and 2.5 is deliberately absent from the
+  progression for the same reason even though it would give tighter axes.
+- **`assertDense` reported an UNUSABLE range as dense.** `enumerateDays` returns `[]` for a
+  reversed, malformed or over-retention range, and an empty bucket list matched it exactly — so
+  `?from=2026-07-31&to=2026-07-01` rendered an empty chart AS IF IT WERE CORRECT. `parseRange`
+  refuses such a range first, so this is the belt; it is also the only one of the two a
+  hand-written call site could bypass.
+- **`Intl`'s compact notation separates with U+00A0.** The first assertion failed with
+  `Expected: "12,9 rb" / Received: "12,9 rb"` — two identical-looking strings. Pinned explicitly,
+  because that output reads as a test framework bug and is not one.
+- **A3's `Forecast` has THREE variants and A4's plan predicted two.** `insufficient | flat | trend`
+  — and **`flat` is the one a two-variant renderer would have crashed on.** It is what `forecast()`
+  returns when every y is identical, *including all zeros, which is the honest reading of "nothing
+  happened"*. `Trajectory` draws the actual series and NO projection for it: a flat series has no
+  trajectory, and a horizontal dashed line to the horizon is a forecast of nothing wearing the
+  costume of one.
+- **My own `deltaE` extractor read a hex code.** `worst adjacent #c2703f↔#a3423a ΔE 12.9` with a
+  bare `\d+(\.\d+)?` returns **2703**. It passed on the sets whose hexes start with a letter and
+  failed on the others, which reads exactly like a palette defect and was a defect in the ruler.
+- **A `noDualAxis` assertion counted a function parameter as a second axis.** `/\byMax\b\s*:/`
+  matched both the props member and `markLast(actual, n, yMax: number)`, reporting two y-domains
+  for `Trajectory`. A fence that goes red on a refactor is a fence somebody deletes.
+
+### Still open after A4
+
+1. **`notionalUsd()` returns `null`, so every cost figure is empty by design.** `NOTIONAL_MODEL` is
+   unset because nobody has read a current price page for `gemini-3.5-flash-lite` or
+   `gpt-5.6-luna`, and `prices.ts`'s own rule is that nothing unverified enters it. R14 already
+   makes the hero a call count, so this blocks nothing — the tile says why.
+2. **`a.navLink 42` is 2px under the iOS floor, in A1's `layout.module.css`**, whose own comment
+   claims *"44px of tap target"*. §6 assigns that file to A1 and A4 does not edit it.
+3. **Loop 6 is undischarged, and §4.2 calls it the most likely live failure in v0.5.0.**
+   `maxDuration = 30` against a suspended Neon compute cannot be measured in WSL, because Docker
+   Postgres never sleeps. Every admin request is a cold one — there is one admin and no warm
+   instance — and the first query of a session also wakes the compute.
+4. **Nobody has read this dashboard on a phone.** Loop 4 measures its width and says nothing about
+   whether a 33px heat cell or a 200px plot is worth looking at on glass.
+5. **`ChartHover` is untested by anything but a fence.** Its keyboard/pointer parity is true by
+   construction — one `index` state, one renderer — and that is an argument rather than a test;
+   the unit project has no DOM for a `pointermove`.
+6. **The trajectory's band is a sliver at the ceiling-dominated scale.** With a 370-call daily
+   equivalent and ~35 calls a day, the residual band is a few pixels tall. That is honest — the
+   band IS that tight relative to the distance — but A-D8's *"never a point estimate without its
+   band"* is satisfied in the markup rather than in the reader's eye. Revisit when the two numbers
+   are within an order of magnitude of each other.
+7. **The 1440px layout is A1's 1200px `max-width` plus A4's `minmax(min(380px, 100%), 1fr)`**, and
+   at 1440 that leaves ~120px of margin each side. It reads well and it is a guess A1 recorded as
+   one; nobody has tried it at 2560.
+
+---
+
 ---
 
 # Part II — the full prior text of CLAUDE.md's sections, moved 2026-07-29
