@@ -185,6 +185,34 @@ The check that matters most is not automatable and takes ten seconds: **stop the
 and take a reading.** It must stream and complete exactly as normal, with nothing but
 `[analytics] ...` lines in the log.
 
+### LIVE TRAP: `defer()` FROM INSIDE A DEFERRED JOB IS SILENTLY ORPHANED
+
+**Recorded here by A2 (v0.5.0, reconciliation R17), because it is a fact about `drain()` and
+nothing had written it down.** `drain()` does:
+
+```ts
+for (const job of store.deferred.splice(0)) { … }
+```
+
+`splice(0)` **empties the live array and returns a copy**, which is what the loop iterates.
+So a `defer()` called from *inside* one of those jobs pushes onto the now-empty live array,
+which nothing drains again — and `ensureRegistered` returns early, so no second `after()` is
+registered either. **The job is orphaned, silently, with a green suite.**
+
+`track()` from inside a deferred job **works**, because the event buffer is spliced after the
+loop. That asymmetry is exactly what makes this hard to spot.
+
+**A2 did not fix it.** Making `defer()` re-entrant is a W4 change with its own blast radius,
+and A2 sidestepped it with a separate `store.calls` buffer flushed after the loop. **It is
+still live for the next person who calls `defer()` from a deferred job** — which is a real
+temptation, because `gist`, `translation_repair` and the `frequency` regeneration all run in
+there.
+
+**And A2 found a second shape of the same ordering problem**, plus `Store.drained` as the
+answer: `bindAnalyticsScope()` registers the drain `after()` eagerly, so a route that
+registers its own `after()` later has the drain run FIRST. Full account under *The LLM call
+ledger (A2)*.
+
 ## Memory features (W5)
 
 W5 is done. Three features, all reading from `readings` and `reading_cards`: a
@@ -289,6 +317,30 @@ words in the CONTROL, against the 128-169 band under "The prompt". W5's system p
 `memory: null` is byte-identical to what shipped before it — there is a test asserting that —
 so this predates the workstream. Fixing it means `readers.ts` or `services.ts` and its own
 tuning loop.
+
+### OPEN: `/api/memory/summary` IS LOSING `memory.summary_generated`. CONFIRMED, NOT SUSPECTED
+
+**Recorded by A2 (v0.5.0, reconciliation R18), which observed it and was ruled out of scope.**
+V2's bug shape exactly, one route over.
+
+That route's `after()` calls `track('memory.summary_generated', …)`. An `after()` callback is
+not guaranteed to run inside the ALS context that registered it, so `als.getStore()` misses,
+`track()` takes its unbatched fallback, and that fallback calls `after()` — from inside an
+`after()`.
+
+**Measured on a real day summary, 2026-07-29:** `daily_summaries` had its row and `events`
+held only `memory.summary_shown`, which fires synchronously in the handler.
+`memory.summary_generated` was absent. **There was no error line to find**, because in this
+Next version `after()` inside an `after()` does not throw — it silently drops the work. So
+the check is *"is the events row there"*, never *"is there a log line"*.
+
+**The remedy is one word and is already available in that function:** A2 binds
+`const inScope = bindAnalyticsScope()` there for its own ledger row, so the fix is
+`inScope(() => track(…))`. There is a paragraph at the call site saying so.
+
+**Why A2 did not do it:** W5's file, W5's event, roadmap §6 assigns neither to A2, and R18
+ruled it out rather than let A2's diff span a sixth workstream. It is one line for whoever
+owns W5 next.
 
 ## Localization (W6) -- the traps
 ### Traps W6 paid for
@@ -597,6 +649,31 @@ src/app/api/translate/route.ts       POST. Streams iff the registry says so.
 **Call `translateOrCached()` or `translateStream()`. Nothing else.** `putTranslation` has
 exactly one caller, because it is the only place verification happens and an unverified row in
 that table is the whole failure the workstream exists to prevent.
+
+### OPEN: `TRANSLATION_MODEL` IS RECORDED BUT NEVER USED
+
+**Found by A2 (v0.5.0) while threading the ledger, and not fixed — V2's file, and roadmap §6
+gives A2 one-line reads here with no behaviour change.**
+
+`persist()` writes `TRANSLATION_MODEL || LLM_MODEL || 'unknown'` into `translations.model`.
+But **nothing in `translate.ts` ever passes a `model` to the provider**: `openStream` calls
+`getProvider().streamReading(prompt)` with no opts at all, and `generate()` calls
+`getProvider().complete(prompt, { op, callClass })` with none either. Both therefore resolve
+to `LLM_MODEL` inside the adapter.
+
+**So setting `TRANSLATION_MODEL` today changes what the column CLAIMS and not what ran.**
+CLAUDE.md says the variable *"defaults to `LLM_MODEL` and WANTS the reading model"*, which is
+true of the default and misleading about the override — the override is inert.
+
+`LOTUS_MODEL` and `PERSONA_MODEL` are **not** like this: `lotus.generate.ts` and
+`persona/generate.ts` both compute their model and pass it in `opts`. This is the one of the
+three that does not.
+
+**`llm_calls.model` deliberately records `LLM_MODEL` here rather than copying `persist()`.**
+That column is what `prices.ts` is keyed on, so a row naming a model that did not run prices
+the wrong rate — silently, in the one table whose entire purpose is cost. There is a comment
+at the site saying so, and if somebody threads `TRANSLATION_MODEL` through to the provider,
+that line moves with it and the two become the same value honestly.
 
 ### The five things a future session will otherwise undo
 
@@ -4456,6 +4533,257 @@ fixing it rather than against.
 `api/cron/sweep/route.ts`, `CLAUDE.md`. Four of those got new tests and no production
 lines. `admin_access_log` has no retention policy and no sweep entry on purpose —
 `/privacy` clause 6 now promises *kept indefinitely*, and that is the whole policy.
+
+---
+
+## The LLM call ledger (A2), v0.5.0
+
+**Before A2 this application made nine distinct LLM calls and recorded the token cost of
+exactly one of them.** `/api/reading` threaded `usage` from the provider through `tee.ts`
+into `readings.token_input` / `token_output`; the moderation classifier, the gist, the day
+summary, the frequency verdict, the Lotus distillation, the persona and both translation
+paths all received a fully-populated `usage` object from the adapter and destructured it
+away. The provider layer was already correct — both adapters resolve `usage` on every exit
+path including a consumer `break`. What was missing was a table and eight reads.
+
+**Governing rulings:** R2 (`tee.ts` gets zero lines), R4 (four statuses, `'refused'`
+struck), R5 (`total_ms`, timed at the call), R16 (**fix** `nonZero()`), R17 (**own
+buffer**), R18, R47, R48, R49, R50, R51.
+
+### The file map
+
+```
+src/lib/llm/prices.ts            PURE, ZERO IMPORTS. Hand-maintained price table.
+src/lib/llm/prices.test.ts       The 365-day tripwire, and pickPrice's period boundary.
+src/lib/llm/ledger.ts            recordCall, usageOrNulls, resolvedModel, USAGE_TIMEOUT_MS.
+src/lib/llm/ledger.test.ts       The two helpers. The sink's branches live in track.test.ts.
+src/lib/llm/types.ts             +LLMOp (nine, closed), +CompleteOpts (op REQUIRED).
+src/lib/llm/index.ts             metered() records the six buffered sites.
+src/lib/llm/callClass.test.ts    +op markers, +the closed-set assertions, both directions.
+src/lib/llm/anthropic.ts         nonZero() on the buffered path (R16). Two lines.
+src/lib/db/schema.ts             llmCalls. Fifteen columns, five indexes, no updated_at.
+src/lib/db/migrations/0010_v12-llm-calls.sql
+src/lib/db/queries/admin/calls.ts   insertCalls, callTotals, callTotalsForUser, callsForReading.
+src/lib/db/testing/harness.ts    resetDb() gains llm_calls (A1's header asked A2 to).
+src/lib/analytics/track.ts       Store.calls, Store.drained, bufferCall, the drain block.
+src/lib/analytics/flush.ts       flushCalls.
+```
+
+Threaded by hand at the three streaming sites: `src/app/api/reading/route.ts`,
+`src/app/api/memory/summary/route.ts`, `src/lib/translate/translate.ts`.
+
+### The invariants, and why each one
+
+1. **`usage` always settles and never rejects, and A2 did not touch that.** Nothing awaits
+   it on a hot path, so a rejection is an unhandled rejection.
+2. **Every `await` on `usage` is bounded at 2000ms.** *A ledger row with null tokens is a
+   fact; a request held open for a token count is a bug.* `USAGE_TIMEOUT_MS` is exported
+   from `ledger.ts` so there is one number; `tee.ts` keeps its own private copy because A2
+   may not edit that file (R2), so the two are **equal by intent rather than by import — if
+   one moves, move both.**
+3. **Snapshot mutable state BEFORE awaiting `usage`.** Both new streaming sites build the
+   row first and fill the two token fields last. This is `tee.ts`'s `finish()` bug, which
+   recorded every abandoned reading as failing for an unknown reason.
+4. **A `ReadableStream`'s `pull()` is not in a request scope**, so the streamed
+   translation's write is inside `inScope(…)`.
+5. **No ledger write is on the path of a byte the user is waiting for.**
+6. **A failed ledger write is logged and swallowed, never retried.** W4's two policies: the
+   `readings` row gets a bounded retry because a missing row breaks a user-facing memory
+   feature; a ledger row breaks a dashboard.
+7. **Never log a driver error from a path that runs a query.** `flushCalls` uses
+   `flush.ts`'s existing `logFailure`.
+8. **`error_kind` is a short classifier, never a message.** `classifyStreamError()` reused.
+9. **NULL, never 0, when the provider reports nothing** — on the buffered path too.
+10. **`local_date` is the querent's calendar day**, never recomputed from `created_at`.
+11. **`model` is the resolved model string, never an env var name**, and never `'fallback'`.
+12. **The reservation count per reading is unchanged: one.**
+13. **`queries/admin/calls.ts` takes the handle first and reaches no `server-only`.**
+14. **The ledger obeys `ANALYTICS_ENABLED`.**
+
+### THE FINDING: `drain()` orphans a nested `defer()` — and a second shape of it
+
+**R17, verified before implementation.** `track.ts`'s `drain()` does
+`store.deferred.splice(0)` and iterates the **removed copy**, so a `defer()` called from
+inside a deferred job pushes onto the now-empty live array, which nothing drains again —
+and `ensureRegistered` returns early, so no second `after()` is registered either. `gist`,
+`translation_repair` and the `frequency` regeneration all run in there, so **three of nine
+ops would have recorded nothing, with a green unit suite and a green integration suite.**
+Same shape as V2's lost translation events, which went unnoticed for as long as V2 had
+shipped.
+
+**A2 did NOT fix `drain()`.** Making `defer()` re-entrant is a W4 change with its own blast
+radius; the ledger rides its own `store.calls` buffer, spliced **after** the deferred loop,
+exactly as the event buffer already is. `track.test.ts` has a case that was run RED by
+moving the block: `expected [ 'deferred', 'events' ] to deeply equal [ 'deferred', 'calls',
+'events' ]`, and `expected [ 'moderation', 'reading' ] to deeply equal [ 'moderation',
+'reading', 'gist' ]` — the second is the gist row vanishing, which is the production symptom
+exactly. **The orphaning itself is still live for the next person who calls `defer()` from
+inside a deferred job.**
+
+**AND THERE IS A SECOND SHAPE R17 DID NOT COVER, FOUND ONLY BY RUNNING THE APP.**
+`bindAnalyticsScope()` registers the drain `after()` **eagerly**, so on a route that also
+registers its own `after()` afterwards — `/api/memory/summary` — Next runs the drain FIRST.
+A row recorded from inside the route's own callback then landed in `store.calls` with
+nothing left to visit it. **Measured: `daily_summaries` had its row, `llm_calls` had none,
+and nothing was logged.**
+
+It is not covered by `bufferCall`'s `after()`-throws catch either, because **in this Next
+version `after()` called from inside an `after()` does not throw — it silently drops the
+work.** That was measured twice: once from a bare `tsx` script in Task 13, and once here.
+
+The fix is `Store.drained`, set by `drain()`, plus a `bufferCall` branch that inserts
+directly when it is true — provably off the request path, because the response has already
+flushed. **That branch reads `store.ctx` rather than falling through to the anonymous one**,
+or the row would be a silently unattributed cost on a request that knew the querent.
+Regression test run RED first: `expected "vi.fn()" to be called 1 times, but got 0 times`.
+
+**The generalisation, which is new here: a buffer drained by an `after()` is only safe for
+work that finishes before that `after()` runs.** Anything writing from a second `after()`
+has to detect that and write through. `bindAnalyticsScope`'s eagerness — which exists to
+stop a late `track()` throwing — is what creates the ordering.
+
+### R18 IS CONFIRMED, NOT SUSPECTED, AND IT IS STILL W5's
+
+The same request that lost the `day_summary` ledger row also lost
+**`memory.summary_generated`**: `events` held only `memory.summary_shown`, which fires
+synchronously in the handler. Same root cause, one table over.
+
+**A2 did not fix it** — W5's file, W5's event, §6 assigns neither, and R18 ruled it out of
+scope rather than let A2's diff span a sixth workstream. The remedy is now literally one
+word, because `inScope` is already bound in that function for A2's row:
+`inScope(() => track(...))`. There is a paragraph at the call site saying so.
+
+**Verify it by grepping a dev log after a real day summary, not by reasoning** — that is how
+V2's was found, and note that in this case there is **no** `outside a request scope` line to
+grep for, because `after()` drops silently. The check is whether the `events` row exists.
+
+### The nine call sites, as built
+
+| # | site | op | class | streamed | row written where |
+|---|---|---|---|---|---|
+| 1 | `api/reading/route.ts` | `reading` | interactive | yes | the existing `defer()`, after `persistReading` |
+| 2 | `moderation/classify.ts` | `moderation` | interactive | no | `metered()` |
+| 3 | `memory/gist.generate.ts` | `gist` | deferred | no | `metered()`, from **inside** `drain` |
+| 4 | `api/memory/summary/route.ts` | `day_summary` | deferred | yes | the existing `after()`, via the `drained` branch |
+| 5 | `api/memory/frequency/route.ts` | `frequency` | deferred | no | `metered()` |
+| 6 | `prompt/lotus.generate.ts` | `lotus` | threaded | no | `metered()`, **unattributed** — R49 |
+| 7 | `persona/generate.ts` | `persona` | threaded | no | `metered()` |
+| 8 | `translate/translate.ts` (stream) | `translation` | interactive | yes | `inScope(…)` at the end of `iterate()` |
+| 9 | `translate/translate.ts` (buffered) | `translation_repair` \| `translation` | as written | no | `metered()`, repair arm from inside `drain` |
+
+**Eight files, nine expressions** (R48): `translate.ts` holds a stream site *and* a
+`complete()` site serving two ops, so its `op` is an expression, not a constant.
+
+### The measured rows — one reading with a question
+
+```
+op         | model         | class       | streamed | status | in  | out | total_ms
+moderation | glm-4.5-flash | interactive | f        | ok     | 970 | 18  | 764
+reading    | glm-4.6       | interactive | t        | ok     |     | 201 | 5423
+gist       | glm-4.6       | deferred    | f        | ok     | 788 | 27  | 955
+```
+
+**Three rows per reading with a question, two without one** (no classifier call), plus a day
+summary, a frequency verdict, a translation pair or a persona depending on the visit. A2's
+estimate for A3's retention planning: **3–6 rows per reading.**
+
+- **`reading.input_tokens` is NULL and that is z.ai, not a bug.** It reports
+  `input_tokens: 0` on the stream, which `nonZero()` turns into NULL. The buffered
+  classifier reported a real 970 on one run and a real 1 on another, so the buffered path
+  does report input tokens — variably.
+- **A2-D4 is true rather than asserted:** ledger `total_ms` **5423** < `reading.completed`'s
+  `total_ms` **5487**, with TTFT **4518**. Three measurements of three different subjects.
+  **A3 must not reconcile them.**
+
+### The consistency query, and R15 demonstrated
+
+**Owed to A3, who owns `docs/analytics-queries.md`.** A2 did not edit that file (§6).
+Transcribe rather than narrow:
+
+```sql
+-- Every reading whose ledger row disagrees with its own denormalized token columns.
+-- EXPECTED: ZERO ROWS.
+-- `IS DISTINCT FROM`, NOT `<>` (R15): both sides are nullable and `a <> b` is NULL
+-- rather than true when either is, so the `<>` spelling returns 0 rows
+-- unconditionally and is INDISTINGUISHABLE FROM A PASSING CHECK.
+select r.id, r.token_input, c.input_tokens, r.token_output, c.output_tokens
+  from readings r
+  join llm_calls c on c.reading_id = r.id and c.op = 'reading'
+ where r.token_input  is distinct from c.input_tokens
+    or r.token_output is distinct from c.output_tokens;
+```
+
+**Demonstrated rather than believed.** With a real disagreement injected inside a
+rolled-back transaction, `IS DISTINCT FROM` returned **1** and `<>` returned **0**.
+
+The ledger-vs-ceiling query, which needs no `status` filter because A2-D6 writes no row for
+a refusal:
+
+```sql
+select count(*) from llm_calls where created_at > now() - interval '5 hours';
+```
+
+And R49's naming query, for the gap below:
+
+```sql
+select count(*) from llm_calls where op = 'lotus' and user_id is null;
+```
+
+### R49: the Lotus rows are unattributed, and it was verified
+
+Three W3 onboarding routes have a real querent and **no `withAnalytics` scope**:
+
+```
+src/app/api/onboarding/answer/route.ts:103        after(() => generateLotus(gate.user.id));
+src/app/api/onboarding/answer/[key]/route.ts:208  await generateLotus(gate.user.id).catch(…);
+src/app/api/onboarding/complete/route.ts:190      after(() => generateLotus(gate.user.id));
+```
+
+A2 asked to wrap them. **R49 refused** — that is a W3 change for a reporting nicety, and
+A2's diff already spans five workstreams. So the gap is accepted and recorded.
+
+**Confirmed live:** a real answer edit produced `op: 'lotus'`, `attributed: f`,
+`locale: 'id'` (not the querent's `en`), `local_date` = the UTC date. **A5's per-user cost
+page must say that Lotus distillations are unattributed**, or a per-user total silently
+under-reports.
+
+### Two pre-existing defects found and NOT fixed
+
+- **`TRANSLATION_MODEL` is recorded but never used.** `translate.ts`'s `persist()` writes
+  `TRANSLATION_MODEL || LLM_MODEL` into `translations.model`, but **nothing in that file
+  ever passes a `model` to the provider** — `openStream` calls `streamReading(prompt)` with
+  no opts and `generate()` calls `complete(prompt, { op, callClass })` with none. So setting
+  it changes what the column CLAIMS, not what runs. V2's file; §6 gives A2 one-line reads
+  there and no behaviour change. **But `llm_calls.model` deliberately records `LLM_MODEL`
+  instead**, because that column is what `prices.ts` is keyed on and a row naming a model
+  that did not run prices the wrong rate — silently, in the one table whose purpose is cost.
+- **R18's lost event**, above.
+
+### What A2 did not touch, deliberately
+
+`tee.ts` (R2 — zero lines), `openai.ts` (its `nonZero()` asymmetry is a fact about that
+provider and its comment says so), `docs/analytics-queries.md` (A3's), the three W3
+onboarding handlers (R49), W5's `track()` call (R18), `events.ts` (A-D18 dropped
+`llm.call_recorded`, so A2 declares no event and never imports the taxonomy — R47),
+`CLAUDE.md`.
+
+### Still open after A2
+
+1. **`drain()`'s original orphaning is worked around, not fixed** (R17). The next `defer()`
+   from inside a deferred job hits it.
+2. **R18's `memory.summary_generated` is being lost**, confirmed. One word to fix, W5's.
+3. **`notionalUsd()` returns `null`** until a human reads a fallback pricing page and adds a
+   `PRICES` row. Deliberate: nothing unverified enters that file. **A4's headline must be a
+   call count**, which R14 independently requires.
+4. **`prices.ts` fails its own suite after 365 days.** The fix is to open the pricing page,
+   **not** to bump `verifiedOn` — that converts a tripwire into a lie with a fresh date.
+5. **`TRANSLATION_MODEL` does nothing**, above.
+6. **A connect-time failure on a stream writes no row** — the day summary's and the
+   translation's `openStream` both return null with no tokens and no honest wall time. So
+   **the ledger is a LOWER BOUND on the window counter**, and R26 already requires A3 to put
+   that sentence on the page rather than only in a plan.
+7. **`llm_calls` has no retention policy yet.** A3's, in the sweep, at
+   `LLM_CALLS_RETENTION_DAYS=400` (R19). **Never `admin_access_log`.**
 
 ---
 
