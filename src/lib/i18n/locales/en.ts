@@ -640,6 +640,36 @@ const en: Catalog = {
     'This artwork belongs to JMTarot. You may keep it and set it as your own wallpaper. ' +
     'Not for resale, not on merchandise, and not for commercial use.',
   'wallpaper.licenceLink': 'Terms & Conditions, clause 9',
+
+  /*
+   * ── The blog (S6, v0.4.0) ──────────────────────────────────────────────────
+   *
+   * WRITTEN, NOT TRANSLATED. `blog.index.title` is `Writing` rather than `Articles`:
+   * `Tulisan` is what the landing page and the account menu already say in
+   * Indonesian, and `Writing` is the register that matches — a place somebody writes
+   * rather than a container of items.
+   *
+   * `blog.readingTime` REALLY DOES NEED TWO FORMS HERE, unlike the Indonesian pair,
+   * which is identical because CLDR gives `id` only `other` (I5).
+   */
+  'blog.index.title': 'Writing',
+  'blog.index.description':
+    'Long-form writing about tarot: how to read it, what the myths get wrong, and what a deck of pictures is actually good for.',
+  'blog.index.lede': 'Long reads about tarot, for before or after you draw.',
+  'blog.readMore': 'Read the article',
+  'blog.published': 'Published {date}',
+  'blog.updated': 'Updated {date}',
+  'blog.readingTime.one': 'about {count} minute',
+  'blog.readingTime.other': 'about {count} minutes',
+  'blog.inThisArticle': 'In this article',
+  'blog.backToIndex': 'All writing',
+  'blog.notFound.title': 'No such article',
+  'blog.notFound.body':
+    'The address may be wrong, or this piece may not exist in the language you are reading.',
+  'blog.orient.title': 'New to this?',
+  'blog.orient.gallery': 'See all 22 Major Arcana',
+  'blog.orient.firstCard': 'Start at The Fool',
+  'blog.orient.feared': 'Death, and why it is not what you think',
 };
 
 export default en;

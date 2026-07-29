@@ -1,0 +1,149 @@
+/*
+ * The article page's furniture: the measure column, the hero, the byline, the in-page
+ * nav, the disclaimer. **The prose itself is `src/components/Prose.module.css`** — the
+ * one renderer three surfaces mount, and S6's plan's Task 8 asked for its typography to
+ * be folded there rather than duplicated here (§D9).
+ *
+ * ── TOKENS ONLY, AND NO NEW ONE ────────────────────────────────────────────────
+ *
+ * The body is `--fs-reading` / `--lh-reading` — 19px on 28px, the same type a *reading*
+ * renders at. That is a coherence argument rather than a shortcut: an article about how to
+ * read tarot, set in the same type as a reading, looks like it came from the same house.
+ * `tokens.ts` is untouched, so `tokens.css` needs no mirror edit.
+ *
+ * ── WHY NOT SHARE `Legal.module.css` ───────────────────────────────────────────
+ *
+ * Every *decision* in it is reused — the 68ch cap, `scroll-margin-block-start` on
+ * headings, tokens only. The FILE is not, for three reasons: it is built around a
+ * numbered-clause rhythm (`.number` in tabular figures, `.sub` with a left hairline)
+ * that an article has no use for; an article needs furniture the legal documents do not
+ * have; and **the legal documents are a contract**, so sharing a stylesheet means a
+ * typographic improvement for the blog silently restyles `/terms` — the file
+ * `legal.test.ts` exists to keep stable.
+ *
+ * ── THE MEASURE IS SET BY THE VIEWPORT, NOT BY CHOICE ──────────────────────────
+ *
+ * The comfortable 45-75 character measure is a DESKTOP guideline. At 320px with any
+ * readable serif body size the viewport binds first: 288px of content at ~8.4px per
+ * character in Cormorant Garamond at 19px is ~34 characters, and reaching 45 needs ~14px
+ * type, which is too small for two thousand words. **The only lever is horizontal
+ * padding**, so this pads 16px rather than `Legal.module.css`'s 20 — 8px of measure bought
+ * back on the width that binds. Measured with `public/cards/_blogfit.html`; the numbers
+ * are in `docs/workstream-notes.md`. **The next person to read the guideline will reach
+ * for a new font-size token; §10 forbids one without a written reason and that
+ * measurement is the reason not to.**
+ */
+
+.page {
+  max-inline-size: 68ch;
+  margin-inline: auto;
+  padding: 8px 16px 56px;
+}
+
+.back {
+  display: inline-block;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-section-label);
+  text-transform: uppercase;
+  color: var(--faint);
+  /* 44px of touch target on the one control above the fold. */
+  padding: 16px 16px 8px;
+  text-decoration: none;
+}
+
+/*
+ * The hero. `block-size: auto` with the intrinsic `width`/`height` attributes on the
+ * element is what reserves the aspect ratio and keeps CLS at zero — **do not "fix" the
+ * reservation with a fixed height**, which breaks the ratio at every width but one.
+ * `/arcana/[slug]`'s `.art` carries the same note for the same reason.
+ *
+ * Narrower than the lore page's 320px: there the painting IS the subject, here it is a
+ * plate above two thousand words and a full-width card would push the first sentence off
+ * a phone screen entirely.
+ */
+.hero {
+  display: block;
+  inline-size: 100%;
+  max-inline-size: 180px;
+  block-size: auto;
+  margin: 0 auto 20px;
+  border-radius: var(--radius-card, 10px);
+  border: 1px solid var(--card-edge);
+}
+
+.h1 {
+  font-family: var(--font-display), serif;
+  font-size: 28px;
+  line-height: 1.2;
+  color: var(--text-warm);
+  margin: 8px 0 10px;
+}
+
+.meta {
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: var(--fs-card-name);
+  color: var(--faint);
+  margin: 0 0 20px;
+  padding-block-end: 16px;
+  border-block-end: 1px solid var(--gold-hairline);
+}
+
+/*
+ * "In this article". A real list of real anchors: it works with JavaScript off, it is what
+ * a crawler reads as the document's outline, and its first three rows are the three
+ * orientation sections a reader who arrived knowing nothing came for.
+ */
+.toc {
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-chip);
+  padding: 14px 16px;
+  margin-block-end: 28px;
+}
+
+.tocTitle {
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-section-label);
+  text-transform: uppercase;
+  color: var(--faint);
+  margin: 0 0 8px;
+}
+
+.tocList {
+  margin: 0;
+  padding-inline-start: 18px;
+}
+
+.tocList li {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-hint);
+  line-height: 1.5;
+  margin-block-end: 6px;
+}
+
+.tocList a {
+  color: var(--gold);
+  text-decoration: none;
+}
+
+.tocList li::marker {
+  color: var(--faint);
+}
+
+/* The prose wrapper. Nothing but a hook for the harness to measure. */
+.body {
+  margin-block-end: 28px;
+}
+
+.disclaimer {
+  display: block;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-card-name);
+  line-height: 1.5;
+  color: var(--faint);
+  margin-block-start: 28px;
+  padding-block-start: 16px;
+  border-block-start: 1px solid var(--gold-hairline);
+}

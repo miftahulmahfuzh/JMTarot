@@ -1049,6 +1049,46 @@ const id = {
     'wallpaper pribadi. Bukan untuk dijual, ditempel ke barang dagangan, atau dipakai ' +
     'secara komersial.',
   'wallpaper.licenceLink': 'Syarat & Ketentuan bagian 9',
+
+  /*
+   * ── The blog (S6, v0.4.0) ──────────────────────────────────────────────────
+   *
+   * **CHROME ONLY. NO PROSE** (S-D6, I9). An article's `title` and `description`
+   * live on its `BlogDoc` in `src/content/blog/`, imported by the server page that
+   * renders them and by nothing else. Putting them here would ship ~5,800 words of
+   * article, in both languages, to every visitor of every page including the draw
+   * screen — which is the exact cost S-D6 exists to refuse, and it would be four
+   * values today and ninety the day the lore pages want the same thing.
+   *
+   * `blog.readingTime` IS A PLURAL FAMILY and the Indonesian pair is IDENTICAL on
+   * purpose (I5): CLDR gives `id` only `other`, so an Indonesian `.one` that differed
+   * would be a string somebody edited believing it renders. `catalog.test.ts` asserts
+   * the pair matches.
+   *
+   * **THE SHARE CONTROL REUSES `public.share.*` AND MINTS NOTHING.** S6's plan §D4
+   * asked for `content.share.action` / `.copied`; S1 had already shipped
+   * `public.share.{button,copied,failed}` and `PublicShare` renders them, so a second
+   * pair would be two words for one button — the `arcana.upright` mistake S3 records.
+   */
+  'blog.index.title': 'Tulisan',
+  'blog.index.description':
+    'Tulisan tentang tarot: cara membacanya, mitosnya, dan apa yang sebenarnya bisa dilakukan dengan setumpuk kartu.',
+  'blog.index.lede':
+    'Bacaan panjang tentang tarot, untuk dibaca sebelum atau sesudah menarik kartu.',
+  'blog.readMore': 'Baca selengkapnya',
+  'blog.published': 'Terbit {date}',
+  'blog.updated': 'Diperbarui {date}',
+  'blog.readingTime.one': 'sekitar {count} menit',
+  'blog.readingTime.other': 'sekitar {count} menit',
+  'blog.inThisArticle': 'Di dalam tulisan ini',
+  'blog.backToIndex': 'Semua tulisan',
+  'blog.notFound.title': 'Tulisan itu tidak ada',
+  'blog.notFound.body':
+    'Mungkin alamatnya salah, atau tulisan ini belum tersedia dalam bahasa yang kamu pakai.',
+  'blog.orient.title': 'Kalau baru mulai',
+  'blog.orient.gallery': 'Lihat ke-22 Major Arcana',
+  'blog.orient.firstCard': 'Mulai dari The Fool',
+  'blog.orient.feared': 'Kartu Death, dan kenapa ia tidak seperti dugaanmu',
 } as const satisfies Record<string, string>;
 
 export default id;

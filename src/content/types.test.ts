@@ -33,14 +33,30 @@ describe('the content block union', () => {
     expect(code).not.toContain('dangerouslySetInnerHTML');
   });
 
-  it('makes a quote carry its source, and a list carry no ordering', () => {
+  it('makes a quote carry its source', () => {
     // A quote with no attribution, on a page making claims about tradition, is
     // exactly what reads as invented -- so `source` is REQUIRED, not optional.
     expect(code).toMatch(/kind: 'quote';[\s\S]{0,120}source: string/);
     expect(code).not.toMatch(/kind: 'quote';[\s\S]{0,120}source\?/);
-    // No `ordered`: a numbered list in lore is a how-to, and a how-to about
-    // reading tarot is S6's article, not a card's page.
-    expect(code).not.toContain('ordered');
+  });
+
+  it('keeps `ordered` OPTIONAL, so a lore list is unordered by default', () => {
+    /*
+     * **THIS CASE IS INVERTED, NOT DELETED.** It read `expect(code).not.toContain
+     * ('ordered')`, with the reason *"a numbered list in lore is a how-to, and a
+     * how-to about reading tarot is S6's article, not a card's page."* That reason
+     * is still right about LORE and was wrong about the UNION: reconciliation R16
+     * granted `list.ordered` for S6's articles, because `<ol>` against `<ul>` is
+     * semantics and five numbered steps rendered as bullets is a procedure lying
+     * about being unnumbered.
+     *
+     * What survives is the property S4 actually wanted, and it is stronger than the
+     * old assertion: the field is OPTIONAL and absent means unordered, so all 44
+     * lore documents needed no edit -- and `lore.test.ts` is where "no lore document
+     * sets it" belongs, not here.
+     */
+    expect(code).toMatch(/kind: 'list';\s*ordered\?: boolean/);
+    expect(code).not.toMatch(/kind: 'list';\s*ordered: boolean/);
   });
 
   it('is a LEAF: no react, no next, no server-only, no db', () => {
