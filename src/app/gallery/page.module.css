@@ -1,0 +1,59 @@
+/*
+ * `/gallery`. The app's `.shell` pattern, copied from
+ * `src/app/[reader]/page.module.css` rather than invented -- one column, capped at
+ * 520px, centred, 16px of side padding. Roadmap §8.1: "a phone-width column
+ * centred at wider viewports", "consistent with an app that is deliberately
+ * phone-shaped".
+ *
+ * `padding-top` IS 18px AND NOT THE ROOT PAGE'S 64px. That 64 exists because V4's
+ * account circle is fixed at the top-right of the reader picker and `Eyebrow`'s
+ * hairlines would run underneath it. This page is PUBLIC: there is no session, no
+ * account circle, and nothing to clear.
+ *
+ * NO NEW DESIGN TOKEN, NO NEW HEX, NO NEW FONT SIZE, NO NEW CURVE (roadmap §10).
+ * The gaps are plain px in the vocabulary the app already uses: 18 (`.shell`'s own
+ * gap), 12 (`Slots`' inter-slot gap), 16 (the reader picker's list gap), 8
+ * (`.back`'s icon gap).
+ */
+.shell {
+  min-height: 100dvh;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 18px 16px calc(40px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-display), serif;
+  font-weight: 500;
+  font-size: var(--fs-title);
+  letter-spacing: var(--ls-title);
+  color: var(--gold-text);
+  text-align: center;
+  /* `The 22 Major Arcana Cards` wraps on every phone width. `balance` keeps the
+     two lines even instead of leaving one word alone on the second. */
+  text-wrap: balance;
+}
+
+.hint {
+  margin: 0 0 4px;
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: var(--fs-hint);
+  color: var(--muted);
+  text-align: center;
+}
+
+/*
+ * THERE IS DELIBERATELY NO `.disclaimer` RULE HERE.
+ *
+ * Roadmap §8.3 puts `common.disclaimer.short` on every public content page, and
+ * S1's `PublicShell` footer already renders it -- its own test asserts so. An
+ * earlier draft of S3's plan rendered a second copy from the page, which is how a
+ * stranger meets the same sentence twice on one screen. `_galleryfit.html` asserts
+ * it appears EXACTLY ONCE, which is what catches a duplicate whichever side
+ * re-adds one.
+ */

@@ -23,8 +23,8 @@ import { Prose } from '@/components/Prose';
 import { Eyebrow } from '@/components/Eyebrow';
 import { JsonLd } from '@/components/JsonLd';
 import { PublicShell } from '@/components/PublicShell';
+import { PublicPageViewed } from '@/components/PublicPageViewed';
 import { PublicShare } from '@/components/PublicShare';
-import { TrackView } from '@/components/TrackView';
 import { TrackLink } from '@/components/TrackLink';
 import { getLocale, getT } from '@/lib/i18n/t';
 import { localePath } from '@/lib/i18n/prefix';
@@ -216,10 +216,14 @@ export default async function ArcanaPage(
 
   return (
     <PublicShell surface="arcana" path={`/arcana/${slug}`}>
-      <TrackView
-        name="public.page_viewed"
-        props={{ page: 'arcana', locale, slug, referrer_kind: 'direct' }}
-      />
+      {/*
+        `PublicPageViewed` AND NOT `TrackView`, SINCE S3 (v0.4.0). The literal
+        `referrer_kind: 'direct'` that used to sit here was wrong on the one prop
+        that separates an organic arrival from a reader who was already on the
+        site -- and `TrackView` could not have got it right, because its props come
+        from this server component. See that component's header.
+      */}
+      <PublicPageViewed page="arcana" locale={locale} slug={slug} />
 
       <JsonLd
         node={arcanaGraph({

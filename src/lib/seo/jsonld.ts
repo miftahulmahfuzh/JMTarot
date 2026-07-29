@@ -144,7 +144,18 @@ export type ImageObjectArgs = {
   url: string;
   width: number;
   height: number;
-  caption: string;
+  /**
+   * A description of the PICTURE.
+   *
+   * **OPTIONAL SINCE S3, AND THE REASON IS THE MERGE.** `/gallery` and
+   * `/arcana/<slug>` emit this node for the same artwork under the same `@id`, so a
+   * consumer merges them and every field they BOTH carry has to agree. The lore
+   * page's caption describes the painting; the gallery had a keyword sentence there
+   * and the two silently disagreed. The lore page keeps `caption`, the gallery
+   * carries `description` instead, and the merged node ends up with one of each --
+   * both true, neither a coin flip. `imageJoin.test.ts` is the guard.
+   */
+  caption?: string;
   /*
    * ── EVERYTHING BELOW IS OPTIONAL AND WAS ADDED BY S3 (v0.4.0) ──────────────
    *

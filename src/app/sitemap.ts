@@ -102,6 +102,22 @@ const SITEMAP_PATHS: readonly SitemapPath[] = [
   { path: '/terms', localized: false },
   { path: '/privacy', localized: false },
   /*
+   * ── S3: the gallery ────────────────────────────────────────────────────────
+   *
+   * ONE entry, and both `/gallery` and `/en/gallery` come out: S2 owns the locale
+   * expansion, so adding both by hand would be two rows for one page and a
+   * self-referential `hreflang` set on each.
+   *
+   * `localized: true` is honest because there is ONE route file and middleware
+   * rewrites the prefix, so neither address can 404 -- unlike a lore page, whose
+   * English document is a thing somebody has to write.
+   *
+   * **LANDED AFTER THE PAGE, WHICH IS THE ORDERING RULE RATHER THAN A
+   * COINCIDENCE** (R9): a path here with no page behind it is a 404 in a sitemap,
+   * and Search Console reports that against the whole FILE rather than the row.
+   */
+  { path: '/gallery', localized: true },
+  /*
    * ── S4: the twenty-two lore pages ──────────────────────────────────────────
    *
    * **FROM `LORE_SLUGS`, THE REGISTRY -- NEVER FROM `CARD_URL_SLUGS`.** The deck

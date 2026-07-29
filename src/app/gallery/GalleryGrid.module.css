@@ -1,0 +1,202 @@
+/*
+ * The 22-card grid, and the zoom sheet's extra content.
+ *
+ * ── THE GEOMETRY, AND EVERY NUMBER IN IT IS MEASURED ────────────────────────
+ *
+ * 2 columns x 11 rows. 22 has exactly four divisors -- 1, 2, 11, 22 -- so those are
+ * the only two column counts that leave no remainder, and 11 columns makes each
+ * card a ~90px sliver. Miftah's ruling (roadmap §8.1). A 4x6 grid with two
+ * non-card tail tiles was OFFERED AND REFUSED; do not re-add filler tiles.
+ *
+ * The containing block is `.shell`'s content box: `min(viewport, 520px) - 32`.
+ *
+ *   viewport  content  column   card h    tile h   grid h
+ *      320      288    138.0    207.0     259.0     3009.0
+ *      360      328    158.0    237.0     289.0     3339.0
+ *      375      343    165.5    248.25    300.25    3462.75   <- iPhone SE binds
+ *      390      358    173.0    259.5     311.5     3586.5
+ *     >=552     488    238.0    357.0     409.0     4659.0
+ *
+ * `column = (content - 12) / 2`, `card h = column * 1.5`, `tile h = card + 8 + 44`.
+ * `public/cards/_galleryfit.html` asserts all of it at four widths in both
+ * locales. If a measurement disagrees with this table, THIS FILE is wrong.
+ *
+ * THE PAGE IS ~3000-3600px OF GRID and that is accepted, not overlooked: this is a
+ * catalogue of 22 artworks. "Every row full, nothing spilling below" is a
+ * statement about ROWS. Do NOT paginate or add a "load more" -- 22 items behind a
+ * button are 22 items a crawler may never reach, which is the release failing at
+ * its only purpose.
+ */
+
+.grid {
+  display: grid;
+  /*
+   * `minmax(0, 1fr)`, NOT `1fr`, AND THIS IS NOT DECORATION.
+   *
+   * `1fr` means `minmax(auto, 1fr)`, and an `auto` minimum is the track's
+   * MIN-CONTENT size. Today the tile's only in-flow child is a short link, so the
+   * two behave identically -- and the first person to put an in-flow `<img>` in a
+   * tile hands the track a 240px intrinsic minimum, at which point the grid is
+   * 240+12+240 = 492px inside a 288px container and every phone scrolls sideways.
+   * `min-width: 0` on the tile below is the other half. `_galleryfit.html` asserts
+   * no overflow at four widths and was negative-controlled by temporarily setting
+   * `min-width: 260px` on `.tile`.
+   */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 12px;
+  /* Larger than the column gap on purpose: `CardFace` paints the card's name
+     across the FOOT of the artwork, so a 12px row gap puts a name 12px above the
+     next card's top edge and the two read as one block. */
+  row-gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* The other half of the `minmax(0, 1fr)` guard: a flex item's own
+     `min-width: auto` can still overflow a zero-minimum track. */
+  min-width: 0;
+}
+
+/* `CardFace` is `position: absolute; inset: 0`, so the BOX decides the size. 2:3,
+   like every other card in this app. */
+.card {
+  position: relative;
+  aspect-ratio: 2 / 3;
+}
+
+/*
+ * `inset: 0` INSIDE THE BOX, WHICH IS `Slots.module.css`'s `.tap` IDIOM AND IS
+ * COPIED FOR ITS ONE PROPERTY: `.card` is already `position: relative` for
+ * `CardFace`, so the tap target coincides with the card BY CONSTRUCTION. There is
+ * no second copy of the geometry to drift from the first.
+ */
+.tap {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: transparent;
+  border-radius: var(--radius-card);
+  cursor: pointer;
+}
+
+.tap:focus-visible {
+  outline: 2px solid var(--gold-lift);
+  outline-offset: 2px;
+}
+
+/*
+ * The lore link: the crawlable half of this page.
+ *
+ * 44px tall because it is a thumb target next to a much larger one, and
+ * full-column wide so at 320px it is a 138x44 hit area. `min-height` rather than
+ * `height` so a wrapped label grows it instead of clipping.
+ *
+ * NO `transform` ON HOVER. That would be motion on 22 elements that nothing gates;
+ * `.service:hover` on the reader picker is the pattern -- a border and a wash.
+ */
+.lore {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 4px 6px;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--muted);
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-chip);
+}
+
+.lore:hover,
+.lore:focus-visible {
+  color: var(--button-text);
+  border-color: var(--gold-border);
+  background: var(--gold-wash);
+  outline: none;
+}
+
+/*
+ * Copied verbatim from `src/app/onboarding/onboarding.module.css`.
+ *
+ * IT CARRIES THE CARD'S NAME INSIDE THE LORE LINK, and both halves of that are
+ * required. Twenty-two links whose accessible name is "Baca maknanya" fail WCAG
+ * 2.4.4 -- a screen reader's link list shows 22 identical entries with no way to
+ * tell them apart. Putting the name in an `aria-label` INSTEAD would fail 2.5.3
+ * (Label in Name), because the visible text would no longer be contained in the
+ * accessible name and voice control would stop working. A visually hidden span
+ * does both: the name is "Baca maknanya The Moon".
+ *
+ * `clip-path` + 1px, never `display: none` or `visibility: hidden`, which screen
+ * readers skip entirely.
+ */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- inside the zoom sheet ------------------------------------------------- */
+
+/* `CardDetail`'s `.sheet` is a centred flex column, so these are its flex items. */
+
+.keywords {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The reader picker's `.chip`, re-declared here because that one is scoped to
+   `src/app/page.module.css` and importing across a CSS module is not a thing. */
+.keyword {
+  font-family: var(--font-display), serif;
+  font-size: 9px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--gold-pale);
+  border: 1px solid var(--gold-border);
+  border-radius: var(--radius-chip);
+  padding: 5px 8px;
+  white-space: nowrap;
+}
+
+.zoomActions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  width: 100%;
+}
+
+.zoomLore {
+  composes: lore;
+}
+
+/*
+ * THERE IS DELIBERATELY NO RULE HERE FOR A WALLPAPER DOWNLOAD, AND `.downloadSeam`
+ * IS ABSENT RATHER THAN EMPTY. S5 owns `WallpaperDownload` and ships its own
+ * stylesheet with it; S3 owns only WHERE it is mounted, and S5 has not landed. An
+ * earlier draft of S3's plan styled the control from here and it was wrong for the
+ * reason V6 records about the tap layer: two stylesheets describing one component
+ * is a drift with no possible guard. When S5 lands, the seam is a
+ * `border-top: 1px solid var(--gold-hairline)` above it, so the sheet reads as
+ * "the card, then what you can do with it" rather than as one list of five
+ * controls.
+ */

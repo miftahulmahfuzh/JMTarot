@@ -1,8 +1,8 @@
 import { Eyebrow } from '@/components/Eyebrow';
 import { JsonLd } from '@/components/JsonLd';
 import { PublicShell } from '@/components/PublicShell';
+import { PublicPageViewed } from '@/components/PublicPageViewed';
 import { TrackLink } from '@/components/TrackLink';
-import { TrackView } from '@/components/TrackView';
 import { CARDS, cardImage } from '@/data/deck';
 import { getLocale, getT } from '@/lib/i18n/t';
 import { graph, organization, website } from '@/lib/seo/jsonld';
@@ -35,7 +35,7 @@ import styles from './Landing.module.css';
  *    model call here is `LLM_WINDOW_CALL_CEILING` with no gate in front of it --
  *    which since V9 is the app's primary abuse control rather than a cost question.
  *    Every word on this page is a catalog key.
- * 4. **Server component, zero client JavaScript except analytics.** `TrackView` and
+ * 4. **Server component, zero client JavaScript except analytics.** `PublicPageViewed` and
  *    `TrackLink` are the only client components below here and neither needs a
  *    session. `/login` set the precedent and the reason: the screen a stranger
  *    meets first should work before hydration.
@@ -78,10 +78,13 @@ export async function Landing() {
 
   return (
     <PublicShell surface="landing" path="/">
-      <TrackView
-        name="public.page_viewed"
-        props={{ page: 'landing', locale, slug: null, referrer_kind: 'direct' }}
-      />
+      {/*
+        `PublicPageViewed` AND NOT `TrackView`, SINCE S3 (v0.4.0). This mount used
+        to pass `referrer_kind: 'direct'` as a literal, which reads as data and is
+        not: the prop is the one number this release is measured by, and it can only
+        be computed where `document.referrer` exists. See that component's header.
+      */}
+      <PublicPageViewed page="landing" locale={locale} />
 
       {/*
         `Organization` + `WebSite`, in ONE `@graph` with ONE `@context` (S-D16).

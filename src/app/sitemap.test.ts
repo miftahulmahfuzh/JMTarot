@@ -25,7 +25,10 @@ describe('sitemap.xml', () => {
       // R4: one address each, both languages, no `/en/` twin. See the next test.
       'https://www.jmtarot.site/terms',
       'https://www.jmtarot.site/privacy',
-      // S3 adds /gallery and /en/gallery.
+      // S3, in the commit that added the page. ONE `SITEMAP_PATHS` entry yields
+      // both, because S2 owns the locale expansion.
+      'https://www.jmtarot.site/gallery',
+      'https://www.jmtarot.site/en/gallery',
       // S6 adds /blog, /en/blog and the articles.
       /*
        * S4's forty-four, spread rather than transcribed. **THE ONE HAND-WRITTEN
