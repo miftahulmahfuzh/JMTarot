@@ -1,7 +1,9 @@
 import 'server-only';
 
+import { classifyStreamError } from '@/lib/analytics/tee';
 import { createAnthropicProvider } from './anthropic';
 import { createOpenAIProvider } from './openai';
+import { recordCall, resolvedModel } from './ledger';
 import { ModelCeilingError, reserveModelCall } from './meter';
 import type { CompleteOpts, CompletionPrompt, LLMProvider } from './types';
 
@@ -79,6 +81,21 @@ export function getProvider(): LLMProvider {
  * the gist, the day summary, the frequency verdict, the Lotus distillation, and
  * V2's translations and V8's persona when they land. None of them needs to know
  * the ceiling exists.
+ *
+ * ── AND SINCE A2 IT IS ALSO THE LEDGER'S CHOKEPOINT ──────────────────────────
+ *
+ * **ALL SIX BUFFERED CALL SITES ARE COVERED HERE WITH NO CALLER EDIT BEYOND
+ * PASSING `op`** (A-D5's mechanism 1). `getProvider()` is the only way to reach a
+ * provider, so a `complete()` that writes no row is not reachable -- and `op` being
+ * required on `CompleteOpts` makes a new site that forgets to declare itself a
+ * compile error rather than a cost the dashboard cannot attribute.
+ *
+ * The stream stays unwrapped for the ledger too, and that is not an omission: the
+ * three streaming sites each write their own row at the point where the work is over
+ * and the response has flushed, because only they know the outcome. `tee.ts` gets
+ * zero lines (reconciliation R2) -- `ReadingOutcome` already carries status,
+ * `errorKind`, `totalMs` and `usage`, and `teeReading` is a pure function over an
+ * async iterable with no request scope and no handle.
  */
 function metered(provider: LLMProvider): LLMProvider {
   return {
@@ -91,10 +108,76 @@ function metered(provider: LLMProvider): LLMProvider {
        * forgets to declare is treated as something a person is waiting for, so the
        * failure of omission is "shed too late", never "shed a reading early".
        */
-      const reservation = await reserveModelCall(opts.callClass ?? 'interactive');
+      const callClass = opts.callClass ?? 'interactive';
+      const reservation = await reserveModelCall(callClass);
+      /*
+       * **A CEILING REFUSAL WRITES NO ROW** (A2-D6, reconciliation R4). It never
+       * reached a provider, so there is no call to record -- and a row for it would
+       * destroy `count(*)` as "calls made", which is the quantity
+       * `LLM_WINDOW_CALL_CEILING=280` is expressed in and the one A3's meter
+       * reconstructs. Every A3 query would then need `where status <> 'refused'` and
+       * the first to forget it under-reports headroom. The refusal is already
+       * recorded, with a user id and a tier, by `llm.ceiling_reached`.
+       */
       if (!reservation.ok) throw new ModelCeilingError(reservation.tier);
 
-      return provider.complete(prompt, opts);
+      /*
+       * MEASURED FROM HERE, AFTER THE RESERVATION. The ledger's `total_ms` times the
+       * CALL and not the request (A2-D4), and a Redis round trip is not the model
+       * thinking. `performance.now()` rather than `Date.now()` for the same reason
+       * `tee.ts` uses it: it is monotonic, so a clock adjustment cannot produce a
+       * negative duration.
+       */
+      const startedAt = performance.now();
+      try {
+        const result = await provider.complete(prompt, opts);
+        /*
+         * `void`, LIKE `track()`. There is nothing useful to do with the promise and
+         * it is already resolved on both scheduled branches -- awaiting it here would
+         * put a database round trip on the moderation classifier's path, which is the
+         * one call whose p95 budget is the reason `MODERATION_MODEL` exists at all.
+         * A-D6 forbids it in words.
+         */
+        void recordCall({
+          op: opts.op,
+          model: resolvedModel(opts),
+          callClass,
+          streamed: false,
+          status: 'ok',
+          errorKind: null,
+          inputTokens: result.usage.inputTokens,
+          outputTokens: result.usage.outputTokens,
+          totalMs: Math.round(performance.now() - startedAt),
+        });
+        return result;
+      } catch (err) {
+        void recordCall({
+          op: opts.op,
+          model: resolvedModel(opts),
+          callClass,
+          streamed: false,
+          /*
+           * `'failed'` AND NOT `'partial'`. A buffered call has one arrival: either
+           * the text came back or it did not, and there is no half of it to have
+           * received. `'partial'` belongs to the three streaming sites, which can lose
+           * a stream after the querent has already read some of it.
+           */
+          status: 'failed',
+          errorKind: classifyStreamError(err),
+          // NULL rather than 0: nothing was reported, and the tokens the provider may
+          // have charged for are not knowable from here.
+          inputTokens: null,
+          outputTokens: null,
+          totalMs: Math.round(performance.now() - startedAt),
+        });
+        /*
+         * **RETHROW, ALWAYS.** Every one of the six callers depends on `complete()`
+         * throwing -- each has its own `catch` that falls back to a template, a 204 or
+         * the untranslated source. A decorator that swallowed this to "record and
+         * continue" would hand every one of them an undefined `text`.
+         */
+        throw err;
+      }
     },
   };
 }

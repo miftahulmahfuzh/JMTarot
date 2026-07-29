@@ -370,16 +370,21 @@ export function defer(fn: () => Promise<void>): void {
  * Not an `await` inside `metered()`: that is a database round trip on the moderation
  * classifier's path, which A-D6 forbids in words.
  *
- * **RETURNS A PROMISE THAT IS ALREADY RESOLVED ON BRANCHES 1 AND 2.** Only branch 3
- * awaits I/O, and it is reachable only where `after()` refuses -- i.e. where there is
- * no request left to delay.
+ * **NOT `async`, AND BRANCHES 1 AND 2 COMPLETE SYNCHRONOUSLY.** `recordCall` is
+ * called as `void recordCall(row)`, so nothing awaits what comes back -- and if the
+ * push happened a microtask later, then on a request whose only analytics is a ledger
+ * row the `after()` that drains the buffer would be registered from a continuation
+ * instead of from the handler. That is the shape V2 paid for, where a late `after()`
+ * throws `` `after` was called outside a request scope ``. A microtask would almost
+ * always win that race, and almost always is not a contract. Only branch 3 awaits
+ * I/O, and it is reachable only where `after()` has already refused.
  */
-export async function bufferCall(row: LlmCallRecord): Promise<void> {
+export function bufferCall(row: LlmCallRecord): Promise<void> {
   const store = als.getStore();
   if (store) {
     store.calls.push(row);
     ensureRegistered(store);
-    return;
+    return Promise.resolve();
   }
 
   /*
@@ -396,24 +401,23 @@ export async function bufferCall(row: LlmCallRecord): Promise<void> {
     localDate: utcDateString(),
   };
 
+  const insert = async (): Promise<void> => {
+    try {
+      await flushCalls(ctx, [row]);
+    } catch (err) {
+      logAnalyticsFailure('calls', err);
+    }
+  };
+
   try {
-    after(async () => {
-      try {
-        await flushCalls(ctx, [row]);
-      } catch (err) {
-        logAnalyticsFailure('calls', err);
-      }
-    });
+    after(insert);
+    return Promise.resolve();
   } catch {
     /*
      * BRANCH 3: `after()` REFUSED, so this is inside another `after()` callback or in
      * a script -- provably off any request path. Awaiting the insert here is the only
      * way the row survives at all, and the alternative is losing it silently.
      */
-    try {
-      await flushCalls(ctx, [row]);
-    } catch (err) {
-      logAnalyticsFailure('calls', err);
-    }
+    return insert();
   }
 }

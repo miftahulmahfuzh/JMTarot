@@ -55,6 +55,7 @@
  * change with its own blast radius, and `docs/workstream-notes.md` records the
  * orphaning under W4 as a live trap for the next person to hit it.
  */
+import { bufferCall } from '@/lib/analytics/track';
 import type { CallClass, LLMOp, ReadingUsage } from './types';
 
 /**
@@ -103,19 +104,33 @@ export type LlmCallRecord = {
  * `void recordCall(row)` at the call sites: like `track()`, there is nothing useful
  * to do with the promise, and the three branches above mean awaiting it is either a
  * no-op or the one case where the caller is already off the request path.
+ *
+ * ── NOT `async`, AND THE BUFFER PUSH IS SYNCHRONOUS. THIS IS LOAD-BEARING ──────
+ *
+ * The first version was `async` and reached `track.ts` through a **dynamic** import,
+ * copying `flush.ts`'s pattern one level up. It worked and it was wrong, in a way the
+ * first assertion of `metered.test.ts` caught immediately: with `void recordCall(row)`
+ * at the call site, nothing awaits the returned promise, so the row was not in the
+ * buffer until a microtask after the call returned.
+ *
+ * In a unit test that is a missing row. **In production it is a race against
+ * `after()`**: `bufferCall` is what calls `ensureRegistered`, so on a request whose
+ * only analytics is a ledger row, the `after()` that drains the buffer would be
+ * registered from a continuation rather than from the handler -- which is precisely
+ * the shape V2 paid for, where a late `after()` throws `` `after` was called outside a
+ * request scope ``. A microtask would almost always win that race. Almost always is
+ * not a contract.
+ *
+ * So the import is STATIC and the push is synchronous. The cost is that `ledger.ts`
+ * now pulls `node:async_hooks` and `next/server` transitively -- acceptable, because
+ * `index.ts` above it is already `server-only` and `ledger.test.ts` tests only the two
+ * helpers below, which need none of it. There is no runtime cycle: `track.ts` ->
+ * `flush.ts` -> `ledger.ts` is a **type-only** edge and is erased.
  */
-export async function recordCall(row: LlmCallRecord): Promise<void> {
+export function recordCall(row: LlmCallRecord): Promise<void> {
   try {
-    if (process.env.ANALYTICS_ENABLED === '0') return;
-
-    /*
-     * DYNAMIC, for `flush.ts`'s reason one level up: a static import of `track.ts`
-     * pulls `node:async_hooks` and `next/server`, and this module is reached from
-     * `index.ts`, which the unit suite imports. It also keeps the import graph
-     * acyclic -- `track.ts` imports `flush.ts`, which will name `LlmCallRecord`.
-     */
-    const { bufferCall } = await import('@/lib/analytics/track');
-    await bufferCall(row);
+    if (process.env.ANALYTICS_ENABLED === '0') return Promise.resolve();
+    return bufferCall(row);
   } catch {
     /*
      * A LEDGER THAT CAN FAIL A READING IS WORSE THAN NO LEDGER. Deliberately not
@@ -123,6 +138,7 @@ export async function recordCall(row: LlmCallRecord): Promise<void> {
      * `logAnalyticsFailure`, and a second line would say the same thing twice on the
      * one path (branch 3's insert) where it says anything at all.
      */
+    return Promise.resolve();
   }
 }
 
