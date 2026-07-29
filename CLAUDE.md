@@ -1077,7 +1077,8 @@ gate change, a sitemap, JSON-LD, canonicals and cache headers (v0.4.0 S1)**,
 **the twenty-two card lore pages, forty-four authored documents (S4)**,
 **the gallery -- 22 artworks, 2x11, measured at four phone widths (S3)**,
 **the wallpaper downloads -- 44 committed derivatives and the control in the zoom
-sheet (S5)**, plus the reader picker, service
+sheet (S5)**, **the blog -- `/blog`, `/blog/[slug]` and two articles authored twice
+rather than translated once (S6)**, plus the reader picker, service
 picker, the draw (fan, pick, flip, reduced-motion grid), the card detail overlay, the
 streaming reading endpoint, the prompt layer, and the web app manifest.
 
@@ -1940,6 +1941,127 @@ questions that matter, and none of them is answerable here: does a downloaded
 the card look right on a lock screen, and is q90 blocking visible in a dark gradient
 on OLED (`QUALITY = 92` in one place, +2.9MB). S4 may mount this control on a lore
 page and has not; `from: 'arcana'` exists for that day.
+
+## The blog (v0.4.0 / S6)
+
+**Two articles, four documents, and the last 404 in the release's route table is
+closed.** `/blog` and `/blog/[slug]` are the only v0.4.0 surface whose subject is
+prose rather than a card, and they are where a stranger who has never touched a deck
+lands. The traps, the measurements and the deltas from S6's plan are in
+`docs/workstream-notes.md`.
+
+```
+src/content/types.ts        GAINED Inline, Phrasing, BlogDoc, and three OPTIONAL
+                            widenings to Block. S4 above the marker, S6 below.
+src/content/blocks.ts       PURE, NO `server-only`. Ten authoring helpers.
+src/content/blog/index.ts   the registry. NO PROSE. dates, locales, bodyHash.
+src/content/blog/<slug>.<loc>.ts   4 documents, 1270-1995 words each.
+src/content/blog/blog.content.test.ts   THE LINT. 36 cases, before the copy.
+src/lib/content/doc.ts      PURE LEAF. plainText / phrasingText / wordCount /
+                            readingMinutes / headingIds / linkPaths / linkKind.
+src/lib/seo/blog.ts         BlogPosting + Blog + both graphs. Into S1's directory.
+src/components/Prose.tsx    GAINED spans(), <ol>, and heading ids. S4's file.
+src/app/blog/**             the index, the article, its 404, the contract test.
+tools/seo/blogfit.{sh,js}   Loop 4, committed beside galleryfit and wallpaperfit.
+```
+
+### The six things a future session will otherwise undo
+
+1. **`plainText()` JOINS SPANS WITH THE EMPTY STRING, AND THAT IS THE CONDITION
+   RECONCILIATION R16 ATTACHED TO WIDENING THE UNION AT ALL.** S4's `text: string`
+   existed so the copy lint sees the exact sentence a reader sees, and that argument
+   is the better-stated one; it bent only because an article cannot carry bold
+   lead-ins or inline links without `Inline[]`. Two tests make the guarantee
+   mechanical rather than promised — `doc.test.ts` asserts the joining directly and
+   `blog.content.test.ts` asserts span adjacency, negative-controlled. **R16 says in
+   those words: if either is deleted, revert to `text: string`.** A `join(' ')` in
+   `plainText` or a `{' '}` in `Prose` breaks both silently.
+2. **`heading.id` AND `list.ordered` ARE OPTIONAL, AND THAT IS WHY 44 LORE DOCUMENTS
+   NEEDED NO EDIT.** `types.test.ts`'s *"a list carries no ordering"* case is
+   **inverted rather than deleted**: its reason was right about lore and wrong about
+   the union. Making either required is a 44-file rewrite for no reader-visible gain.
+3. **THERE IS NO `callout` KIND. S6 ASKED AND R16 REFUSED** — on S6's own
+   recommendation that it was the ask to refuse first. The two asides in the launch
+   article are paragraphs and read correctly as one. `types.contract.test.ts` asserts
+   the absence, because the failure mode of a refused ask is somebody granting it
+   quietly.
+4. **`bodyHash` IS MANUAL BOOKKEEPING AND SOMEBODY WILL WANT TO DELETE IT.** Editing
+   the prose fails a test whose fix is pasting a hash and bumping a date. There is no
+   truthful automatic source for `dateModified` — an mtime is a checkout artefact on
+   Vercel, `git log` is unavailable at request time, and either moves on a whitespace
+   change. Reconciliation §7 ruled on it directly: **the honest alternative is
+   dropping `dateModified` from the structured data, never emitting a date nobody
+   maintains.**
+5. **THE ARTICLE PAGE PASSES `entry.locales` AND THE INDEX PASSES `LOCALES`, AND THE
+   DIFFERENCE IS NOT AN INCONSISTENCY** (R2). The index is chrome served by one
+   rewritten route file, so neither address can 404. An article's `hreflang` must name
+   only the languages it was written in, or Google discards the whole set silently.
+   Both articles ship in both locales today, which is exactly when somebody
+   "simplifies" the first one. `blog.contract.test.ts` asserts the two spellings.
+6. **THE SECOND ARTICLE'S SLUG IS ENGLISH AND SINGULAR, AND THE RECONCILIATION WROTE
+   IT AS TWO.** R5 named it *"`apa-itu-tarot` / `what-tarot-is`"*, which reads as one
+   slug per locale. It cannot be: `contentAlternates()` derives the `/en/` twin from
+   **one** bare path, so a per-locale slug needs a per-locale path table nothing in
+   this release has. `what-tarot-is`, in both trees — the same ruling that kept
+   `/history` from becoming `/jejak`.
+
+**TWO ARTICLES, NOT ONE, AND THAT IS RECONCILIATION R5 CLOSING ROADMAP §13.** S6's
+plan shipped one and flagged the reason it should be two: a link labelled *"apa itu
+tarot"* landing two-thirds of the way into a 2,000-word how-to is a compromise, not a
+design. Jodith's request — *"ttg mitos, fakta, tarot itu apa, manfaat apa"* — got its
+own page. **Both articles carry `#what-tarot-is`, `#myths-and-facts` and
+`#what-its-for` in both locales**; R5 moved the *links* onto the new article, it did
+not take the sections out of the how-to, which would leave a how-to that teaches a
+method without first saying what the thing is.
+
+**THREE THINGS S6's PLAN ASKED FOR THAT ARE DELIBERATELY ABSENT, ALL BECAUSE S1
+CLOSED `events.ts` FIRST (S-D13).** No `ScrollDepth` — `content.scrolled` is not in
+the folded taxonomy. No delegated in-prose link listener — `public.link_clicked`'s
+`to` union has no `anchor` member, so wiring one means widening a closed workstream's
+data dictionary for an in-page jump. And no `content.share.*` catalog pair — S1's
+`public.share.*` already exists and `PublicShare` renders it, so a second pair would
+be two words for one button. In-prose link clicks are unmeasured, exactly as they
+already are on the 44 lore pages; `linkKind()` survives in `@/lib/content/doc` as the
+single definition for the day somebody wants it.
+
+**THE MEASURE AT 320px IS ~32 CHARACTERS AGAINST THE 45-75 GUIDELINE, AND IT IS
+ARITHMETIC RATHER THAN A DEFECT** (reconciliation §7, S6 F4). 288px of content at
+~9.1px per character in Cormorant Garamond at 19px cannot reach 45; getting there
+needs ~14px type, too small for two thousand words of serif. The lever used is
+padding, 20 → 16. **The next person to read the guideline will reach for a new
+font-size token; §10 forbids one without a written reason and `tools/seo/blogfit.sh`'s
+measurement is the reason not to.**
+
+**TWO THINGS `blogfit.sh` FOUND IN `PublicShare`, AND BOTH ARE S1's FILE ON
+TWENTY-THREE PAGES RATHER THAN S6's.** Its button is **36px tall at every width**,
+under the 44px iOS minimum. And it **renders in the server HTML, so with JavaScript off
+the control is present and dead** — which is the state S6's plan flag 5 said must not
+ship and which **reconciliation §7 records as already settled the other way**
+(*"The share control is invisible without JavaScript"*). It is not; there is no
+`mounted` guard. Left alone deliberately (§6 file ownership) and written up in
+`docs/workstream-notes.md`, because a reconciliation stating a property the code does
+not have is worse than an open item — nobody goes looking for it.
+
+**AND THE ONE FINDING THAT IS BIGGER THAN THIS WORKSTREAM: EVERY `/en/` CONTENT ROUTE
+LOSES ITS `Cache-Control`, MEASURED ON A REAL `npx next start`.** `/blog`,
+`/blog/<slug>`, `/gallery` and `/arcana/<slug>` all answer
+`public, s-maxage=3600, stale-while-revalidate=86400`; **`/en/blog`, `/en/blog/<slug>`,
+`/en/gallery` and `/en/arcana/<slug>` all answer `no-cache, must-revalidate`.** Four of
+the eight content entries in `next.config.ts` are inert and the four are exactly the
+English tree — twenty-five indexable pages. The config's `headers()` does run there (the
+catch-all's `x-frame-options` arrives); it is `cache-control` that loses to the rewritten
+render, and `headers.test.ts` asserts the entries EXIST, which they do. **R21 said this
+was "measured locally but not against a CDN"; the truth is that locally half of it never
+reaches the wire.** Diagnosis, the candidate fix and why S6 left it alone are in
+`docs/workstream-notes.md` — it is S1's `next.config.ts` and S2's rewrite, and a
+config-level test structurally cannot see it.
+
+**Still open:** the `s-maxage` on the BARE paths is measured on `next start` and never
+against a Vercel CDN (R21) — the residual gap `/gallery` and the lore pages carry. No RSS (S6 F10,
+out of scope and the only excluded feature that costs nothing to maintain). And nobody
+has read either article on a phone — reconciliation §8's *"no lint can tell whether a
+page is worth reading"* binds these two documents exactly as it binds the 22 lore
+pages.
 
 ## /account and the persona (V8)
 

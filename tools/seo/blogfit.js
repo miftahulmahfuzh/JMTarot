@@ -62,12 +62,55 @@
 
   const contentPx = firstP.getBoundingClientRect().width;
 
-  /* Every block that carries words. `scrollWidth > clientWidth + 1` -- the +1 is
-     sub-pixel rounding, not slack: a real overflow is tens of pixels. */
+  /*
+   * OVERFLOW, IN TWO FORMS, AND THE FIRST VERSION OF THIS ONLY CHECKED ONE OF THEM.
+   *
+   * **`scrollWidth > clientWidth` ON A BLOCK ANSWERS "does this block's CONTENT
+   * overflow its own box" -- NOT "is this block wider than its container".** The
+   * negative control found it: `min-width: 420px` on `.p` at a 320px width produced
+   * `contentPx: 420`, a paragraph 132px wider than the page, and `overflow: false`
+   * with an empty `offenders`. `getComputedStyle(p).minWidth` confirmed the rule was
+   * applied, so this was the harness failing to see a real defect rather than the
+   * control failing to arm -- which is the same class of mistake `galleryfit.sh`'s
+   * header warns about from the other direction, and the reason its header says to
+   * check `getComputedStyle` BEFORE believing a green control.
+   *
+   * The second form is the commoner phone failure: a long unbroken URL, a wide table,
+   * an unwrapped code span, a stray `min-width`. So both are measured, and the
+   * container chain is measured too -- the overflow of a too-wide child shows up on
+   * the PARENT's `scrollWidth`, which is where a phone's horizontal scrollbar comes
+   * from.
+   *
+   * `+ 1` is sub-pixel rounding, not slack: a real overflow is tens of pixels.
+   */
   const blocks = Array.from(body.querySelectorAll('p, h2, h3, li, figure, blockquote'));
-  const offenders = blocks
-    .filter((el) => el.scrollWidth > el.clientWidth + 1)
-    .map((el) => el.tagName.toLowerCase() + ' ' + el.scrollWidth + '>' + el.clientWidth);
+  const bodyWidth = body.clientWidth;
+  const offenders = [];
+
+  for (const el of blocks) {
+    if (el.scrollWidth > el.clientWidth + 1) {
+      offenders.push(el.tagName.toLowerCase() + ' content ' + el.scrollWidth + '>' + el.clientWidth);
+    }
+    /* Wider than the column it sits in. `getBoundingClientRect` rather than
+       `offsetWidth`, because a fractional width rounds the wrong way at these sizes. */
+    const w = el.getBoundingClientRect().width;
+    if (w > bodyWidth + 1) {
+      offenders.push(el.tagName.toLowerCase() + ' box ' + Math.round(w) + '>' + bodyWidth);
+    }
+  }
+
+  /* And the containers, which is where a too-wide child becomes a scrollbar. */
+  for (const el of [body, page]) {
+    if (el.scrollWidth > el.clientWidth + 1) {
+      offenders.push(
+        (el.dataset.articleBody !== undefined ? 'body' : 'article') +
+          ' content ' +
+          el.scrollWidth +
+          '>' +
+          el.clientWidth,
+      );
+    }
+  }
 
   /* One entry per LINE BOX, clustered. See the header. */
   const lineCount = (el) => {

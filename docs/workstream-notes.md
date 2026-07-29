@@ -3618,3 +3618,338 @@ against a Vercel CDN (R21); `tools/check_card_art.py:mean_colour` still uses
 `Image.Image.getdata`, deprecated in Pillow 12 and removed in 14 (F6, not S5's, and
 the two new scripts use `load()`/`tobytes()` so they do not acquire it); and the
 1440x3120 canvas is chosen against a 2026 device census, which ages (F7).
+
+## The blog (S6), v0.4.0
+
+CLAUDE.md's `## The blog (v0.4.0 / S6)` keeps the six rules. This is the evidence: what
+the plan asked for and did not get, the three defects the suite did not notice, the loop-4
+table, and the crawl.
+
+### The seam with S4, and what actually happened to it
+
+S6's plan opens with an `AMENDED` block conceding four things to S4 mid-draft, and
+reconciliation R16 ratified the concessions and ruled on four field-level asks. **By the
+time S6 was executed, S4 had landed and `src/content/types.ts` was the PRE-R16 union** —
+`heading` with no `id`, `list` with no `ordered`, `paragraph.text: string`, no `Inline`.
+So the ruling had to be applied to a file another workstream had already finished, which
+is the state S5 was in when it landed S1's two missed deltas.
+
+The property that made it safe, and the one to check before widening anything there
+again: **every change was optional or a union with what was already there.**
+
+| ask | R16 | how it landed |
+|---|---|---|
+| `heading.id?` | granted | optional — `Prose` emits the attribute only when present |
+| `list.ordered` | granted | **optional**, absent means unordered |
+| `paragraph.text: string \| Inline[]` | granted, with a guard | `Phrasing`, a union |
+| `callout` | **refused** | no sixth kind; two asides became paragraphs |
+
+**Not one of the forty-four lore documents needed an edit.** That is the evidence the
+seam held, and `types.contract.test.ts` asserts S4's plain-string shapes still typecheck
+so a future "tidy-up" to `Inline[]`-only fails rather than starting a 44-file rewrite.
+
+R16's guard is the part most easily lost: it granted `Inline[]` **because `plainText()`
+joins spans with the empty string**, so the copy lint still sees the exact reader string.
+Two tests hold it — `doc.test.ts`'s direct assertion and `blog.content.test.ts`'s
+adjacency case — and R16 says in those words that deleting either means reverting to
+`text: string`.
+
+### Three things the plan specified that could not be built, and why each was dropped
+
+None of these is a shortcut; each is a consequence of S1 having closed `events.ts` first
+(S-D13: **one owner per release, everyone else declares and S1 folds in**).
+
+1. **`ScrollDepth` and `content.scrolled`.** The plan's `## Analytics deltas` declares
+   four `content.*` names. The folded taxonomy has five `public.*` events and no
+   scroll-depth event at all — reconciliation R18 ruled the namespace to `public.*` and
+   S1 transcribed the agreed set. Adding a sixth now is editing a closed workstream's
+   data dictionary, which is exactly what S-D13 exists to prevent. **The four
+   `IntersectionObserver` sentinels are not built and nothing renders `data-depth`.**
+2. **The delegated in-prose link listener, and `data-content-link` on every `<a>`
+   `Prose` renders** (plan §D9). `public.link_clicked`'s `to` union is
+   `sign_in | app | gallery | arcana | blog | terms | privacy | wallpaper | locale` —
+   **no `anchor`**, and `linkKind()`'s fifth value is exactly that. So the listener would
+   have needed a union widened in S1's file for an in-page jump. Dropped; in-prose
+   clicks are unmeasured, **which is already true of the 44 lore pages' `cardRef`
+   links**, so this is consistency rather than a new gap. The index's three orientation
+   links fire the event through `TrackLink` with a literal `to`, which is what
+   `/arcana/[slug]` already does for its gallery link.
+3. **`content.share.action` / `.copied` and `SharePage.tsx`** (plan §D4, Task 10). S1
+   shipped `PublicShare` and `public.share.{button,copied,failed}` before S6 ran. A
+   second component and a second key pair for one button is the `arcana.upright`
+   mistake S3 records — the gallery would have been the third spelling of one word.
+
+### Three defects a green build did not notice
+
+**1. `t('blog.readingTime', { minutes })` typechecked as a MISSING KEY, not as a wrong
+call.** `blog.readingTime` is a plural family, so the catalog holds `.one` and `.other`
+and no bare `blog.readingTime` — and `t()` is typed over `keyof typeof id`, so the error
+was TS2345 naming 323 other keys. The fix is `t.plural('blog.readingTime', minutes)`,
+**and the catalog parameter had to become `{count}`**: `plural()` injects the count
+itself and a `{minutes}` placeholder would have rendered literally. Found by
+`npm run typecheck`, which is the only thing that could have: the value reads perfectly
+in the catalog and the call reads perfectly in the page.
+
+**2. `src/content/copy.test.ts`'s locale-naming case failed on `blocks.ts`.** That case
+asserts every file under `src/content/` is named `*.id.ts` or `*.en.ts`, because the
+lint derives the locale from the filename and `the-moon.ts` would be skipped SILENTLY.
+`blocks.ts` is legitimately locale-free. The exemption list went `(index|types)` →
+`(index|types|blocks)` **and is now documented as a CLOSED SET**: not "files that happen
+to be locale-free", but the three whose emptiness of prose is asserted elsewhere.
+Adding a fourth name without that guarantee is how a document escapes the lint.
+
+**3. `types.test.ts` asserted `expect(code).not.toContain('ordered')`.** S4 wrote it
+with the reason *"a numbered list in lore is a how-to, and a how-to about reading tarot
+is S6's article, not a card's page"* — right about lore, wrong about the union, and R16
+had already granted the field. **Inverted rather than deleted**, and the replacement is
+stronger than the original: it asserts `ordered?: boolean` and fails on
+`ordered: boolean`, which is the property that kept 44 documents untouched.
+
+### The lint, and the one entry that had to come out of it
+
+`blog.content.test.ts` is 36 cases. Three worth naming:
+
+- **The span-adjacency case has a negative control, and it needs one.** It passes on
+  four correct documents, which is precisely the state in which a broken whitespace
+  checker is indistinguishable from a working one. The control constructs
+  `[s('Lihat'), link('/gallery', 'galeri')]` and asserts the predicate says `false`.
+- **`' api '` is not in the product-secret list** (reconciliation §8, raised by S6 while
+  writing). `api` is Indonesian for fire and the article names the four elements, so the
+  substring check fired on `elemen api` in correct copy. `api key` and `/api/` are the
+  shapes that would indicate a leak. **A lint that cries wolf is a lint somebody
+  deletes.**
+- **`prompt` IS in it, and it cost one English sentence.** The draft read *"the card is a
+  prompt for a sentence you already had"* — an ordinary English noun, matched as a
+  substring, correctly flagged. Rewritten to *"an invitation to say"*. Worth recording
+  because the next English article will hit the same word.
+
+The lint also duplicates `copy.test.ts`'s Malay/therapy/tic checks on the TYPED structure
+rather than on string literals. That is not redundancy: `copy.test.ts`'s own header asks
+for it — *"importing the registry and walking the typed block union is strictly better
+than this regex"* — and the regex still covers a document no registry imports, which is
+the state a half-finished article is in.
+
+### The four documents, measured
+
+| document | words | reading time | description | title |
+|---|---|---|---|---|
+| `what-tarot-is.id` | 1270 | 6 min | 156 chars | 43 |
+| `what-tarot-is.en` | 1616 | 8 min | 157 | 56 |
+| `how-to-read-tarot.id` | 1693 | 8 min | 156 | 51 |
+| `how-to-read-tarot.en` | 1995 | 10 min | 157 | 53 |
+
+**The plan predicted ~2,400 words for the how-to and the Indonesian came in at 1,693.**
+Indonesian says the same thing in fewer words — no articles, fewer prepositions, heavy
+compounding — so the length floor in the lint is 1100 rather than the plan's 1200, and a
+word count is a poor cross-language proxy for how long a page takes to read. Nobody has
+measured Indonesian reading speed; `readingMinutes` uses 200 wpm for both and the label
+says *"sekitar"* / *"about"* (S6 F6, reconciliation §7).
+
+The divergence between locales is enforced, not trusted. Per article the two documents
+must share no `cardRef` card, no set of recommended `/arcana/` pages, no title and no
+description, and each must have at least one level-2 section the other does not:
+
+| article | `id`-only sections | `en`-only sections | worked card |
+|---|---|---|---|
+| `how-to-read-tarot` | `preparing` | `one-card`, `a-good-reading` | The Moon / Temperance |
+| `what-tarot-is` | `origins`, `not-for` | `how-it-works`, `skeptics` | The Fool / Justice |
+
+### Loop 4 — the article measure, and the thing it found
+
+`tools/seo/blogfit.{sh,js}`, committed beside `galleryfit` and `wallpaperfit`. It
+constrains `article[class*=page]` to a known width and reads a `ch`-calibrated probe
+against the paragraph's own computed font — **never a hardcoded 8.4px advance**, which
+silently stops being true the day `--font-body` changes.
+
+Sixteen measurements — four widths × four documents. **`contentPx` and `chars` are
+identical across all four documents at each width**, which is the point: the measure is a
+function of the container and the font, never of the content.
+
+```
+  w   contentPx  chars     how-to.id  what-is.id  how-to.en  what-is.en   (h1 lines / ToC rows)
+ 320     288       32        4 / 11      3 / 7      4 / 12      4 / 7
+ 360     328       36        3 / 11      3 / 7      3 / 12      4 / 7
+ 375     343       38        3 / 11      3 / 7      3 / 12      3 / 7
+ 390     358       40        3 / 11      2 / 7      3 / 12      3 / 7
+
+ chWidth 9.06px at every width, in both locales -- Cormorant Garamond at 19px.
+ overflow false and offenders [] in all sixteen. tocDead [], proseDead [] in all
+ sixteen. pageH 7351-12524px, so the how-to is about nine phone screens.
+```
+
+**`chars` is 32 at 320px against the 45-75 guideline and that is arithmetic** (S6 F4,
+reconciliation §7): 288px at 9.06px per character cannot reach 45, and getting there
+needs ~14px type. Padding is the lever and it is already spent, 20 → 16.
+
+**THE LINE-COUNT METRIC IS CLUSTERED WITH A TOLERANCE, WHICH IS S5's SCAR PAID FORWARD.**
+`getClientRects().length` counts fragments, so a paragraph with an inline `<a>` reports
+several rects for one line; 2px buckets then split two rects either side of a bucket
+edge. S5 got that metric wrong twice — *"the third time that metric has misled someone
+here"* — so this clusters rect tops at half the line height. The `h1Lines` column above
+is the metric that would have been wrong: four lines of a 28px display face at 320px is
+correct and a fragment count would have said more.
+
+#### The negative control FAILED TO GO RED, and fixing that fixed the harness
+
+`min-width: 420px` on `.p` in `Prose.module.css`, measured at 320px: `contentPx` came back
+**420** — a paragraph 132px wider than the page — and `overflow` came back **false** with
+an empty `offenders`. `getComputedStyle(p).minWidth` returned `420px`, so the rule WAS
+applied. **The control was armed and the harness could not see the defect.**
+
+The cause is a distinction worth carrying to the next harness:
+
+> **`scrollWidth > clientWidth` on a block answers *"does this block's CONTENT overflow
+> its own box"* — not *"is this block wider than its container"*.** A `min-width` makes the
+> element itself wide, so its own content fits perfectly and the overflow lands on the
+> PARENT's `scrollWidth`, which is where a phone's horizontal scrollbar actually comes
+> from.
+
+And the second form is the commoner real failure: a long unbroken URL, a wide table, an
+unwrapped code span. So `blogfit.js` now measures three things — a block's content against
+its own box, a block's box against the body's column, and the container chain — and the
+re-armed control names all three:
+
+```
+overflow true
+offenders ["p box 420>288" x23, "body content 420>288", "article content 436>320"]
+```
+
+Reverted, and the four widths re-measured green with the fixed harness.
+**A harness whose red state has never been seen is worth nothing, and this one was worth
+nothing for about twenty minutes.**
+
+**`chars` is ~32 at 320px against the 45-75 guideline and that is arithmetic** (S6 F4,
+reconciliation §7): 288px at 9.06px per character cannot reach 45, and getting there
+needs ~14px type. Padding is the lever and it is already spent, 20 → 16.
+
+**THE LINE-COUNT METRIC IS CLUSTERED WITH A TOLERANCE, WHICH IS S5's SCAR PAID FORWARD.**
+`getClientRects().length` counts fragments, so a paragraph with an inline `<a>` reports
+several rects for one line; 2px buckets then split two rects either side of a bucket
+edge. S5 got that metric wrong twice — *"the third time that metric has misled someone
+here"* — so this clusters rect tops at half the line height.
+
+**WHAT IT FOUND: `PublicShare`'s button is 36px tall at every width, under the 44px iOS
+minimum.** It is S1's component and its own stylesheet, and it already ships under 22
+lore pages, so it is pre-existing rather than S6's to fix (§6 file ownership) — but
+nothing was reporting it before, and `blogfit.sh`'s `smallTargets` is now what does.
+
+### And a second S1 finding, which contradicts a sentence in the reconciliation
+
+**`PublicShare` RENDERS ITS BUTTON IN THE SERVER HTML, SO WITH JAVASCRIPT OFF THE
+CONTROL IS PRESENT AND DEAD.** Verified by `curl` on `/blog/what-tarot-is` and on
+`/arcana/the-moon` — the same markup on both:
+
+```html
+<button type="button" class="PublicShare-module__…__button">Bagikan halaman ini</button>
+```
+
+S6's plan flag 5 said the opposite would ship — *"it renders `null` until mounted… a dead
+button is worse than no button"* — and **reconciliation §7 recorded it as a settled fact
+about the release: *"The share control is invisible without JavaScript"***. It is not.
+`PublicShare` has no `mounted` guard, no `useEffect`, and returns its markup on the first
+render.
+
+This is **pre-existing on twenty-three pages and S1's file to change**, so S6 did not
+touch it. It is written down here because reconciliation §7 is the document a future
+session will consult, and it currently states a property the code does not have — which
+is worse than an open item, because nobody goes looking for it. The fix is four lines
+(`const [mounted, setMounted] = useState(false)`, an effect, `if (!mounted) return null`)
+and the decision is whether a permanently-visible control that works for ~99% of visitors
+beats no control at all for the rest. **Not S6's call and not S6's file.**
+
+### The crawl, signed out, no cookie jar
+
+Six URLs — `/blog`, `/en/blog` and both articles in both trees. Every one **200**, every
+one carrying **zero `Set-Cookie`**, **no `x-robots-tag`** (S-D12 has not spread) and no
+`content-disposition`.
+
+The locale checks, which are the ones nothing else can do:
+
+```
+Cookie: jmt_locale=en        -> /blog/how-to-read-tarot is INDONESIAN   ✓
+Accept-Language: en-GB       -> INDONESIAN                              ✓
+?lang=en                     -> INDONESIAN (inert on content, S2 F5)    ✓
+/en/blog/how-to-read-tarot   -> ENGLISH                                 ✓
+```
+
+**All three hostile inputs lose to the URL** (§4.1), which is the property that stops a
+CDN serving whichever language warmed the cache to everybody under a canonical claiming
+otherwise.
+
+Off the wire: a canonical at the bare path, three `alternate` links (`id`, `en`,
+`x-default`), an Indonesian `<title>`, an unknown slug **404**, and the sitemap carrying
+exactly six blog rows.
+
+**ONE `application/ld+json` BLOCK, NOT TWO, AND THE PLAN EXPECTED TWO.** `graph()` wraps
+both nodes under one `@context` — S4's pattern, and two contexts is valid markup that
+doubles the bytes on the pages whose TTFB a crawler measures. Parsed off the wire:
+`BlogPosting` with `inLanguage: 'id'` (the bare tag, R15 — the plan's own test spelled
+`en-GB`), `wordCount: 1693`, `author` and `publisher` by `@id`, `isPartOf` the `Blog`
+node, an `ImageObject` at `#hero`, and a three-rung breadcrumb `/` → `/blog` → article.
+**No `&amp;` anywhere in it**, which is the failure `JsonLd.tsx`'s pre-escape exists to
+make impossible and which no validator flags.
+
+### EVERY `/en/` CONTENT ROUTE LOSES ITS CACHE HEADER, AND THAT IS NOT S6's TO FIX
+
+**Measured against a real `npx next start`, 2026-07-29.** This is R21's open item — *"the
+cache-header question has ONE owner and it is a blocker on the S-D10 claim"* — closed
+in the direction nobody expected. R21 and three workstream sections say the `s-maxage` is
+*"measured locally but not against a Vercel CDN"*. The truth is worse: **measured locally,
+half of it never reaches the wire at all.**
+
+```
+/blog                     public, s-maxage=3600, stale-while-revalidate=86400
+/en/blog                  no-cache, must-revalidate
+/blog/what-tarot-is       public, s-maxage=3600, stale-while-revalidate=86400
+/en/blog/what-tarot-is    no-cache, must-revalidate
+/arcana/the-moon          public, s-maxage=3600, stale-while-revalidate=86400
+/en/arcana/the-moon       no-cache, must-revalidate
+/gallery                  public, s-maxage=3600, stale-while-revalidate=86400
+/en/gallery               no-cache, must-revalidate
+```
+
+**IT IS NOT BLOG-SPECIFIC. Four of the eight content entries in `next.config.ts` are
+inert, and the four inert ones are exactly the English tree** — `/en/gallery`, the
+twenty-two `/en/arcana/<slug>`, `/en/blog` and both `/en/blog/<slug>`. Twenty-five
+indexable English pages, uncacheable at the edge, on a release whose entire argument for
+`s-maxage` over multiple root layouts is TTFB for a crawler (S-D10).
+
+**The diagnosis, because a shrug is not a record.** The config's `headers()` DOES run on a
+prefixed path — the catch-all's `x-frame-options: SAMEORIGIN` and
+`x-content-type-options: nosniff` both arrive on `/en/blog`. What does not survive is
+`cache-control` specifically, and the response carries `x-middleware-rewrite:
+http://localhost:3001/blog`. So the rewritten render's own `Cache-Control` wins over the
+matched config entry, while on the bare path — same route file, no rewrite — the config
+entry wins. **`headers.test.ts`'s comment is the thing that made this invisible**: it says
+*"Next's `headers()` matches the INCOMING request path, before middleware's rewrite… so
+`/en/gallery` never matches the `/gallery` entry"*, which is true about MATCHING and says
+nothing about which value survives a rewrite. The test asserts the config CONTAINS the
+four `/en/` entries. It does, and they do nothing.
+
+**S6 did not fix it, deliberately.** `next.config.ts` is S1's file and the rewrite is S2's
+(roadmap §6.4, §6.2), the fix is a cross-workstream design decision rather than a missed
+delta, and getting it wrong on the response that carries a session is the one mistake on
+this seam that is worse than the bug. The candidate fix is to set `Cache-Control` inside
+middleware on the rewrite branch — the one place that already knows a response is a
+content response, already manipulates headers on exactly those responses, and is already
+fenced by `content.kind !== 'passthrough'` so a signed-in `/` cannot be caught by it.
+**A config-level test cannot catch this class of bug and a `curl` against `next start`
+can, which is the loop this belongs in.**
+
+### Still open
+
+- **The `/en/` cache header, above. It is the release's most consequential open item and
+  it is S1/S2's.** `blogfit.sh` and `crawl.sh` both run against dev, where every route is
+  `no-cache`, so neither would have found it; `npx next start -p 3002` did.
+- **Nobody has read either article on a phone.** Reconciliation §8: *"no lint can tell
+  whether a page is worth reading"*, and every mechanical check passes on atmospheric
+  nothing. The acceptance test is Miftah reading both, in both languages, on glass.
+- **The `s-maxage` on the BARE paths is measured on `next start` and never against a
+  Vercel CDN** (R21) — the same residual gap `/gallery` and the 22 lore pages carry. The
+  `/en/` half is a different and larger problem; see the section above.
+- **`PublicShare`'s 36px button and its dead no-JS state**, above. S1's file, 23 pages.
+- **No RSS** (S6 F10). Out of scope, ~30 lines, no dependency, and the only excluded
+  feature that costs nothing to maintain.
+- **`og:image` is 2:3 card art on a page whose previews want ~1.91:1** (R20). The ruling
+  is a site-level default through `metadataBase`; naming the hero is still better than
+  naming nothing.
