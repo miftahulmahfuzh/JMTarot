@@ -110,6 +110,22 @@ export function dayCount(from: string, to: string): number {
 }
 
 /**
+ * Is this a range an admin query will run at all?
+ *
+ * **IT LIVES HERE AND NOT IN `queries/admin/metrics.ts` FOR THE USUAL REASON**:
+ * `queries/contract.test.ts` requires the handle as the first parameter of every
+ * exported function in that directory, and a range guard has no handle to take. Fifth
+ * time this project has hit that wall; same resolution.
+ *
+ * `dayCount` rather than `enumerateDays().length`, so a caller can refuse a range
+ * without allocating 400 strings first.
+ */
+export function isUsableRange(from: string, to: string): boolean {
+  const n = dayCount(from, to);
+  return n > 0 && n <= MAX_RANGE_DAYS;
+}
+
+/**
  * The **Monday** of `day`'s week, ISO. `''` for a malformed input.
  *
  * `(dow + 6) % 7` is what turns Postgres's and JavaScript's Sunday-is-0 into
