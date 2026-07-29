@@ -1845,11 +1845,21 @@ question -- and a constant reads as data. `TrackView` could not have got it righ
 its props come from a server component, where `document.referrer` does not exist.
 `PublicPageViewed` is the fix and all three surfaces mount it.
 
-**Still open:** no wallpaper download is mounted (S5 has not landed -- the placement
-decisions are recorded in `GalleryGrid.tsx` so S5 does not re-derive them, and when
-it lands `contentUrl` should move to the 1024x1536 wallpaper and `licenseUrl` to
-`/terms#9` **only if** clause 9 gains the grant); the `s-maxage` on this route is
-measured locally and not against a Vercel CDN (R21).
+**S5 LANDED HOURS AFTER THIS SECTION WAS WRITTEN AND CLOSED TWO OF ITS THREE OPEN
+ITEMS.** The paragraph here said *"no wallpaper download is mounted"*; S5 mounted
+`WallpaperDownload` in `GalleryGrid`'s zoom sheet at the placement S3 had recorded
+for it, added `.downloadSeam`, wrote clause 9's licence grant into
+`terms.{id,en}.tsx`, and `images.ts` therefore now claims `licenseUrl: /terms#9`
+honestly. **Do not read this section as if the download were still absent.**
+
+**Still open:** `contentUrl` is STILL the 800x1200 WebP rather than the 1024x1536
+wallpaper, and S5 left it deliberately with the argument in `images.ts` -- the node
+describes ONE binary, so moving `contentUrl` without `url`, `width`, `height` and
+`encodingFormat` leaves a node whose declared dimensions belong to a different file,
+and moving all four means editing S4's `jsonld.ts` in the same commit and changing
+the image identity of 22 pages. Worth doing as one change, by whoever owns both.
+And the `s-maxage` on this route is measured locally, never against a Vercel CDN
+(R21).
 
 ## /account and the persona (V8)
 
