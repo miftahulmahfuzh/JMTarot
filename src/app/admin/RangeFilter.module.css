@@ -1,0 +1,122 @@
+/*
+ * The range filter. v0.5.0 / A4. **One row, above everything, on both pages** (I-20).
+ *
+ * A `<form method="get">`, so a preset is a submit and a range change is a NAVIGATION. That
+ * deletes the client fetch, deletes `/api/admin/metrics/[metric]` (R21 struck it), and deletes
+ * `interaction.md`'s "hold the previous render at reduced opacity" requirement -- there is no
+ * refetch to hold anything through. It is also why nothing on either page needs hydration.
+ *
+ * PRESETS BEFORE THE CUSTOM RANGE. The operator's question is almost always "the last week" or
+ * "the last month"; a date picker as the primary control makes the common case the expensive
+ * one.
+ *
+ * 44px OF TARGET ON EVERY CONTROL. `PublicShare`'s known 36px defect is measured against the
+ * same iOS floor, and the operator here may well be on a phone looking at why something broke.
+ * Loop 4 measures it at 320.
+ */
+
+.filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.label {
+  font-family: var(--font-display), Georgia, serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-section-label);
+  text-transform: uppercase;
+  color: var(--label);
+}
+
+.presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.preset {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-chip);
+  background: transparent;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.preset:hover,
+.preset:focus-visible {
+  color: var(--gold-text);
+  border-color: var(--gold-border);
+}
+
+/* The active preset. `--gold-wash` is the existing 8% fill; gold here means "this is the
+   one", which is the same thing it means on a picker. `aria-current` carries it for a
+   screen reader, so the colour is not the only signal. */
+.active {
+  background: var(--gold-wash);
+  border-color: var(--gold-border);
+  color: var(--gold-text);
+}
+
+.custom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.date {
+  min-height: 44px;
+  padding: 0 8px;
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-chip);
+  background: transparent;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 13px;
+  color: var(--text);
+  /* A native date input on a dark background renders its own picker glyph in the UA's
+     colour. `color-scheme: dark` is what makes that glyph light rather than a black square
+     on near-black -- the one property that has to be set for a native control to belong on
+     this canvas. */
+  color-scheme: dark;
+}
+
+.apply {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--gold-border);
+  border-radius: var(--radius-chip);
+  background: var(--gold-wash);
+  font-family: var(--font-display), Georgia, serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--gold-text);
+  cursor: pointer;
+}
+
+/* Which range is actually on screen, spelled out. A filter that shows four presets and no
+   dates leaves an operator guessing whether "30 hari" ended today or yesterday. */
+.shown {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* `fellBack`: the URL asked for something unusable and this is the default instead. Said out
+   loud rather than silently honoured -- an operator who hand-edited a URL is owed the
+   difference. */
+.fellBack {
+  flex-basis: 100%;
+  margin: 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 12px;
+  color: var(--chart-sev-2);
+}

@@ -1,0 +1,102 @@
+/*
+ * The table view every chart carries. v0.5.0 / A4.
+ *
+ * ZERO JAVASCRIPT: `<details>` IS the toggle. That is not a minimalism flourish -- I-17
+ * caps this directory at one client component, and an accessibility affordance that
+ * needs hydration is one that is absent until hydration lands.
+ *
+ * `tabular-nums` LIVES HERE AND IN `Axis.module.css`, AND NOWHERE ELSE (§1.10). A column
+ * of figures must align digit-for-digit or a reader cannot compare two rows; a stat
+ * tile's value and the hero figure take PROPORTIONAL figures, because tabular digits at
+ * 28-48px read as a spreadsheet cell rather than as a number somebody chose to show you.
+ * `Task 11`'s acceptance step greps for exactly that split.
+ *
+ * THE TABLE SCROLLS INSIDE ITS OWN BOX, NEVER THE PAGE (`## Styling`). A nine-row `op`
+ * table with five columns does not fit 320px, and the alternative -- letting the body
+ * scroll horizontally -- is the failure that rule exists for.
+ */
+
+.details {
+  border-top: 1px solid var(--card-edge);
+  padding-top: 8px;
+}
+
+/* 44px of target, the iOS floor. `PublicShare`'s known 36px defect is measured against
+   the same number, and this control is on a surface whose operator may well be on a
+   phone looking at why something broke. */
+.summary {
+  font-family: var(--font-display), Georgia, serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+
+.summary:hover,
+.summary:focus-visible {
+  color: var(--gold-text);
+}
+
+.scroller {
+  overflow-x: auto;
+  margin-top: 4px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 13px;
+}
+
+/* The caption IS the chart's title, passed as one string, so the two cannot disagree.
+   Visible rather than `sr-only`: an opened table is a thing being read on its own. */
+.caption {
+  text-align: left;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--label);
+  padding-bottom: 6px;
+}
+
+.th {
+  text-align: left;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 400;
+  padding: 6px 10px 6px 0;
+  border-bottom: 1px solid var(--card-edge);
+  white-space: nowrap;
+}
+
+.td {
+  color: var(--text);
+  padding: 6px 10px 6px 0;
+  border-bottom: 1px solid var(--card-edge);
+}
+
+.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The row's own mark, when the row IS a series. Same 10px rounded square the legend
+   uses, for the same reason: the shape carries the identity when the colour cannot. */
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-chip);
+  margin-right: 8px;
+  vertical-align: baseline;
+}

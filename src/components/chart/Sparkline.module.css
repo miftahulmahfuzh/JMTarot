@@ -1,0 +1,42 @@
+/*
+ * The stat tile's sparkline. v0.5.0 / A4.
+ *
+ * NO AXIS, NO LABEL, NO TOOLTIP, AND IT GATES NOTHING. Its twelve values are in the
+ * parent tile's table row, so a reader who needs the numbers has them and a reader who
+ * needs the shape has this. That is what makes it legitimate to draw a series with no
+ * scale at all: it is a sentence about direction, not a measurement.
+ *
+ * 24px tall over a 240x48 viewBox -- so the shear is 2:1 vertically, which is exactly why
+ * `non-scaling-stroke` is not optional here. Without it a 2px stroke would render 1px on
+ * one axis and 2px on the other and read as a hairline that faded.
+ */
+
+.spark {
+  display: block;
+  width: 100%;
+  height: 24px;
+  overflow: visible;
+}
+
+.body {
+  fill: none;
+  stroke: var(--chart-deemph);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/*
+ * THE LAST SEGMENT CARRIES THE COLOUR, AND THE BODY DOES NOT. The tile's job is "where
+ * is this now, and which way is it going" -- so the recent end is the accented part and
+ * the history is context. Colouring the whole path would make twelve sparklines on one
+ * page into twelve competing marks with nothing to distinguish the one that matters.
+ */
+.tail {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}

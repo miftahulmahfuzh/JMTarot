@@ -1,0 +1,165 @@
+/*
+ * The weekday x week calendar heatmap. v0.5.0 / A4. **CSS grid, not SVG** -- a cell has an
+ * intrinsic size and a hit target (§3).
+ *
+ * ── SEVEN COLUMNS AT EVERY WIDTH, AND THE 1440px SHOT IS WHY ────────────────
+ *
+ * The first version flipped orientation at 520px: **7 x 24 on a phone and 24 x 7 above it**,
+ * one container query, inherited from §5.3's weekday x HOUR design where 24 was the hours.
+ *
+ * The data is weekday x **WEEK** (§1.7's hour axis has no query behind it), so that flip was
+ * wrong in two ways at once, and only a screenshot showed either:
+ *
+ *   1. **The labels and the grid disagreed.** The weekday names were printed across the top by
+ *      the same `grid-template-columns` -- so at 1200px seven weekday labels sat over
+ *      TWENTY-FOUR columns of weeks. A chart whose axis names the wrong dimension is worse
+ *      than one with no axis.
+ *   2. **24 was never the week count.** A 90-day range is 14 weeks and a 30-day one is 5, so
+ *      98 cells wrapped into rows of 24 and the grid stopped being a calendar at all -- it was
+ *      a ribbon with a ragged end, and it LOOKED like missing data.
+ *
+ * So: **seven columns, always, weekday across and week down**, and the labels can only ever
+ * name the dimension they sit over. There is no orientation left to get wrong. The grid is
+ * capped rather than stretched, because a 7-column grid in a 1100px card would give 150px
+ * cells -- a calendar the size of a wall planner.
+ *
+ * At a 280px content box that is ~38px cells; capped, ~46px. Loop 4 measures both.
+ *
+ * ── AN EMPTY CELL IS OUTLINED, NEVER PAINTED THE LOWEST STEP ────────────────
+ *
+ * `bucketFor(0)` returns `null`, and a `null` cell is the surface with a 1px outline. **A
+ * cell painted `--chart-seq-1` claims data.** On a calendar grid the range's first and last
+ * weeks are always part-empty -- a 30-day range starts mid-week -- so the difference between
+ * "quiet" and "outside the range" is the chart's whole information content.
+ *
+ * ── EVERY CELL IS A BUTTON, AND ITS READOUT IS CSS ──────────────────────────
+ *
+ * I-17 caps this directory at one client component and it is spent on the crosshair, so the
+ * per-cell readout is a `:hover` / `:focus-visible` box with no JavaScript at all. A
+ * `<button>` rather than a `<div>` because it must be reachable by keyboard for
+ * `:focus-visible` to fire -- which is what makes I-19's *"keyboard shows what hover shows"*
+ * true here without a line of script.
+ */
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.grid {
+  display: grid;
+  /* Seven columns, one per weekday, at every width. `minmax(0, 1fr)` so a track cannot
+     refuse to shrink -- the `min-width: 0` lesson from `galleryfit.sh`'s negative control --
+     and the cap below is what stops a 1100px card giving 150px cells. */
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+  /* 7 x 46 + 6 x 2 gaps. A calendar does not get more informative by being wider. */
+  max-width: 334px;
+}
+
+.cell {
+  position: relative;
+  aspect-ratio: 1;
+  border: 0;
+  padding: 0;
+  border-radius: var(--radius-chip);
+  cursor: default;
+  /* A cell has no text, so its accessible name is its `aria-label` -- which carries the
+     same string the readout shows. */
+  appearance: none;
+}
+
+/* An empty cell: the surface, outlined. NOT the lowest sequential step. */
+.empty {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--chart-axis);
+}
+
+.cell:focus-visible {
+  outline: 2px solid var(--gold-border);
+  outline-offset: 1px;
+}
+
+/*
+ * The readout. CSS-only, so it costs no JavaScript, and it appears on BOTH hover and
+ * keyboard focus -- I-19's parity rule, discharged by a selector.
+ *
+ * `pointer-events: none` so the box cannot itself capture the pointer and flicker, and it
+ * is anchored above the cell with a translate rather than positioned per-cell, so no cell
+ * needs to know where it is in the grid.
+ */
+.readout {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: none;
+  padding: 4px 8px;
+  border: 1px solid var(--card-edge);
+  border-radius: var(--radius-chip);
+  /* OPAQUE, for the same reason the panel is (I-4): a translucent readout over a chart
+     mark is unreadable, and over the radial it is a contrast failure. */
+  background: var(--chart-surface);
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.cell:hover .readout,
+.cell:focus-visible .readout {
+  display: block;
+}
+
+/* The weekday labels across the top. `--muted` at 11px, per I-12: `--label` is 4.11:1 and
+   fails 4.5:1 for text this size. Seven three-letter labels fit 38px cells at 320. */
+.axisRow {
+  display: grid;
+  /* THE SAME SEVEN TRACKS AND THE SAME CAP as `.grid`, so a label is always over the column
+     it names. The first version shared a template that flipped to 24 and the labels stopped
+     lining up with anything. */
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+  max-width: 334px;
+}
+
+.axisLabel {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--muted);
+  text-align: center;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* ── The scale legend ──────────────────────────────────────────────────────── */
+
+/*
+ * REQUIRED beside the heatmap, not optional: a sequential scale with no legend is
+ * colour-only encoding on a continuous scale, which is the one case where the table view
+ * alone is not enough relief -- a reader cannot even tell which end is more.
+ */
+.scale {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.swatches {
+  display: flex;
+  gap: 2px;
+}
+
+.swatch {
+  width: 14px;
+  height: 10px;
+  border-radius: var(--radius-chip);
+}

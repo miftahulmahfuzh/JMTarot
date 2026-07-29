@@ -1,0 +1,84 @@
+/*
+ * The stated failure state and the skeleton. v0.5.0 / A4.
+ *
+ * ── I-24: A CARD MAY FAIL; THE PAGE MAY NOT ─────────────────────────────────
+ *
+ * §4.2 requires a bigger `maxDuration` be paired with a bound on the client, *or you have
+ * only made the hang longer*. A3 gives every admin query a 10s statement timeout and a typed
+ * thrown error; this is what the page renders instead of 500ing. **`tally.ts`'s rule: a
+ * heuristic may fail a build; it may not fail a person.**
+ *
+ * It renders INSIDE the frame, so the card keeps its height and the grid does not reflow
+ * around a missing tile -- a page that rearranges itself when one query is slow is a page
+ * whose layout is a status indicator.
+ *
+ * ── THE SKELETON RESERVES THE EXACT HEIGHT, AND ITS PULSE IS OFF UNDER
+ *    `html[data-still]` ─────────────────────────────────────────────────────
+ *
+ * `StillMode` sets that attribute for the screenshot loops, and `_accountshot.html`'s ruling
+ * is *measure the resting state, do not wait for an animation headless Chrome will not
+ * advance*. A pulsing skeleton in a 1440px screenshot is a grey box of indeterminate
+ * lightness; with the pulse off it is a grey box, which is what it is.
+ *
+ * `prefers-reduced-motion` gets the same treatment, and for a better reason than symmetry:
+ * a pulse is decorative and this app already honours that preference everywhere else.
+ */
+
+.error {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 120px;
+  justify-content: center;
+  padding: 16px 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+/* The one place `--chart-sev-4` touches type-adjacent chrome, and it is a GLYPH, not the
+   sentence -- 3.04:1 is a legal mark and an illegal text colour (I-11). */
+.errorGlyph {
+  color: var(--chart-sev-4);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.skeleton {
+  border-radius: var(--radius-chip);
+  /* `--gold-wash` at its documented 8%: the existing token for "something belongs here".
+     No new value, and no grey invented for a loading state. */
+  background: var(--gold-wash);
+  animation: pulse 1400ms var(--ease-card) infinite;
+}
+
+.skeletonLabel {
+  display: block;
+  margin-top: 8px;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--label);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+:global(html[data-still]) .skeleton {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}

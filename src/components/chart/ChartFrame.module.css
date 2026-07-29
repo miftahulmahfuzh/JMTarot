@@ -1,0 +1,104 @@
+/*
+ * The chart card. v0.5.0 / A4.
+ *
+ * ── THE `background` LINE IS AN INVARIANT, NOT A STYLE (I-4, R8) ─────────────
+ *
+ * `Backdrop` paints `--bg-radial` at `position: fixed; inset: 0`, so **the colour behind
+ * a chart depends on where that chart sits on SCREEN.** The gradient runs
+ * `#221a3a 0% -> #130f22 42% -> #08060f 100%`, and §5.1's whole palette was validated
+ * against `#130f22`.
+ *
+ * Measured: `--chart-sev-4` (`#a3423a` -- the critical status colour, the deep end of the
+ * severity ramp AND a diverging pole) is **2.66:1** against the top of that radial and
+ * **3.04:1** against `#130f22`. The mark floor is 3:1. So a transparent panel at the top
+ * of the viewport -- where the KPI row and the hero figure go -- puts an under-contrast
+ * mark on screen, and **the ordinal validator would still have passed, because its own
+ * light-end floor is 2.0.**
+ *
+ * **So: no `rgba`, no `opacity` on this element, no `backdrop-filter`.** Any translucency
+ * invalidates the entire validation run, and the failure looks like nothing at all --
+ * which is why `chart.contract.test.ts` asserts this declaration by name rather than
+ * trusting a reviewer to notice its absence.
+ *
+ * ── THE HEIGHT INCLUDES THE AXIS BAND ────────────────────────────────────────
+ *
+ * The card grows with its content. A fixed height that excludes the x-axis is
+ * `anti-patterns.md`'s nested-scroll failure: the plot fits, the axis does not, and the
+ * reader gets a scrollbar inside a card inside a page.
+ *
+ * ── ONE CONTAINER QUERY, DECLARED HERE AND READ BY DESCENDANTS ───────────────
+ *
+ * `container-type: inline-size` is on THIS element and every `@container` rule lives in
+ * a descendant's stylesheet. CLAUDE.md's trap: *`container-type` does not make an element
+ * its own container* -- `cqw` in the declarations of the element that DECLARES it
+ * resolves against the nearest ANCESTOR container, which is what split `CardBack` into
+ * `.back` and `.plate`. So this file must never use `cqw` or `@container` in `.figure`
+ * itself.
+ *
+ * A container query and not a media query, so a card behaves identically in a 1-up phone
+ * column and a 3-up desktop grid -- which is the whole reason the dashboard can be
+ * desktop-first without a second layout.
+ *
+ * NO NEW VALUES: every colour, radius and size below is an existing custom property.
+ */
+
+.figure {
+  container-type: inline-size;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--card-edge);
+  border-radius: var(--radius-card);
+  /* OPAQUE. See the header. This one declaration is the difference between a
+     validated palette and an under-contrast mark, and it looks like nothing. */
+  background: var(--chart-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* Wide content scrolls inside its own container, never the page body
+     (`## Styling`). A table view is the usual reason. */
+  min-width: 0;
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Cinzel, uppercase, wide tracking -- the `type.sectionLabel` register, which is what
+   every other section heading in this app wears. A chart title is a label, not prose. */
+.title {
+  margin: 0;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-section-label);
+  text-transform: uppercase;
+  color: var(--gold-text);
+}
+
+/* The subtitle is the one place a caveat rides with the chart -- "two calendar systems",
+   "a lower bound on the counter", "Jam (WIB)". It is body-register on purpose: a reader
+   who has to read a sentence should be given a sentence to read. */
+.subtitle {
+  margin: 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.body {
+  min-width: 0;
+}
+
+/* A footnote is where `n`, R² and `k` land. Same register as the subtitle, dimmer,
+   because it qualifies a number the reader has already read rather than introducing
+   one. `--label` is legal here: this is large-ish body text at 12px on an opaque
+   surface, not an 11px axis tick (I-12 is about ticks). */
+.footnote {
+  margin: 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--label);
+}

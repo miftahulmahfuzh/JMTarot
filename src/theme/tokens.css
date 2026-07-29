@@ -83,4 +83,73 @@
   /* --- Shape ------------------------------------------------------------ */
   --radius-card: 10px;
   --radius-chip: 2px;
+
+  /* --- Charts (src/theme/chart.ts, v0.5.0 / A4) -------------------------- */
+  /* MIRROR ONLY. Every value below has a counterpart in `chart.ts`, which carries
+     the reasoning and the measurements, and `tokens.ts` is deliberately NOT touched
+     -- roadmap §6 assigns A4 this file and no other. The chart palette lives in its
+     own TypeScript file rather than in `tokens.ts` because JMTarot has ONE accent
+     hue: gold means "a card goes here", and one hue cannot carry three readers,
+     three services and two token directions. These values are licensed for MARKS ON
+     A CHART SURFACE and for nothing else -- a screen reaching for --chart-cat-2 as a
+     UI colour is the thing the file split exists to discourage.
+
+     DARK MODE IS THE ONLY MODE. Every hex was validated against --chart-surface in
+     dark mode by `tools/dataviz/validate_palette.js`; there is no light theme to
+     flip and an unvalidated second palette is worse than one mode. */
+
+  /* OPAQUE, AND THAT IS A CONTRAST REQUIREMENT (R8). This is `color.bgRadial[1]`,
+     so it is not a new value. `Backdrop` paints --bg-radial at `position: fixed`,
+     so the colour behind a chart depends on where it sits ON SCREEN: a transparent
+     panel at the top of the viewport sits on #221a3a, where --chart-sev-4 measures
+     2.66:1 -- BELOW the 3:1 mark floor -- against 3.04:1 here. A chart panel may
+     never be translucent, and the failure looks like nothing at all. */
+  --chart-surface: #130f22;
+
+  /* Fixed order, four slots, never cycled, never indexed by rank. cat-1 is --gold
+     darkened into the dark lightness band [0.48, 0.67]; the token itself measures
+     L=0.728 and is out of band. */
+  --chart-cat-1: #ab8b20;
+  --chart-cat-2: #2fa4a0;
+  --chart-cat-3: #8b7bd8;
+  --chart-cat-4: #d2707f;
+
+  /* Magnitude, one hue, light -> dark. On a dark canvas the DIMMEST step is the one
+     that must clear the surface: seq-5 does, at 4.02:1. */
+  --chart-seq-1: #d8cdf7;
+  --chart-seq-2: #c0b0ee;
+  --chart-seq-3: #a996e4;
+  --chart-seq-4: #9382cf;
+  --chart-seq-5: #7a68b8;
+
+  /* Ordinal severity, terminating on --danger so the app has one destructive colour
+     rather than two. Adjacent normal-vision ΔE is 7.5, so colour NEVER carries the
+     state alone -- the meter takes an icon and a word as required props. */
+  --chart-sev-1: #e0a49c;
+  --chart-sev-2: #cd8078;
+  --chart-sev-3: #b85c52;
+  --chart-sev-4: #a3423a;
+
+  --chart-good: #4f9d6b;
+  --chart-critical: #a3423a;
+
+  /* Two hues + a NEUTRAL GRAY midpoint, which is --label. The midpoint is below the
+     chroma floor and that is the requirement: the middle must read as "nothing". */
+  --chart-div-down: #2fa4a0;
+  --chart-div-mid: #7a7192;
+  --chart-div-up: #a3423a;
+
+  /* De-emphasis: a sparkline's body, the meter's empty track. Legal as a MARK at
+     4.11:1; ILLEGAL as tick text, which uses --muted at 6.47:1. */
+  --chart-deemph: #7a7192;
+
+  /* FURNITURE: NO NEW HEX. The axis rule reuses --card-edge, the pewter hairline
+     whose whole job is already "the outermost millimetre"; gridlines are the same
+     stroke one step more recessive. `## Styling` wants a reason for a new value and
+     there was no reason for two. */
+  --chart-axis: var(--card-edge);
+  --chart-mark: 8px; /* marker diameter, at the 8px floor */
+  --chart-ring: 2px; /* surface ring AND stacked-segment gap: ONE consistent width */
+  --chart-bar: 20px; /* under the 24px cap; the leftover is air, never a filled slot */
+  --chart-end: 4px; /* rounded data-end, anchored to the baseline */
 }

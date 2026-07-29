@@ -1,0 +1,207 @@
+/*
+ * `/admin` and `/admin/tokens`. v0.5.0 / A4.
+ *
+ * ── THE FIRST DESKTOP-FIRST SURFACE IN THIS PROJECT ─────────────────────────
+ *
+ * Everything else here is a phone screen. This is a table of numbers read on a laptop, and
+ * roadmap §0.5 is explicit that *nobody has looked at this dashboard on the machine it will be
+ * used from* -- so the grid below is written to be measured, not guessed: **`auto-fit` with a
+ * `minmax` floor**, so the column count is a consequence of the container rather than a media
+ * query somebody has to maintain.
+ *
+ * At 320px it is one column; at 1200 (A1's `.shell` max-width) it is two. **Loop 3 at 1440 is
+ * A4's acceptance step and the only instrument that can say whether that is right**, and loop 4
+ * measures the phone widths.
+ *
+ * ── THE FULL-WIDTH CARDS ARE FULL-WIDTH FOR A REASON ────────────────────────
+ *
+ * A time series with 30-90 x positions in a half-width column at 1200px is ~570px, which is
+ * under 7px per day. The lead cards span both columns so a day is a readable column; the tables
+ * and the short-series cards do not.
+ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.h1 {
+  margin: 0;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: var(--fs-title);
+  letter-spacing: var(--ls-title);
+  text-transform: uppercase;
+  color: var(--gold-text);
+}
+
+.grid {
+  display: grid;
+  /*
+   * 380px is the narrowest a chart card can be and still hold a 30-day axis with four ticks
+   * plus a 120px hover readout.
+   *
+   * ── `min(380px, 100%)` AND NOT `380px`, AND LOOP 4 FOUND THIS ───────────────
+   *
+   * **`repeat(auto-fit, minmax(380px, 1fr))` DOES NOT SHRINK BELOW 380px.** `auto-fit`
+   * collapses empty tracks, not narrow ones, so a 280px content box got a 380px track and the
+   * page overflowed by 100px at 320. Measured, 2026-07-30:
+   *
+   *     w 320  content 280  ->  div.grid 380>280   overflow true
+   *
+   * And it cascaded: the KPI row inside that 380px track fitted TWO `minmax(150px, 1fr)`
+   * columns, so the "one column at 320" commitment was also failing -- for a reason that had
+   * nothing to do with the KPI row. **One CSS defect, two wrong numbers, and neither was
+   * visible in a screenshot** because the crop hides the overflow.
+   *
+   * `min(380px, 100%)` is the standard fix and says the intended thing: prefer 380, but never
+   * exceed the container.
+   */
+  grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+/* Spans every column at any count, without knowing how many there are. */
+.wide {
+  grid-column: 1 / -1;
+}
+
+/*
+ * ── THE KPI ROW NEEDS ITS OWN OPAQUE PANEL, AND THE 1440px SHOT FOUND IT ─────
+ *
+ * The first version put the five tiles straight onto the page, with no card. **That is the R8
+ * violation, in the one place R8 names**: the KPI row sits at the TOP of the viewport, which is
+ * exactly where `Backdrop`'s radial is `#221a3a` -- and each tile carries a SPARKLINE, which is
+ * a `--chart-cat-*` mark. The palette was validated against `#130f22`; on `#221a3a` every one of
+ * those numbers stops holding.
+ *
+ * The tile's own text was fine (`--gold-text`, `--muted`), which is why nothing looked wrong --
+ * and it is why R8 is the defect that *"would have been green while the mark was under-contrast
+ * on screen."* It took a screenshot to notice that the marks had no surface under them at all.
+ *
+ * A plain panel rather than a `ChartFrame`: the frame requires a `table` prop (I-13, correctly),
+ * and five tiles whose values are already text and whose series are already in their own tiles'
+ * sparklines have no table to give it.
+ */
+.panel {
+  padding: 16px;
+  border: 1px solid var(--card-edge);
+  border-radius: var(--radius-card);
+  background: var(--chart-surface);
+}
+
+/*
+ * The lead card: the hero and its meter side by side above 520px, stacked below. Not a chart
+ * card -- it has no plot -- so it paints the same opaque surface by hand rather than borrowing
+ * `ChartFrame`, which would demand a `table` prop for two numbers that are already text.
+ */
+.lead {
+  container-type: inline-size;
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--card-edge);
+  border-radius: var(--radius-card);
+  /* OPAQUE, for I-4's reason: this card sits at the TOP of the viewport, which is exactly
+     where `Backdrop`'s radial is `#221a3a` and where `--chart-sev-4` measures 2.66:1. The
+     meter's critical fill is that colour. */
+  background: var(--chart-surface);
+}
+
+@container (min-width: 520px) {
+  .lead {
+    grid-template-columns: max-content 1fr;
+    align-items: center;
+    gap: 28px;
+  }
+}
+
+/*
+ * ── A TABLE'S INLINE BAR COLUMN ──────────────────────────────────────────────
+ *
+ * Page furniture, not a chart primitive: it takes a pre-formatted label, a share and a value
+ * string, and has no axis, no domain and no legend. Keeping it here is deliberate -- as a
+ * primitive it would invite somebody to use it as a bar chart, and it is a LENGTH encoding
+ * inside a table rather than a chart with a scale.
+ *
+ * The fill is one sequential step, so it spends no categorical slot -- which is the other half
+ * of why the nine `op` values can be shown at all (§1.5: >7 classes is a table, and a table
+ * with a bar is still a table).
+ */
+.inlineRows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.inlineRow {
+  display: grid;
+  /* The label column is CAPPED, not sized to content: `translation_repair` would otherwise eat
+     half a 380px card and squeeze the bar into nothing. `minmax(0, …)` is what lets a track
+     actually shrink -- `galleryfit.sh`'s header records a negative control that did nothing
+     because a later `min-width: 0` won. */
+  grid-template-columns: minmax(0, 38%) minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 10px;
+  /* 44px of row, the iOS floor, because the league's rows are links. */
+  min-height: 44px;
+}
+
+.inlineLabel {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 13px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+/*
+ * ── THE ROW BEING 44px DOES NOT MAKE THE LINK 44px, AND LOOP 4 SAID SO ───────
+ *
+ * `.inlineRow` carries `min-height: 44px`, and the first version left the anchor as inline
+ * text: measured **16px tall**. **The tap target is the ANCHOR, not the row that contains
+ * it** -- a thumb aimed at the middle of a 44px row lands on padding and nothing happens,
+ * which is the same class of defect as `PublicShare`'s known 36px button, on a surface whose
+ * operator may well be on a phone finding out why something broke.
+ *
+ * `display: flex; align-items: center; min-height: 44px` makes the anchor fill its grid cell,
+ * so the row's height and the target's height are the same number by construction.
+ */
+.inlineLink {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--gold-text);
+  text-decoration: none;
+}
+
+.inlineLink:hover,
+.inlineLink:focus-visible {
+  text-decoration: underline;
+}
+
+.inlineTrack {
+  height: 10px;
+  min-width: 0;
+  border-radius: var(--radius-chip);
+  /* No track fill: an empty track painted anything would claim a value of zero is a value.
+     Same rule as `bucketFor(0) === null` and the stacked bar's outlined empty row. */
+  background: transparent;
+}
+
+.inlineFill {
+  display: block;
+  height: 100%;
+  /* Only the data end is rounded, anchored to the baseline (`marks-and-anatomy.md`). */
+  border-radius: 0 var(--chart-end) var(--chart-end) 0;
+  min-width: 2px;
+}
+
+.inlineValue {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 13px;
+  /* A column of figures a reader compares row by row -- the case tabular digits exist for. */
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  white-space: nowrap;
+}

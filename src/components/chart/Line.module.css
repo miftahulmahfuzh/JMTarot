@@ -1,0 +1,97 @@
+/*
+ * `Line`, `Area` and `Trajectory`'s shared marks. v0.5.0 / A4.
+ *
+ * ── WHY THE SVG IS `preserveAspectRatio="none"` AND WHY THAT IS SAFE ─────────
+ *
+ * §3: everything inside a uniformly-scaled SVG scales, including things whose
+ * specification is a fixed pixel count. `none` shears the box to fit -- which is
+ * precisely the plot transform -- and it is safe here because **the only things inside
+ * these SVGs are paths and polygons with no intrinsic size.** Markers, end labels, ticks
+ * and the crosshair are all HTML, positioned by percent against the same box.
+ *
+ * `vector-effect: non-scaling-stroke` is what makes the shear harmless for a stroke: a
+ * 2px line is drawn 2px wide perpendicular to the sheared path, at any container width.
+ * There is no equivalent for a radius, which is exactly why a rounded data-end and an
+ * 8px marker are HTML.
+ *
+ * ── THE MARKER'S RING IS A `box-shadow`, NOT A BORDER ───────────────────────
+ *
+ * `marks-and-anatomy.md` asks for a 2px SURFACE ring on overlapping marks. A border
+ * would grow the element and shift the dot off its data point by 2px; a spread-only
+ * `box-shadow` paints outside the box and leaves the centre where the maths put it. The
+ * ring is `--chart-surface` -- the same opaque value the panel paints -- so two crossing
+ * series are separable where they meet.
+ */
+
+.svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+
+.path {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* An area's wash. 10% of the series hue: enough to read as belonging to the line, far
+   too little to read as a second series. Stacked areas are deliberately absent -- four
+   hues at 10% over one another is mud, and part-to-whole is `StackedBar`'s job. */
+.areaFill {
+  stroke: none;
+}
+
+/* The end-dot. `--chart-mark` is 8px, at the >= 8px floor, inside a 24px transparent hit
+   area so a pointer or a thumb has something to aim at (I-19). The hit area is
+   `pointer-events: none` because `ChartHover` owns the whole plot's pointer surface --
+   a dot that swallowed a pointermove would create a dead zone exactly where the reader
+   is most likely to aim. */
+.marker {
+  position: absolute;
+  width: var(--chart-mark);
+  height: var(--chart-mark);
+  margin-left: calc(var(--chart-mark) / -2);
+  margin-top: calc(var(--chart-mark) / -2);
+  border-radius: 50%;
+  box-shadow: 0 0 0 var(--chart-ring) var(--chart-surface);
+  pointer-events: none;
+}
+
+/*
+ * A direct end-label, so identity is never colour-alone (I-10). Since the palette is
+ * four wide, EVERY multi-series chart in this release is direct-labelled.
+ *
+ * TEXT WEARS A TEXT TOKEN (I-11): `--text`, never the series colour. The coloured thing
+ * is the dot beside it.
+ */
+.endLabel {
+  position: absolute;
+  transform: translateY(-50%);
+  padding-left: 10px;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--text);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/*
+ * The label sits INSIDE the plot's right edge rather than outside it. Outside would need
+ * the frame to reserve horizontal room for the longest series name at every width, and at
+ * 320px the longest one (`translation_repair`) is wider than the plot. Loop 4 measures
+ * the overflow this avoids.
+ */
+.endLabelInside {
+  right: 0;
+  padding-left: 0;
+  padding-right: 2px;
+  text-align: right;
+}
