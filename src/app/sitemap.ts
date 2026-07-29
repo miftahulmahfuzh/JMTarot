@@ -1,5 +1,6 @@
 import type { MetadataRoute } from 'next';
 import { LORE_SLUGS } from '@/content/arcana';
+import { blogEntries } from '@/content/blog';
 import { LOCALES, type Locale } from '@/lib/i18n/locale';
 import { sitemapLanguages } from '@/lib/seo/alternates';
 import { absoluteUrl, siteOrigin } from '@/lib/seo/origin';
@@ -84,8 +85,28 @@ type SitemapPath = {
    * `false` -> one address serving both languages by D6's chain, and NO
    * alternates at all. See the header: the second is not a smaller version of
    * the first, it is a different claim.
+   *
+   * OPTIONAL SINCE S6, because `locales` below is the more precise form of the
+   * same question. Exactly one of the two is set on every entry.
    */
-  localized: boolean;
+  localized?: boolean;
+  /**
+   * The locales that ACTUALLY HAVE A DOCUMENT at this path. **Present only where
+   * the answer can be something other than "both".**
+   *
+   * This is the field `entriesFor`'s comment predicted: *"the first path that
+   * ships Indonesian-only turns `localized: boolean` into a locale list and passes
+   * it straight through as this third argument, which is what the parameter exists
+   * for."* S6's articles are the first entries whose locale set is a fact about a
+   * DOCUMENT rather than about a route, so they carry it, and `blogEntries()` is
+   * the single source of that fact — the same field `hreflang`, the visible index
+   * list and the `Blog` node's `blogPost` array all read.
+   *
+   * `localized: true` is shorthand for `locales: LOCALES` and stays on the routes
+   * where the two addresses are one route file (`/`, `/gallery`, `/blog`), which
+   * cannot 404 in either language.
+   */
+  locales?: readonly Locale[];
 };
 
 /**
@@ -117,6 +138,34 @@ const SITEMAP_PATHS: readonly SitemapPath[] = [
    * and Search Console reports that against the whole FILE rather than the row.
    */
   { path: '/gallery', localized: true },
+  /*
+   * ── S6: the blog index and its articles ────────────────────────────────────
+   *
+   * `/blog` is `localized: true` for the gallery's reason: ONE route file, and
+   * middleware rewrites the prefix, so neither address can 404.
+   *
+   * **THE ARTICLES COME FROM `blogEntries()`, WHICH CARRIES `locales` PER
+   * ARTICLE**, and that is R2 at page granularity rather than at release
+   * granularity. Roadmap §1 permits an Indonesian-only article, and an `hreflang`
+   * pair naming an English URL that 404s is non-reciprocal -- **Google discards
+   * the whole set silently**, so one unwritten translation would break the
+   * language targeting of every article that IS complete. Both ship in both
+   * locales today, which is exactly when somebody replaces this with
+   * `localized: true` and nothing fails until the next partial release.
+   *
+   * `lastModified` STAYS `CONTENT_UPDATED_AT` RATHER THAN `revisions[locale]`,
+   * and that is a deliberate loss. The registry has a per-locale `dateModified`
+   * and the `BlogPosting` node emits it; using it here would mean this entry
+   * carrying a different date per URL, which `SitemapPath` cannot express without
+   * becoming a per-locale row shape -- and the field's only use is "has this
+   * changed since I crawled", which one constant per release answers honestly.
+   * Worth revisiting the day an article is edited without a release.
+   */
+  { path: '/blog', localized: true },
+  ...blogEntries().map((entry) => ({
+    path: `/blog/${entry.slug}`,
+    locales: entry.locales,
+  })),
   /*
    * ── S4: the twenty-two lore pages ──────────────────────────────────────────
    *
@@ -168,16 +217,22 @@ function entriesFor(entry: SitemapPath): MetadataRoute.Sitemap {
    * would also be the shape somebody later "completes" by adding an `en` URL that
    * does not exist.
    *
-   * **`LOCALES` IS CORRECT HERE ONLY BECAUSE EVERY LOCALIZED PATH IN THE LIST
-   * TODAY HAS BOTH DOCUMENTS.** R2 is per PAGE, not per release: the first path
-   * that ships Indonesian-only turns `localized: boolean` into a locale list and
-   * passes it straight through as this third argument, which is what the
-   * parameter exists for. Passing `LOCALES` for a card with no English lore
-   * would name a 404 and discard the whole set.
+   * **`localized: true` IS SHORTHAND FOR `LOCALES`, AND IT IS ONLY CORRECT ON A
+   * PATH WHOSE TWO ADDRESSES ARE ONE ROUTE FILE** (`/`, `/gallery`, `/blog`) --
+   * those cannot 404 in either language. R2 is per PAGE, not per release, so a
+   * path whose locale set is a fact about a DOCUMENT carries `locales` instead
+   * and it is passed straight through as this third argument, which is what the
+   * parameter exists for. **S6's articles are the first entries to use it**, and
+   * the prediction that used to sit in this paragraph is now the field above.
+   * Passing `LOCALES` for a document that exists in one language would name a 404
+   * and discard the whole set, silently.
+   *
+   * A path with exactly ONE locale gets `null` here rather than a one-entry set,
+   * for the reason two paragraphs up.
    */
-  const languages = entry.localized
-    ? sitemapLanguages(siteOrigin(), entry.path, LOCALES)
-    : null;
+  const declared = entry.locales ?? (entry.localized ? LOCALES : []);
+  const languages =
+    declared.length > 1 ? sitemapLanguages(siteOrigin(), entry.path, declared) : null;
 
   /** Every address this path is served at, in locale order. */
   const urls: Partial<Record<Locale, string>> = languages

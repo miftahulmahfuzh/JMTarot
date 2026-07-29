@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { blogEntries } from '@/content/blog';
 import { CARD_URL_SLUGS } from '@/data/deck';
 import sitemap from './sitemap';
 
@@ -29,7 +30,16 @@ describe('sitemap.xml', () => {
       // both, because S2 owns the locale expansion.
       'https://www.jmtarot.site/gallery',
       'https://www.jmtarot.site/en/gallery',
-      // S6 adds /blog, /en/blog and the articles.
+      // S6, in the commit that added the pages. `/blog` is one route file, so both
+      // addresses come out of one entry; the two articles come from `blogEntries()`
+      // in its order -- newest first, then by slug, which is why `how-to-read-tarot`
+      // precedes `what-tarot-is` on a shared publication date.
+      'https://www.jmtarot.site/blog',
+      'https://www.jmtarot.site/en/blog',
+      'https://www.jmtarot.site/blog/how-to-read-tarot',
+      'https://www.jmtarot.site/en/blog/how-to-read-tarot',
+      'https://www.jmtarot.site/blog/what-tarot-is',
+      'https://www.jmtarot.site/en/blog/what-tarot-is',
       /*
        * S4's forty-four, spread rather than transcribed. **THE ONE HAND-WRITTEN
        * SLUG TABLE IN THIS REPOSITORY IS IN `urlSlug.test.ts`** and a second copy
@@ -72,6 +82,28 @@ describe('sitemap.xml', () => {
     ]) {
       expect(urls().filter((u) => u.includes(forbidden))).toEqual([]);
     }
+  });
+
+  it('derives the blog rows from the registry, one per locale the article exists in', () => {
+    /*
+     * **R2 AT PAGE GRANULARITY, AND THE REASON THE ARTICLES CARRY `locales` RATHER
+     * THAN `localized: true`.** Roadmap §1 permits an Indonesian-only article; an
+     * `hreflang` pair naming an English URL that 404s is non-reciprocal, and Google
+     * discards THE WHOLE SET silently — so one unwritten translation would break the
+     * language targeting of every article that is complete.
+     *
+     * Derived from `blogEntries()` rather than transcribed, so the day an article
+     * ships in one language this expectation follows it. The exact-set case above is
+     * what still fails if a row disappears entirely.
+     */
+    const expected = blogEntries().flatMap((entry) =>
+      entry.locales.map((locale) =>
+        locale === 'id'
+          ? `https://www.jmtarot.site/blog/${entry.slug}`
+          : `https://www.jmtarot.site/${locale}/blog/${entry.slug}`,
+      ),
+    );
+    expect(urls().filter((u) => /\/blog\/./.test(u)).sort()).toEqual([...expected].sort());
   });
 
   it('pairs a LOCALIZED entry with a RECIPROCAL hreflang set including x-default', () => {
