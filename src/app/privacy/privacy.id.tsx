@@ -168,15 +168,72 @@ export function PrivacyId({ effective }: { effective: string }) {
             'Bacaan: supaya aplikasi ini mengingat apa yang sudah kamu tanyakan.',
             'Analitik: supaya kami tahu bagian mana yang rusak dan bagian mana yang dipakai.',
             'Moderasi: supaya penolakan yang keliru bisa ditemukan dan diperbaiki.',
+            'Pengelolaan Layanan: supaya kerusakan bisa diperbaiki, permintaanmu tentang datamu bisa dijawab, dan Syarat & Ketentuan bisa ditegakkan.',
           ]}
         />
         <P>
           Singkatnya: karena kamu memintanya, dan karena Layanan tidak bisa bekerja tanpanya.
         </P>
+
+        {/*
+          3.1 — v0.5.0 / A1, decision A-D16, and a RELEASE BLOCKER rather than a
+          follow-up: /admin ships in this release, so a policy that still describes a
+          system in which nobody reads your answers would be a live legal document
+          that is false.
+
+          WRITTEN LAST, FROM THE SHIPPED CODE (§11 seam 8), which is why the
+          uncomfortable sentences are here: one key per request, an audit row that
+          gates the reveal, and — the one most likely to be omitted — that a question
+          which was REFUSED can be read too.
+        */}
+        <SubClause id="3-1" n="3.1" title="Siapa di pihak kami yang bisa melihat datamu">
+          <P>
+            Satu orang: operator Layanan ini. Bukan sebuah tim, dan bukan pintu yang bisa dibuka
+            siapa saja &mdash; daftar alamat email yang diizinkan disimpan di lingkungan tempat
+            aplikasi dijalankan, dan mengubahnya berarti memasang ulang aplikasi.
+          </P>
+          <P>
+            Yang bisa dilihat tanpa membuka apa pun: profilmu, jawaban awal yang mana saja sudah
+            kamu isi (bukan isinya), bacaanmu beserta kartunya, tautan bagikan, dan catatan
+            moderasi.
+          </P>
+          <P>
+            Jawaban terbuka yang sensitif dan teks pertanyaan yang pernah ditolak berbeda. Keduanya
+            disimpan terenkripsi, dan dibuka{' '}
+            <strong>satu per satu, satu permintaan untuk satu jawaban</strong>. Tidak ada tombol
+            yang membuka keenamnya sekaligus, dan tidak ada ekspor.
+          </P>
+          <P>
+            <strong>Setiap kali satu jawaban dibuka, satu baris catatan ditulis</strong>: siapa yang
+            membuka, milik siapa, jawaban yang mana, dan kapan. Baris itu tidak pernah memuat
+            jawabannya. Kalau baris itu gagal ditulis, jawabannya tidak dibuka.
+          </P>
+          <P>
+            Yang tidak bisa dilakukan: mengubah profilmu, jawabanmu, bacaanmu, atau sosok yang
+            ditulis tentangmu. Operator hanya membaca.
+          </P>
+          <P>
+            Kalau kamu ingin tahu apa saja yang pernah dibuka tentang kamu, tulis ke{' '}
+            <a href={`mailto:${OPERATOR.contactEmail}`}>{OPERATOR.contactEmail}</a>. Tanyakan
+            sebelum meminta penghapusan &mdash; alasannya ada di{' '}
+            <Link href="#8-1">klausul 8.1</Link>.
+          </P>
+        </SubClause>
       </Clause>
 
       <Clause id="4" n="4." title="Siapa lagi yang melihatnya">
-        <P>Tiga pihak, dan tidak ada yang lain.</P>
+        {/*
+          **THIS LINE USED TO READ "Tiga pihak, dan tidak ada yang lain."** and
+          reconciliation R31 is why it changed: A-D16 named clauses 3 and 8, but a
+          reader does not read this sentence as narrowly as it was written. It is an
+          answer about THIRD parties; it reads as an exhaustive answer to "who sees
+          my answers". Amending only 3 and 8 would leave a policy that is technically
+          amended and still misleading, which is worse than one plainly out of date.
+        */}
+        <P>
+          Tiga pihak di luar kami, dan tidak ada yang lain. Siapa di pihak kami yang bisa
+          melihatnya ada di <Link href="#3-1">klausul 3.1</Link>.
+        </P>
 
         <SubClause id="4-1" n="4.1" title={`Penyedia model bahasa (${PROVIDER.name})`}>
           <Callout>
@@ -294,6 +351,17 @@ export function PrivacyId({ effective }: { effective: string }) {
           jujur: enkripsi kolom melindungi dari salinan basis data yang bocor, bukan dari aplikasi
           yang sedang berjalan dan berhasil dibobol.
         </P>
+        {/*
+          R31 again. This clause exists to state the limit honestly, and after
+          v0.5.0 there is a SECOND limit -- so the one paragraph in the document
+          about limits is the worst possible place to omit it.
+        */}
+        <P>
+          Batas kedua, dan yang ini pilihan dan bukan kebocoran: enkripsi kolom tidak melindungimu
+          dari operator yang memang berhak membukanya.{' '}
+          <Link href="#3-1">Klausul 3.1</Link>{' '}menyebutkan apa yang boleh dibuka dan apa yang
+          dicatat setiap kali itu terjadi.
+        </P>
       </Clause>
 
       <Clause id="6" n="6." title="Berapa lama kami menyimpannya">
@@ -317,6 +385,18 @@ export function PrivacyId({ effective }: { effective: string }) {
               Tautan bagikan: selama akunmu ada.{' '}
               <strong>Tautan yang dimatikan tetap disimpan dalam keadaan mati</strong>, tidak
               dihapus, supaya alamat itu tidak bisa diberikan lagi ke bacaan lain.
+            </>,
+            /*
+              R31's third clause. **THE SWEEP IS FORBIDDEN FROM TOUCHING THIS TABLE**
+              (roadmap §6), so the honest row reads *kept indefinitely* -- an unusual
+              promise in a retention list, which is exactly why it has to be written
+              rather than inferred from an absence.
+            */
+            <>
+              Catatan akses operator: <strong>disimpan seterusnya</strong>, tidak dihapus. Baris
+              itulah yang membuat pertanyaan &ldquo;apa yang pernah dibuka tentang aku&rdquo; bisa
+              dijawab; menghapusnya sama dengan tidak pernah mencatatnya. Isinya tidak pernah
+              berupa teks yang kamu tulis.
             </>,
           ]}
         />
@@ -357,6 +437,34 @@ export function PrivacyId({ effective }: { effective: string }) {
           menyebutkannya karena mengatakan &ldquo;semua data kamu dihapus&rdquo; tidak akan benar,
           dan orang memeriksanya.
         </P>
+
+        {/*
+          8.1 — A-D16's second required amendment. `admin_access_log` genuinely
+          survives erasure, and the cost is one a person can feel: the link to them
+          is the part that gets removed, so afterwards the trail cannot answer the
+          one question it exists for. Same bargain `events` already pays, stated in
+          the same place, and `audit.integration.test.ts` asserts it rather than
+          leaving a policy sentence with no test behind it.
+        */}
+        <SubClause id="8-1" n="8.1" title="Catatan akses operator, sesudah penghapusan">
+          <P>
+            Catatan akses operator ikut selamat dari penghapusan, sama seperti catatan analitik dan
+            catatan moderasi: barisnya tetap ada, kolom penggunanya dikosongkan.
+          </P>
+          <P>
+            Kami menyebutkannya karena akibatnya nyata dan tidak enak.{' '}
+            <strong>
+              Sesudah akunmu benar-benar dihapus, catatan itu tidak lagi bisa memberi tahu kamu apa
+              yang pernah dibuka tentang kamu
+            </strong>
+            , karena kaitannya ke akunmu justru bagian yang dihapus. Kalau kamu ingin tahu,
+            tanyakan sebelum meminta penghapusan.
+          </P>
+          <P>
+            Catatan itu tidak kami hapus dan tidak ada tombol untuk menghapusnya. Tombol hapus di
+            atas catatan pemeriksaan sama dengan tidak punya catatan pemeriksaan.
+          </P>
+        </SubClause>
       </Clause>
 
       <Clause id="9" n="9." title="Anak-anak">
