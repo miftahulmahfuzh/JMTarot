@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { blogArticle, blogDoc, blogEntries } from '@/content/blog';
+import type { ArticleFacts } from '@/lib/content/blogRow';
 import { serializeJsonLd } from './jsonld';
 import {
   blogIndexGraph,
@@ -17,10 +18,33 @@ const en = blogDoc(SLUG, 'en')!;
 const entry = blogArticle(SLUG)!;
 const canonical = `${ORIGIN}/blog/${SLUG}`;
 
-const node = blogPostingNode({ origin: ORIGIN, doc, entry, locale: 'id', canonical }) as Record<
-  string,
-  unknown
->;
+/**
+ * **v0.5.0 / A6: `entry: BlogEntry` BECAME `article: ArticleFacts`.**
+ *
+ * The fixtures still come from the committed registry -- these are the two articles the
+ * node builder has to be right about, and they are live in production -- but the shape
+ * is the row's. The registry dies in task 26 and this file's fixtures go with it; what
+ * survives is the assertion set, over whatever `loadArticle()` returns.
+ *
+ * The interesting difference is `dateModified`: it was
+ * `entry.revisions[locale]?.dateModified ?? entry.datePublished`, and a row always has
+ * one, so **the `??` is gone and the case that exercised it is gone with it** -- see
+ * below.
+ */
+const facts = (locale: 'id' | 'en'): ArticleFacts => ({
+  slug: entry.slug,
+  datePublished: entry.datePublished,
+  dateModified: entry.revisions[locale]!.dateModified,
+  locales: entry.locales,
+});
+
+const node = blogPostingNode({
+  origin: ORIGIN,
+  doc,
+  article: facts('id'),
+  locale: 'id',
+  canonical,
+}) as Record<string, unknown>;
 
 describe('blogPostingNode', () => {
   it('is a BlogPosting at an absolute, locale-correct URL', () => {
@@ -42,7 +66,7 @@ describe('blogPostingNode', () => {
     const odd = blogPostingNode({
       origin: ORIGIN,
       doc,
-      entry,
+      article: facts('id'),
       locale: 'id',
       canonical: `${ORIGIN}/blog/elsewhere`,
     }) as Record<string, unknown>;
@@ -62,7 +86,7 @@ describe('blogPostingNode', () => {
     const enNode = blogPostingNode({
       origin: ORIGIN,
       doc: en,
-      entry,
+      article: facts('id'),
       locale: 'en',
       canonical: `${ORIGIN}/en/blog/${SLUG}`,
     }) as Record<string, unknown>;
@@ -91,25 +115,33 @@ describe('blogPostingNode', () => {
     expect(node.isPartOf).toEqual({ '@type': 'Blog', '@id': `${ORIGIN}/blog#blog` });
   });
 
-  it('carries both dates, from the registry and never from a filesystem', () => {
+  it('carries both dates, from the ROW and never from a filesystem', () => {
     expect(node.datePublished).toBe(entry.datePublished);
     expect(node.dateModified).toBe(entry.revisions.id!.dateModified);
     // Not `new Date()`: a page reporting itself modified on every fetch is a lie that
     // costs crawl budget. Two calls, byte-identical.
-    expect(serializeJsonLd(blogPostingNode({ origin: ORIGIN, doc, entry, locale: 'id', canonical })))
-      .toBe(serializeJsonLd(node as never));
+    expect(
+      serializeJsonLd(
+        blogPostingNode({ origin: ORIGIN, doc, article: facts('id'), locale: 'id', canonical }),
+      ),
+    ).toBe(serializeJsonLd(node as never));
   });
 
-  it('falls back to datePublished when a locale has no revision row', () => {
-    const bare = { ...entry, revisions: {} };
-    const n = blogPostingNode({
-      origin: ORIGIN,
-      doc,
-      entry: bare,
-      locale: 'id',
-      canonical,
-    }) as Record<string, unknown>;
-    expect(n.dateModified).toBe(entry.datePublished);
+  it('emits `dateModified` with NO fallback, because a row always has one', () => {
+    /*
+     * **THE CASE THAT USED TO BE HERE WAS `falls back to datePublished when a locale
+     * has no revision row`, AND ITS SUBJECT NO LONGER EXISTS.** The registry's
+     * `revisions` was `Partial<Record<Locale, …>>`, so a locale could be listed with no
+     * revision and `blogPostingNode` wrote
+     * `entry.revisions[locale]?.dateModified ?? entry.datePublished`.
+     * `blog_post_locales.updated_at` is `NOT NULL DEFAULT now()`, written by the request
+     * that changed the prose, in the same transaction — **the truthful source that did
+     * not exist when `bodyHash` was invented** (A-D13). A `??` that can never fire is a
+     * reader's second guess about which branch is live, so it is deleted and this case
+     * asserts the deletion rather than the branch.
+     */
+    expect(node.dateModified).toBe(facts('id').dateModified);
+    expect(String(node.dateModified)).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
   it('keeps the headline inside the 110 characters Google will use', () => {
@@ -153,7 +185,7 @@ describe('blogPostingNode', () => {
     const n = blogPostingNode({
       origin: ORIGIN,
       doc: { ...doc, hero: null },
-      entry,
+      article: facts('id'),
       locale: 'id',
       canonical,
     }) as Record<string, unknown>;
@@ -167,39 +199,53 @@ describe('blogPostingNode', () => {
 });
 
 describe('blogIndexNode', () => {
+  /**
+   * **`entries: BlogEntry[]` BECAME `articles: { slug }[]`, ALREADY FILTERED (A6-6).**
+   * The filter used to live here AND on the index page — one predicate, two places.
+   * Now the page passes what `publishedArticles(db, locale)` returned, so the visible
+   * list and the `blogPost` array are the SAME array.
+   */
   const entries = blogEntries();
+  const articles = entries.map((e) => ({ slug: e.slug }));
   const index = blogIndexNode({
     origin: ORIGIN,
     locale: 'id',
     name: 'Artikel',
     description: 'Tulisan tentang tarot.',
-    entries,
+    articles,
   }) as Record<string, unknown>;
 
   it('is a Blog listing every article by @id', () => {
     expect(index['@type']).toBe('Blog');
     expect(index['@id']).toBe(`${ORIGIN}/blog#blog`);
     expect(index.blogPost).toEqual(
-      entries.map((e) => ({
+      articles.map((e) => ({
         '@type': 'BlogPosting',
         '@id': `${ORIGIN}/blog/${e.slug}#article`,
       })),
     );
   });
 
-  it('lists an article ONLY in the locales it exists in', () => {
+  it('lists exactly what it is given, because the filter is a WHERE clause now', () => {
     /*
-     * The reciprocity rule at the list level rather than in `hreflang`: a `blogPost`
-     * pointing at a URL that 404s is a claim a crawler can check and fail. An
-     * `id`-only article must not appear on `/en/blog`.
+     * **THIS CASE CHANGED ITS SUBJECT, AND THE GUARANTEE GOT STRONGER.** It used to
+     * hand this function an `id`-only entry and assert that asking for `en` produced an
+     * empty `blogPost` — the reciprocity rule at the list level, enforced by a
+     * `.filter()` inside the builder.
+     *
+     * A6-6 moved that filter into SQL: `publishedArticles(db, 'en')` **cannot return an
+     * article that has no live English document**, so the builder never sees one and a
+     * filter here would be the second spelling of a predicate. What is asserted instead
+     * is that it adds nothing of its own — an empty list in, an empty list out — and
+     * `blog.integration.test.ts` is where the `id`-only case is now proved, against
+     * rows.
      */
-    const idOnly = { ...blogArticle(SLUG)!, locales: ['id'] as const };
     const enIndex = blogIndexNode({
       origin: ORIGIN,
       locale: 'en',
       name: 'Writing',
       description: 'x',
-      entries: [idOnly],
+      articles: [],
     }) as Record<string, unknown>;
     expect(enIndex.blogPost).toEqual([]);
   });
@@ -210,7 +256,7 @@ describe('blogIndexNode', () => {
       locale: 'en',
       name: 'Writing',
       description: 'x',
-      entries,
+      articles,
     }) as Record<string, unknown>;
     for (const post of enIndex.blogPost as { '@id': string }[]) {
       expect({ id: post['@id'], prefixed: post['@id'].includes('/en/blog/') }).toMatchObject({
@@ -225,7 +271,7 @@ describe('the graphs', () => {
     const g = blogPostingGraph({
       origin: ORIGIN,
       doc,
-      entry,
+      article: facts('id'),
       locale: 'id',
       canonical,
       homeLabel: 'JMTarot',
@@ -246,7 +292,7 @@ describe('the graphs', () => {
     const g = blogPostingGraph({
       origin: ORIGIN,
       doc,
-      entry,
+      article: facts('id'),
       locale: 'id',
       canonical,
       homeLabel: 'JMTarot',
@@ -266,7 +312,7 @@ describe('the graphs', () => {
       locale: 'en',
       name: 'Writing',
       description: 'x',
-      entries: blogEntries(),
+      articles: blogEntries().map((e) => ({ slug: e.slug })),
       homeLabel: 'JMTarot',
       homeUrl: `${ORIGIN}/en`,
     }) as Record<string, unknown>;

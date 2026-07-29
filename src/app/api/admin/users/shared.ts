@@ -80,3 +80,28 @@ export function logAdminFailure(
     name: err instanceof Error ? err.name : typeof err,
   });
 }
+
+/**
+ * **A METHOD MISMATCH MUST 404, NOT 405.** v0.5.0 / **A6's edit to an A5 file**, and the
+ * reason it is not flagged-and-left is that A-D2 is roadmap non-negotiable 1.
+ *
+ * *"A non-admin never learns `/admin` exists. 404, never 403."* A 405 confirms it
+ * exactly as a 403 would — and **Next answers 405 at the ROUTING layer, from the set of
+ * exported verbs, before the handler runs**, so `requireAdmin()` never executes and no
+ * gate in this file can prevent it. Measured 2026-07-30 against a signed-in, ONBOARDED,
+ * non-allowlisted session on the local dev server:
+ *
+ *     POST /api/admin/users                    405     <- the route exists
+ *     POST /api/admin/definitely-not-a-route   404     <- it does not
+ *
+ * One reliable bit per unimplemented verb, on all four of A5's routes and both of A6's.
+ * **A5's four are GET-only, so the leak is a POST; A6's two are POST-only, so it is a
+ * GET** — the same defect from opposite directions, which is why it survived A5's own
+ * probe: `tools/admin/probe.sh` compares the SHAPE of a refusal and only ever sends GET.
+ *
+ * The change is additive and cannot alter any existing behaviour — it only answers
+ * requests that previously got a 405 — which is what makes fixing it here better than
+ * leaving a known leak in the release whose first non-negotiable forbids it.
+ * `probe.sh`'s path list and its method coverage are still A1's to extend.
+ */
+export const refuseMethod = async (): Promise<NextResponse> => adminNotFound();

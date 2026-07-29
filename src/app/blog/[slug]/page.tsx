@@ -6,7 +6,6 @@ import { Prose } from '@/components/Prose';
 import { PublicPageViewed } from '@/components/PublicPageViewed';
 import { PublicShare } from '@/components/PublicShare';
 import { PublicShell } from '@/components/PublicShell';
-import { blogArticle, blogDoc, blogSlugs } from '@/content/blog';
 import { cardByUrlSlug, cardImage } from '@/data/deck';
 import { headingIds, readingMinutes, wordCount } from '@/lib/content/doc';
 import { formatLocalDate } from '@/lib/i18n/format';
@@ -15,6 +14,7 @@ import { getLocale, getT } from '@/lib/i18n/t';
 import { contentAlternates } from '@/lib/seo/alternates';
 import { blogPostingGraph } from '@/lib/seo/blog';
 import { siteOrigin } from '@/lib/seo/origin';
+import { loadCachedArticle } from './load';
 import styles from './page.module.css';
 
 /**
@@ -37,20 +37,58 @@ import styles from './page.module.css';
  *      both directions, so a cookie, an `Accept-Language` and `?lang=` are all inert.
  *      This page depends on that rather than implementing it, and `await getT()` is the
  *      sanctioned door.
- *   3. **NO DATABASE.** So there is no version of a database outage that makes this page
- *      500 (roadmap §10), and no fourth route joining the three that already return 500
- *      instead of 204. Every byte comes from `src/content/blog/`.
+ *   3. **ONE DATABASE MODULE, NAMED: `@/lib/db/queries/blog`** (v0.5.0 / A6, §9.4).
+ *      `@/lib/db/client`, `@/lib/db/schema`, `@/lib/db/queries/admin/**` and every other
+ *      `@/lib/db/**` specifier stay forbidden, **named by path exactly as
+ *      `queries/contract.test.ts` excludes `client.ts` by name rather than by loosening
+ *      the rule** — so a second database import is a test failure and not a shrug. (The
+ *      `db` singleton is named in `load.ts`, which is where a request-scoped cache
+ *      belongs and where `react` may be imported.)
+ *
+ *      **THE ORIGINAL RATIONALE HAS EXPIRED AND IS REWRITTEN RATHER THAN DELETED**
+ *      (A6-27, R40). It said: *"there is no version of a database outage that makes this
+ *      page 500 (roadmap §10), and no fourth route joining the three that already return
+ *      500 instead of 204."* The honest replacement: **an outage makes `/blog/<slug>`
+ *      unavailable, deliberately, with a 500 rather than a 404** — because a 404 on an
+ *      indexable URL is a de-indexing event and a 500 is a retry (A6-24). The three
+ *      routes that return 500 where they should return 204 (`/api/memory/frequency`,
+ *      `/api/memory/summary`, `/api/persona`) are a DIFFERENT bug: those are 204-shaped
+ *      endpoints where an empty answer is correct. **There is no empty article.**
+ *      `sitemap.xml` is the one place that inverts this, and §10.2 says why.
  *   4. **NO MODEL CALL** (S-D7). The article is committed source, read by a human before
  *      it shipped.
  *
- * ── `generateStaticParams` DOES NOT MAKE THIS PAGE STATIC ──────────────────────
+ * ── `generateStaticParams` AND `dynamicParams` ARE DELETED (A6-26, R41) ────────
  *
- * `app/layout.tsx` awaits `getLocale()` for `<html lang>` and `## Localization` rule 5
- * forbids "fixing" that, so `headers()` is read above every page and the whole tree
- * renders per request. **The build output shows `ƒ` and that is the symptom of the rule
- * working, not a defect.** What `generateStaticParams` + `dynamicParams = false` buys is a
- * **404 at the routing layer** for any slug outside the registry, before this module runs.
- * The TTFB story is entirely S1's `Cache-Control`.
+ * **KEEPING THEM WOULD BREAK THE ONE FEATURE THIS WORKSTREAM EXISTS TO BUILD.**
+ * `generateStaticParams` runs at BUILD time, so `dynamicParams = false` closes the slug
+ * space to the slugs that existed when the deploy was built — an article created
+ * afterwards would 404 at the routing layer, before this module runs, with no fix but a
+ * redeploy. Publishing would still require a deploy.
+ *
+ * **NOTHING IS LOST, AND THAT IS MEASURED RATHER THAN ASSUMED.** Three citations:
+ *
+ *   - This header used to say it, correctly: *"`generateStaticParams` DOES NOT MAKE THIS
+ *     PAGE STATIC"*, because `app/layout.tsx` awaits `getLocale()` for `<html lang>` and
+ *     `## Localization` rule 5 forbids "fixing" that. **The build output shows `ƒ` and
+ *     that is the symptom of the rule working.** What the pair bought was a 404 at the
+ *     routing layer, and `notFound()` below is already the belt for it.
+ *   - **R21 of v0.4.0 is closed and the answer was "none of it"** — measured against the
+ *     real Vercel CDN on 2026-07-29, all four blog URLs answer
+ *     `private, no-cache, no-store` with `x-vercel-cache: MISS` on two consecutive
+ *     fetches. All eight content entries in `next.config.ts` are inert. **There is no
+ *     cache to lose.**
+ *   - **ISR was never available**: it needs a static root layout, and S-D10 already
+ *     refused multiple root layouts by route group.
+ *
+ * `blog.contract.test.ts` asserted both strings were PRESENT, so it was red on the
+ * correct implementation (R40). It is **inverted**, with the reason in the test, so that
+ * re-adding them is a failure rather than a tidy-up — a future session will otherwise
+ * "restore" the static params and re-break publishing.
+ *
+ * `runtime` and `maxDuration` STAY, and matter more than they did: this page has
+ * acquired a database and a Neon compute that sleeps, so a `POST /api/locale`-class cold
+ * truncation is now reachable here.
  *
  * `maxDuration` IS DECLARED even though nothing here is slow. `POST /api/locale` was the
  * only database-writing route declaring neither `runtime` nor `maxDuration`, and Hobby's
@@ -69,20 +107,19 @@ import styles from './page.module.css';
 
 export const runtime = 'nodejs';
 export const maxDuration = 15;
-export const dynamicParams = false;
-
-export function generateStaticParams() {
-  return blogSlugs().map((slug) => ({ slug }));
-}
 
 type Params = { params: Promise<{ slug: string }> };
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params;
   const locale = await getLocale();
-  const doc = blogDoc(slug, locale);
-  const entry = blogArticle(slug);
-  if (!doc || !entry) return {};
+  /*
+   * ONE READ PER REQUEST, shared with the body below through `React.cache()` (§9.3).
+   * A driver error PROPAGATES from here — see `load.ts` and A6-24.
+   */
+  const loaded = await loadCachedArticle(slug, locale);
+  if (!loaded) return {};
+  const { doc, facts } = loaded;
 
   const card = doc.hero ? cardByUrlSlug(doc.hero.cardUrlSlug) : undefined;
 
@@ -101,15 +138,15 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
       origin: siteOrigin(),
       path: `/blog/${slug}`,
       locale,
-      locales: entry.locales,
+      locales: facts.locales,
     }),
     openGraph: {
       type: 'article',
       title: doc.title,
       description: doc.description,
       locale: locale === 'en' ? 'en_US' : 'id_ID',
-      publishedTime: entry.datePublished,
-      modifiedTime: entry.revisions[locale]?.dateModified,
+      publishedTime: facts.datePublished,
+      modifiedTime: facts.dateModified,
       /*
        * **THE CARD ART IS 2:3 AND MESSENGERS WANT ~1.91:1, SO MOST WILL CROP IT
        * PORTRAIT. Accepted rather than overlooked** (reconciliation R20): S-D9 forbids
@@ -134,16 +171,23 @@ export default async function BlogArticlePage({ params }: Params) {
   const locale = await getLocale();
   const t = await getT();
 
-  const entry = blogArticle(slug);
-  const doc = blogDoc(slug, locale);
   /*
    * `notFound()` FOR "EXISTS BUT NOT IN THIS LANGUAGE" TOO. Roadmap §1 permits an
    * Indonesian-only article, and the alternative — serving the Indonesian body under
    * `/en/blog/x` — is the half-translated page Miftah's `/s/` ruling rejected, at a URL
    * whose `hreflang` claims it is English. **NO CROSS-LOCALE FALLBACK**, which is I3's
    * argument applied to content.
+   *
+   * **AND IT IS NOW ALSO A6-7's SECOND DEFENCE** (R42): the query returns `null` for
+   * *"`en` published, `id` not"*, so a row hand-edited in `db:studio` produces a 404
+   * here rather than an unhandled throw out of `contentAlternates()` — which would be a
+   * 500 on a URL in the sitemap. **`null` MEANS NO SUCH PUBLISHED ROW AND NOTHING
+   * ELSE**; a driver error propagates (A6-24), because a 404 on an indexable URL is a
+   * de-indexing event and a 500 is a retry.
    */
-  if (!entry || !doc) notFound();
+  const loaded = await loadCachedArticle(slug, locale);
+  if (!loaded) notFound();
+  const { doc, facts } = loaded;
 
   const origin = siteOrigin();
   const path = `/blog/${slug}`;
@@ -151,17 +195,24 @@ export default async function BlogArticlePage({ params }: Params) {
     origin,
     path,
     locale,
-    locales: entry.locales,
+    locales: facts.locales,
   }).canonical;
 
   const sections = doc.body.filter((b) => b.kind === 'heading' && b.level === 2);
   const anchors = headingIds(doc.body, 2);
   const minutes = readingMinutes(wordCount(doc.body));
-  const revision = entry.revisions[locale];
   const card = doc.hero ? cardByUrlSlug(doc.hero.cardUrlSlug) : undefined;
 
+  /*
+   * `locales` IS THE ARTICLE'S OWN SET (R45). Every other `PublicShell` caller omits
+   * it, because their two addresses are one route file that cannot 404 in either
+   * language; an article's `en` document can be unpublished between two page views,
+   * and the footer would otherwise offer *English* to a page that answers 404 -- a
+   * reader-facing dead link A6 creates. It is the same array `contentAlternates()`
+   * received above, so the anchor and the `hreflang` tag cannot disagree.
+   */
   return (
-    <PublicShell surface="blog_post" path={path}>
+    <PublicShell surface="blog_post" path={path} locales={facts.locales}>
       <PublicPageViewed page="blog_post" locale={locale} slug={slug} />
 
       <a className={styles.back} href={localePath(locale, '/blog')}>
@@ -194,9 +245,9 @@ export default async function BlogArticlePage({ params }: Params) {
         <h1 className={styles.h1}>{doc.title}</h1>
 
         <p className={styles.meta}>
-          {t('blog.published', { date: formatLocalDate(entry.datePublished, locale, true) })}
-          {revision && revision.dateModified !== entry.datePublished
-            ? ` · ${t('blog.updated', { date: formatLocalDate(revision.dateModified, locale, true) })}`
+          {t('blog.published', { date: formatLocalDate(facts.datePublished, locale, true) })}
+          {facts.dateModified !== facts.datePublished
+            ? ` · ${t('blog.updated', { date: formatLocalDate(facts.dateModified, locale, true) })}`
             : ''}
           {` · ${t.plural('blog.readingTime', minutes)}`}
         </p>
@@ -257,7 +308,7 @@ export default async function BlogArticlePage({ params }: Params) {
         node={blogPostingGraph({
           origin,
           doc,
-          entry,
+          article: facts,
           locale,
           canonical,
           homeLabel: t('public.crumb.home'),

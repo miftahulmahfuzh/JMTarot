@@ -55,6 +55,16 @@ import type {
   ServiceId,
   YesNo,
 } from '@/data/types';
+/**
+ * A6's `blog_post_locales.body`. **A TYPE-ONLY IMPORT OF A SHAPE, NOT A VALUE
+ * SET**, so it does not breach this file's narrowing rule: `Block` is S4's union
+ * in `src/content/types.ts`, which is PURE and CLIENT-IMPORTABLE and imports only
+ * `@/data/types` -- the same leaf everything above imports. The rule forbids
+ * schema.ts depending on a module that depends on schema.ts, and nothing under
+ * `src/content/**` does or ever will. `status` stays bare `text` for exactly that
+ * reason, because `BlogStatus` lives beside a module that will.
+ */
+import type { Block } from '@/content/types';
 
 /** Every timestamp in this schema. timestamptz, UTC, never a bare `timestamp`. */
 const tsCol = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
@@ -1261,6 +1271,172 @@ export const llmCalls = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// blog_posts + blog_post_locales  (A6, v0.5.0 §3.3, migration 0011)
+//
+// **TWO TABLES, BECAUSE AN ARTICLE IS ONE THING PUBLISHED ONCE AND N LOCALE
+// DOCUMENTS WITH INDEPENDENT BODIES, STATUSES AND TIMESTAMPS.** One table with
+// `..._id` / `..._en` column pairs is the shape R6 of v0.3.0 already rejected
+// for `lotus_avatars.summary`, and it gets worse here: `status` and
+// `updated_at` are per locale, so the pair form would be six columns that must
+// be kept in step by hand.
+//
+// **NOTHING IN THIS PROJECT'S SCHEMA HAD PROSE IN IT BEFORE THIS.** Every other
+// text column is either the querent's (encrypted, redacted, retained on a
+// clock) or a model's. These two hold PUBLIC content the operator authored, so
+// they carry no retention policy and never will: an unpublished article's prose
+// is the operator's own, and A-D16's redaction sweep has nothing to do here.
+// ---------------------------------------------------------------------------
+
+export const blogPosts = pgTable(
+  'blog_posts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /**
+     * The URL slug. Hyphenated lowercase ASCII, English, **identical in both
+     * locales** -- the same ruling that kept `/history` from becoming `/jejak`,
+     * and the thing that makes `/blog/X` <-> `/en/blog/X` a clean mapping
+     * `contentAlternates()` can derive without a per-locale path table.
+     */
+    slug: text('slug').notNull().unique(),
+    /**
+     * `'YYYY-MM-DD'`, **NULL until the first publish of ANY locale**, and
+     * locale-invariant: the article was published once.
+     *
+     * NOT rewritten by a re-publish. An unpublished article that comes back is
+     * the same article, and moving its publication date would tell every
+     * crawler it is new.
+     */
+    datePublished: dateCol('date_published'),
+    createdAt: tsCol('created_at').notNull().defaultNow(),
+    /**
+     * **THIS IS NOT `dateModified`.** `blog_post_locales.updated_at` is
+     * (reconciliation R6). This column moves when the SLUG or the PUBLICATION
+     * DATE changes, which is a fact about the article and not about either
+     * document's prose.
+     *
+     * Two columns with one name and two meanings is the `llm_calls.latency_ms`
+     * trap one table over; R6's ruling is that both keep the name -- they are
+     * genuinely the same kind of thing at different grains -- and that the other
+     * one carries a comment saying which it is.
+     */
+    updatedAt: tsCol('updated_at')
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    /**
+     * **THE CHECK IS NOT BELT-AND-BRACES OVER THE ZOD SCHEMA. IT IS THE HALF
+     * THAT SURVIVES `db:studio`** (reconciliation R6). Without it,
+     * `What-Tarot-Is` and `what-tarot-is` are two rows, two URLs and two
+     * `hreflang` groups, and the only thing that would notice is a crawler.
+     * There is no redirect table in this project and building one is not in
+     * scope.
+     */
+    check('blog_posts_slug_shape_ck', sql`${t.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`),
+  ],
+);
+
+export const blogPostLocales = pgTable(
+  'blog_post_locales',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    postId: uuid('post_id')
+      .notNull()
+      .references(() => blogPosts.id, { onDelete: 'cascade' }),
+    locale: text('locale').$type<Locale>().notNull(),
+    /**
+     * `'draft' | 'published' | 'unpublished'`. **Bare `text`, per this file's
+     * rule**: A6 owns the union (`BlogStatus` in `@/lib/content/blogStatus`),
+     * and narrowing it here would make schema.ts depend on a module that
+     * depends on schema.ts. Same shape as `moderation_flags.category` and
+     * `events.name`.
+     *
+     * **THREE VALUES, AND `'unpublished'` IS NOT `'draft'`** (A6-9). A draft was
+     * never public. An unpublished article WAS, may be in Google's index, may be
+     * in somebody's group chat, and its URL must now answer 404. They differ in
+     * the sitemap, in `hreflang`, in `blogIndexNode.blogPost`, and in whether
+     * the transition is reversible without a new `date_published`. Collapsing
+     * them to a boolean `published` loses the distinction A-D15's whole
+     * reciprocity argument is built on, and `blogStatus.ts` forbids the
+     * transition that would launder one into the other.
+     */
+    status: text('status').notNull().default('draft'),
+    /** The `<h1>` and the `<title>`. Under 110 chars **by lint, not by column**. */
+    title: text('title').notNull(),
+    /** The meta description. 80-158 chars **by lint, not by column**. */
+    description: text('description').notNull(),
+    /** A committed card's URL slug, resolved through `cardByUrlSlug` ON SAVE. */
+    heroCardSlug: text('hero_card_slug'),
+    heroAlt: text('hero_alt'),
+    /**
+     * The existing FIVE block kinds. Validated by zod on save
+     * (`@/lib/content/blockSchema`), never on read -- a parse on the read path
+     * would sit in front of the pages this release exists to get indexed, and a
+     * page that threw on a row it could not parse would 500 on a sitemapped URL
+     * for a defect that is already committed.
+     */
+    body: jsonb('body').$type<Block[]>().notNull(),
+    createdAt: tsCol('created_at').notNull().defaultNow(),
+    /**
+     * **THIS COLUMN IS `dateModified`** (reconciliation R6), and that is why it
+     * carries a comment where an ordinary `updated_at` would not.
+     *
+     * A-D13 DELETED `bodyHash` and the hand-written per-locale date it kept
+     * honest. The reason those existed is a reason about FILES -- *"a filesystem
+     * mtime is a checkout artefact on Vercel, `git log` is unavailable at
+     * request time, and either moves on a whitespace change"* -- and every
+     * clause of it is false of a row. This column is written by the request that
+     * changed the prose, in the same transaction, and is readable at request
+     * time. It is the truthful source that did not exist, and it feeds
+     * `BlogPosting.dateModified` AND `sitemap.xml`'s per-URL `lastModified`.
+     *
+     * **EVERY UPSERT IN `queries/admin/blog.ts` SETS THIS BY HAND, AND THE
+     * REASON USUALLY GIVEN IS NOT TRUE OF THE INSTALLED DRIZZLE.** CLAUDE.md
+     * says in capitals that `$onUpdate()` does not fire inside
+     * `onConflictDoUpdate`; **on drizzle-orm 0.45.2 it does**, measured
+     * 2026-07-30 by printing `.toSQL()` here, on `translations` and on
+     * `personas` -- all three emit `do update set … "updated_at" = $n` with no
+     * by-hand line. The rule stands anyway: three PUBLIC claims
+     * (`BlogPosting.dateModified`, `sitemap.xml`'s `lastModified`, and V2's
+     * `translations.updated_at < source.updated_at` staleness, which has no
+     * `source_hash` column behind it) must not rest on an undocumented
+     * behaviour of a pinned dependency. The evidence is in
+     * `docs/workstream-notes.md`; amending CLAUDE.md is the reconciliation's.
+     */
+    updatedAt: tsCol('updated_at')
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    unique('blog_post_locales_post_locale_uq').on(t.postId, t.locale),
+    /** The public list filters on it. */
+    index('blog_post_locales_status_idx').on(t.status),
+    /**
+     * **AN FK NEEDS ITS OWN INDEX AND POSTGRES DOES NOT CREATE ONE** (R6). The
+     * unique above leads with `post_id` and covers most plans, but a cascade
+     * from `blog_posts` is not guaranteed to use it -- the
+     * `reading_cards_reading_idx` lesson, where a cascade performed one
+     * sequential scan per deleted parent row. `llm_calls.reading_id` states the
+     * rule in capitals one table over and §3.3 omitted it here.
+     */
+    index('blog_post_locales_post_idx').on(t.postId),
+    /**
+     * **BOTH NULL OR BOTH PRESENT.** `BlogDoc.hero` is
+     * `{ cardUrlSlug, alt } | null`, so a half-set pair is a shape the type
+     * cannot express and the transform would have to guess at -- and the guess
+     * somebody writes is `alt: row.heroAlt ?? ''`, which is an accessibility
+     * failure that renders as a perfectly normal-looking page.
+     */
+    check(
+      'blog_post_locales_hero_pair_ck',
+      sql`(${t.heroCardSlug} IS NULL) = (${t.heroAlt} IS NULL)`,
+    ),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Row types
 //
 // `X` is what a select returns; `NewX` is what an insert accepts (columns with
@@ -1302,3 +1478,8 @@ export type AdminAccessLogRow = typeof adminAccessLog.$inferSelect;
 export type NewAdminAccessLogRow = typeof adminAccessLog.$inferInsert;
 export type LlmCall = typeof llmCalls.$inferSelect;
 export type NewLlmCall = typeof llmCalls.$inferInsert;
+export type BlogPost = typeof blogPosts.$inferSelect;
+export type NewBlogPost = typeof blogPosts.$inferInsert;
+/** `BlogPostLocale`, singular, though the table is plural: one row is one document. */
+export type BlogPostLocale = typeof blogPostLocales.$inferSelect;
+export type NewBlogPostLocale = typeof blogPostLocales.$inferInsert;

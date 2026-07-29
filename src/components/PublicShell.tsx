@@ -2,6 +2,7 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { ContentLocaleLink } from '@/components/ContentLocaleLink';
 import { TrackLink } from '@/components/TrackLink';
+import type { Locale } from '@/lib/i18n/locale';
 import { getT } from '@/lib/i18n/t';
 import styles from './PublicShell.module.css';
 
@@ -121,6 +122,20 @@ export type PublicShellProps = {
    * by `siteOrigin()`, which is fenced out of client components.
    */
   path: string;
+  /**
+   * The locales this path is actually served in. **v0.5.0 / A6, reconciliation R45.**
+   *
+   * Passed straight to `ContentLocaleLink`, which defaults it to `LOCALES`. **Only an
+   * ARTICLE needs to supply it**: every other caller's two addresses are one route
+   * file that middleware rewrites, so neither can 404. An article's `en` document can
+   * be unpublished between two page views, and the footer would otherwise offer
+   * *English* to a page that answers 404 — a reader-facing dead link A6 creates.
+   *
+   * The same set the page hands `contentAlternates()`, derived in SQL from published
+   * rows that have a body (A6-6), so the anchor and the `hreflang` tag cannot disagree
+   * — which is R17's whole reason for the shell mounting the control itself.
+   */
+  locales?: readonly Locale[];
   children: ReactNode;
 };
 
@@ -138,7 +153,7 @@ export type PublicShellProps = {
  * than on all five.
  */
 
-export async function PublicShell({ surface, path, children }: PublicShellProps) {
+export async function PublicShell({ surface, path, locales, children }: PublicShellProps) {
   const t = await getT();
 
   return (
@@ -183,7 +198,7 @@ export async function PublicShell({ surface, path, children }: PublicShellProps)
           by URL regardless: the switch gates the CONTROL, never the address, and
           `hreflang` names the other tree to a crawler whatever the UI offers.
         */}
-        <ContentLocaleLink path={path} />
+        <ContentLocaleLink path={path} locales={locales} />
 
         <nav className={styles.legal} aria-label={t('common.terms')}>
           <Link href="/terms">{t('common.terms')}</Link>

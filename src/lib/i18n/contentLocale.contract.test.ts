@@ -263,7 +263,22 @@ describe('the content-page language control is a server-rendered link (§4.2)', 
   it('is a server component that takes the bare path as a prop', () => {
     expect(link).not.toMatch(/^\s*(['"])use client\1/m);
     expect(link).not.toContain('usePathname');
-    expect(link).toMatch(/\{\s*path\s*\}:\s*\{\s*path:\s*string\s*\}/);
+    /*
+     * **THIS USED TO PIN THE WHOLE SIGNATURE — `{ path }: { path: string }` — AND
+     * v0.5.0 / A6 ADDED A SECOND PROP (R45).** The rule it carries is not "one prop":
+     * it is *"`path` IS A PROP AND `usePathname()` IS NOT AN OPTION"*, because on
+     * `/en/gallery` the browser URL is `/en/gallery` and the rendered route is
+     * `/gallery`, so a client-side computation builds `/en/en/gallery` and disagrees
+     * with the server about it. Both halves of that are still asserted; the exact-shape
+     * match is relaxed to `path: string` appearing as a declared prop.
+     *
+     * `locales` is A6's: `ContentLocaleLink` looped `LOCALES` unconditionally, which was
+     * safe while every article shipped in both languages, and A6 lets an admin unpublish
+     * `en` between two page views — leaving the footer offering *English* to a page that
+     * answers 404.
+     */
+    expect(link).toMatch(/path:\s*string/);
+    expect(link).toMatch(/locales\?:\s*readonly Locale\[\]/);
     expect(link).toContain('localePath(');
   });
 

@@ -307,6 +307,70 @@ export async function GET(request: Request) {
   }
 
   /*
+   * **THE COPY LINT OVER EVERY PUBLISHED BLOG ROW.** A6, reconciliation R43.
+   *
+   * **THIS IS THE CALLER THAT KEEPS A-D13 HONEST, AND IT IS HERE BECAUSE THERE IS
+   * NOWHERE ELSE FOR IT.** A-D13 named two callers -- the vitest suite over the 44 lore
+   * documents, and the save endpoint over submitted bodies. All thirty-six of
+   * `blog.content.test.ts`'s cases derive their fixtures from `BLOG_ARTICLES`, so once
+   * the prose is a row and that registry is deleted, **CI lints nothing that ships**:
+   * *"the lint survives the move to Postgres"* would be true of new writes and false of
+   * everything already published, and the failure is invisible because **the lint would
+   * be passing on an empty set.**
+   *
+   * It cannot run in vitest's unit project -- that project has no database and
+   * **must not acquire one** -- so it rides the job that is already running, on exactly
+   * the terms A3's size probe and V9's ceiling report did.
+   *
+   * **IT REPORTS AND DOES NOT DELETE, AND IT IS NOT A `failures` ENTRY.** Nothing here
+   * may unpublish an article: an operator waking up to a page missing from Google
+   * because a word list moved is a worse outcome than a stale line in a log. And a
+   * diagnostic that could not run must not turn a successful sweep red.
+   *
+   * **§6 ASSIGNS THIS FILE TO A3 AND RECONCILIATION R43 ASSIGNS THIS PASS TO "THE
+   * SWEEP CRON", SO THE EDIT IS THE RULING RATHER THAN AN UNLISTED ONE.** A3 owns the
+   * retention delete and the size probe above; A6 owns this block and nothing else in
+   * the file.
+   *
+   * `error`-class only. A warning refuses a PUBLISH, and these rows are already
+   * published -- the four imported articles carry eight warnings between them (every
+   * hero `alt` is the bare card name, which is a real v0.4.0 finding), and reporting
+   * those nightly forever would train the reader to skip the line.
+   */
+  try {
+    const { publishedDocumentsForLint } = await import('@/lib/db/queries/admin/blog');
+    const { publishedSlugs } = await import('@/lib/db/queries/blog');
+    const { lintDocument, hasErrors, rulesFor, formatViolation } = await import(
+      '@/lib/content/lint'
+    );
+    const { resolveViolations } = await import('@/lib/content/blogResolve');
+    const [docs, known] = await Promise.all([publishedDocumentsForLint(db), publishedSlugs(db)]);
+    const offences: string[] = [];
+    for (const { slug, row } of docs) {
+      const doc = {
+        locale: row.locale,
+        slug,
+        title: row.title,
+        description: row.description,
+        hero:
+          row.heroCardSlug !== null && row.heroAlt !== null
+            ? { cardUrlSlug: row.heroCardSlug, alt: row.heroAlt }
+            : null,
+        body: row.body,
+      };
+      const violations = [...lintDocument(doc, rulesFor(slug)), ...resolveViolations(doc, known)];
+      if (!hasErrors(violations)) continue;
+      for (const v of violations.filter((x) => x.cls === 'error')) {
+        offences.push(`${slug}.${row.locale} ${formatViolation(v)}`);
+      }
+    }
+    console.log(`[blog-lint] documents=${docs.length} errors=${offences.length}`);
+    for (const line of offences) console.error(`[blog-lint] ${line}`);
+  } catch (err) {
+    console.error('[cron] blog lint failed', err instanceof Error ? err.name : 'unknown');
+  }
+
+  /*
    * **V9 ADDS ONE SELECT AND NO SECOND JOB.** This file's header is emphatic that
    * there is ONE cron job -- five deletes now, three when V9 wrote this -- because
    * Vercel's free plan allows a small number of invocations, so the ceiling's early

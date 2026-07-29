@@ -17,6 +17,7 @@
     "db:migrate": "tsx scripts/db-migrate.ts",
     "db:studio": "drizzle-kit studio",
     "db:test:reset": "tsx scripts/db-test-reset.ts",
+    "blog:import": "RES_OPTIONS=no-aaaa tsx scripts/blog-import.ts",
     "db:seed": "tsx scripts/db-seed.ts",
     "test": "vitest run --project unit",
     "test:watch": "vitest --project unit",

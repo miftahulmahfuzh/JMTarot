@@ -1,7 +1,7 @@
 import { cardByUrlSlug, cardImagePath } from '@/data/deck';
 import type { Locale } from '@/data/types';
 import type { BlogDoc } from '@/content/types';
-import type { BlogEntry } from '@/content/blog';
+import type { ArticleFacts } from '@/lib/content/blogRow';
 import { wordCount } from '@/lib/content/doc';
 import { localePath } from '@/lib/i18n/prefix';
 import { breadcrumbList, graph, imageObject, organizationId, type JsonLdNode } from './jsonld';
@@ -61,7 +61,13 @@ export function blogIndexUrl(origin: string, locale: Locale): string {
 export type PostingArgs = {
   origin: string;
   doc: BlogDoc;
-  entry: BlogEntry;
+  /**
+   * **`ArticleFacts`, NOT `BlogEntry` — v0.5.0 / A6, task 17.** The registry is gone
+   * and a row is the source; `article.dateModified` is `blog_post_locales.updated_at`
+   * formatted in UTC (A6-13), which is the truthful per-locale source that did not
+   * exist when `bodyHash` was written.
+   */
+  article: ArticleFacts;
   locale: Locale;
   /**
    * The canonical, absolute, from `contentAlternates()`.
@@ -83,7 +89,7 @@ export type PostingArgs = {
 export function blogPostingNode({
   origin,
   doc,
-  entry,
+  article,
   locale,
   canonical,
 }: PostingArgs): JsonLdNode {
@@ -98,14 +104,30 @@ export function blogPostingNode({
     headline: doc.title,
     description: doc.description,
     inLanguage: locale,
-    datePublished: entry.datePublished,
+    datePublished: article.datePublished,
     /*
-     * A COMMITTED CONSTANT FROM THE REGISTRY, never `new Date()` and never a filesystem
-     * mtime. `revisions[locale]` is the per-locale one: the two locales are two URLs and
-     * two nodes, so claiming the English changed because the Indonesian did is a small
-     * lie in structured data. `bodyHash` is what keeps it honest.
+     * **A ROW'S `updated_at`, AND THE `??` IS GONE — WHICH IS THE ONE THING THIS
+     * CHANGE MAKES GENUINELY BETTER** (A-D13, and A6 §0).
+     *
+     * It used to be `entry.revisions[locale]?.dateModified ?? entry.datePublished`,
+     * because the registry's `revisions` map was `Partial<Record<Locale, …>>` and a
+     * locale could be listed with no revision. **A ROW ALWAYS HAS ONE**: `updated_at`
+     * is `NOT NULL DEFAULT now()`, written by the request that changed the prose, in
+     * the same transaction. A `??` that can never fire is a reader's second guess
+     * about which branch is live.
+     *
+     * `bodyHash` and the hand-written per-locale date are DELETED with it, and that is
+     * not a loss. The reason they existed is a reason about FILES — *"a filesystem
+     * mtime is a checkout artefact on Vercel, `git log` is unavailable at request
+     * time, and either moves on a whitespace change"* — and every clause of it is
+     * false of a row. The four committed hashes did not simply die: they became the
+     * one-shot migration oracle in `blog.import.test.ts` (R46).
+     *
+     * Still per LOCALE, for the reason that has not changed: the two locales are two
+     * URLs and two nodes, so claiming the English changed because the Indonesian did
+     * is a small lie in structured data.
      */
-    dateModified: entry.revisions[locale]?.dateModified ?? entry.datePublished,
+    dateModified: article.dateModified,
     author: { '@id': organizationId(origin) },
     publisher: { '@id': organizationId(origin) },
     wordCount: wordCount(doc.body),
@@ -136,7 +158,13 @@ export type IndexArgs = {
   locale: Locale;
   name: string;
   description: string;
-  entries: readonly BlogEntry[];
+  /**
+   * **THE ALREADY-FILTERED LIST — THE FILTER MOVED INTO THE QUERY (A6-6).** It used to
+   * be every entry, filtered here by `e.locales.includes(locale)`. Now the page passes
+   * what `publishedArticles(db, locale)` returned, so the visible index and the
+   * `blogPost` array come from ONE call and cannot disagree about what exists.
+   */
+  articles: readonly { slug: string }[];
 };
 
 export function blogIndexNode({
@@ -144,7 +172,7 @@ export function blogIndexNode({
   locale,
   name,
   description,
-  entries,
+  articles,
 }: IndexArgs): JsonLdNode {
   const url = blogIndexUrl(origin, locale);
   return {
@@ -159,15 +187,18 @@ export function blogIndexNode({
      * ONLY the articles that exist in THIS locale. A `blogPost` pointing at a 404 is a
      * claim a crawler can check and fail, and `/en/blog` listing an Indonesian-only
      * article is exactly the state roadmap §1 permits (*"`id` ships complete and `en`
-     * waits"*). The list page filters the same way, from the same field, so the markup
-     * and the visible list cannot disagree.
+     * waits"*).
+     *
+     * **THE FILTER IS GONE FROM HERE AND IS A `WHERE` CLAUSE NOW** (A6-6). It was
+     * `entries.filter((e) => e.locales.includes(locale))`, which was correct and was
+     * the SECOND place the same predicate was written. The caller passes what the
+     * query returned, so the markup and the visible list cannot disagree — they are
+     * the same array. A filter in TypeScript is exactly the shape a caller forgets.
      */
-    blogPost: entries
-      .filter((e) => e.locales.includes(locale))
-      .map((e) => ({
-        '@type': 'BlogPosting',
-        '@id': `${blogPostingUrl(origin, e.slug, locale)}#article`,
-      })),
+    blogPost: articles.map((a) => ({
+      '@type': 'BlogPosting',
+      '@id': `${blogPostingUrl(origin, a.slug, locale)}#article`,
+    })),
   };
 }
 

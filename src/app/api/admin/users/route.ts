@@ -21,7 +21,13 @@
 import { db } from '@/lib/db/client';
 import { withAdminRead } from '@/lib/db/queries/admin/timeout';
 import { adminUserListPage, normalizeQuery, USERS_PAGE } from '@/lib/admin/userList';
-import { logAdminFailure, ok, requireAdmin, unavailable } from './shared';
+import {
+  logAdminFailure,
+  ok,
+  refuseMethod,
+  requireAdmin,
+  unavailable,
+} from './shared';
 import { parseRange } from '@/app/admin/range';
 
 export const runtime = 'nodejs';
@@ -34,6 +40,12 @@ export const runtime = 'nodejs';
  * A3's `timeout.ts` owns the number and the ordering it sits in.
  */
 export const maxDuration = 30;
+
+/** A-D2: an unimplemented verb answers 404, not 405. See `refuseMethod`. */
+export const POST = refuseMethod;
+export const PUT = refuseMethod;
+export const PATCH = refuseMethod;
+export const DELETE = refuseMethod;
 
 export async function GET(request: Request) {
   const gate = await requireAdmin();

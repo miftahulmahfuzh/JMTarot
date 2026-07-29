@@ -37,8 +37,32 @@ describe('the fences are not vacuous', () => {
   it('finds A5 subtree, its routes and its query modules', () => {
     // A glob that matches nothing is a test that always passes.
     expect(APP.length).toBeGreaterThanOrEqual(20);
-    expect(ROUTES.length).toBe(4);
     expect(QUERIES.length).toBeGreaterThanOrEqual(7);
+  });
+
+  it('names every route under /api/admin, and A6 added two (roadmap §4.1)', () => {
+    /*
+     * **THIS WAS `expect(ROUTES.length).toBe(4)` AND A6 MADE IT SIX.** Every
+     * assertion below iterates `ROUTES`, and the glob is the whole `/api/admin/**`
+     * tree rather than A5's own — deliberately, because the rules those assertions
+     * carry (404 never 403, a literal `maxDuration`, no `after()`, no bare
+     * `NextResponse.json`) are the SURFACE's rules and should bind whoever adds a
+     * route next. A6's two satisfy all of them, which is the fence working.
+     *
+     * **NAMED RATHER THAN COUNTED, WHICH IS STRICTLY STRONGER.** A count says the
+     * glob is not empty; a list says exactly which routes exist, so an UNOWNED
+     * seventh fails loudly — R21's lesson, where `/api/admin/metrics/[metric]` was
+     * assigned to "A3/A4", listed as a seam by nobody, and was the cheapest defect in
+     * the release to fix and the likeliest to have been built twice.
+     */
+    expect(ROUTES.map((f) => f.replaceAll('\\', '/')).sort()).toEqual([
+      'src/app/api/admin/blog/[slug]/status/route.ts',
+      'src/app/api/admin/blog/route.ts',
+      'src/app/api/admin/users/[id]/answer/[key]/route.ts',
+      'src/app/api/admin/users/[id]/moderation/[flagId]/route.ts',
+      'src/app/api/admin/users/[id]/reading/[readingId]/route.ts',
+      'src/app/api/admin/users/route.ts',
+    ]);
   });
 });
 
