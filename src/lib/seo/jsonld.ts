@@ -433,6 +433,20 @@ export function serializeJsonLd(node: JsonLdNode): string {
     .replace(/\u2029/g, '\\u2029');
 }
 
+/**
+ * The `@id` of the single `Organization` node `/` emits.
+ *
+ * **EXPORTED FOR S6 (its plan §D2 names this exact signature), AND IT IS A NARROW
+ * EXPORT RATHER THAN A NEW BUILDER.** `src/lib/seo/blog.ts` builds `BlogPosting`,
+ * which needs `author` and `publisher` by reference — and the alternative was that
+ * file writing `` `${origin}/#organization` `` itself, which is a second definition of
+ * the join every node in the graph hangs off. One string, one place; the fragment
+ * convention is the header's.
+ */
+export function organizationId(origin: string): string {
+  return orgId(origin);
+}
+
 function orgId(origin: string): string {
   return `${origin}/#organization`;
 }
