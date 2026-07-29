@@ -4395,6 +4395,44 @@ closed set in the comment.
   this the highest-value seam in the release, because writing it in house style would
   make A5's invariant unimplementable **and looks implemented**.
 
+### Found while verifying A1, NOT A1's and NOT NEW: `/terms` and `/privacy` still emit two cookies
+
+`tools/seo/crawl.sh` against production on 2026-07-30, immediately after A1 deployed:
+every content route is clean, and **`/terms` and `/privacy` both carry
+`jmt_locale`, `__Host-authjs.csrf-token` and `__Secure-authjs.callback-url`**, so the
+script reports `crawl: FAILED` on those two rows and only those two.
+
+**It is not a regression and A1 cannot have caused it:** A1's diff to `middleware.ts`,
+`gate.ts` and `prefix.ts` is zero lines (R1, `git diff --stat` empty), and the cause is
+structural. `CONTENT_EXACT` is `['/', '/gallery', '/blog', '/arcana']` plus the two
+trees — **`/terms` and `/privacy` are not in it**, because they serve both languages at
+one address and emit no alternates. So `contentRewrite` returns `passthrough` for them,
+and S-D10's cookie strip fires only on `content.kind !== 'passthrough'`. The v0.4.0
+"measured after" list in the S2 section names `/ /en /gallery /en/gallery /blog` as
+zero-cookie and never claimed these two.
+
+**What IS new is knowing that the crawl script and S-D10's fence disagree.** CLAUDE.md
+states the rule as *"A PUBLIC CONTENT RESPONSE CARRIES ZERO COOKIES"*; `crawl.sh` puts
+`/terms` and `/privacy` in its path list and applies that assertion to them; the fence
+deliberately excludes them. **So the release acceptance test has been red on two rows
+since S1 shipped, with nothing recording it as expected** — which is how an acceptance
+test stops being read.
+
+Not fixed here, deliberately, and the two ways to fix it are not equivalent:
+
+- **Adding them to `CONTENT_EXACT` is not a one-line change.** It would put them inside
+  `isPublicContentPath` (i.e. inside `isPublic()`), make `/en/terms` and `/en/privacy`
+  rewrite targets, and oblige an `hreflang` pair for documents that deliberately have
+  none. That is S1/S2 territory and a reconciliation question.
+- **Amending `crawl.sh` to record the exemption with its reason** is the cheap half, and
+  `crawl.sh` is a shared tool roadmap §6 assigns to nobody in v0.5.0 — so A1 flags it
+  rather than editing it, which is what §6 is for.
+
+**The reason it is worth a paragraph rather than a shrug:** a stranger reading the
+privacy policy leaves with two `authjs` cookies, on the one page in the product that
+exists to tell them what they leave with. Small, but the irony is the argument for
+fixing it rather than against.
+
 ### What A1 did not touch, deliberately
 
 `gate.ts`, `middleware.ts`, `prefix.ts`, `alternates.ts`, `sitemap.ts`,
