@@ -184,7 +184,7 @@ function InputVsOutput({ series }: { series: ReturnType<typeof tokenSeries> }) {
     toggleLabel: COMMON.tableToggle,
     emptyCell: COMMON.emptyCell,
     columns: [
-      { label: TOKENS.ioTitle },
+      { label: COMMON.dayColumn },
       { label: TOKENS.ioInput, numeric: true },
       { label: TOKENS.ioOutput, numeric: true },
     ],
@@ -281,8 +281,8 @@ function TrajectoryCard({
     toggleLabel: COMMON.tableToggle,
     emptyCell: COMMON.emptyCell,
     columns: [
-      { label: TOKENS.trajectoryTitle },
-      { label: COMMON.rangeLabel, numeric: true },
+      { label: COMMON.dayColumn },
+      { label: TOKENS.opColumns.calls, numeric: true },
     ],
     rows: [
       ...buckets.map((b, i) => ({ cells: [day(b), int(values[i])] })),
@@ -514,7 +514,7 @@ function WhenBusy({ utc }: { utc: Awaited<ReturnType<typeof callsByUtcDay>> }) {
     toggleLabel: COMMON.tableToggle,
     emptyCell: COMMON.emptyCell,
     columns: [
-      { label: TOKENS.heatTitle },
+      { label: COMMON.dayColumn },
       { label: TOKENS.opColumns.calls, numeric: true },
     ],
     rows: heat.cells.map((c) => ({ cells: [day(c.day), int(c.value)] })),

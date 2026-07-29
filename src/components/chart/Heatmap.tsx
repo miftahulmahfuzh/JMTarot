@@ -1,32 +1,34 @@
 /**
- * The weekday x hour heatmap, and its required `ScaleLegend`.
+ * A two-dimensional heat grid and its required `ScaleLegend`. Generic over what the two axes
+ * are; `/admin/tokens` uses it for **weekday x ISO week**.
  *
- * ── THE HOUR AXIS IS AN APPROXIMATION AND THE LABEL IS THE WHOLE DIFFERENCE ──
+ * ── WHY NOT WEEKDAY x HOUR, WHICH IS WHAT §5.3 ASKED FOR ────────────────────
  *
- * §1.7 / R12. `llm_calls.local_date` is a date with **no time**, and `created_at` is UTC, so
- * **the querent's local hour is not derivable from the ledger.** Weekday comes from
- * `local_date` (correct, no zone involved); hour comes from `created_at AT TIME ZONE
- * 'Asia/Jakarta'`.
+ * §1.7 / R12: `llm_calls.local_date` is a date with **no time** and `created_at` is UTC, so
+ * **the querent's local hour is not derivable from the ledger.** R12 ruled the hour version
+ * ships Jakarta-pinned and labelled `Jam (WIB)` -- *an unlabelled local-hour axis derived from
+ * UTC is a chart that lies* -- or not at all, and §10 asked A3 for the query behind it.
  *
- * Indonesia has no DST, so the offset is fixed and the mapping is exact for the population
- * that matters -- and the operator asking "when is the app busy" is in Jakarta. **An
- * unlabelled local-hour axis derived from UTC is a chart that lies**, so `Jam (WIB)` is not
- * decoration: it is the claim being narrowed to the one that is true. The label arrives as a
- * required prop (I-16) and the page passes it from `copy.ts`.
+ * **A3 shipped no hour query, and `queries/admin/**` is A3's by §7.** So the hour axis is a
+ * stated gap and the page folds the axis §1.7 itself calls exact -- *"weekday comes from
+ * `local_date`, correct, no zone involved"* -- against the week. No pinning, no approximation
+ * and no label narrowing a claim. `src/app/admin/copy.ts` says so on the card.
  *
  * ── A CELL'S VALUE OF 0 IS EMPTY, NOT "LOWEST" ──────────────────────────────
  *
- * `bucketFor(0) === null` and a null bucket renders as the outlined surface. On this grid
- * most cells are genuinely empty and a painted one claims data.
+ * `bucketFor(0) === null` and a null bucket renders as the outlined surface. On a calendar the
+ * range's first and last weeks are always part-empty -- a 30-day range starts mid-week -- so a
+ * painted cell there would claim data on days outside the range entirely.
  */
 import { SEQUENTIAL } from '@/theme/chart';
 import { bucketFor } from './geometry';
 import styles from './Heatmap.module.css';
 
 export type HeatCell = {
-  /** 0..6. The caller decides which day 0 is and labels it; nothing here assumes Monday. */
+  /** The row index, `0..rowLabels.length - 1`. The CALLER decides what a row is and labels
+   *  it; nothing here assumes a weekday, a Monday or a count. */
   row: number;
-  /** 0..23, Jakarta. See the header. */
+  /** The column index, `0..colLabels.length - 1`. */
   col: number;
   value: number;
   /** What the cell's readout and its accessible name say. Pre-formatted (I-16). */
@@ -35,9 +37,17 @@ export type HeatCell = {
 
 export type HeatmapProps = {
   cells: HeatCell[];
-  /** Weekday labels, in `row` order. Length is the grid's row count. */
+  /**
+   * The labels printed ACROSS THE TOP, in `row` order -- the weekdays.
+   *
+   * The grid is `rowLabels.length` columns wide, so this array's length and the template must
+   * agree: `Heatmap.module.css` hardcodes seven tracks, which is what a weekday axis is. A
+   * caller passing eight would get a wrapped grid, and the module's header records that
+   * failure happening once already for a different reason.
+   */
   rowLabels: string[];
-  /** Hour labels, in `col` order. */
+  /** One entry per column-group -- the ISO weeks. Not printed; it sets the cell count and
+   *  feeds each cell's readout. */
   colLabels: string[];
   /** The largest value in the range, for the shared bucket scale. */
   max: number;
@@ -48,11 +58,15 @@ export type HeatmapProps = {
 /**
  * The grid.
  *
- * **The DOM order is hour-major** (24 groups of 7), which is what makes ONE grid work in
- * both orientations: on the phone the container is 7 columns wide so each group of seven
- * becomes a row of weekdays; above 520px it is 24 wide, so the same cells lay out as 7 rows
- * of hours. One markup, one container query, no duplicated cells -- and a screen reader
- * reads it in a consistent order either way, because the order never changes.
+ * **THE DOM ORDER IS WEEK-MAJOR** -- all seven weekdays of the first week, then the second --
+ * and the grid is seven columns wide at every width, so each row IS one week and each column
+ * IS one weekday. One markup, no orientation, and the labels can only ever name the dimension
+ * they sit over.
+ *
+ * The first version flipped to 24 columns above 520px, inherited from §5.3's weekday x HOUR
+ * design. The 1440px screenshot showed both consequences at once: seven weekday labels over
+ * twenty-four columns, and 98 cells wrapping into rows of 24 so the calendar stopped being a
+ * calendar. `Heatmap.module.css`'s header has the full account.
  */
 export function Heatmap({ cells, rowLabels, colLabels, max, scale }: HeatmapProps) {
   const byKey = new Map(cells.map((c) => [`${c.row}:${c.col}`, c]));

@@ -33,12 +33,28 @@
   gap: 8px;
 }
 
+/*
+ * ── THE TRACK IS `--chart-axis`, AND THE 1440px SHOT IS WHY ──────────────────
+ *
+ * §1.8 ruled the track must not be the severity ramp's lightest step, because `#e0a49c` on an
+ * empty track **announces mild alarm at 0% utilisation**. That reasoning stands. What it did
+ * not anticipate is the opposite failure, and only a screenshot could show it:
+ *
+ * At the real utilisation this dashboard opens on -- **15 / 280, or 5.4%** -- a full-width 12px
+ * bar in `--chart-deemph` (`#7a7192`, 4.11:1) is the loudest thing in the card, and it reads as
+ * a progress bar that is FULL. The 5% of green at the left edge reads as an anomaly on it
+ * rather than as the value. The gauge said "critical" in shape while saying "Aman" in words.
+ *
+ * `--chart-axis` is `--card-edge` -- the pewter hairline whose whole job is already *"the
+ * outermost millimetre"* -- so the empty channel is visibly a channel and the FILL is the only
+ * mark. No new value, no palette slot, and §1.8's rule is untouched: this is still not the
+ * severity ramp.
+ */
 .track {
   position: relative;
   height: 12px;
   border-radius: 6px;
-  /* The empty channel. See the header: NOT the lightest severity step. */
-  background: var(--chart-deemph);
+  background: var(--chart-axis);
   overflow: hidden;
 }
 

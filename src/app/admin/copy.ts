@@ -30,6 +30,13 @@
 /** Shared by both pages: the frame's furniture and the words a primitive cannot spell. */
 export const COMMON = {
   tableToggle: 'Lihat tabel',
+  /*
+   * The day column's header. **A table's `<caption>` is already the chart's title, so a
+   * first column labelled with that title prints it TWICE** -- seen at 1440 in
+   * `/tmp/admin-1440.png`, where "PANGGILAN MODEL PER HARI" appeared as the caption and
+   * again as the header of the column holding dates. Only a screenshot shows that.
+   */
+  dayColumn: 'Hari',
   emptyCell: '—',
   /** For a table row whose `user_id` is NULL. See `format.shortId`. */
   unattributed: '(terhapus / sistem)',

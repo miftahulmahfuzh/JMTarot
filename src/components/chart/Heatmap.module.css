@@ -1,23 +1,36 @@
 /*
- * The weekday x hour heatmap. v0.5.0 / A4. **CSS grid, not SVG** -- a cell has an
+ * The weekday x week calendar heatmap. v0.5.0 / A4. **CSS grid, not SVG** -- a cell has an
  * intrinsic size and a hit target (§3).
  *
- * ── THE ORIENTATION FLIPS AT 520px, BY ONE CONTAINER QUERY ──────────────────
+ * ── SEVEN COLUMNS AT EVERY WIDTH, AND THE 1440px SHOT IS WHY ────────────────
  *
- * 24 columns at 320px would give 11px cells: unreadable and untappable. So the phone
- * orientation is **7 columns x 24 rows** (hours down the side, days across) and the desktop
- * one is **24 x 7**, switched by one container query on the card's inline size -- never a
- * media query, so a card behaves the same 1-up and 3-up.
+ * The first version flipped orientation at 520px: **7 x 24 on a phone and 24 x 7 above it**,
+ * one container query, inherited from §5.3's weekday x HOUR design where 24 was the hours.
  *
- * At a 288px content box, 7 columns with 2px gaps gives ~39px cells, which is a real
- * target. Loop 4 measures exactly that number.
+ * The data is weekday x **WEEK** (§1.7's hour axis has no query behind it), so that flip was
+ * wrong in two ways at once, and only a screenshot showed either:
+ *
+ *   1. **The labels and the grid disagreed.** The weekday names were printed across the top by
+ *      the same `grid-template-columns` -- so at 1200px seven weekday labels sat over
+ *      TWENTY-FOUR columns of weeks. A chart whose axis names the wrong dimension is worse
+ *      than one with no axis.
+ *   2. **24 was never the week count.** A 90-day range is 14 weeks and a 30-day one is 5, so
+ *      98 cells wrapped into rows of 24 and the grid stopped being a calendar at all -- it was
+ *      a ribbon with a ragged end, and it LOOKED like missing data.
+ *
+ * So: **seven columns, always, weekday across and week down**, and the labels can only ever
+ * name the dimension they sit over. There is no orientation left to get wrong. The grid is
+ * capped rather than stretched, because a 7-column grid in a 1100px card would give 150px
+ * cells -- a calendar the size of a wall planner.
+ *
+ * At a 280px content box that is ~38px cells; capped, ~46px. Loop 4 measures both.
  *
  * ── AN EMPTY CELL IS OUTLINED, NEVER PAINTED THE LOWEST STEP ────────────────
  *
  * `bucketFor(0)` returns `null`, and a `null` cell is the surface with a 1px outline. **A
- * cell painted `--chart-seq-1` claims data.** On a weekday x hour grid most cells are
- * genuinely empty, so the difference between "quiet" and "nothing" is the chart's whole
- * information content.
+ * cell painted `--chart-seq-1` claims data.** On a calendar grid the range's first and last
+ * weeks are always part-empty -- a 30-day range starts mid-week -- so the difference between
+ * "quiet" and "outside the range" is the chart's whole information content.
  *
  * ── EVERY CELL IS A BUTTON, AND ITS READOUT IS CSS ──────────────────────────
  *
@@ -36,17 +49,13 @@
 
 .grid {
   display: grid;
-  /* Phone: 7 columns (one per weekday). `minmax(0, 1fr)` so a track cannot refuse to
-     shrink -- the `min-width: 0` lesson from `galleryfit.sh`'s negative control. */
+  /* Seven columns, one per weekday, at every width. `minmax(0, 1fr)` so a track cannot
+     refuse to shrink -- the `min-width: 0` lesson from `galleryfit.sh`'s negative control --
+     and the cap below is what stops a 1100px card giving 150px cells. */
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 2px;
-}
-
-@container (min-width: 520px) {
-  .grid {
-    /* Desktop: 24 columns (one per hour). */
-    grid-template-columns: repeat(24, minmax(0, 1fr));
-  }
+  /* 7 x 46 + 6 x 2 gaps. A calendar does not get more informative by being wider. */
+  max-width: 334px;
 }
 
 .cell {
@@ -106,18 +115,16 @@
   display: block;
 }
 
-/* The row and column labels. `--muted` at 11px, per I-12. Selective: every third hour on
-   the phone axis, because 24 stacked labels at 11px do not fit 39px rows. */
+/* The weekday labels across the top. `--muted` at 11px, per I-12: `--label` is 4.11:1 and
+   fails 4.5:1 for text this size. Seven three-letter labels fit 38px cells at 320. */
 .axisRow {
   display: grid;
+  /* THE SAME SEVEN TRACKS AND THE SAME CAP as `.grid`, so a label is always over the column
+     it names. The first version shared a template that flipped to 24 and the labels stopped
+     lining up with anything. */
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 2px;
-}
-
-@container (min-width: 520px) {
-  .axisRow {
-    grid-template-columns: repeat(24, minmax(0, 1fr));
-  }
+  max-width: 334px;
 }
 
 .axisLabel {

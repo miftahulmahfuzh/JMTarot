@@ -37,10 +37,27 @@
 
 .grid {
   display: grid;
-  /* 380px is the narrowest a chart card can be and still hold a 30-day axis with four ticks
-     plus a 120px hover readout. Below that the container query in `Axis.module.css` has
-     already dropped the plot to 200px tall, which is the phone case. */
-  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  /*
+   * 380px is the narrowest a chart card can be and still hold a 30-day axis with four ticks
+   * plus a 120px hover readout.
+   *
+   * ── `min(380px, 100%)` AND NOT `380px`, AND LOOP 4 FOUND THIS ───────────────
+   *
+   * **`repeat(auto-fit, minmax(380px, 1fr))` DOES NOT SHRINK BELOW 380px.** `auto-fit`
+   * collapses empty tracks, not narrow ones, so a 280px content box got a 380px track and the
+   * page overflowed by 100px at 320. Measured, 2026-07-30:
+   *
+   *     w 320  content 280  ->  div.grid 380>280   overflow true
+   *
+   * And it cascaded: the KPI row inside that 380px track fitted TWO `minmax(150px, 1fr)`
+   * columns, so the "one column at 320" commitment was also failing -- for a reason that had
+   * nothing to do with the KPI row. **One CSS defect, two wrong numbers, and neither was
+   * visible in a screenshot** because the crop hides the overflow.
+   *
+   * `min(380px, 100%)` is the standard fix and says the intended thing: prefer 380, but never
+   * exceed the container.
+   */
+  grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr));
   gap: 16px;
   align-items: start;
 }
@@ -48,6 +65,30 @@
 /* Spans every column at any count, without knowing how many there are. */
 .wide {
   grid-column: 1 / -1;
+}
+
+/*
+ * ── THE KPI ROW NEEDS ITS OWN OPAQUE PANEL, AND THE 1440px SHOT FOUND IT ─────
+ *
+ * The first version put the five tiles straight onto the page, with no card. **That is the R8
+ * violation, in the one place R8 names**: the KPI row sits at the TOP of the viewport, which is
+ * exactly where `Backdrop`'s radial is `#221a3a` -- and each tile carries a SPARKLINE, which is
+ * a `--chart-cat-*` mark. The palette was validated against `#130f22`; on `#221a3a` every one of
+ * those numbers stops holding.
+ *
+ * The tile's own text was fine (`--gold-text`, `--muted`), which is why nothing looked wrong --
+ * and it is why R8 is the defect that *"would have been green while the mark was under-contrast
+ * on screen."* It took a screenshot to notice that the marks had no surface under them at all.
+ *
+ * A plain panel rather than a `ChartFrame`: the frame requires a `table` prop (I-13, correctly),
+ * and five tiles whose values are already text and whose series are already in their own tiles'
+ * sparklines have no table to give it.
+ */
+.panel {
+  padding: 16px;
+  border: 1px solid var(--card-edge);
+  border-radius: var(--radius-card);
+  background: var(--chart-surface);
 }
 
 /*
@@ -114,7 +155,22 @@
   overflow-wrap: anywhere;
 }
 
+/*
+ * ── THE ROW BEING 44px DOES NOT MAKE THE LINK 44px, AND LOOP 4 SAID SO ───────
+ *
+ * `.inlineRow` carries `min-height: 44px`, and the first version left the anchor as inline
+ * text: measured **16px tall**. **The tap target is the ANCHOR, not the row that contains
+ * it** -- a thumb aimed at the middle of a 44px row lands on padding and nothing happens,
+ * which is the same class of defect as `PublicShare`'s known 36px button, on a surface whose
+ * operator may well be on a phone finding out why something broke.
+ *
+ * `display: flex; align-items: center; min-height: 44px` makes the anchor fill its grid cell,
+ * so the row's height and the target's height are the same number by construction.
+ */
 .inlineLink {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
   color: var(--gold-text);
   text-decoration: none;
 }

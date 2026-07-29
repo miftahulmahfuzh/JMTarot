@@ -62,10 +62,22 @@ export function StackedBar({ rows }: { rows: StackRow[] }) {
                     key={seg.datum.key}
                     className={styles.segment}
                     style={{
-                      // `flex-basis` and not `width`: the 2px gaps are part of the row's
-                      // layout, so a percentage width would overflow by (n-1)*2px. Basis
-                      // with `flex-grow: 0` lets flex subtract the gaps for us.
-                      flex: `0 0 ${seg.pct}%`,
+                      /*
+                       * `0 1 <pct>%` -- basis with SHRINK ALLOWED, and loop 4 found that the
+                       * first version (`0 0`) overflowed.
+                       *
+                       * The percentages sum to exactly 100 (`stackSegments` guarantees it), and
+                       * the row also carries `(n-1) x 2px` of flex gap -- so a non-shrinkable
+                       * basis of 100% plus the gaps is wider than the container by 4-6px.
+                       * Measured: `span.bar 179>175`. My own comment claimed basis *"lets flex
+                       * subtract the gaps for us"*, which is false with `flex-shrink: 0`: flex
+                       * subtracts gaps only when it has permission to shrink.
+                       *
+                       * With shrink on, every segment gives up the same PROPORTION, so the
+                       * stack still closes and the ratios still hold -- the gaps come out of the
+                       * segments rather than out of the container.
+                       */
+                      flex: `0 1 ${seg.pct}%`,
                       background: slotColor(seg.datum.slot),
                     }}
                     title={seg.datum.readout}

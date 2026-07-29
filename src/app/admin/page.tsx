@@ -46,7 +46,7 @@ import { withAdminRead } from '@/lib/db/queries/admin/timeout';
 import { periodDelta, priceRollup, slotFor } from '@/lib/analytics/rollup';
 import { track } from '@/lib/analytics/track';
 import { _ceilings } from '@/lib/llm/meter';
-import { priceFor } from '@/lib/llm/prices';
+import { NOTIONAL_MODEL, priceFor } from '@/lib/llm/prices';
 import { DIRECTION_SLOT, SERVICE_SLOT, slotColor } from '@/theme/chart';
 import { Area } from '@/components/chart/Area';
 import { AxisX, AxisY, PlotFrame } from '@/components/chart/Axis';
@@ -71,6 +71,29 @@ export const maxDuration = 30;
 
 /** The three services, in the fixed order `SERVICE_SLOT` keys. Colour follows the entity. */
 const SERVICES = ['daily', 'spread3', 'yesno'] as const;
+
+/**
+ * The price lookup for the KPI tile. **EVERY model is priced at `NOTIONAL_MODEL`'s rate, not at
+ * its own, and the 1440px shot is what caught the difference.**
+ *
+ * The tile is labelled *"Biaya notional"* (A-D7, R14): **what these tokens WOULD cost if the
+ * fallback provider had to serve them** -- the number worth watching, because a z.ai key
+ * revocation lands there and turns a subscription into a bill overnight.
+ *
+ * The first version passed A2's `priceFor` straight in, which prices each model at ITS OWN rate.
+ * Every z.ai row is priced at **zero on purpose** (`prices.ts`: the Coding Plan is a fixed annual
+ * subscription with no per-token charge), so the tile rendered `US$0,00` under the word
+ * "notional" -- a real figure wearing a counterfactual's label, and the one reading an operator
+ * must not take from it: *we are spending nothing.* Nothing about that is visible in a test; it
+ * is visible in a screenshot, once, immediately.
+ *
+ * `NOTIONAL_MODEL` is deliberately unset today, so this returns `null` for every model, the
+ * rollup's `costUsd` is `null`, and the tile renders the honest empty state plus the reason. When
+ * a human fills that constant in, this starts answering with no other change.
+ */
+function notionalLookup(_model: string, on: string) {
+  return NOTIONAL_MODEL === null ? null : priceFor(NOTIONAL_MODEL, on);
+}
 
 export default async function AdminOverviewPage({
   searchParams,
@@ -125,7 +148,7 @@ async function Body({ parsed }: { parsed: ParsedRange }) {
         fleetRollup(tx, previous),
         callTotals(tx, parsed.range),
       ]);
-      return { rollup, prev, cost: priceRollup(totals, priceFor) };
+      return { rollup, prev, cost: priceRollup(totals, notionalLookup) };
     });
   } catch {
     /*
@@ -156,7 +179,9 @@ async function Body({ parsed }: { parsed: ParsedRange }) {
       <div className={styles.wide}>
         <QuotaLead rollup={rollup} />
       </div>
-      <div className={styles.wide}>
+      {/* The KPI row's tiles carry SPARKLINES, which are palette marks -- so the row needs an
+          opaque panel of its own or they sit on the radial (R8). See `page.module.css`. */}
+      <div className={`${styles.wide} ${styles.panel}`}>
         <Kpis rollup={rollup} prev={prev} cost={cost} days={parsed.days} />
       </div>
       <div className={styles.wide}>
@@ -325,7 +350,7 @@ function CallsPerDay({ rollup }: { rollup: FleetRollup }) {
     caption: OVERVIEW.callsTitle,
     toggleLabel: COMMON.tableToggle,
     emptyCell: COMMON.emptyCell,
-    columns: [{ label: OVERVIEW.callsTitle }, { label: OVERVIEW.callsSeries, numeric: true }],
+    columns: [{ label: COMMON.dayColumn }, { label: OVERVIEW.callsSeries, numeric: true }],
     rows: buckets.map((b, i) => ({ cells: [day(b), int(values[i])] })),
   };
 
