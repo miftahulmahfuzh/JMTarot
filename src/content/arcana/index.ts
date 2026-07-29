@@ -52,6 +52,10 @@ import { temperanceId } from './temperance.id';
 import { temperanceEn } from './temperance.en';
 import { theDevilId } from './the-devil.id';
 import { theDevilEn } from './the-devil.en';
+import { theTowerId } from './the-tower.id';
+import { theTowerEn } from './the-tower.en';
+import { theStarId } from './the-star.id';
+import { theStarEn } from './the-star.en';
 import { theMoonId } from './the-moon.id';
 import { theMoonEn } from './the-moon.en';
 
@@ -78,6 +82,8 @@ export const ARCANA_LORE: Record<string, Localized<LoreDoc>> = {
   death: { id: deathId, en: deathEn },
   temperance: { id: temperanceId, en: temperanceEn },
   'the-devil': { id: theDevilId, en: theDevilEn },
+  'the-tower': { id: theTowerId, en: theTowerEn },
+  'the-star': { id: theStarId, en: theStarEn },
   'the-moon': { id: theMoonId, en: theMoonEn },
 };
 

@@ -151,6 +151,8 @@ const DIVERGENCE: Record<string, string[]> = {
   death: ['announce', 'upkeep', 'loyalty', 'subscription'],
   temperance: ['pour', 'proportion', 'alternate', 'window'],
   'the-devil': ['renew', 'terms', 'anniversary', 'lamp'],
+  'the-tower': ['crack', 'patch', 'inspect', 'stood'],
+  'the-star': ['survived', 'repeat', 'direction', 'unnoticed'],
   'the-moon': ['step', 'night', 'guess', 'message', 'seven', 'two in the morning'],
 };
 
