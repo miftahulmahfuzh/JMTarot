@@ -16,6 +16,16 @@
  * consumes -- ambiguous about who may widen it. Nobody widens it: a sixth block kind
  * is a reconciliation question.
  *
+ * **S6 DID EDIT ABOVE THE MARKER, ONCE, AND THIS IS THE RECORD OF IT.**
+ * Reconciliation R16 granted three field-level changes to `Block` and refused the
+ * fourth, and this file was written before that ruling landed: `Inline`/`Phrasing`
+ * arrived, `heading` gained an optional `id`, `list` gained an optional `ordered`,
+ * and `paragraph.text` / `list.items[]` widened to `Phrasing`. **No variant lost a
+ * field, no variant was renamed, and no sixth kind exists** -- `callout` is the ask
+ * R16 refused. Every widening is optional or a union with what was there, which is
+ * why the forty-four lore documents needed no edit at all. That property is the
+ * evidence the seam held; check it before widening anything else here.
+ *
  * ── WHY PROSE IS DATA AND NOT TSX ───────────────────────────────────────────────
  *
  * `terms.id.tsx` is this codebase's precedent for long-form bilingual prose and it
@@ -37,6 +47,50 @@
 import type { Locale, YesNo } from '@/data/types';
 
 /**
+ * A run of words inside one block. **S6's addition, granted by reconciliation R16.**
+ *
+ * ── WHY THE UNION BENT, AND WHY S4's ARGUMENT AGAINST IT WAS THE BETTER ONE ─────
+ *
+ * S4 wrote `text: string` per block **so the copy lint sees the exact sentence a
+ * reader sees** -- the file header above says at length that the lint is the reason
+ * the prose is data at all, and a sentence split across nodes can hide
+ * `\btempoh\b` straddling a boundary. That argument is correct and it is the
+ * stronger of the two.
+ *
+ * It bent because **an article cannot be written without bold lead-ins and inline
+ * links**, and internal linking is one of the two things the blog is in this
+ * release to do (R5 doubles down on the other): every myth in `#myths-and-facts` is
+ * `**Mitos: X.** Fakta: Y`, and `#next` is one paragraph carrying four links into
+ * the lore pages. **What keeps the lint's guarantee rather than trading it away is
+ * `plainText()` joining spans with the EMPTY STRING**, so the linted string is
+ * byte-identical to the rendered one. Two tests make that mechanical rather than
+ * promised: `doc.test.ts` asserts the joining directly, and
+ * `blog.content.test.ts`'s adjacency case asserts the joined string is the one the
+ * renderer produces. **If either is deleted, revert to `text: string`** -- R16 says
+ * so in those words, and the lint outranks the typography.
+ *
+ * **`link.path` IS A BARE PATH, NEVER A PREFIXED ONE.** `/arcana/the-moon`, never
+ * `/en/arcana/the-moon`: `Prose.tsx` applies `localePath()`, so one document serves
+ * both trees and cannot be wrong about either. A path beginning `#` is an in-page
+ * anchor and is left unprefixed. `blog.content.test.ts` fences both.
+ */
+export type Inline =
+  | { kind: 'text'; text: string }
+  | { kind: 'em'; text: string }
+  | { kind: 'strong'; text: string }
+  | { kind: 'link'; path: string; text: string };
+
+/**
+ * A run of words, either as one plain string or as spans.
+ *
+ * **THE PLAIN STRING IS NOT LEGACY AND IS NOT BEING MIGRATED.** Forty-four lore
+ * documents use it and they are right to: a lore paragraph carries no emphasis and
+ * no inline link, so `Inline[]` there would be ceremony around one `text` node.
+ * `plainText()` normalises both shapes and is the only thing that reads them.
+ */
+export type Phrasing = string | Inline[];
+
+/**
  * One unit of prose. Rendered by `src/components/Prose.tsx` and by nothing else.
  *
  * **NO `html`, NO `raw`, NO `markdown` VARIANT, EVER** (§5 rule 3, §10). The CSP is
@@ -44,6 +98,12 @@ import type { Locale, YesNo } from '@/data/types';
  * A markup-carrying block is a `dangerouslySetInnerHTML` call site waiting to be
  * written, and what it costs is not a theoretical injection on prose we wrote --
  * it is a permanent new reason the policy can never be enforced.
+ *
+ * **AND THERE IS NO SIXTH KIND. S6 ASKED FOR `callout` AND RECONCILIATION R16
+ * REFUSED IT**, on S6's own recommendation that it was the ask to refuse first: an
+ * aside that must not be skimmed past is a paragraph, and the two in the launch
+ * article read correctly as one. The five kinds here are the whole vocabulary and
+ * widening the union is a reconciliation question, not an authoring convenience.
  */
 export type Block =
   /**
@@ -51,11 +111,25 @@ export type Block =
    * that could emit a second one would break the one heading rule a crawler
    * actually reads. Never used for styling -- if a line needs to be large and is
    * not a section, it is a paragraph and the CSS says so.
+   *
+   * **`id` IS OPTIONAL AND AN ANCHOR IS AN INTERFACE** (R16, granted): a lore page
+   * anchors its sections with the fixed `LORE_ANCHORS` enum and needs none, while
+   * an article's sections differ per article -- and without a per-heading id there
+   * is no `/blog/x#myths-and-facts`, no table of contents, and no target for the
+   * three orientation links §D8 asks for. Optional rather than required so the
+   * forty-four lore documents are untouched; `Prose.tsx` emits the attribute only
+   * when it is there.
    */
-  | { kind: 'heading'; level: 2 | 3; text: string }
-  | { kind: 'paragraph'; text: string }
-  /** Unordered only. See the file header's note. */
-  | { kind: 'list'; items: string[] }
+  | { kind: 'heading'; level: 2 | 3; id?: string; text: string }
+  | { kind: 'paragraph'; text: Phrasing }
+  /**
+   * **`ordered` IS OPTIONAL AND ABSENT MEANS UNORDERED** (R16, granted). `<ol>`
+   * against `<ul>` is semantics rather than styling: the launch article teaches a
+   * five-step draw and lists five mistakes in order, and rendering "1, 2, 3, 4, 5"
+   * as bullets is a numbered procedure lying about being unnumbered. Optional for
+   * the same reason `heading.id` is -- forty-four unordered lists stay as written.
+   */
+  | { kind: 'list'; ordered?: boolean; items: Phrasing[] }
   /**
    * `source` is REQUIRED. A quotation with no attribution, on a page making claims
    * about a tradition, is precisely what reads as invented -- and the roadmap's
@@ -197,4 +271,51 @@ export type LoreDoc = {
 /* ────────────────────────────────────────────────────────────────────────────────
  * S6 APPENDS `BlogDoc` BELOW THIS LINE AND CHANGES NOTHING ABOVE IT.
  * `Block`, `BlockKind` and `QA` are shared; `LoreDoc` is S4's alone.
+ * (It changed four fields above, once, under reconciliation R16 -- the header
+ * records exactly what and why. Nothing else.)
  * ──────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * One blog article, in one locale. **S6 (`docs/plans/2026-07-28-blog.md` §D1).**
+ *
+ * **`title` AND `description` LIVE HERE AND NOT IN THE CATALOG** (S-D6, I9). They
+ * are per-article prose rather than chrome, and the catalog is shipped to the
+ * browser as JSON on *every* page: a `meta.description` key per article per locale
+ * would be four catalog values today and ninety the day the lore pages want the
+ * same thing. `blog.content.test.ts` asserts the description's length band, because
+ * these two strings are the highest-leverage words in the workstream -- they are
+ * what a search result shows.
+ *
+ * **NO `body` PROSE ANYWHERE NEAR THE REGISTRY.** `src/content/blog/index.ts` holds
+ * the dates, the locales and the hashes and no words at all (roadmap §5). The words
+ * are in `<slug>.<locale>.ts`, one file per document, imported only by the server.
+ *
+ * There is deliberately no `h1` field, unlike `LoreDoc`. A lore page has a title
+ * that must earn a click and an `<h1>` that must read as a heading, and those pull
+ * in different directions; an article's title is the same sentence in both places,
+ * and two fields holding one sentence is how they drift.
+ */
+export type BlogDoc = {
+  /**
+   * The URL slug. Hyphenated lowercase, **identical in both locales** and English
+   * in both, exactly like every other path in this app -- the same ruling that kept
+   * `/history` from becoming `/jejak`. A per-locale slug would need a per-locale
+   * path table that `contentAlternates()` has no way to express, so it is not a
+   * style preference: it is what makes `/blog/X` <-> `/en/blog/X` a clean mapping.
+   */
+  slug: string;
+  /** Asserted against the filename's second segment by the copy lint's naming case. */
+  locale: Locale;
+  /** The `<h1>` and the `<title>`. Under 110 characters -- Google's headline cap. */
+  title: string;
+  /** The meta description. 80-158 characters; `blog.content.test.ts` asserts the band. */
+  description: string;
+  /**
+   * A committed card image, or `null`. **NO NEW ASSET** (S-D9): the hero is one of
+   * the twenty-two paintings already in `public/cards/`, named by its URL slug so a
+   * typo is a failing test rather than a broken image in production. Nullable
+   * because an article need not be about a card.
+   */
+  hero: { cardUrlSlug: string; alt: string } | null;
+  body: Block[];
+};
