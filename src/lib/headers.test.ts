@@ -277,19 +277,43 @@ describe('the content cache rules (S1, S-D10)', () => {
     }
   });
 
-  it('serves /wallpapers/* immutably, on its own entry (S-D9)', async () => {
+  it('serves /wallpapers/* for a DAY, not a year of immutable (S-D9, W-D4)', async () => {
     /*
-     * S5 declares this and S1 writes it. **A NEW ASSET CLASS GETS ITS OWN ENTRY**
-     * rather than joining `/cards/*`, so its lifecycle can change independently --
-     * and the caveat `/cards/*` records applies here too and is worse, because a
-     * wallpaper is something somebody DOWNLOADED: the filenames are not
-     * content-hashed, so regenerating means changing the filenames or shortening
-     * this header first.
+     * S5 declares this header and S1 writes it (§6.4). **A NEW ASSET CLASS GETS ITS
+     * OWN ENTRY** rather than joining `/cards/*`, so its lifecycle can change
+     * independently -- and this is the assertion that the lifecycle actually DID
+     * change, which is the whole reason for the separate path.
+     *
+     * IT SHIPPED FOR ONE COMMIT AS `max-age=31536000, immutable`, WRITTEN FROM
+     * `/cards/*`'s REASONING RATHER THAN FROM S5's DECLARATION, AND THIS TEST
+     * ASSERTED IT. `immutable` on a non-content-hashed filename is what makes
+     * regenerating the art a year-long staleness problem; a wallpaper is fetched
+     * ONCE by somebody who tapped a button, so it buys nothing here. If this ever
+     * reads `immutable` again, somebody has "made it consistent" with the entry
+     * above it.
      */
     const rule = await ruleFor('/wallpapers/:path*');
     expect(rule?.headers).toEqual([
-      { key: 'cache-control', value: 'public, max-age=31536000, immutable' },
+      { key: 'cache-control', value: 'public, max-age=86400, stale-while-revalidate=604800' },
     ]);
+    expect(rule?.headers[0].value).not.toContain('immutable');
+  });
+
+  it('sets no x-robots-tag and no content-disposition on /wallpapers/*', async () => {
+    // The first is S-D12: `/s/`'s noindex must not spread to art we WANT indexed --
+    // 22 pieces of original art in Google Images is upside. The second is W-D10:
+    // `attachment` forces a download and closes iOS's long-press -> Add to Photos,
+    // which is the fallback path when the Web Share sheet is unavailable.
+    const keys = (await ruleFor('/wallpapers/:path*'))!.headers.map((h) => h.key);
+    expect(keys).not.toContain('x-robots-tag');
+    expect(keys).not.toContain('content-disposition');
+  });
+
+  it('leaves /cards/* on a year of immutable', async () => {
+    // The negative control. Correcting S5's entry must not have touched the
+    // neighbour whose traffic shape genuinely wants a year.
+    const rule = await ruleFor('/cards/:path*');
+    expect(rule?.headers[0].value).toBe('public, max-age=31536000, immutable');
   });
 
   it('adds every new entry AFTER the catch-all (S-D12)', async () => {

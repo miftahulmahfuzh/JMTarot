@@ -29,6 +29,7 @@ import Link from 'next/link';
 import { useRef, useState } from 'react';
 
 import { CardDetail } from '@/components/CardDetail';
+import { WallpaperDownload } from '@/components/WallpaperDownload';
 import { cardKeywords } from '@/data/deck';
 import type { Card } from '@/data/types';
 import { track } from '@/lib/analytics/track.client';
@@ -131,24 +132,29 @@ export function GalleryGrid({
             </Link>
 
             {/*
-              S5's `WallpaperDownload` MOUNTS HERE, BELOW THE LORE LINK, INSIDE A
-              `.downloadSeam` DIVIDER, WITH `from="gallery"` -- AND S5 HAS NOT
-              LANDED, SO THE TWO LINES ARE ABSENT RATHER THAN STUBBED.
+              S5 LANDED, AND THIS IS EXACTLY WHERE S3 SAID IT GOES -- below the lore
+              link, inside a `.downloadSeam` divider, with `from="gallery"`.
 
-              S3's own plan names this as the correct temporary state and gives the
-              reason: a committed `<a href>` to `/wallpapers/...` is a 404 on a
-              public page, and inventing a local `wallpaperPath()` would be a second
-              definition of an address S5 owns (reconciliation §5's register). The
-              placement decisions S3 does own are recorded so S5 does not have to
-              re-derive them: in the ZOOM SHEET rather than on the tile (a download
-              is a secondary action, and 22 of them would compete with 22 lore links
-              on a page whose subject is the art), BELOW the lore link (reading the
-              card's page is the primary next step; the wallpaper is the souvenir),
-              and above `.actions`, which holds Close.
+              The placement decisions are S3's and were recorded here so S5 would
+              not re-derive them: in the ZOOM SHEET rather than on the tile (a
+              download is a secondary action, and 22 of them would compete with 22
+              lore links on a page whose subject is the art), BELOW the lore link
+              (reading the card's page is the primary next step; the wallpaper is the
+              souvenir), and above `.actions`, which holds Close.
 
-              There is no `gallery.download_clicked` to add either: S5's
-              `wallpaper.downloaded` already carries `{ card_id, variant }`.
+              The two lines that used to be absent rather than stubbed are these
+              two, and the reason they were absent still holds in reverse: the `<a
+              href>` this renders points at `/wallpapers/<slug>-phone.jpg`, which is
+              a committed file since S5-3, and the address is built by
+              `@/lib/wallpaper` rather than by anything here -- one definition of a
+              permanent public address (reconciliation §5's register).
+
+              There is no `gallery.download_clicked`: `wallpaper.downloaded` carries
+              `{ card_id, variant, method, from }` and the component fires it.
             */}
+            <div className={styles.downloadSeam}>
+              <WallpaperDownload card={open} from="gallery" />
+            </div>
           </div>
         </CardDetail>
       ) : null}

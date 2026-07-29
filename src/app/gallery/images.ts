@@ -58,16 +58,28 @@ export function galleryImages(input: {
      */
     url: abs(cardImagePath(card.slug)),
     /*
-     * The highest-resolution bytes available. Today that is the same 800x1200
-     * export; **when S5 lands it becomes `wallpaperPath(cardUrlSlug(card), 'card')`
-     * at `WALLPAPER_SIZE.card`** -- 1024x1536, the art's true resolution and a
-     * better Google Images target (S5's advisory D6). The only reason it is not
-     * that today is that `contentUrl` must name a file that exists.
+     * The bytes Google should fetch, and **STILL THE 800x1200 EXPORT NOW THAT S5
+     * HAS LANDED, WHICH IS A DECISION RATHER THAN THE STALE VERSION OF THIS
+     * COMMENT.** S5's advisory D6 asks for `wallpaperPath(cardUrlSlug(card),
+     * 'card')` at 1024x1536, and the reason is right: Google Images wants the
+     * highest honest resolution and that file now exists and is committed.
+     *
+     * What stops it being a one-line change is that **this node describes ONE
+     * binary**. `encodingFormat` documents `contentUrl`'s MIME type, and `url`,
+     * `width` and `height` are the fields the lore page ALSO carries -- so moving
+     * `contentUrl` alone leaves a node whose declared 800x1200 WebP dimensions
+     * belong to a different file from its `contentUrl`, which is the same class of
+     * ambiguity the shared-`@id` collisions in this file's header were about.
+     * Moving all four means editing `src/app/arcana/[slug]/jsonld.ts`'s `width`,
+     * `height` and `url` in the same commit -- S4's file -- and changing the image
+     * identity of 22 pages. Worth doing; not S5's to force, and recorded in
+     * `docs/workstream-notes.md` as open rather than dropped.
      *
      * UNVERSIONED, all three. `cardImage()`/`cardThumb()` append
      * `?v=${ART_VERSION}` for the browser cache; a version here would change 22
      * image URLs on every art regeneration, and Google Images treats a changed URL
-     * as a new image with no history.
+     * as a new image with no history. `/wallpapers/*` carries no version at all,
+     * which is why it would need none.
      */
     contentUrl: abs(cardImagePath(card.slug)),
     thumbnailUrl: abs(cardThumbPath(card.slug)),
@@ -92,13 +104,22 @@ export function galleryImages(input: {
     inLanguage: locale,
     creator,
     /*
-     * **NO `licenseUrl`, AND THAT IS THE HONEST VALUE RATHER THAN AN OMISSION.**
-     * S3's plan passes `/terms#9` on the premise that S5 writes a wallpaper licence
-     * into that clause. S5 has not landed, and clause 9 today RESERVES our rights
-     * rather than granting any -- so `license` + `acquireLicensePage` would be a
-     * claim a crawler believes about terms that do not say it: the `SearchAction`
-     * mistake with legal consequences instead of cosmetic ones. `jsonld.test.ts`
-     * asserts both directions.
+     * **`/terms#9` NOW, AND ONLY BECAUSE THE CLAUSE NOW SAYS SOMETHING.** This was
+     * `undefined` for one workstream, deliberately: S3's plan passed `/terms#9` on
+     * the premise that S5 would write a wallpaper grant into that clause, and until
+     * S5-5b clause 9 RESERVED our rights and granted nothing -- so `license` +
+     * `acquireLicensePage` would have been a claim a crawler believes about terms
+     * that do not make it, which is the `SearchAction` mistake with legal
+     * consequences instead of cosmetic ones.
+     *
+     * Clause 9 now carries, in both locales, *"You may download the card artwork and
+     * use it as your own wallpaper. Not for resale, not on merchandise, and not for
+     * commercial use."* That is a licence statement, so naming it is honest.
+     * `jsonld.ts` emits `license` AND `acquireLicensePage` from this one field
+     * because one without the other is a half-claim, and it throws on a relative
+     * URL. **IF THAT SENTENCE IS EVER REMOVED FROM CLAUSE 9, THIS LINE COMES OUT IN
+     * THE SAME COMMIT.**
      */
+    licenseUrl: abs('/terms#9'),
   }));
 }

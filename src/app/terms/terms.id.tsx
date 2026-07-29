@@ -271,6 +271,23 @@ export function TermsId({ effective }: { effective: string }) {
           hal lain.
         </P>
         <P>Bacaan adalah untuk keperluan pribadimu, bukan untuk keperluan komersial.</P>
+        {/*
+          S5's licence, appended INSIDE clause 9 with no renumbering -- `legal.test.ts`
+          asserts the clause anchors and clause 6's sub-numbering, and a new clause
+          would move both. The sentence before this one is scoped to BACAAN, so
+          nothing in this document said anything about downloading the artwork until
+          v0.4.0 put a button under it. A permission that lives only in UI copy is the
+          weaker half of the pair, and this is the most copyable thing the release
+          publishes: 22 pieces of original commissioned art at 1024x1536, free, with
+          no account.
+
+          THE WORDING MATCHES `wallpaper.licence` DELIBERATELY. A licence line on
+          screen that paraphrases this clause is a second, slightly different licence.
+        */}
+        <P>
+          Gambar kartu boleh kamu unduh dan pakai sebagai wallpaper pribadi. Bukan untuk dijual,
+          ditempel ke barang dagangan, atau dipakai secara komersial.
+        </P>
       </Clause>
 
       <Clause id="10" n="10." title="Tanpa jaminan">

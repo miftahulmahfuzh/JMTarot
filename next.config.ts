@@ -200,14 +200,43 @@ const nextConfig: NextConfig = {
       { source: '/en/blog/:slug', headers: CONTENT_CACHE },
       {
         /*
-         * S5's asset class, declared in its plan and written here (§6.4).
+         * S5's asset class. §6.4 says **S5 declares this header and S1 writes it**,
+         * and the value it declared is W-D4's -- one day plus a week of
+         * stale-while-revalidate. **IT SHIPPED FOR ONE COMMIT AS A YEAR OF
+         * `immutable`, AND THAT IS THE ONE THING NOT TO RESTORE** (corrected by S5,
+         * 2026-07-29): the entry was written from `/cards/*`'s reasoning rather than
+         * from the declaration.
          *
-         * ITS OWN ENTRY RATHER THAN JOINING `/cards/*` (S-D9), so the two
-         * lifecycles can diverge -- and the caveat `/cards/*` records is WORSE
-         * here, because a wallpaper is a file somebody chose to download: these
-         * filenames are not content-hashed either, so regenerating means changing
-         * the filenames or shortening this header first. The source art is never
-         * regenerated in v0.4.0, which is what makes a year safe today.
+         * ITS OWN ENTRY RATHER THAN JOINING `/cards/*` (S-D9), so the two lifecycles
+         * can diverge -- and diverging is the entire point. `/cards/:path*` above
+         * carries a year of `immutable` on non-content-hashed filenames because the
+         * fan pulls 22 thumbnails on every cold draw, and its comment says at length
+         * what that costs: regenerate the art and every existing install keeps the
+         * old images for up to a year, with `src/data/deck.ts`'s `ART_VERSION` as the
+         * workaround.
+         *
+         * **THAT TRADE DOES NOT TRANSFER, BECAUSE THE TRAFFIC SHAPE IS THE OPPOSITE
+         * ONE.** A wallpaper is fetched ONCE, by somebody who tapped a button, and
+         * never again -- `/gallery` draws `cards/thumb`, not these -- so a year of
+         * caching buys approximately nothing and costs the whole documented
+         * staleness problem. 86400 plus a week of `stale-while-revalidate` means a
+         * regenerated deck propagates on its own, which is also why these filenames
+         * carry no `?v=` and no content hash and `src/lib/wallpaper.ts` has no
+         * version to forget to bump. A new deployment already invalidates Vercel's
+         * edge copy, so this bounds the BROWSER's copy -- the one that outlives a
+         * deploy.
+         *
+         * **NO `content-disposition: attachment`** (W-D10). It would force a download
+         * and make the image impossible to VIEW, and viewing is the prerequisite for
+         * iOS's long-press -> Add to Photos, which is the fallback when the Web Share
+         * sheet is unavailable. `WallpaperDownload` sets the filename with the
+         * `download` attribute instead, which costs that door nothing.
+         *
+         * **NO `x-robots-tag`.** These are 22 pieces of original art at high
+         * resolution and Google Images is upside, not a leak. S-D12's warning is
+         * about a broad entry ACQUIRING `noindex` from `/s/:path*`; this entry shares
+         * no key with that one and sits above `/(.*)` rather than below it, so
+         * nothing here overrides anything.
          *
          * **`wallpapers/` ALSO HAS TO JOIN `src/middleware.ts`'s NEGATIVE
          * LOOKAHEAD, AND THAT IS S2's LINE (R7).** Without it a signed-out
@@ -218,7 +247,12 @@ const nextConfig: NextConfig = {
          * breach on the response where CDN caching matters most.
          */
         source: '/wallpapers/:path*',
-        headers: [{ key: 'cache-control', value: 'public, max-age=31536000, immutable' }],
+        headers: [
+          {
+            key: 'cache-control',
+            value: 'public, max-age=86400, stale-while-revalidate=604800',
+          },
+        ],
       },
       {
         /*

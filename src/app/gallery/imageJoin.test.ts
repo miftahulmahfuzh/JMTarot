@@ -112,9 +112,18 @@ describe('the ImageObject join between /gallery and /arcana/<slug>', () => {
       });
       expect(args).toHaveLength(22);
       expect(new Set(args.map((a) => a.id)).size).toBe(22);
-      expect(JSON.stringify(args)).not.toContain('?');
-      // The licence claim stays absent until S5 writes clause 9's grant.
-      expect(args.every((a) => a.licenseUrl === undefined)).toBe(true);
+      // `?v=` in an image URL, not the `#image` fragment or `/terms#9`.
+      expect(args.every((a) => !a.url.includes('?') && !a.contentUrl?.includes('?'))).toBe(true);
+      /*
+       * THE LICENCE CLAIM IS PRESENT NOW, AND THIS ASSERTION IS INVERTED RATHER
+       * THAN DELETED. It read `licenseUrl === undefined` with the comment "until S5
+       * writes clause 9's grant", which S5-5b did: clause 9 grants personal
+       * wallpaper use in both locales. A `license` naming a clause that grants
+       * nothing is the failure this used to fence, so the fence stays, pointing the
+       * other way -- if somebody removes the sentence from `/terms`, the fix is to
+       * drop this field, not to relax this line.
+       */
+      expect(args.every((a) => a.licenseUrl === `${ORIGIN}/terms#9`)).toBe(true);
     }
   });
 

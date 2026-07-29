@@ -190,13 +190,18 @@
 }
 
 /*
- * THERE IS DELIBERATELY NO RULE HERE FOR A WALLPAPER DOWNLOAD, AND `.downloadSeam`
- * IS ABSENT RATHER THAN EMPTY. S5 owns `WallpaperDownload` and ships its own
- * stylesheet with it; S3 owns only WHERE it is mounted, and S5 has not landed. An
- * earlier draft of S3's plan styled the control from here and it was wrong for the
- * reason V6 records about the tap layer: two stylesheets describing one component
- * is a drift with no possible guard. When S5 lands, the seam is a
- * `border-top: 1px solid var(--gold-hairline)` above it, so the sheet reads as
- * "the card, then what you can do with it" rather than as one list of five
- * controls.
+ * `.downloadSeam` IS THE SEAM AND NOTHING ELSE. S5 owns `WallpaperDownload` and
+ * ships its own stylesheet with it; S3 owns only WHERE it is mounted, so the only
+ * declaration here is the divider S3's note specified before S5 landed:
+ * `border-top: 1px solid var(--gold-hairline)`, so the sheet reads as "the card,
+ * then what you can do with it" rather than as one list of five controls.
+ *
+ * **DO NOT STYLE THE CONTROL FROM HERE.** An earlier draft of S3's plan did, and it
+ * was wrong for the reason V6 records about the tap layer: two stylesheets
+ * describing one component is a drift with no possible guard.
  */
+.downloadSeam {
+  width: 100%;
+  padding-top: 10px;
+  border-top: 1px solid var(--gold-hairline);
+}
