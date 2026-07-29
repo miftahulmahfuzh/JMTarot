@@ -304,6 +304,23 @@ describe('bare paths — the shape half (A6-20)', () => {
     expect(rulesIn(doc)).toContain('bare-path');
   });
 
+  it('refuses an in-page anchor that names no heading in the same document', () => {
+    /*
+     * A `#reversals` that names no heading is a link that scrolls nowhere, and
+     * nothing about the page looks wrong. **IT IS IN THE LINT AND `/arcana/x` IS NOT**,
+     * and the line is whether the answer is inside the document.
+     */
+    const doc = clean({ body: [h2('mulai', 'Mulai'), para(s('Lihat '), link('#tidak-ada', 'ini'))] });
+    expect(rulesIn(doc)).toContain('dead-anchor');
+  });
+
+  it('accepts an anchor that names a heading at either level', () => {
+    const doc = clean({
+      body: [h2('mulai', 'Mulai'), h3('lanjut', 'Lanjut'), para(s('Lihat '), link('#lanjut', 'ini'))],
+    });
+    expect(rulesIn(doc)).not.toContain('dead-anchor');
+  });
+
   it('leaves RESOLUTION to the route handler, and says so', () => {
     /*
      * `cardByUrlSlug` lives in `@/data/deck`, which this module may not import

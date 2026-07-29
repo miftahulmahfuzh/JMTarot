@@ -130,6 +130,7 @@ export const LINT_RULES = [
   'app-secrets',
   'span-adjacency',
   'bare-path',
+  'dead-anchor',
   'heading-id',
   'heading-id-unique',
   'title-length',
@@ -161,6 +162,7 @@ export const ARTICLE_RULES: readonly LintRule[] = [
   'app-secrets',
   'span-adjacency',
   'bare-path',
+  'dead-anchor',
   'heading-id',
   'heading-id-unique',
   'title-length',
@@ -426,6 +428,24 @@ export function lintDocument(
     for (const p of linkPaths(doc.body)) {
       const bad = badPath(p);
       if (bad) push('bare-path', 'error', 'body', p, bad);
+    }
+  }
+
+  if (on('dead-anchor')) {
+    /*
+     * **A `#reversals` THAT NAMES NO HEADING IS A LINK THAT SCROLLS NOWHERE, AND
+     * NOTHING ABOUT THE PAGE LOOKS WRONG.** Cheap to check, invisible by eye, and the
+     * launch article carries four of them.
+     *
+     * **IT IS IN THE LINT AND NOT IN THE HANDLER, UNLIKE THE OTHER HALF OF
+     * `bare-path`'s RESOLUTION** (A6-20), and the line is exactly whether the answer
+     * is inside the document: an in-page anchor resolves against this document's own
+     * headings, while `/arcana/the-moon` resolves against the deck -- which is
+     * `@/data/deck`, which this module may not import (A6-3).
+     */
+    const ids = new Set([...headingIds(doc.body, 2), ...headingIds(doc.body, 3)]);
+    for (const p of linkPaths(doc.body)) {
+      if (p.startsWith('#') && !ids.has(p.slice(1))) push('dead-anchor', 'error', 'body', p, p);
     }
   }
 
