@@ -149,8 +149,16 @@ describe('the content copy lint', () => {
      * the locale from the filename -- so a file named `the-moon.ts` would be
      * skipped SILENTLY. Assert the convention rather than trusting it.
      *
-     * `index.ts` and `types.ts` are exempt because §5 requires them to hold no
-     * prose, and `copy.test.ts` is this file.
+     * `index.ts`, `types.ts` and `blocks.ts` are exempt because §5 requires them to
+     * hold no prose, and `copy.test.ts` is this file.
+     *
+     * **THE EXEMPTION LIST IS A CLOSED SET AND MUST STAY ONE.** It is not "files
+     * that happen to be locale-free": it is the three files whose emptiness of prose
+     * is asserted elsewhere -- `clientBoundary.test.ts` puts a length ceiling on
+     * `types.ts`'s string literals, `blog.content.test.ts` reads `index.ts` as data
+     * with no words in it, and `blocks.ts` is ten one-line functions. Adding a
+     * fourth name here without that guarantee is how a document escapes the lint,
+     * which is the exact failure this case exists to catch.
      */
     if (!existsSync(CONTENT)) return;
     const stray = walkFiles(CONTENT)
@@ -159,7 +167,7 @@ describe('the content copy lint', () => {
         (p) =>
           /\.tsx?$/.test(p) &&
           !/\.test\.tsx?$/.test(p) &&
-          !/\/(index|types)\.ts$/.test(p) &&
+          !/\/(index|types|blocks)\.ts$/.test(p) &&
           !/\.(id|en)\.ts$/.test(p),
       );
     expect(stray).toEqual([]);
