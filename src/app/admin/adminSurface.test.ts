@@ -64,6 +64,35 @@ describe('EVERY page and EVERY route calls the gate for itself (A1-8)', () => {
     }
   });
 
+  it('exports EVERY verb, so a method mismatch is a 404 and not a 405 (A-D2)', () => {
+    /*
+     * **A 405 CONFIRMS THE SURFACE EXISTS AS SURELY AS A 403 DOES, AND NO GATE IN THE
+     * FILE CAN PREVENT IT.** Next answers 405 at the ROUTING layer, from the set of
+     * exported verbs, before the handler runs -- so `requireAdmin()` never executes.
+     * Measured 2026-07-30 against a signed-in, ONBOARDED, non-allowlisted session:
+     *
+     *     POST /api/admin/users                    405   <- the route exists
+     *     GET  /api/admin/blog                     405   <- so does this one
+     *     POST /api/admin/definitely-not-a-route   404   <- it does not
+     *
+     * One reliable bit per unimplemented verb. **It survived A5's own acceptance probe
+     * because `tools/admin/probe.sh` compares the SHAPE of a refusal and only ever sends
+     * GET** -- and A5's routes are GET-only, so their leak is a POST.
+     *
+     * Every admin route therefore exports the complement of its real verbs, answering
+     * them with `refuseMethod` -- the identical empty 404 an unauthorised caller gets.
+     * `HEAD` is absent from the list because Next derives it from `GET`.
+     */
+    const VERBS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
+    for (const f of ROUTES) {
+      const src = code(f);
+      const exported = VERBS.filter((v) =>
+        new RegExp(`export (?:async function|const) ${v}\\b`).test(src),
+      );
+      expect(exported.sort(), `${f} does not answer every verb`).toEqual([...VERBS].sort());
+    }
+  });
+
   it('never answers 401 or 403 from an admin route (A-D2)', () => {
     // A 403 confirms the surface exists. Every refusal in this tree is a 404, and
     // `adminNotFound()` is the only shape of it. (A signed-OUT caller does get a

@@ -5909,6 +5909,60 @@ hero        { cardUrlSlug: "the-world", alt: "The World" }
 And the round trip is lossless: the row saved **through the editor** is still deep-equal
 to the committed document, alongside the three that were not.
 
+### An A-D2 violation on all six admin routes, found by extending the probe to methods
+
+**Roadmap non-negotiable 1: *"A non-admin never learns `/admin` exists. 404, never
+403."*** A **405** confirms it exactly as a 403 would, and **Next answers 405 at the
+ROUTING layer from the set of exported verbs, before the handler runs** — so
+`requireAdmin()` never executes and no gate inside the file can prevent it.
+
+Measured against a signed-in, **onboarded**, non-allowlisted session on the local dev
+server:
+
+```
+                                          GET   POST
+/api/admin/blog                           405   404      <- the route exists
+/api/admin/blog/x/status                  405   404      <- so does this one
+/api/admin/users                          404   405      <- and this one
+/api/admin/definitely-not-a-route         404   404      <- it does not
+/api/definitely-not-a-route               404   404
+```
+
+One reliable bit per unimplemented verb, on **all four of A5's routes and both of A6's**.
+A5's are GET-only so their leak is a POST; A6's are POST-only so theirs is a GET — the
+same defect from opposite directions.
+
+**Why A5's own acceptance probe did not see it:** `tools/admin/probe.sh` is built to
+compare the SHAPE of a refusal — *"the `/api/admin` comparison is the point of this
+script"* — and it only ever sends GET. Against A5's four GET routes that is exactly the
+verb that works.
+
+**And the onboarded session is what made it visible at all.** The A5 handoff records that
+`dev:jodith` is useless as the non-admin subject; the reason bites here too. An
+un-onboarded account is bounced by `decide()` **above** the admin check, so every path —
+real or invented — answers 403, and the 405 is invisible. `db:seed`'s `gatedone@localhost`
+is onboarded and not allowlisted, which is the identity roadmap §10.2 actually needs.
+
+**Fixed on all six**, including A5's four. §0.0 says to flag rather than edit another
+workstream's file, and the roadmap's own precedent is A1 declining `audit-secrets.ts` and
+the reconciliation then granting it — but this is non-negotiable 1, the change is purely
+additive (it can only answer requests that previously got a 405), and leaving a known
+leak in the release whose first rule forbids it on a file-ownership technicality is not a
+defensible call. Each route exports the complement of its real verbs, answering
+`refuseMethod` — the identical empty 404. `HEAD` is absent because Next derives it from
+`GET`.
+
+After:
+
+```
+every verb x every admin route, non-admin session:   404
+the admin, unchanged:  /admin/blog 200, /api/admin/users 200, status POST 200
+```
+
+`adminSurface.test.ts` gains the fence, so a seventh route cannot reintroduce it.
+**`tools/admin/probe.sh`'s path list and its method coverage are still A1's to extend** —
+it currently sends one verb and knows nothing about A6's two routes.
+
 ### Nine deviations, each with its reason
 
 1. **Task 26 is not done.** The plan gates it on the production import; nothing is
@@ -5933,6 +5987,8 @@ to the committed document, alongside the three that were not.
 8. **The admin list is not paged.** Two articles. A5-13's ceiling logic in reverse;
    revisit past ~50.
 9. **The preview is one save behind.** Above.
+10. **Six route files gained method handlers, four of them A5's.** Above — non-negotiable
+    1, and additive.
 
 ### Still open
 

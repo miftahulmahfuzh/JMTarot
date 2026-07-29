@@ -35,11 +35,25 @@
 import { changeStatus } from '@/lib/admin/blogSave';
 import { track, withAnalytics } from '@/lib/analytics/track';
 import { db } from '@/lib/db/client';
-import { adminNotFound, logBlogFailure, ok, refused, requireAdmin, unavailable } from '../../shared';
+import {
+  adminNotFound,
+  logBlogFailure,
+  ok,
+  refused,
+  refuseMethod,
+  requireAdmin,
+  unavailable,
+} from '../../shared';
 
 export const runtime = 'nodejs';
 /** A literal, for `adminSurface.test.ts`'s source-level match. See the sibling route. */
 export const maxDuration = 30;
+
+/** A-D2: an unimplemented verb answers 404, not 405. See `refuseMethod`. */
+export const GET = refuseMethod;
+export const PUT = refuseMethod;
+export const PATCH = refuseMethod;
+export const DELETE = refuseMethod;
 
 export async function POST(request: Request, ctx: { params: Promise<{ slug: string }> }) {
   const gate = await requireAdmin();

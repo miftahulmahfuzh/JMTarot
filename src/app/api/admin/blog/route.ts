@@ -42,7 +42,15 @@
 import { saveDocument } from '@/lib/admin/blogSave';
 import { track, withAnalytics } from '@/lib/analytics/track';
 import { db } from '@/lib/db/client';
-import { adminNotFound, logBlogFailure, ok, refused, requireAdmin, unavailable } from './shared';
+import {
+  adminNotFound,
+  logBlogFailure,
+  ok,
+  refused,
+  refuseMethod,
+  requireAdmin,
+  unavailable,
+} from './shared';
 
 export const runtime = 'nodejs';
 /**
@@ -53,6 +61,15 @@ export const runtime = 'nodejs';
  * manifest.
  */
 export const maxDuration = 30;
+
+/**
+ * **THE UNIMPLEMENTED VERBS ANSWER 404, NOT 405** — see `refuseMethod`. Next derives the
+ * 405 from the exported verb set at the routing layer, so the gate never runs and a
+ * method mismatch would otherwise tell a signed-in non-admin that this route exists.
+ */
+export const GET = refuseMethod;
+export const PATCH = refuseMethod;
+export const DELETE = refuseMethod;
 
 export async function POST(request: Request) {
   return save(request, 'create');

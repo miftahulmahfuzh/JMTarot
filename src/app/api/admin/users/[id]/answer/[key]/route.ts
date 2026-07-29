@@ -44,12 +44,26 @@
 import { isOnboardingQuestionKey } from '@/data/onboarding';
 import { revealAnswer } from '@/lib/admin/reveal';
 import { db } from '@/lib/db/client';
-import { adminNotFound, logAdminFailure, ok, requireAdmin, unavailable, UUID_RE } from '../../../shared';
+import {
+  UUID_RE,
+  adminNotFound,
+  logAdminFailure,
+  ok,
+  refuseMethod,
+  requireAdmin,
+  unavailable,
+} from '../../../shared';
 
 export const runtime = 'nodejs';
 /** 15s, paired with `REVEAL_ABORT_MS = 12_000` on the client (§4.2 rule 2) and above
  *  A3's 10s statement timeout, so the database gives up first with a diagnosable error. */
 export const maxDuration = 15;
+
+/** A-D2: an unimplemented verb answers 404, not 405. See `refuseMethod`. */
+export const POST = refuseMethod;
+export const PUT = refuseMethod;
+export const PATCH = refuseMethod;
+export const DELETE = refuseMethod;
 
 export async function GET(
   _request: Request,

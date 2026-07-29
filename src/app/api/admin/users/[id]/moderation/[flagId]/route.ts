@@ -35,10 +35,24 @@
  */
 import { revealFlag } from '@/lib/admin/reveal';
 import { db } from '@/lib/db/client';
-import { adminNotFound, logAdminFailure, ok, requireAdmin, unavailable, UUID_RE } from '../../../shared';
+import {
+  UUID_RE,
+  adminNotFound,
+  logAdminFailure,
+  ok,
+  refuseMethod,
+  requireAdmin,
+  unavailable,
+} from '../../../shared';
 
 export const runtime = 'nodejs';
 export const maxDuration = 15;
+
+/** A-D2: an unimplemented verb answers 404, not 405. See `refuseMethod`. */
+export const POST = refuseMethod;
+export const PUT = refuseMethod;
+export const PATCH = refuseMethod;
+export const DELETE = refuseMethod;
 
 export async function GET(
   _request: Request,

@@ -72,3 +72,24 @@ export function logBlogFailure(what: string, err: unknown, ids: Record<string, s
     name: err instanceof Error ? err.name : typeof err,
   });
 }
+
+/**
+ * **A METHOD MISMATCH MUST 404, NOT 405, AND THIS IS A-D2's FIRST NON-NEGOTIABLE.**
+ * v0.5.0 / A6, found by `tools/admin/probe.sh`'s own comparison extended to methods.
+ *
+ * *"A non-admin never learns `/admin` exists. 404, never 403."* A 405 confirms it
+ * exactly as a 403 would — and **Next answers 405 at the ROUTING layer, from the set of
+ * exported verbs, before the handler runs**, so `requireAdmin()` never executes and no
+ * gate can prevent it. Measured against a signed-in, onboarded, non-allowlisted session:
+ *
+ *     GET  /api/admin/blog                    405     <- the route exists
+ *     GET  /api/admin/definitely-not-a-route  404     <- it does not
+ *
+ * One bit, reliably, for every unimplemented verb on every admin route. So each route
+ * exports the complement of its real verbs and answers them with the identical empty
+ * 404 an unauthorised caller gets.
+ *
+ * **A `HEAD` IS NOT IN THE LIST BECAUSE NEXT DERIVES IT FROM `GET`**, and a route with
+ * no `GET` gets the same 405 for both — which this covers by exporting `GET`.
+ */
+export const refuseMethod = async (): Promise<NextResponse> => adminNotFound();
