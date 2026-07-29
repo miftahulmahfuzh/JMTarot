@@ -5,6 +5,384 @@ All notable changes to JMTarot are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.4.0] - 2026-07-29
+
+Six workstreams (S1–S6) planned in `PUBLIC_RELEASE_ROADMAP_v0.4.0.md`, reconciled
+in `docs/plans/2026-07-28-RECONCILIATION-v0.4.0.md` — which found **six defects in
+the roadmap it was reconciling** — and merged in dependency order across 106 tasks,
+plus a two-part change on 2026-07-29 that came from reading real output rather than
+from a plan.
+
+**The thesis: before this release a search engine could see three pages of this
+application and one of them was a login form.** `/` was a 302 to `/login` for
+anybody without a cookie, and the two legal documents carried `noindex`. Everything
+worth reading — the deck, the readers, the craft — was behind a gate. Six
+workstreams built the indexable surface: the gate change and a signed-out homepage,
+`/en/` as a middleware rewrite, 22 card lore pages from 44 authored documents, the
+gallery, 44 wallpaper derivatives and two blog articles. **54 indexable pages
+where there were three.**
+
+**The second thesis: two languages cannot occupy one address in a search index.**
+D6 said locale is never a URL segment and it was right for the nine app routes; it
+is wrong for content, so `/gallery` is Indonesian and `/en/gallery` is English,
+reached by a middleware **rewrite** rather than a route segment, so there is still
+one route tree. That is an amendment, not an oversight — and a stripping bug making
+the gated app reachable under `/en/` is the worst outcome this release had
+available, which is why there is a test named for it.
+
+**The third: the closed OAuth branding blocker.** Google's consent screen needs an
+app homepage that is not a login page. Signed out, `/` now renders a landing page.
+
+2130 unit tests across 123 files; 252 integration tests across 16. One migration on
+top of v0.3.0's seven — a **column**, `readings.choice`, and no new table.
+
+### Added
+
+- **The public surface and the technical SEO foundation (S1).** `src/lib/seo/` —
+  `origin.ts` is the **origin leaf**: env only, zero imports, and `shareOrigin()`
+  delegates to it so the two cannot disagree. `jsonld.ts` holds pure builders and
+  `JsonLd.tsx` is the **one `ld+json` mount in the app**, with a plain text child
+  plus `serializeJsonLd` pre-escaping `& < >` — not for correctness, but because
+  React's escaping of a `<script>` text child is an unspecified implementation
+  detail and a release must not depend on one. `sitemap.ts` and `robots.ts` are
+  leaves; `/terms` and `/privacy` become indexable (R4); `metadataBase` lands, and
+  the secrets tripwire learns its first `NEXT_PUBLIC_` variable.
+  `PublicShell.tsx` is the chrome, `PublicShare.tsx` the share control (S-D8),
+  and `PublicPageViewed.tsx` reports a referrer no server component could know.
+- **A signed-out landing page, and `/` dual-renders by session (S-D5).** No
+  session read, no database, no model call on the signed-out arm. **`'/'` is
+  deliberately NOT in `isPublic()`** — that function short-circuits `decide()`
+  *above* the onboarding check, so the allowlist would land a half-onboarded
+  querent on a picker that assumes a completed `profiles` row. The clause is
+  `!signedIn && pathname === '/'`, below the public check.
+- **Locale-addressable public content (S2).** `src/lib/i18n/prefix.ts` — the
+  `/en/` parser, the content route table and `contentRewrite()` — **edge-safe,
+  with no `server-only`, no `next/*` and no `process.env`**, because `gate.ts`
+  imports it. The rewrite runs **before** the D6 chain and before the gate
+  (contract G1), pins the locale into `x-jmt-locale` and writes **no cookie**, so
+  a cookie, an `Accept-Language` and `?lang=` are all inert on a content route —
+  measured, in every `NODE_ENV`. `contentAlternates()` is the **only** way to emit
+  a canonical or an `hreflang` in this codebase, it takes the locales that
+  actually exist rather than `LOCALES`, and it throws on a prefixed path, on a
+  non-content path and on a canonical for a locale with no document, because a
+  wrong canonical de-indexes the correct page and nothing reports it.
+  `sitemapLanguages()` is the same function, so the two sets cannot disagree.
+  `ContentLocaleLink.tsx` is a server-rendered `<a href>` to the sibling URL —
+  on a content route the URL is the only input, so the switcher is a **link**.
+- **22 card lore pages, from 44 authored documents (S4).** `/arcana/<slug>` in
+  both trees: the fact strip, the upright and reversed readings, the
+  correspondences, and `Article` + `ImageObject` + `BreadcrumbList` structured
+  data. `src/content/types.ts` holds the block union and `LoreDoc`;
+  `src/components/Prose.tsx` is the **one block renderer**, server-side and
+  exhaustive; `src/lib/arcana/correspondence.ts` bridges the glyph attributions to
+  V1's engine; `cardUrlSlug` / `cardByUrlSlug` are asserted against roadmap §3.2.
+  **Prose is data, not TSX, because the copy lint needs strings** — in a `.tsx`
+  document a sentence splits across text nodes at `{' '}`, punctuation arrives as
+  `&ldquo;`, and `\btempoh\b` can straddle a JSX boundary and never match.
+  `doc.yesno` is asserted against `effectiveYesNo()`, because the reversal flip is
+  counter-intuitive — The Moon and The Hermit both answer `no` upright — and a
+  writer following the artwork gets it backwards.
+- **`/arcana` is public though its page only calls `notFound()`.** It is the
+  parent of 22 indexed URLs and Google reads a login redirect on a content path as
+  a soft 404, so its 404 has to be a real one. **The file existing is the ruling
+  (R6)**; the negative controls are `/arcanax` and `/arcana-foo`.
+- **The Gallery (S3).** A 2×11 grid of all 22 Majors at `/gallery`, every card
+  upright, with a zoom sheet that **labels both glosses** — an unlabelled pair
+  under upright art is exactly the contradiction `cardMeaning()` exists to
+  prevent. The 22 lore hrefs are built on the server and each tile is
+  `prefetch={false}`. `galleryAlt` is its own module with its own test;
+  `CardFace` takes an alt override; `CardDetail` gains both glosses and a
+  `children` slot. Measured at 320/360/375/390 in both locales, negative-controlled.
+- **44 HQ wallpapers, committed (S5).** 22 × { 1024×1536 card, 1440×3120 phone },
+  JPEG q90 4:4:4, 23.77MB, from `tools/make_wallpapers.py`; `src/lib/wallpaper.ts`
+  is the asset contract and `WallpaperDownload.tsx` the control, mounted in the
+  gallery. **The oracle was written before the wallpapers** —
+  `tools/check_wallpapers.py` holds its own expectations and asserts colour with a
+  **tolerance**, because JPEG quantization moves `#0a0812` by one unit and an
+  oracle written with `==` fails on correct output, which is how a check gets
+  deleted. **Nothing is upscaled or cropped**: `make_wallpapers.py` uses
+  `normalize_cards.py`'s `fit_to_ratio` as an *assertion* and reads the untouched
+  source pixels, because that helper would otherwise LANCZOS 1020 → 1024 (S-D9).
+  **JPEG rather than WebP, deliberately** — the one thing a wallpaper must do is
+  reach the iOS Photos library, and *Set Wallpaper* reads from nowhere else — with
+  an `<a download>` anchor as the contract, `navigator.share` as an upgrade, and
+  **no `content-disposition`** (W-D10), or the image cannot be *viewed*, which is
+  the precondition for long-press → Add to Photos. T&C clause 9 grants the licence.
+- **The blog (S6).** `/blog` and `/blog/[slug]` in both trees, `Blog` and
+  `BlogPosting` nodes with the organisation as author, `src/lib/seo/blog.ts`, and
+  two authored articles — *what tarot is* and *how to read tarot* — in
+  `src/content/blog/**`. The `Block` union widened under R16 and `Prose` renders
+  the article union; **`heading.id` and `list.ordered` are optional, and that is
+  why 44 lore documents needed no edit.** The sitemap entries landed **after** the
+  pages existed, which is the ordering rule rather than a coincidence (R9): a path
+  in a sitemap with no page behind it is a 404 Search Console reports against the
+  whole file.
+- **`/account`'s six onboarding answers are readable and editable** (2026-07-29).
+  Each row is one 44px button — question on the left, a tick or an empty circle —
+  and tapping it opens a sheet holding the answer. **`worst_thing`'s plaintext
+  leaves the server ONLY through `GET /api/onboarding/answer/<key>`: one key per
+  request, `private, no-store`, and there must NEVER be a bulk variant**, because
+  a six-answer read for a browser puts the most sensitive string in the product
+  into the response to *opening a page*. Nothing is decrypted on a render path —
+  `answerPresence` still reads the column's nullity. **L13 is what died** (*"the
+  six are deletable and NOT editable"*): reconciliation §7.3 asked for the text
+  not to be shown *until asked*, V8 made "asked" unreachable, and a tap on a
+  question is asking.
+- **A choice verdict: a question offering options gets answered with one of
+  them** (2026-07-29), in the box the yes/no verdict already had. The report was a
+  four-paragraph reading of *"mending makan ayam atau ikan nanti siang?"* that
+  never said ayam or ikan. `src/lib/reading/choice.ts` is **pure** — no
+  `server-only`, no `process.env` — because the marker crosses the wire and a
+  server-side stream transform cannot work: the choice arrives long after the
+  response headers, so a server that strips it cannot tell the client what it was.
+  `Draw.tsx` strips incrementally, `/api/reading`'s `defer()` strips once over the
+  finished body, **with the same function**, and `choice.test.ts` feeds one body in
+  every possible split. **`validateChoice` returns a word-bounded SLICE of
+  `readings.question`, never the model's copy** — which is why it returns a string
+  rather than a boolean, since a caller handed `true` would render the model's
+  text. `CHOICE_RULE_{ID,EN}` is in `daily` and `spread3` and **never `yesno`**,
+  whose answer is already forced by `effectiveYesNo()`; `ReadingView` uses
+  `else if` as the belt to that brace. Migration `0008` adds `readings.choice`.
+- **`npm run smoke -- --all --choice`** — eighteen live readings all asking a
+  two-option question, and **the only instrument for the marker's format.**
+  `npm run wallpapers` joins the idempotent asset scripts.
+- **Six committed measurement harnesses under `tools/seo/`** — `crawl.sh` (the
+  signed-out crawl, which is the release's acceptance test), and `fit.sh`,
+  `galleryfit.sh`, `wallpaperfit.sh`, `blogfit.sh`, `answersfit.sh` as loop-4
+  instances: a fixed-width container plus `scrollWidth > clientWidth`, exact for
+  container-driven layout, because **neither Chrome available here gives a real
+  phone width** — both floor at ~500px.
+- **`src/lib/analytics/referrer.ts`** — `referrerKind` becomes a leaf at its
+  third caller.
+
+### Changed
+
+- **The gate opens the content surface.** `isPublic()` now admits `/gallery`,
+  `/arcana/*`, `/blog/*` and their `/en/` twins — **and its content clause strips
+  the prefix where the other clauses must not** (contract G2), because
+  unconditional stripping would make `/en/api/events` public. `/en/history` is
+  `false`, with a test named for the worst outcome available in this release.
+- **`src/middleware.ts` gains an outer wrapper, and that is the only place the
+  last two cookies could be removed.** See *Fixed*. `content.kind !==
+  'passthrough'` is the whole fence: a signed-in visitor on `/` is `passthrough`,
+  so stripping there would drop the `jmt_locale` sync D6 needs *and* the sliding
+  session cookie on the busiest screen in the app, and `/login` and
+  `/api/auth/*` being `passthrough` keeps the csrf token available to the sign-in
+  POST. It costs the sliding refresh on content pages, deliberately: browsing
+  public content is not app activity.
+- **D6 is amended rather than overturned, and the amendment is narrow.** Locale is
+  still never a URL segment for the nine app routes; inside the app
+  `router.push('/en/...')` is still wrong and no `<Link>` is locale-aware.
+  `/en/history` is not a route — it reaches `decide()` spelled as the request
+  spelled it and matches nothing.
+- **A slug is one bare path in both trees** — `what-tarot-is`, never a per-locale
+  pair — because `contentAlternates()` derives the `/en/` twin from one path. Same
+  ruling that kept `/history` from becoming `/jejak`.
+- **The closed event taxonomy grows 61 → 66 in one edit, then 66 → 67 once**, and
+  the second time the register was **revisited rather than the number bumped**:
+  four names were drafted and one landed. `reading.choice_offered` became two
+  *props* on `reading.completed` so numerator and denominator come out of one
+  scan; two answer-write names became one `account.answer_changed` with a closed
+  `action`; and `revealed` was dropped, because request volume in the platform log
+  answers the privacy question and a look-and-close changes no decision. **Expect
+  to fold rather than add.**
+- **The message catalogs grow 242 → 337 keys.** `id.ts` still owns the key set and
+  a missing English string is still a red typecheck.
+- **Every reading is 30% shorter — ceilings AND floors** (Miftah's ruling: too
+  long to read on a phone). `daily` 55 → 39 per paragraph, `spread3` 40 → 28,
+  `yesno` 70 → 49, with the totals scaled to match, because scaling one end of a
+  band narrows it rather than shortening it and would fail the smoke script on
+  output that obeyed the prompt. The sentence counts came down with them.
+  **`spread3` keeps four paragraphs** — dropping the synthesis would leave three
+  unconnected card notes — and **`MAX_TOKENS` and `MARGARET_MULTIPLIER = 1.3` did
+  not move**: the first is a runaway guard, and scaling the second would cut
+  Margaret twice.
+- **An answer edit now DEFERS the persona and keeps the Lotus eager, and the
+  asymmetry is an erasure duty.** `lotus_avatars.summary` is read into **every
+  reading prompt**, so deferring it would let a reading taken before the next
+  `/account` visit still be generated from the answer just deleted, which
+  `/privacy` clause 3 promises against twice in both locales. `personas.body` is
+  read by `/account` alone, so it waits. One model call per edit instead of two.
+  **A13's rule is intact and only its enforcement point moved**, to
+  `personaStaleness`, via `max(onboarding_answers.updated_at) >
+  personas.updated_at` — no schema delta.
+- **The account menu grows from four items to six**, and `AccountMenu`'s header
+  comment forbidding a fifth is **inverted rather than deleted** — it is still
+  right about the case it was made for, which is a share control. `Galeri kartu`
+  and `Tulisan` carry their own `account.menu.*` keys, never a reuse of
+  `public.footer.*`.
+- **`CLAUDE.md` was cut a second time, 167k → 94k**, by the same method as the
+  first: the invariants stay, the evidence moves to `docs/workstream-notes.md`,
+  and every compressed section's full prior text is preserved verbatim in that
+  file's Part II. The file is loaded every session and rejected above 150k, so
+  prose that argues rather than binds costs every future session its context.
+- **Upstash has a Singapore region, and five places in this repository said it
+  does not** and told the reader to use Tokyo. All corrected —
+  `ap-southeast-1`, the same region as the functions (`sin1`) and as Neon, so
+  every hop is intra-region.
+- **`ReadingView` gains the choice box**, and `readings.choice` **rides on
+  `include_question` in `publicReadingQuery`, in the same ternary**: it is a slice
+  of the question, so a link excluding the question and selecting this column
+  would publish a fragment of the excluded string through the one field that reads
+  as a verdict rather than as user text. It is **never translated** — the one
+  piece of reading chrome that does not follow `t` — and rendered with **no `lang`
+  attribute**, matching the question block.
+
+### Fixed
+
+- **A public content response carried two cookies, and neither of them was ours.**
+  `authjs.csrf-token` and `authjs.callback-url` are appended by the `auth()`
+  wrapper around middleware **after** the handler returns, so no line inside that
+  handler could have prevented them — which is why S-D10 read as satisfied while
+  being false on **every public page**. The fix is an outer `middleware()` around
+  the `auth()`-wrapped gate: the inner handler marks a content response with an
+  internal header, the outer deletes every `Set-Cookie` and then the marker.
+- **`sql<Date>` lied, and a green typecheck and a green unit suite could not see
+  it.** `answersUpdatedAt` was written as `sql<Date | null>` over
+  `max(timestamptz)`. Drizzle maps a timestamp to a `Date` when it knows the
+  **column**; inside a raw `sql` template there is no mapper and postgres.js
+  returns a **string**. `personaStaleness` compared that with `>` against a real
+  `Date`, which coerces through `ToPrimitive` and answers *something* — so **every
+  answer edit was judged wrongly**, invisibly, because the unit tests pass real
+  `Date`s in, which is what the type claimed. Caught by an integration test
+  calling `.getTime()`. The column is now typed `unknown` and converted by hand.
+  The rule was already written one file over, on `readingsForDay`'s `hasBody`.
+- **The choice box shipped the exact bug it was built to prevent, for one
+  commit.** `validateChoice` guaranteed the box holds only the querent's own words
+  — word-bounded, capped at 40 characters, sliced out of `readings.question`.
+  Three of eighteen live readings answered the marker with a whole clause,
+  `PILIHAN: makan ayam atau ikan nanti siang`, which passed every check because a
+  clause from the question *is* a word-bounded substring of it and 32 characters
+  is inside the cap. The guarantee was true and insufficient: it has to be one of
+  the querent's **options**. `MULTI_OPTION` refuses a candidate containing
+  `atau` / `apa` / `or` / `versus` or a comma, biased towards rejecting, because a
+  false rejection costs the box and a false acceptance ships the report.
+- **`/` and `/en` shared one canonical**, which is the de-indexing failure S-D15
+  exists to prevent.
+- **`/gallery` and `/arcana/<slug>` disagreed on two fields of a shared `@id`,
+  twice, and both were found by reading the JSON off the wire with a green
+  suite.** A shared `@id` makes a consumer **merge** the two nodes and pick one
+  value for any duplicated field, silently. It broke on `url` and on `caption`.
+  By field now: the lore page keeps `caption`, the gallery carries `description`,
+  `url` is the image file on both, and `imageJoin.test.ts` imports S4's
+  `arcanaGraph` **on purpose**, because its subject *is* the agreement between two
+  owners.
+- **`/wallpapers/*` shipped for one commit with `/cards/*`'s year of
+  `immutable`**, reasoning carried over from content-hashed filenames to files
+  that are not. It is one day plus a week of `stale-while-revalidate` now.
+- **`referrer_kind` was the literal `'direct'` on two public surfaces.**
+  `TrackView` cannot get it right — its props come from a server component, where
+  `document.referrer` does not exist. `PublicPageViewed` is the fix and all three
+  surfaces mount it.
+- **Safari does not focus a `<button>` when it is tapped**, so
+  `document.activeElement` on the way into `CardDetail` captured `<body>` on the
+  one platform this app is built for, and restoring focus there dropped the
+  querent at the top of the document. The opener is a prop (`returnFocusTo`) now.
+  **Loop 5 can reproduce it** — a programmatic `.click()` does not focus a button
+  either — which CLAUDE.md previously denied.
+- **A loop-4 negative control was defeated exactly as `galleryfit`'s header warns
+  it can be.** `min-width: 420px` injected at the top of `.question` lost the
+  cascade to the block's closing `min-width: 0`, so `overflow` stayed false and
+  the harness looked fine. `getComputedStyle` read `0px`. **A control that cannot
+  fail is indistinguishable from a harness that cannot see.**
+- **The public footer grew a link to itself** when `PublicShell`'s `LINKS` table
+  was emptied rather than deleted, taking the filter with it.
+
+### Removed
+
+- **`PublicShell`'s `LINKS` table**, deleted rather than emptied. *Gallery* and
+  *Writing* moved out of the public footer and into the account menu.
+- **Six `account.answers.*` catalog keys** — `answered`, `empty`, `cleared`,
+  `clear`, `clearing`, `clearAria`, `failed` — as the row became one button and
+  the two state words moved into the icon's `aria-label`, because a glyph with no
+  accessible name says nothing at all to a screen reader.
+- **`arcana.upright` and `arcana.reversed`.** The two orientation words are
+  `card.upright` and `card.reversed`, because three surfaces render them.
+- **No `callout` block kind. S6 asked and R16 refused**, with
+  `types.contract.test.ts` asserting the absence, because the failure mode of a
+  refused ask is somebody granting it quietly.
+
+### Security
+
+- **A stranger on a public content page now leaves with an empty cookie jar.** See
+  *Fixed* — and note that `wallpapers/`, `cards/` and `dukuns/` are excluded in
+  the **middleware matcher** and must never be "fixed" in `isPublic()` instead
+  (R7): both give a 200, but only the matcher stops middleware running, and
+  middleware running means a `Set-Cookie` on a ~550KB static response.
+- **The most sensitive string in the product has exactly one exit.**
+  `worst_thing`'s plaintext leaves the server only through
+  `GET /api/onboarding/answer/<key>` — one key per request, `private, no-store`,
+  no bulk variant — and `queries/onboarding.ts` is still the only module that
+  encrypts or decrypts that column. A skip is still `answer_text IS NULL`, never
+  an encrypted empty string.
+- **The persona prompt still never receives a raw onboarding answer**, now with
+  the reveal control that made "until asked" reachable. It gets the engine facts,
+  the closed values and the Lotus summary; `<sosok>` remains the sixth fence, as
+  defence in depth *because* of that, with the canary in `prompt.test.ts`.
+- **`account.answer_changed` carries a `length` and a closed `action`, never
+  text.** `events` rows survive account erasure with `user_id` nulled, and that is
+  only honest because `sanitizeProps()` provably strips everything identifying.
+- **The secrets tripwire learned its first `NEXT_PUBLIC_` variable.**
+  `NEXT_PUBLIC_SITE_ORIGIN` is the only one this project declares, and
+  `scripts/audit-secrets.ts` runs inside `npm run build`.
+- **`/s/<slug>` keeps `x-robots-tag: noindex, nofollow, noarchive` and
+  `referrer-policy: no-referrer`**, and `crawl.sh` checks it as the script's own
+  **negative control**: if that line printed nothing, the crawl above it would
+  prove less than it looks like it does. `x-frame-options` stays `SAMEORIGIN` and
+  `frame-ancestors 'self'`, never `DENY`.
+- **No `x-robots-tag` on any content route (S-D12).** Next applies every matching
+  entry and a later one with the same key wins, so a broadly-matching entry
+  carrying that header would silently `noindex` the site. `headers.test.ts`
+  asserts these entries carry `cache-control` and nothing else, and that
+  `/s/:path*` is the only entry in the file with an `x-robots-tag`.
+
+### Known gaps at this tag
+
+- **No public content route is cached in production, and all eight
+  `next.config.ts` content entries are inert.** R21 is closed and the answer is
+  "none of it": measured against the real Vercel CDN on 2026-07-29, every content
+  route in both trees answers `private, no-cache, no-store` with `x-vercel-cache:
+  MISS` twice running. The discriminator is the middleware matcher — an excluded
+  path gets its configured headers verbatim, and on a matched path every *other*
+  config header arrives, so `headers()` runs and `cache-control` alone loses to
+  the rendered response. **`headers.test.ts` cannot see this and no config-level
+  test can**; `curl -D -` against a deployed URL is the only instrument, and
+  `next start` is not Vercel — an intermediate local measurement said something
+  different and was a local artifact. The candidate fix is one line in the
+  middleware wrapper that already discriminates a content response exactly.
+- **Whether a downloaded `-phone.jpg` reaches the iOS Photos library and *Set
+  Wallpaper* accepts it is a release blocker and needs a real iPhone.** So does
+  the answer sheet's geometry — a textarea with the keyboard up inside a `90dvh`
+  sheet is a question WSL cannot answer.
+- **Nobody has read the two articles or the 22 lore pages on a phone.** No lint
+  can tell whether a page is worth reading.
+- **`contentUrl` on the 22 `ImageObject`s is still the 800×1200 WebP**, and moving
+  it means moving `url`, `width`, `height` and `encodingFormat` too, changing the
+  image identity of 22 pages.
+- **Two known defects in `PublicShare`, on twenty-three pages:** the button is
+  36px tall, under the 44px iOS minimum, and it renders in the server HTML, so
+  with JavaScript off the control is present and dead. Left alone deliberately
+  under §6 file ownership — and **reconciliation §7 records this as already
+  settled the other way**, which it is not.
+- **No RSS.**
+- **`GET /api/persona`, `/api/memory/frequency` and `/api/memory/summary` return
+  500 when the database is down**, not 204. One omission in three files.
+- **`PERSONA_MIN_AGE_SECONDS=3600` is still a guess**, and
+  `account.details_viewed` still always reports `from: 'direct'`.
+- **The Google consent screen is still in Testing mode.** The branding blocker is
+  closed — signed out, `/` renders a landing page — so what remains is pressing
+  Publish.
+- **`daily` did not land the 30% cut**, and it is recorded rather than fixed:
+  Margaret wrote 53, 84 and 67-word openings against her 51-word ceiling on
+  identical hands. **The English `spread3` calibration is still unconverged** at
+  157–243 words across runs. Measure before moving either.
+- **`npm run test:all` still fails ~12–22 of V9's limiter tests** — a harness race
+  on the one shared `serverless-redis-http`, not a regression. Run the two
+  projects separately for a true answer.
+- **The largest unverified risk in the project is unchanged:** signing in with
+  Google from a home-screen installed instance, in standalone mode. Only a real
+  iPhone against a Vercel preview can test it.
+
 ## [v0.3.0] - 2026-07-28
 
 Nine workstreams (V1–V9) planned in `PUBLIC_RELEASE_ROADMAP_v0.3.0.md`,
