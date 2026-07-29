@@ -278,13 +278,13 @@ export default async function ArcanaPage(
           orientations are rendered, so nobody tidies this away as duplication.
         */}
         <section className={styles.section}>
-          <h2 className={styles.h2}>{t('arcana.upright')}</h2>
+          <h2 className={styles.h2}>{t('card.upright')}</h2>
           <p className={styles.gloss}>{cardMeaning({ card, reversed: false }, locale)}</p>
           <Prose blocks={doc.upright} />
         </section>
 
         <section className={styles.section}>
-          <h2 className={styles.h2}>{t('arcana.reversed')}</h2>
+          <h2 className={styles.h2}>{t('card.reversed')}</h2>
           <p className={styles.gloss}>{cardMeaning({ card, reversed: true }, locale)}</p>
           <Prose blocks={doc.reversed} />
         </section>
@@ -299,9 +299,9 @@ export default async function ArcanaPage(
             reading, by construction.
           */}
           <dl className={styles.verdict}>
-            <dt>{t('arcana.upright')}</dt>
+            <dt>{t('card.upright')}</dt>
             <dd>{t(VERDICT_KEY[effectiveYesNo({ card, reversed: false })])}</dd>
-            <dt>{t('arcana.reversed')}</dt>
+            <dt>{t('card.reversed')}</dt>
             <dd>{t(VERDICT_KEY[effectiveYesNo({ card, reversed: true })])}</dd>
           </dl>
           <p className={styles.p}>{doc.yesno.note}</p>

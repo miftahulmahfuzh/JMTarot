@@ -88,6 +88,7 @@ const en: Catalog = {
   'draw.card.aria.take': 'Take a card',
 
   // --- Card detail ----------------------------------------------------------
+  'card.upright': 'Upright',
   'card.reversed': 'Reversed',
   /*
    * `Put it back`, not `Put it back in the deck`. The longer version was 23 characters
@@ -562,8 +563,28 @@ const en: Catalog = {
   'public.crumb.blog': 'Writing',
 
   // ── S4: /arcana/<slug> ─────────────────────────────────────────────────────
-  'arcana.upright': 'Upright',
-  'arcana.reversed': 'Reversed',
+  /*
+   * S3, `/gallery`. **THE ENGLISH IS WRITTEN, NOT TRANSLATED** (§8.2). "Read the
+   * lore" is not a rendering of "Baca maknanya", and "the original artwork" is not
+   * one of "gambar aslinya" in the other direction either.
+   *
+   * `gallery.card.alt` KEEPS THE WORD ORDER ENGLISH SEARCH USES: "{name} tarot
+   * card", because `the moon tarot card` is what somebody types, where the
+   * Indonesian phrase is `kartu tarot the moon`. The card NAME and the NUMERAL stay
+   * English in both locales (`## Card data`); only the frame and the keywords are
+   * translated, which is why the two locales differ on every one of the 22 and why
+   * `alt.test.ts` asserts they do.
+   */
+  'gallery.meta.title': 'Major Arcana Gallery — All 22 Tarot Cards | JMTarot',
+  'gallery.meta.description':
+    'See all 22 Major Arcana cards: the original artwork, the upright and reversed meanings, and the keywords for each.',
+  'gallery.eyebrow': 'Gallery',
+  'gallery.title': 'The 22 Major Arcana Cards',
+  'gallery.hint': 'Tap a card to see it larger.',
+  'gallery.card.alt': '{name} tarot card, Major Arcana {numeral}: {keywords}',
+  'gallery.card.zoomAria': 'See {name} larger',
+  'gallery.card.lore': 'Read the lore',
+
   'arcana.verdict': 'Yes or no',
   'arcana.lore': 'Where the card comes from',
   'arcana.inSpread': 'In a reading',

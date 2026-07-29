@@ -157,6 +157,19 @@ const id = {
   // --- Card detail ----------------------------------------------------------
   //
   // The `·` separator stays in the JSX; only the word is copy.
+  //
+  // **`card.upright` AND `card.reversed` ARE ONE PAIR AND THERE MUST NOT BE A
+  // SECOND ONE.** S4 minted `arcana.upright` / `arcana.reversed` for the lore
+  // page's two section headings while `card.reversed` had already existed since
+  // W6; S3 needed the same pair for `/gallery`'s zoom sheet, which would have
+  // been the THIRD spelling of one word. Both `arcana.*` keys are deleted and
+  // the lore page reads these -- S3's delta 18 to S4, which argued it before
+  // either shipped: two keys for one word is how the gallery and the lore page
+  // end up disagreeing about what `Tegak` is called.
+  //
+  // Namespaced `card.` rather than `gallery.` for the same reason: the word is a
+  // fact about a CARD's orientation, and three surfaces render it.
+  'card.upright': 'Tegak',
   'card.reversed': 'Terbalik',
   'card.return': 'Kembalikan ke dek',
   // The bare-name alt gets a key so a locale can add "the card" if it needs to,
@@ -880,6 +893,44 @@ const id = {
   'public.crumb.blog': 'Tulisan',
 
   /**
+   * ── S3: `/gallery`, the twenty-two cards as a catalogue ───────────────────
+   *
+   * CHROME ONLY, and there is remarkably little of it: the page's subject is the
+   * art, and every word ABOUT a card -- its name, its numeral, its keywords, both
+   * glosses -- is already in `cards.json` and already localised. Nine keys render
+   * twenty-two tiles.
+   *
+   * **`gallery.card.alt` IS A SINGLE LITERAL AND MUST NEVER BE BUILT WITH `+`.**
+   * A concatenated value has type `string` rather than a literal type, so its
+   * `{placeholders}` are not derived and `t()` silently stops checking the
+   * params. This one has three, and it is the only value in this catalog whose
+   * output is INDEXED CONTENT -- `alt` is what Google Images reads, and the art
+   * is the one asset a competitor cannot copy. `src/app/gallery/alt.ts` derives
+   * twenty-two distinct sentences per locale from it.
+   *
+   * **`gallery.card.zoomAria` IS NOT A REUSE OF `account.card.zoomAria`**, whose
+   * Indonesian is today the identical sentence. V8's precedent for reuse is
+   * `history.home`, and that holds because "Home" cannot drift; this one can and
+   * will -- the moment somebody makes `/account`'s label say *"Lihat kartumu
+   * lebih besar"* (**your** card), the gallery says "see your card larger" about
+   * The Moon, on a public page, with nothing failing. A key named `account.*`
+   * doing work on `/gallery` is a trap for whoever next edits `/account`.
+   *
+   * The two orientation labels the zoom sheet needs are `card.upright` /
+   * `card.reversed`, up beside the card detail block. Not `gallery.*`: three
+   * surfaces render them.
+   */
+  'gallery.meta.title': 'Galeri Major Arcana — 22 kartu tarot | JMTarot',
+  'gallery.meta.description':
+    'Lihat semua 22 kartu Major Arcana: gambar aslinya, arti tegak dan terbaliknya, serta kata kunci tiap kartu.',
+  'gallery.eyebrow': 'Galeri',
+  'gallery.title': '22 Kartu Major Arcana',
+  'gallery.hint': 'Ketuk kartu untuk melihatnya lebih besar.',
+  'gallery.card.alt': 'Kartu tarot {name}, Major Arcana {numeral}: {keywords}',
+  'gallery.card.zoomAria': 'Lihat {name} lebih besar',
+  'gallery.card.lore': 'Baca maknanya',
+
+  /**
    * ── S4: `/arcana/<slug>`, the twenty-two lore pages ───────────────────────
    *
    * CHROME ONLY. Every word of the lore itself lives in `src/content/arcana/**`
@@ -897,9 +948,12 @@ const id = {
    * They must be the SAME WORDS the app prints after a real yes/no reading; a
    * second key is how the lore page and the reading eventually disagree about
    * what `maybe` is called.
+   *
+   * **THE SAME RULE TOOK `arcana.upright` / `arcana.reversed` AWAY** (S3). The
+   * two orientation words are `card.upright` / `card.reversed`, up beside the
+   * card detail block, because three surfaces render them: the draw screen's
+   * overlay, `/gallery`'s zoom sheet and this page's two section headings.
    */
-  'arcana.upright': 'Tegak',
-  'arcana.reversed': 'Terbalik',
   'arcana.verdict': 'Ya atau tidak',
   'arcana.lore': 'Asal-usul kartu',
   'arcana.inSpread': 'Dalam bacaan',
