@@ -5302,6 +5302,309 @@ arbitrary.
    at 1440 that leaves ~120px of margin each side. It reads well and it is a guess A1 recorded as
    one; nobody has tried it at 2560.
 
+## The per-user everything page (A5), v0.5.0
+
+**`/admin/users`, `/admin/users/[id]`, four audited API routes, and the ordering that makes a
+reveal fail when its audit row cannot be written.** Plan:
+`docs/plans/2026-07-30-admin-user-detail.md` (20 tasks). Rulings that bound it: R3, R21, R27,
+R28, R29, R30, R33, R36, R51.
+
+### The file map
+
+```
+NEW -- the shapes and the copy
+src/lib/admin/types.ts                    AdminUserListItem + the three reveal shapes.
+                                          ZERO IMPORTS: `AdminReveal` is a client component
+                                          and `adminCopy.test.ts` forbids any @/lib/i18n
+                                          specifier in this tree, so `Locale` is restated as
+                                          `AdminLocale = 'id' | 'en'`.
+src/lib/admin/reveal.ts                   **THE ORDERING.** Handle-first, no next/*, no catch.
+src/lib/admin/userList.ts                 the list projection, shared by the page and the route
+src/app/admin/users/copy.ts               ~150 Indonesian strings. No t().
+src/app/admin/users/series.ts             the per-user token fold. PURE.
+
+NEW -- the data layer (A5 owns three files in a directory it shares)
+src/lib/db/queries/admin/detail.ts        identity, answer presence, lotus, summaries,
+                                          verdicts, translations, share links, events
+src/lib/db/queries/admin/moderation.ts    THE ONE decrypt site for moderation_flags.question
+src/lib/db/queries/admin/readings.ts      readings + cards + the per-reading ledger fold
+
+NEW -- the pages
+src/app/admin/users/page.tsx              the list. server.
+src/app/admin/users/AdminUserTable.tsx    'use client' -- the search box, and nothing else
+src/app/admin/users/users.module.css
+src/app/admin/users/[id]/page.tsx         the everything page. one Promise.all, one failure
+src/app/admin/users/[id]/detail.module.css
+src/app/admin/users/[id]/AdminReveal.tsx  'use client'. THE reveal, mounted three times
+src/app/admin/users/[id]/AdminReadingDetail.tsx   NOT ReadingView (R27). SERVER, not client
+src/app/admin/users/[id]/sections/kit.tsx         Panel/Field/DataTable/Empty/Json/Badge
+src/app/admin/users/[id]/sections/*.tsx           the fourteen, one file each
+
+NEW -- the routes
+src/app/api/admin/users/shared.ts                 the gate, the 404, UUID_RE, the header
+src/app/api/admin/users/route.ts
+src/app/api/admin/users/[id]/answer/[key]/route.ts
+src/app/api/admin/users/[id]/moderation/[flagId]/route.ts
+src/app/api/admin/users/[id]/reading/[readingId]/route.ts    <- R28's route
+
+NEW -- the tests
+src/lib/admin/reveal.integration.test.ts          the audit ordering, TWO instruments
+src/lib/admin/userList.integration.test.ts        the payload fence over the real projection
+src/lib/db/queries/admin/{detail,moderation,readings}.integration.test.ts
+src/app/admin/users/[id]/page.contract.test.ts    the subtree fences
+src/app/admin/users/series.test.ts
+
+EDITED: nothing outside src/app/admin/users/**, src/app/api/admin/**, src/lib/admin/** and
+        A5's three files in src/lib/db/queries/admin/**.
+```
+
+### The defect in A5's OWN test that the negative control found, and it is the important one
+
+**`reveal.integration.test.ts` shipped a `pg_temp` trigger that raises on
+`insert into admin_access_log`, asserted the reveal rejects, and PASSED against a
+`recordAdminAccess` written in house style — a `try` that logs and continues.** All twelve tests
+were green with the control removed.
+
+The reason is that the raised exception **aborts the whole Postgres transaction**, so the
+statement AFTER the audit write answers `25P02 current transaction is aborted` and the reveal
+rejects *whatever the ordering is*. The instrument could not see the one defect it exists to
+catch. In production there is no wrapping transaction, so a swallowed audit failure lets the
+decrypt proceed and returns plaintext with no record — exactly what R30 calls the worst available
+outcome, *"the reveal would work, the audit row would silently not exist"*.
+
+**The fix is a second instrument: a `Proxy` over the handle whose `insert()` throws and whose
+reads all work.** With it, a swallowing `recordAdminAccess` RESOLVES with
+`text: 'yang paling berat'` and three tests go red. Verified by injecting the house-style version
+on 2026-07-29:
+
+```
+× FAILS when ONLY the write fails and every read still works
+× FAILS when only the write fails, so no flagged question is decrypted
+× FAILS when only the write fails, so no body is read
+      Tests  3 failed | 12 passed (15)
+```
+
+Both instruments ship. **The generalisation is worth more than the fix: inside
+`withRollback`, "the statement raised" and "the ordering is wrong" produce the same observable,
+so any ordering test built on a raising trigger is measuring the abort.** The same doubt applies
+to `delete.integration.test.ts`, which is the precedent A5 copied — it gets away with it because
+`deleteAccount` opens its own savepoint, so its failure is scoped, but the assertion it makes is
+still about the abort rather than about the order.
+
+### The keyset cursor that returned an empty second page, and why a `Date` cannot be one
+
+**`timestamptz` holds MICROseconds and a JavaScript `Date` holds MILLIseconds.** The first
+`readingsForAdmin` carried `{ createdAt: Date; id: string }` as its cursor, so a row stored at
+`21:14:28.123456` came back as `.123` — and `created_at = $cursor` was false, `created_at <
+$cursor` was false too, and the tiebreak arm of the keyset matched nothing.
+
+Measured: five readings seeded inside one transaction (where `now()` is fixed, so all five share a
+timestamp and the tiebreak is the *only* thing paging them) returned **two unique ids across three
+pages instead of five**, with a non-null cursor at the end.
+
+In production the timestamps differ, so the failure is subtler and worse: paging stops one row
+early at every boundary whose microseconds are non-zero, and the operator sees a list that quietly
+ends. `ReadingCursor.createdAt` is now `created_at::text` and the comparison casts it back.
+
+### Three things measured on screen at 1440px, and none of them was visible in a test
+
+Loop 5 with a fresh Chrome at `--width 1440` (`innerWidth === 1440`), signed in through a
+gitignored `public/cards/_a5.html` that POSTs to `/api/auth/dev-session` — the `_gate.html`
+precedent, because `tools/shot.sh` can hold no session and Windows floors a window at ~500px.
+
+1. **The notional-cost column was clipped.** Ten columns came to `scrollWidth 1193` inside a
+   `clientWidth 1126` panel, so the one column a cost league exists for sat behind a scrollbar.
+   Fixed by dropping seconds from "terakhir terlihat" (a second answers no operator question) and
+   8px cell padding instead of 10px: 40px across ten columns. Re-measured `1126/1126`.
+2. **The table of contents rendered above the `<h1>`.** The nav was in the shell, above
+   `<Suspense>`, and the title needs `identity.email` so it lives in `Body` — so the first thing on
+   the page was a fourteen-anchor index for a page whose subject had not been named. The nav moved
+   into `Body`.
+3. **Two bare timestamps side by side.** `2026-07-29 02:12:00  2026-07-29` with nothing saying
+   which was the instant and which the querent's calendar day — and §4.6's whole reason for showing
+   both is that *the operator's question is often "what does the gap between these two mean"*. Both
+   now carry a one-word label.
+
+Plus two on the token card: the unpriced-count sentence rendered **twice** (a `StatTile` note and
+the chart footnote, the same three lines on one screen), and `Line`'s end labels **collided into
+one unreadable string** because the range's last day had no calls, so both series ended at 0.
+
+### `Line`'s `showEndLabels` needs a nudge, and it is A4's file
+
+**Flagged, not fixed** (§6): `src/components/chart/Line.tsx` places each series label at its own
+last point with no collision handling, so any two series ending within a line of each other print
+on top of one another. A5 works around it caller-side — `endLabelsFit()` compares the last values
+against a twentieth of the domain and passes `showEndLabels={false}` below that, because **a
+collided label communicates less than no label** and §5.4's obligation is met by the legend in that
+case. The fix belongs in `Line`.
+
+### `admin.page_viewed` was firing twice per page view, and `/admin` still does
+
+A5's pages mounted A1's `<AdminPageViewed>` **and** called `track('admin.page_viewed', …)`
+server-side in the body — copied from A4's `/admin/page.tsx`, which does the same. Two events per
+view, and the server-side one printed
+`[analytics] unbatched track() outside withAnalytics: admin.page_viewed` on every load, because a
+page render is not inside a `withAnalytics` scope: each call became its own INSERT with a NULL
+`user_id`.
+
+`AdminPageViewed`'s own header calls itself *"the ONE mount for `admin.page_viewed`"*. A5 deleted
+the server-side call and kept the mount; measured after, one page view is one row, attributed, with
+`props = {"page": "/admin/users"}` and no uuid. **`/admin` and `/admin/tokens` still double-fire —
+A4's files, so flagged rather than edited**, and anybody comparing page popularity across the four
+should know that two of them count double.
+
+### The measurement A1's probe script asked A5 for (R35)
+
+`tools/admin/probe.sh` says *"A1 ships no `/api/admin/**` route, so that comparison is not yet
+measurable … A5 lands the first real admin route and owes the measurement"*. Discharged, against
+the dev server with an ordinary signed-in non-admin session:
+
+| path | code | bytes | content-type |
+|---|---|---|---|
+| `/api/admin/definitely-not-a-route` | 404 | 38068 | `text/html` |
+| `/api/definitely-not-a-route` | 404 | 39028 | `text/html` |
+| `/api/admin/users` (unauthorised) | 404 | **0** | none |
+
+**So byte-identity is not merely unclaimed, it is plainly false**, which is what R35 already said:
+a route handler cannot render Next's not-found page. What the shape check does establish is that
+`adminNotFound()` sends **no body and no JSON `{ error }`** — the tell A-D2 forbids — and that all
+three answer 404. **The 38KB figure is `next dev`'s error page and is not the production number**;
+measuring that needs a real admin session against a deployment, which R37 puts on production only.
+Recorded as a stated gap.
+
+Also measured, and it is the row that matters: an **onboarded** non-admin gets 404 on `/admin`,
+`/admin/users`, `/admin/tokens`, `/admin/blog`, `/en/admin` and both API paths. Signed out, the
+pages redirect to `/login` and the API paths answer 401 — R36's two codes, from two callers.
+
+### An un-onboarded account is not a non-admin test subject, and the probe cannot tell
+
+The first refusal run used `dev:jodith`, whose `profiles.completed_at` is NULL, and every page came
+back **200 with one hop** — read by the script as `ADMIN (200)`. It was `/onboarding`. R34
+documents that an un-onboarded admin cannot reach `/admin` and that *the redirect reads exactly like
+a misspelt `ADMIN_EMAILS`*; the same shape also makes an un-onboarded account **useless as the
+non-admin identity**, and `probe.sh` reports it as the opposite of what it is. `dev:walker` is
+onboarded and is the right subject. Worth a line in the script's header; not edited here.
+
+### Loop 5 honours 1440 and still floors at 500, so the earlier narrowing was itself incomplete
+
+CLAUDE.md says loop 5 gives `innerWidth === outerWidth === 500` whatever `--width` says; A4's
+session narrowed that to *"~500px is a floor, not a clamp — the 500 reading reproduces only against
+an already-running Chrome, where `launch` silently ignores the flag"*. Measured 2026-07-29, with a
+`kill` before each `launch`:
+
+```
+launch --width 1440 → {"iw":1440,"ow":1440}
+launch --width 390  → {"iw":500}
+```
+
+**It is a floor, and it applies to a FRESH launch too.** 1440 works because it is above the floor;
+390 does not. So loop 5 answers a desktop width exactly and still cannot answer a phone width, and
+loop 4 remains the instrument for narrow layout — which is what CLAUDE.md concludes, for a reason
+that is half wrong.
+
+### Loop 4, applied to a whole page rather than a component
+
+A page cannot go in a fixed-width container, so the root goes in one instead: set
+`documentElement.style.width` to 320/360/390, force layout, and read `body.scrollWidth` and every
+`.scroller`'s `scrollWidth > clientWidth`. Measured, both pages:
+
+| width | body overflows | tables scrolling inside themselves |
+|---|---|---|
+| 320 | **no** | list 1/1, detail 9/10 |
+| 360 | **no** | list 1/1, detail 9/10 |
+| 390 | **no** | list 1/1, detail 8/10 |
+
+The requirement is exactly that: **the table scrolls, the page body never does.** The tenth
+scroller on the detail page is a short table that genuinely fits.
+
+### Nine deviations from the plan, each with the reason
+
+1. **The ordering lives in `src/lib/admin/reveal.ts`, not inline in each route.** §6.2 wrote the
+   sequence into the handler and §9's A5-28 asserts it against the route's source. A source grep is
+   the weakest instrument available for the release's highest-value invariant, and a route cannot be
+   driven by an integration test (it imports `next/server` and the `server-only` singleton). The
+   ordering is now executable; the fence still asserts the shape and additionally that no route
+   calls `recordAdminAccess` at all.
+2. **A thrown audit write becomes a 503, not Next's 500.** The plan wanted the exception to escape
+   the handler. It is caught with the database's own failures, because both are the same failure and
+   **neither returns text**. What A5-10 actually requires — no plaintext without a committed audit
+   row — is enforced by the ordering in `reveal.ts` and proved by the proxy instrument.
+3. **The readings cursor is text, not a `Date`.** See above; a `Date` cursor is a silently
+   truncating list.
+4. **The user list pages by OFFSET, not keyset (A5-D2).** A3's `adminUserList` takes
+   `{ search, limit, offset }` and that file is A3's by §7. The hazard is real and is on screen:
+   ordered by `last_seen_at`, which `touchLastSeen` moves, a user who is browsing can appear on two
+   pages or on neither. **Nothing on this surface writes, so the cost is a confusing row and never a
+   wrong action.** The fix is one `cursor` parameter in A3's file.
+5. **Search matches `users.email` only, not `display_name`.** Same ownership reason. **A5-13 is a
+   CEILING, not a floor** — searching less than it permits is not a violation; searching more would
+   be. The label says "Cari email" rather than promising more than it does.
+6. **There is no `?deleted=only|hide` filter.** A3's list query has no such parameter and filtering
+   a fetched page in JavaScript would silently return eleven rows for a page of fifty. A5-14's
+   actual requirement is that **no default hides them**, which "always shown, always badged"
+   satisfies completely.
+7. **`AdminReadingDetail` is a SERVER component**, where the file map said `'use client'`. Nothing
+   in it is stateful and the one interactive part is `AdminReveal`, which is its own boundary.
+8. **`answerStatesForAdmin` is A5's own presence read**, not `answerPresence` from
+   `queries/onboarding.ts`. The page needs `updated_at` per row (§4.4's honest staleness signal is
+   the Lotus's `updated_at` beside the answers') plus `asked` and `skipped` told apart, which
+   `answerPresence` folds together. **It is a second NULLITY read and not a second decrypt site:
+   A5-6 is intact**, and `page.contract.test.ts` asserts `decryptField` appears in exactly three
+   files.
+9. **`userIdentityForAdmin` exists beside A3's `adminUserById`.** §4.1 needs all fifteen `users`
+   columns and A3's row is the LIST's eleven-field projection. Widening A3's row would edit A3's
+   file for A5's page; calling both would be two reads for one row. The list calls A3's, the detail
+   page calls A5's, and each returns what its own surface renders.
+
+### The list's cost column, and the two things it cannot honestly say
+
+`userCostLeague` returns `(user, model)` pairs with no `local_date` and no `untokenized`, so:
+
+- **A user outside the league's 200-row cap carries `null`, not `0`**, and the note says
+  *"kosong — bukan nol"*, because a zero reads as *this person costs nothing*.
+- **A per-row unpriced count is not derivable**, so A-D7's denominator warning is carried once
+  above the table rather than per row. The per-user page has `callTotalsForUser`, which has both,
+  and shows the count properly.
+- Cost is priced at `NOTIONAL_MODEL`'s rate and never at each row's own model — A4 paid for that
+  distinction at 1440px, where per-model pricing rendered `US$0,00` under the word "notional".
+  `NOTIONAL_MODEL` is `null` today, so the whole column is honestly empty.
+
+### The database-down acceptance, run
+
+W4's test applied to a read surface. `docker stop jmtarot-pg`, then:
+
+```
+/admin/users                              200  "Data pengguna ini tidak bisa dibaca sekarang"
+/admin/users/<id>                         200  "Data pengguna ini tidak bisa dibaca sekarang"
+/api/admin/users                          503  {"error":"unavailable"}
+/api/admin/users/<id>/answer/worst_thing  503  {"error":"unavailable"}
+```
+
+Logged: `admin read failed: users list { adminUserId: …, name: 'Error' }` — the error's **class**
+and the ids, nothing else. The one full driver error in the log came from W4's `flushEvents`, whose
+dev-mode behaviour is to print everything; its bound parameters are `admin.page_viewed` and a
+`props` object that `sanitizeProps` guarantees is non-identifying, so it is within the rule rather
+than an exception to it.
+
+### Still open
+
+1. **Loop 6 is undischarged.** `maxDuration = 30` against a suspended Neon compute is the failure a
+   warm WSL request cannot see, and §4.2 calls it the most likely live failure in the release. The
+   detail page issues sixteen statements in two round trips; nobody has opened it from a phone
+   against a preview after the compute has idled.
+2. **The production refusal shape is unmeasured** — the 38KB figure above is `next dev`'s error
+   page. Needs an admin session against a deployment, which R37 puts on production only.
+3. **`/admin` and `/admin/tokens` double-fire `admin.page_viewed`** (A4's files).
+4. **`Line`'s end labels have no collision nudge** (A4's file).
+5. **`probe.sh` reports an un-onboarded account as an admin** (A1's file).
+6. **The audit trail has no `resource` value for the LIST page** — §13.7, reconciliation §9.8, and
+   it is on screen where the operator can see it. Fifty rows per page load would make §4.14
+   unreadable.
+7. **A per-reading total cost including moderation is not answerable** (R51). The figure on screen is
+   *biaya generasi* and the complete total is in the per-op table.
+8. **Nobody has read the fourteen sections on a phone.** The tables scroll inside themselves at 320
+   by measurement, which is not the same claim as "an operator can use this on a phone".
+
 ---
 
 ---
