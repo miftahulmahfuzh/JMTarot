@@ -154,6 +154,29 @@ export const EVENT_NAMES = [
   // — the app shell —
   'app.launched',
 
+  // — the admin surface (v0.5.0) —
+  /*
+   * **THREE NAMES, 67 -> 70, AND THREE WERE FOLDED OUT RATHER THAN ADDED.** A-D18,
+   * and the process the 66->67 comment further down exists to force. The
+   * accounting:
+   *
+   *   DROPPED  `admin.pii_revealed`   -- `admin_access_log` is the record of truth
+   *            for a reveal. A second copy here buys nothing and puts a resource
+   *            key into a table whose rows SURVIVE account erasure.
+   *   DROPPED  `admin.user_viewed`    -- opening a page changes no decision. Same
+   *            argument that killed `revealed` in v0.4.0.
+   *   DROPPED  `llm.call_recorded`    -- that is a row in `llm_calls`, not an event.
+   *            A fact table and an event stream recording the same fact is how they
+   *            drift. (And it is why A2 imports nothing from this file: R47.)
+   *
+   * A1 owns this file for v0.5.0 (S-D13's rule). A6 declares the two `blog` names;
+   * folding a declaration in means TRANSCRIBING it, not narrowing it, so their prop
+   * shapes below are A6's words.
+   */
+  'admin.page_viewed',
+  'admin.blog_saved',
+  'admin.blog_status_changed',
+
   // — self-diagnostics —
   'analytics.local_date_fallback',
   'analytics.events_dropped',
@@ -761,6 +784,47 @@ export type EventMap = {
                                  method: 'share' | 'link'; from: 'gallery' | 'arcana' };
 
   'app.launched':              { standalone: boolean; referrer_kind: 'direct' | 'internal' | 'external' };
+
+  /*
+   * **`page` IS A ROUTE TEMPLATE FROM `ADMIN_PAGES`, NEVER A RESOLVED PATHNAME.**
+   * `/admin/users/[id]`, never `/admin/users/9f3c…`. A resolved path breaks two of
+   * this file's rules at once: the cardinality rule, because a uuid per row makes
+   * every `group by page` useless; and the erasure rule, because `events` rows
+   * survive account erasure with `user_id` nulled, so a SUBJECT's uuid in `props`
+   * is an identifier outliving that person's deletion. `usePathname()` is the
+   * obvious implementation and it is the wrong one; `AdminPageViewed` takes
+   * `AdminPagePath` so the wrong one is a compile error (reconciliation R32).
+   *
+   * Typed `string` rather than the union, deliberately: A3-A6 add pages and this
+   * file should not be edited for each. The closure is enforced at the call site
+   * and by `events.test.ts`.
+   *
+   * **WHY THIS SURVIVED WHILE `admin.user_viewed` DID NOT, given that both are
+   * nothing but page opens:** not the argument A-D18 gave. R32 struck that
+   * justification and kept the name. The honest reason is that this answers *"is
+   * the dashboard used at all, and which of six pages is worth maintaining"*,
+   * which is the input to whether v0.6.0 keeps building it. Once that question is
+   * answered, delete this name rather than keeping it out of habit.
+   */
+  'admin.page_viewed':         { page: string };
+  /*
+   * A6's declarations, transcribed. **`slug` IS NOT A VIOLATION OF "NO FREE TEXT,
+   * EVER" AND A REVIEWER WILL FLAG IT** (A-D18 says to say so here): that rule is
+   * about QUERENT text, and a blog slug is admin-authored public content that is
+   * already in a URL. `lint_violations` is a COUNT and never the offending words --
+   * those are prose, and prose in `props` is the thing the rule forbids.
+   *
+   * **A6 DECLARED `locale: Locale` AND IT IS SPELLED `string` HERE, WHICH IS NOT A
+   * NARROWING** (§11 seam 1 forbids narrowing a folded declaration). This file has
+   * no imports by design, so `Locale` is unavailable in it -- exactly as
+   * `translation.generated.entity` and `moderation.refused.category` are `string`
+   * with their closed sets in a comment. The set is `'id' | 'en'`, and `status` on
+   * `admin.blog_status_changed` is A6's `'draft' | 'published' | 'unpublished'` for
+   * both `from` and `to`.
+   */
+  'admin.blog_saved':          { slug: string; locale: string; action: 'create' | 'update';
+                                 blocks: number; lint_violations: number };
+  'admin.blog_status_changed': { slug: string; locale: string; from: string; to: string };
 
   'analytics.local_date_fallback': { reason: 'absent' | 'malformed' | 'out_of_range'; received: string | null; surface: string };
   'analytics.events_dropped':  { count: number; reason: 'unknown_name' | 'queue_overflow' | 'oversize_batch' };
