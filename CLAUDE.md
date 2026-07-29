@@ -180,7 +180,14 @@ ANALYTICS_RETRY_BUDGET_MS=5000
 
 UPSTASH_REDIS_REST_URL=       # V9. Both or neither. WITHOUT THEM THE LIMITER SILENTLY
 UPSTASH_REDIS_REST_TOKEN=     # REVERTS to per-instance memory -- fine locally, not
-                              # fine in prod. No Singapore region; use Tokyo.
+                              # fine in prod. **UPSTASH HAS A SINGAPORE REGION AND THIS
+                              # LINE SAID IT DOES NOT** -- it read "No Singapore region;
+                              # use Tokyo", "verified 2026-07-27", and it was WRONG.
+                              # Production's database is `ap-southeast-1` Singapore,
+                              # Global tier (read from the Upstash console 2026-07-29).
+                              # Use Singapore: it is the SAME region as the functions
+                              # (`sin1`) and as Neon, so the hop is intra-region. Four
+                              # other places repeated the false claim; all corrected.
 RATELIMIT_BACKEND=            # `memory` forces local. The 2am kill switch. ONLY that
                               # exact string does anything -- the OPPOSITE defaulting
                               # rule to ANALYTICS_ENABLED, on purpose: a typo must not
@@ -191,9 +198,18 @@ RATELIMIT_EVENTS_BACKEND=     # `redis` moves /api/events off memory.
 RATELIMIT_SESSION_BACKEND=    # `redis` moves the SESSION-UPDATE budget onto Upstash.
                               # LEAVE IT UNSET: memory for LATENCY, not cost --
                               # `refreshSession()` spends one hit() and POST /api/locale
-                              # pays it on the request path of a language switch, and
-                              # with no Upstash Singapore region that is a sin1->Tokyo
-                              # hop between a DB write and a DB read. Its OWN variable,
+                              # pays it on the request path of a language switch.
+                              # **THE SECOND HALF OF THIS ARGUMENT HAS EXPIRED AND IS
+                              # KEPT INVERTED:** it said "with no Upstash Singapore
+                              # region that is a sin1->Tokyo hop between a DB write and
+                              # a DB read". Upstash IS in Singapore, same region as the
+                              # functions, so the hop is intra-region and small. The
+                              # DECISION still stands on the first half -- a per-user
+                              # budget lands mostly on one warm instance, so memory
+                              # costs nothing real -- but it is now a smaller win than
+                              # this comment claimed, and anybody who wants the session
+                              # budget fleet-wide should MEASURE rather than read this.
+                              # Its OWN variable,
                               # not the one above: `memoryOnly` used to test
                               # EVENTS_BACKEND first and return early, so one variable
                               # governed every memory-only budget.
@@ -416,12 +432,13 @@ Recorded rather than deleted, because each looks like a bug someone will helpful
   reaches a model. It was **the only database-writing route declaring neither `runtime`
   nor `maxDuration`**, and Vercel's Hobby default is ten seconds.
 
-  Functions are Hobby in `sin1`, Neon free-plan in `ap-southeast-1`, Upstash in Tokyo. A
+  Functions are Hobby in `sin1`, Neon free-plan in `ap-southeast-1`, **Upstash in
+  `ap-southeast-1` Singapore too — this line said Tokyo and was wrong** (console, 2026-07-29). A
   free-plan Neon compute **suspends when idle**, so the first switch after a quiet spell
   is: a cold lambda whose graph includes @auth/core, postgres.js and — via `auth.ts` →
   `users.ts` — bcrypt; then `setUserLocale`, possibly the request that WAKES the
-  compute, on a `max: 1` connection; then `refreshSession()`, one `sin1`→Tokyo hop and
-  THEN a second query to that compute. Truncated at ten seconds the write is lost, no
+  compute, on a `max: 1` connection; then `refreshSession()`, one intra-region Upstash
+  hop (this used to say `sin1`→Tokyo) and THEN a second query to that compute. Truncated at ten seconds the write is lost, no
   response arrives, and the querent is looking at a dead control.
 
   **The lesson generalises: a user action that WRITES is one of the few things likely to

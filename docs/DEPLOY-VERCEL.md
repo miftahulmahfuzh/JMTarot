@@ -107,9 +107,13 @@ rather than the optional one below:
   here — an unconfigured limiter is not a degraded one, it simply never tries.
 
   Create a free database at console.upstash.com; both values are on its page.
-  **Pick `ap-northeast-1` (Tokyo): there is no Singapore region**, verified
-  2026-07-27, and Tokyo is ~80–120ms from a Vercel Singapore function against a
-  1000ms timeout. The free tier (500K commands/month) is far above this app's
+  **Pick `ap-southeast-1` (Singapore) — the same region as the functions.**
+  *(Corrected 2026-07-29. This said “there is no Singapore region”, verified
+  2026-07-27, and it was wrong: production's database is `ap-southeast-1`, Global
+  tier, read off the Upstash console. The wrong claim reached five places in this
+  repo and justified two decisions, so it is inverted rather than deleted.)* The
+  hop is intra-region and its real cost is **unmeasured** — do not repeat the old
+  ~80–120ms Tokyo figure as if it applied. The free tier (500K commands/month) is far above this app's
   volume — `/api/events`, the one high-volume caller, is deliberately kept off
   Redis. **Do not escape `$` in the token here**, per the rule below: dashboard
   values are literal, and a mangled token is an *error*, which falls back to
@@ -345,9 +349,9 @@ six model calls.
    `UPSTASH_REDIS_REST_TOKEN` in §2 — **without them the app still works and the
    limiter silently reverts to per-instance memory**, which is v0.2.0's
    behaviour and is not what you want in production. **Choose the
-   `ap-northeast-1` (Tokyo) region: there is no Singapore region**, verified
-   2026-07-27, and Tokyo is ~80–120ms from a Vercel Singapore function against a
-   1000ms timeout.
+   `ap-southeast-1` (Singapore) region — the same one the functions run in.**
+   *(Corrected 2026-07-29; this said there is no Singapore region and that was
+   wrong. See §2.)*
 2. **`LLM_WINDOW_CALL_CEILING` bounds the window.** It counts model *calls*, not
    readings, over **a rolling five hours** — which is the shape of the quota it
    protects, because z.ai meters prompts per rolling 5-hour cycle. A calendar-day
@@ -712,6 +716,16 @@ Every canonical tag, every `hreflang`, every `og:image` and every URL in
 `VERCEL_PROJECT_PRODUCTION_URL`, then to `VERCEL_URL` — **and a canonical tag
 pointing at `jmtarot-abc123.vercel.app` de-indexes the real page.** Nothing
 reports that; it is the single worst class of SEO bug available.
+
+**IT IS SET IN PRODUCTION AS OF 2026-07-29**, by
+`vercel env add NEXT_PUBLIC_SITE_ORIGIN production --value https://www.jmtarot.site
+--no-sensitive` — and `--no-sensitive` is the part worth copying. This project's
+Vercel team defaults new variables to **Sensitive**, which means Vercel never hands
+the value back: `vercel env pull` writes the literal string `[SENSITIVE]`, and the
+one variable whose whole purpose is to be a public URL becomes the one variable
+nobody can verify without a deploy. (Ask how that was discovered: a `curl` to
+Upstash with a "token" 11 characters long, `[S…`, which is `[SENSITIVE]`.) Store
+every secret sensitive and this one readable.
 
 **So check it, in two commands, and do not skip it:**
 
