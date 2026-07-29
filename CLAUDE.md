@@ -670,6 +670,9 @@ were removed once this one superseded them; both are still in history at `d7fdd8
 assets/major_arcanas/   SOURCE art. Never edit in place, never delete.
 public/cards/           GENERATED, committed. Never hand-edit.
 public/cards/thumb/     GENERATED 240x360, for the fan and slots.
+public/wallpapers/      GENERATED, COMMITTED. 22 x { 1024x1536 card, 1440x3120 phone },
+                        JPEG q90 4:4:4, 23.77MB. Its own cache header -- NOT /cards/*'s
+                        year of `immutable`. Never hand-edit. `npm run wallpapers`.
 public/dukuns/          reader portraits, 2:1 landscape scenes
 public/icon.png         GENERATED home-screen icon
 ```
@@ -678,6 +681,7 @@ Regenerate with the idempotent scripts, never by hand:
 
 ```sh
 npm run assets    # source PNGs -> 800x1200 + 240x360 WebP
+npm run wallpapers # source PNGs -> public/wallpapers/, 44 JPEGs, 23.77MB
 npm run cards     # rebuild src/data/cards.json
 python3 tools/make_icons.py
 ```
@@ -1071,7 +1075,9 @@ editable facts, per-answer clearing, and the Inner Heavenly Lotus persona (V8)**
 gate change, a sitemap, JSON-LD, canonicals and cache headers (v0.4.0 S1)**,
 **locale-addressable public content -- `/en/`, the rewrite and the hreflang set (S2)**,
 **the twenty-two card lore pages, forty-four authored documents (S4)**,
-**the gallery -- 22 artworks, 2x11, measured at four phone widths (S3)**, plus the reader picker, service
+**the gallery -- 22 artworks, 2x11, measured at four phone widths (S3)**,
+**the wallpaper downloads -- 44 committed derivatives and the control in the zoom
+sheet (S5)**, plus the reader picker, service
 picker, the draw (fan, pick, flip, reduced-motion grid), the card detail overlay, the
 streaming reading endpoint, the prompt layer, and the web app manifest.
 
@@ -1860,6 +1866,80 @@ and moving all four means editing S4's `jsonld.ts` in the same commit and changi
 the image identity of 22 pages. Worth doing as one change, by whoever owns both.
 And the `s-maxage` on this route is measured locally, never against a Vercel CDN
 (R21).
+
+## Wallpaper downloads (v0.4.0 / S5)
+
+**Twenty-two pieces of commissioned art, downloadable, free, with no account** — the
+one thing in this release a competitor cannot copy, handed to the reader. Two
+derivatives per card, committed; a control in the gallery's zoom sheet; a licence in
+clause 9. The measurements, the negative controls and the harness findings are in
+`docs/workstream-notes.md`.
+
+```
+tools/make_wallpapers.py    THE PIPELINE. Idempotent, byte-identical on re-run.
+tools/check_wallpapers.py   THE ORACLE. Holds its OWN table, dimensions, thresholds.
+public/wallpapers/          44 JPEGs, 23.77MB, committed. `npm run wallpapers`.
+src/lib/wallpaper.ts        PURE, CLIENT-IMPORTABLE LEAF. No process.env, no version.
+src/components/WallpaperDownload.tsx  'use client'. Two anchors, one event.
+src/components/wallpaperDownload.ts   PURE. chooseMethod, the one policy decision.
+tools/seo/wallpaperfit.{sh,js}        Loop 4, committed beside galleryfit.
+```
+
+### The six things a future session will otherwise undo
+
+1. **NOTHING IS UPSCALED AND NOTHING IS CROPPED, AND THE TRAP IS INSIDE THE FUNCTION
+   THAT LOOKS RIGHT TO REUSE** (S-D9, W-D7). `normalize_cards.py`'s `fit_to_ratio`
+   trims a dark mat and then scales the result to the target, so if `trim_dark_mat`
+   ever removes 4px it LANCZOSes 1020 → 1024 — the exact upscale S-D9 forbids, from
+   the shipping pipeline's own helper. `make_wallpapers.py` uses
+   `flatten`/`trim_dark_mat` as an **assertion** and then reads the untouched source
+   pixels. A source that fails the assertion is a source to fix.
+2. **`/wallpapers/*` IS DELIBERATELY NOT `immutable`, AND IT SHIPPED WRONG ONCE.**
+   §6.4 gives S5 the declaration and S1 the pen; the entry was first written from
+   `/cards/*`'s reasoning as a year of `immutable`, and `headers.test.ts` asserted it.
+   The traffic shape is the opposite one: the fan pulls 22 thumbs on every cold draw,
+   a wallpaper is fetched **once** by somebody who tapped a button. So
+   `max-age=86400, stale-while-revalidate=604800`, which is also why these filenames
+   carry no `?v=` and `src/lib/wallpaper.ts` has no `ART_VERSION` to forget.
+3. **JPEG, NOT WEBP, AND IT IS NOT AN OVERSIGHT.** WebP q90 is 24% smaller at matched
+   fidelity (measured). The one thing a wallpaper must do is reach the iOS Photos
+   library, because *Set Wallpaper* reads from nowhere else, and iOS's WebP story in
+   that pipeline is version-dependent. 6.6MB of git is not worth a download button
+   that silently does nothing on the platform this app is built for. Same file: 4:4:4
+   rather than 4:2:0, because the deck's signature is a thin gold hairline.
+4. **THE ANCHOR IS THE CONTRACT; `navigator.share` IS AN UPGRADE**, gated on
+   `canShare({files})` **and** `(pointer: coarse)` and never on a user-agent string.
+   On iOS `<a download>` lands the file in Files while *Set Wallpaper* reads Photos;
+   on a desktop, hijacking a download into an OS share sheet is worse than the
+   default. **A cancelled share sheet records NOTHING** — recording it makes every
+   download figure an intent figure.
+5. **NO `content-disposition` ON THAT PATH** (W-D10). It would force a download and
+   make the image impossible to *view*, and viewing is the precondition for iOS's
+   long-press → Add to Photos, the fallback when the share sheet is unavailable.
+   Verified in a real browser: navigating to the URL renders it, `1440×3120`.
+6. **THE ORACLE HOLDS ITS OWN EXPECTATIONS** (W-D6) and asserts the backdrop colour
+   with a **tolerance**: `#0a0812` goes in as (10, 8, 18) and comes out as
+   (10, 8, 19) on every card, because JPEG's DCT quantization moves it. An oracle
+   written with `== (10,8,18)` fails on correct output, and what somebody does then is
+   delete the check. Its flatness check is `check_card_art.py`'s
+   `EDGE_UNIFORM_STDDEV` **in reverse** — there a flat edge strip means the source is
+   not full bleed and fails; here it is the proof the card was padded rather than
+   scaled to fill. Same instrument, opposite verdict; do not "fix" either to agree.
+
+**`wallpaper.downloaded` CARRIES `{ card_id, variant, method, from }`**, and the
+declaration was folded into `events.ts` narrower than S5 wrote it — `method` and
+`from` dropped, `card` renamed `native`. Restored, with the reason in the file:
+`variant` must be spelled like the file on disk, `method` is the only way to see
+whether the iOS upgrade runs in production, and `from` mirrors
+`public.card_zoomed`'s `surface`. S-D13 makes S1 the owner of that file and everyone
+else a declarer; **folding a declaration in means transcribing it.**
+
+**Still open:** loop 6 — a real iPhone — is the only instrument for the three
+questions that matter, and none of them is answerable here: does a downloaded
+`-phone.jpg` reach Photos and does *Set Wallpaper* accept it (a release blocker), does
+the card look right on a lock screen, and is q90 blocking visible in a dark gradient
+on OLED (`QUALITY = 92` in one place, +2.9MB). S4 may mount this control on a lore
+page and has not; `from: 'arcana'` exists for that day.
 
 ## /account and the persona (V8)
 

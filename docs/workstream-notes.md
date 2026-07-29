@@ -3359,3 +3359,262 @@ pages. The ruling: **the homepage and the card pages should look clean.**
 - The landing's three body sections stay: they are the homepage's content — what
   closed Google's "an app homepage that is not a login page" blocker — and the only
   public path into `/blog`.
+
+## Wallpaper downloads (S5), v0.4.0
+
+**Every number here was measured in this worktree on 2026-07-29 unless it is marked
+as coming from the plan's own 2026-07-28 measurement pass.** CLAUDE.md's
+`## Wallpaper downloads (v0.4.0 / S5)` keeps the rules; this keeps the evidence.
+
+### The format decision, and the trick that does NOT scale
+
+Mean over six cards at 1024x1536, PSNR against the source PNG (plan's pass):
+
+| Encoding | mean KB | mean PSNR | p99.9 per-channel error |
+|---|---|---|---|
+| PNG, `optimize=True` | 2847 | ∞ | 0 |
+| PNG quantized to 256 colours | 1381 | — | **17–21** |
+| **JPEG q90, 4:4:4** | **555** | **38.00** | **11–13** |
+| JPEG q90, 4:2:0 | 472 | 37.19 | — |
+| JPEG q92, 4:4:4 | 621 | 38.94 | 10–11 |
+| JPEG q95, 4:4:4 | 809 | 41.04 | 8–9 |
+| WebP q90 | 471 | 38.99 | — |
+
+1. **PNG-256 IS 2.6x LARGER THAN JPEG q90 *AND* MEASURABLY WORSE**, and this is the
+   one worth knowing, because `normalize_cards.py` uses exactly that palette trick
+   for `public/cards/og/` and is right to at 200x300. It does not scale: at
+   1024x1536 with smooth dark gradients it bands and costs 1.4MB doing it. **Do not
+   "reuse the OG approach".**
+2. **WebP q90 beats JPEG q92 on both axes and is still not what ships.** The reason
+   is the target platform, not the encoder: a wallpaper has to reach iOS Photos
+   because *Set Wallpaper* reads nowhere else, and Photos does not treat WebP as a
+   native asset type. The evidence there is anecdotal and version-dependent, which
+   is exactly why the one download in this product does not bet on it.
+3. **65.1% of this deck's pixels are darker than 15% luminance**, so the error that
+   matters is the error in the dark: dark-region PSNR 37.64 at q85, **39.15 at q90**,
+   40.02 at q92, 41.99 at q95. q92 buys ONE level of p99.9 error for +12% bytes.
+   `QUALITY = 92` is the one-line lever if a real phone ever shows blocking.
+
+### The pipeline's one real trap: `fit_to_ratio` would upscale
+
+`normalize_cards.py`'s `fit_to_ratio` trims a dark mat and then scales the trimmed
+image to the target. On art that is already correct that costs nothing — **measured
+0px trimmed on all 22** — but a 4px trim would LANCZOS 1020 → 1024 and produce
+exactly the upscale S-D9 forbids, **from inside the function that looks like the
+right one to reuse.** So the pipeline calls `flatten`/`trim_dark_mat` as an
+assertion and then encodes the untouched source pixels. This is the thing a future
+session is most likely to reintroduce, because reusing the shipping pipeline's own
+helper is the obviously correct instinct.
+
+### The oracle's thresholds, each with the negative control that a wrong pipeline gives
+
+| Check | Correct output, all 22 | Negative control | Threshold |
+|---|---|---|---|
+| Card MAD vs source (64x96 downsample) | **0.123–0.188** | **10.174** (crop, then rescale) | ≤ 1.0 — a 54x margin |
+| Phone inner-region MAD | same | same | ≤ 1.0 |
+| Left-bar stddev (x < 204) | **0.000** | **19.88** (upscaled to fill) | ≤ 1.5 |
+| Left-bar mean RGB | **(10, 8, 19)** on all 22 | — | (10, 8, 18) ±3 |
+
+**THE BAR COLOUR DRIFTS BY EXACTLY ONE LEVEL OF BLUE, ON EVERY CARD,
+DETERMINISTICALLY.** `#0a0812` is (10, 8, 18) going in and (10, 8, 19) coming out,
+because JPEG's DCT quantization moves it. The oracle asserts a tolerance and never
+equality: an oracle written `== (10,8,18)` fails on correct output, and what
+somebody does at that point is delete the check.
+
+**And the flatness check is `check_card_art.py`'s `EDGE_UNIFORM_STDDEV` used in
+reverse.** There a flat edge strip is a FAILURE — it means the source art is not
+full bleed. Here a flat bar is the PROOF that the card was padded rather than scaled
+to fill, which is the whole of "no upscaling". Same constant, same instrument,
+opposite verdict, and a comment in both files so neither is "fixed" to agree.
+
+### 1440x3120, and the aspect-fill arithmetic
+
+1440 is the widest pixel width in common circulation (Galaxy S24/S25 Ultra), so **no
+phone ever upscales this file** — the strongest available form of "no upscaling": we
+do not do it and we do not make the device do it either. 3120 puts the aspect at
+0.4615, within 0.5% of every modern iPhone (0.4603–0.4614).
+
+The card is 1536/3120 = **49.2% of the canvas height**, so it survives an
+aspect-fill crop on anything: a 16:9 screen shows 0.4615/0.5625 = **82%** of the
+height, a 4:3 tablet **61.5%**. Both exceed 49.2%. Checked concretely on an iPhone
+SE 3 (750x1334): scaled to fill 750px of width the image is 1625px tall, cropping
+145px from each end, and the card sits y=412..1212 — inside. The card's top edge is
+at 25.4% of the height and iOS puts the clock at roughly 12–20%, so they do not
+collide. The card at 1024/1440 = **71.1% of screen width** reads as a framed object.
+
+Two things deliberately not on the canvas: **no gradient** (a subtle dark gradient
+in 8-bit sRGB bands on OLED, and the flat mat is nearly free — measured, the padded
+1440x3120 file is only **39KB** larger than the bare card, because a flat region is
+DC-only), and **no card name or glyph** (the regenerated deck carries no text at
+all, and a name burned into a wallpaper cannot be undone by the person who
+downloaded it).
+
+### The weight, and idempotency proved the way that matters
+
+`JPEG q90 4:4:4 progressive optimized`: **22 card 11.45MB + 22 phone 12.32MB =
+23.77MB, 44 files, 528KB mean**, reproducing the plan's per-card table exactly. R3
+ruled both variants ship and refused the reduction to 12.32MB.
+
+Idempotency was not asserted from Pillow's documentation: `git add public/wallpapers`
+then a second `npm run wallpapers` then `git status --porcelain | grep -v '^A '`
+returns nothing. Every file is byte-identical.
+
+### The live checks
+
+**`curl -i` against `next start -p 3001`** — `npm start` binds 3000, which Grafana
+holds permanently:
+
+```
+GET /wallpapers/the-moon-phone.jpg
+  HTTP/1.1 200                                          not a 302
+  content-type: image/jpeg      content-length: 599116
+  cache-control: public, max-age=86400, stale-while-revalidate=604800
+  set-cookie            0 occurrences                   S-D10
+  content-disposition   0 occurrences                   W-D10
+  x-robots-tag          absent                          S-D12
+  x-frame-options: SAMEORIGIN, both CSP headers present  /(.*) still applies
+GET /s/abcdefghijkl -> x-robots-tag: noindex, nofollow, noarchive
+```
+
+**F1 IS CONFIRMED EMPIRICALLY NOW, AND THE PLAN SAID IT WAS NOT.** Its flag ended *"I
+have not confirmed the 302 empirically"*. A path one letter outside the matcher's
+negative lookahead settles it:
+
+```
+/wallpapersx/the-moon-phone.jpg   307 -> /login?callbackUrl=%2Fwallpapersx%2F...
+/wallpapers/the-moon-phone.jpg    200
+```
+
+So the lookahead entry is what makes the asset public, exactly as R7 reasoned, and
+the failure it prevents reads as missing artwork rather than as an auth problem.
+
+**Loop 5, every step through real Input-domain events**, body read off the wire:
+
+```
+{"name":"wallpaper.downloaded","props":{"card_id":18,"variant":"phone",
+  "method":"link","from":"gallery"},"seq":3}
+```
+
+`card_id` is the integer, `variant` is spelled like the file on disk, `method` is
+`link` because loop 5 is a desktop pointer — so `(pointer: coarse)` is doing its job
+— and there is no free text in `props`. The `card` variant fires the same shape.
+
+**THREE HARNESS FINDINGS, ALL OF WHICH COST TIME AND ONE OF WHICH WOULD HAVE
+PRODUCED A FALSE CLAIM:**
+
+1. **`tapIn` reads `getBoundingClientRect()` and does NOT scroll**, so a tap aimed at
+   a tile **3741px down a 701px viewport** lands on nothing — and `tap` prints
+   `tapped "Lihat The Moon lebih besar" -> [exact]` anyway, because the match
+   succeeded and only the dispatch failed. The sheet never opened and the verb said
+   it did. `scrollIntoView({block:'center'})` first; after it, `top` is 191 and the
+   same real tap opens the sheet. (`innerWidth` was 500 with `--width 390`, again.)
+2. **Downloads are DENIED in headless Chrome** without `Browser.setDownloadBehavior`,
+   so the anchor's own request is never issued — `performance.getEntriesByType`
+   shows no `/wallpapers/*` entry and the server log has none. `curl` is what proves
+   the bytes. **Navigating to the URL instead renders it**: title
+   `the-moon-phone.jpg (1440×3120)`, `document.contentType` `image/jpeg`,
+   `naturalWidth` 1440 — which is W-D10's actual claim, that the image is viewable,
+   and it also proves the delivered pixels survive Python → git → Next → decode.
+3. **`net` truncates a POST body at 200 characters**, so the props were captured by
+   patching `fetch` and `sendBeacon` in the page — the technique CLAUDE.md records
+   for "does the UI agree with what it sends".
+
+**Loop 4 — `tools/seo/wallpaperfit.{sh,js}`, committed beside `galleryfit`.** The
+sheet width is derived, `min(340, w - 40)`, because `CardDetail`'s scrim carries 20px
+of side padding: 280 / 320 / 335 / 340 at 320 / 360 / 375 / 390.
+
+```
+id   overflow false, offenders [], sameRow false, linkH 44, labelLines 1,
+     dimsLines 1, licenceLines 5 4 4 4, blockH 266 247 247 247
+en   the same, labelLines 1, licenceLines 4 3 3 3, blockH 247 228 228 228
+```
+
+**Negative control run and recorded**, because a harness whose red state has never
+been seen cannot be trusted: `min-width: 400px` on the two anchors at w=320 gives
+`overflow: true` with five named offenders (`sheet`, `zoomActions`, `downloadSeam`,
+`block`, `list`, each `400>280`) — and `getComputedStyle(...).minWidth` was read back
+as `400px` FIRST, which is galleryfit's own trap, where the control was silently
+overridden by the rule's `min-width: 0` and the harness stayed green.
+
+**AND THE LINE COUNT WAS WRONG TWICE BEFORE IT WAS RIGHT. This is the third time this
+one metric has misled somebody in this project.**
+
+- `range.getClientRects().length` returns one rect per line box **per fragment**, so
+  a one-line anchor reported **5** (label text + `<span>` + three text nodes inside
+  it, since `{width}`, `×` and `{height}` are separate nodes) and `.licence` reported
+  5, 7, 8, 9 lines at **increasing** widths — the tell, since a wider box cannot wrap
+  more.
+- Rounding tops into 2px buckets then reported the English anchor as **2** lines: the
+  10px label sits at `top` 424 and its 9px `.dims` at 425, one visual line,
+  `align-items: center`, either side of a bucket edge. **A bucket edge is not a
+  distance.** Clustering sorted tops with a 4px tolerance is what a line is.
+- `galleryfit.js` records the sibling failure: `height / lineHeight` measured padding
+  and confidently reported three lines where nothing wrapped.
+
+### Two deltas S1 did not fold in, and one it folded in narrower
+
+S1 is complete, so S5 landed all three itself rather than leaving the feature
+uncompilable. The single-owner rule (S-D13) exists to stop six agents editing one
+file in parallel; there is no parallel agent left to collide with.
+
+- **The eight `wallpaper.*` catalog keys** (D4) were absent. Indonesian first (I2),
+  under `prose.test.ts`'s 320-character and 20,000-byte ceilings, and the longest
+  value in the catalog is still `onboarding.intro.body`.
+- **The `/wallpapers/*` cache header** was written as `max-age=31536000, immutable`
+  from `/cards/*`'s reasoning rather than from W-D4's declaration, and
+  `headers.test.ts` asserted the year. Corrected in both places, plus two new cases
+  and a negative control that `/cards/*` still has its year.
+- **`wallpaper.downloaded` lost `method` and `from`** and had `card` renamed
+  `native`. Restored with the argument in the file: a prop spelled differently from
+  the asset it describes is a query written against a value that never appears, and
+  `method` is the only way to see whether the iOS upgrade runs in production.
+
+### Clause 9, and the licence claim it unlocked
+
+F2 was real: clause 9 asserted the artwork is ours and its personal-use sentence was
+scoped to **readings**, so nothing in the agreement mentioned downloading the art. One
+sentence per locale, appended inside the clause with no renumbering, so
+`legal.test.ts`'s clause anchors and clause-6 sub-numbering are untouched. Worded to
+match `wallpaper.licence` exactly — a licence line that paraphrases the clause is a
+second, slightly different licence.
+
+That is what makes `licenseUrl: /terms#9` on the gallery's 22 `ImageObject`s honest,
+and `imageJoin.test.ts`'s assertion was **inverted rather than deleted**: it read
+`licenseUrl === undefined` with the comment "until S5 writes clause 9's grant".
+
+**`contentUrl` was NOT moved to the wallpaper, and that is a decision.** D6 asks for
+it and the reason is right — Google Images wants the highest honest resolution — but
+this node describes ONE binary: `encodingFormat` documents `contentUrl`'s MIME type,
+and `url`, `width` and `height` are the fields `/arcana/<slug>` also carries under
+the same `@id`. Moving `contentUrl` alone leaves declared 800x1200 WebP dimensions
+belonging to a different file, which is the same class of ambiguity as the two
+`@id` collisions S3 records. Moving all four means editing S4's `jsonld.ts` in the
+same commit and changing the image identity of 22 pages. Worth doing as one change.
+
+### One thing about this branch's history
+
+`tools/seo/wallpaperfit.{js,sh}` are committed inside **`593e1de`, a docs commit about
+Upstash's Singapore region**, and its message does not mention them. Two Claude
+sessions were working in this worktree at the same time and the other one's
+`git add` swept S5's staged harness. Nothing is lost and no file is wrong; the record
+for those two files is this section rather than their commit message.
+
+### Still open, and only hardware can close it
+
+**Loop 6 — a real iPhone against a Vercel preview.** Nothing above substitutes, and
+CLAUDE.md gives two live bugs as proof that loop 5 cannot. Three questions:
+
+1. **Does a downloaded `-phone.jpg` reach Photos, and does *Set Wallpaper* accept
+   it?** This is the whole feature and it is a release blocker. If the share sheet's
+   "Save Image" does not appear, `wallpaper.saveHint`'s long-press instruction is the
+   entire mechanism.
+2. **Does the card look right on a lock screen** — is 71.1% of the width correct,
+   does the clock overlap the composition, is the aspect-fill crop invisible?
+3. **Is q90 blocking visible in a dark gradient on OLED?** If yes, `QUALITY = 92` in
+   one place and the weight goes 23.77 → ~26.6MB.
+
+Also open: the `s-maxage`-style cache header is measured on `next start` and **not**
+against a Vercel CDN (R21); `tools/check_card_art.py:mean_colour` still uses
+`Image.Image.getdata`, deprecated in Pillow 12 and removed in 14 (F6, not S5's, and
+the two new scripts use `load()`/`tobytes()` so they do not acquire it); and the
+1440x3120 canvas is chosen against a 2026 device census, which ages (F7).
