@@ -16,8 +16,11 @@
  *
  * ── A RANGE CHANGE IS A NAVIGATION, NOT A FETCH (I-20, R21) ──────────────────
  *
- * The filter is a `<form method="get">`, so a preset is a link-shaped submit and the new
- * range arrives as a fresh server render. That deletes `/api/admin/metrics/[metric]`
+ * The filter is a `<form method="get">` -- **two of them**, and the split is load-bearing:
+ * a preset submit sends every field in its own form, so while the date inputs shared it every
+ * preset also sent the `from`/`to` pair on screen, which WINS below. See `RangeFilter.tsx`.
+ * A preset is a link-shaped submit and the new range arrives as a fresh server render. That
+ * deletes `/api/admin/metrics/[metric]`
  * (R21 struck it), deletes the client fetch, deletes the "hold the previous render at
  * reduced opacity" requirement -- there is no refetch -- and is why nothing on either page
  * needs hydration.
@@ -87,8 +90,12 @@ export type ParsedRange = {
 /**
  * Parse `searchParams` into a usable range.
  *
- * Precedence: an explicit `from`/`to` pair, then `d=<days>`, then the default. An explicit
- * pair that is not usable -- reversed, malformed, or longer than retention -- **falls back
+ * Precedence: an explicit `from`/`to` pair, then `d=<days>`, then the default. **The filter no
+ * longer submits both** (two forms), so a request carrying both is a hand-edited URL and the
+ * explicit pair is the more specific thing the operator asked for. Do not flip this to make a
+ * preset win: that was the other candidate fix for the dead preset buttons, and it leaves
+ * `?d=14&from=…&to=…` in the address bar with `from`/`to` naming a range nobody is looking at.
+ * An explicit pair that is not usable -- reversed, malformed, or longer than retention -- **falls back
  * and says so** via `fellBack`, because an operator who hand-edited a URL is better served
  * by a working dashboard plus a note than by an error page.
  *

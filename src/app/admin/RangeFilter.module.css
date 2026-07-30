@@ -6,6 +6,12 @@
  * `interaction.md`'s "hold the previous render at reduced opacity" requirement -- there is no
  * refetch to hold anything through. It is also why nothing on either page needs hydration.
  *
+ * TWO forms, wrapped in one flex row: `.filter` is a plain `<div>` and `.group` / `.custom` are
+ * the forms. `RangeFilter.tsx`'s header has the reason and it is a bug, not a layout choice --
+ * one form sent the date inputs along with every preset press. The row reads exactly as it did
+ * before, which is the point: the wrapper carries the gap the forms' children used to get from
+ * `.filter` directly.
+ *
  * PRESETS BEFORE THE CUSTOM RANGE. The operator's question is almost always "the last week" or
  * "the last month"; a date picker as the primary control makes the common case the expensive
  * one.
@@ -20,6 +26,17 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 12px;
+}
+
+/* The presets' own form. `margin: 0` because a UA gives `<form>` no margin but a nested
+   `<form>` inherits nothing useful either -- stated rather than assumed, since this element
+   became a form only to keep `from`/`to` out of a preset submit. */
+.group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 0;
 }
 
 .label {
@@ -65,11 +82,14 @@
   color: var(--gold-text);
 }
 
+/* The custom range's own form -- the second of the two. Tighter gap than `.group`, because a
+   `Dari <date> Sampai <date> Terapkan` run reads as one control and the presets read as four. */
 .custom {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+  margin: 0;
 }
 
 .date {

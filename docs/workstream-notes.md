@@ -5317,6 +5317,62 @@ arbitrary.
    at 1440 that leaves ~120px of margin each side. It reads well and it is a guess A1 recorded as
    one; nobody has tried it at 2560.
 
+### The range presets were dead for the whole release, and one form is the reason (2026-07-30)
+
+Reported as *"in admin page, the date range shortcut does not seem to work. i clicked 14 hari but the
+date range didn't do shit"*, with a second half: highlight the active preset, and move `Dari`/`Sampai`
+to match it.
+
+**Both halves were already implemented and both were correct.** `RangeFilter` set `styles.active` and
+`aria-current` from `parsed.preset`, and the date inputs took `defaultValue={range.from}` — the
+resolved range, not the submitted params. Nothing about either needed a line of code.
+
+**The cause is that a submit sends every field in its form.** The presets and the two date inputs
+shared one `<form method="get">`, so pressing `14 hari` sent `d=14` **together with** the `from`/`to`
+pair on screen — and `parseRange` gives an explicit pair precedence over `d`. Every preset navigated
+to a URL that re-selected the range already being shown. The dates did not move, the pressed state did
+not move, and the URL changed, which is why it reads as "the button does nothing" rather than as a
+crash.
+
+Measured in the browser rather than argued, by stashing the fix against the running dev server
+(loop 5, `E2E_BASE=http://localhost:3001`, a dev-session cookie planted by `eval`-ing a `fetch` to
+`/api/auth/dev-session` — `.env.local` has `DEV_PASSWORD_LOGIN=1` and an `ADMIN_EMAILS` entry ending
+`@localhost`, so `{"username":"miftah"}` is an admin):
+
+```
+before   forms: [["d","d","d","d","from","to"]]        <- one form, the bug
+after    forms: [["d","d","d","d"], ["from","to"]]
+tap "14 hari"  ->  url /admin?d=14   active ["14 hari"]   from 2026-07-17  to 2026-07-30
+```
+
+**The fix is a second form, and the two alternatives are both worse.** Clearing the date inputs on a
+preset press needs JavaScript on a page that deliberately ships none (I-20, R21). Flipping the
+precedence in `parseRange` leaves `?d=14&from=…&to=…` in the address bar with `from`/`to` naming a
+range nobody is looking at, and it would make a hand-edited URL's explicit pair lose to a `d` the
+operator did not type. `RangeFilter.test.ts` asserts **no form holds both a preset and a date input**,
+named for the shape rather than the count, so splitting the filter differently still passes and
+merging it back does not.
+
+**Wrapped height is unchanged at every phone width** — 320: 240px, 360: 192px, 390: 192px, identical
+before and after, no overflow — because `.filter` became a `<div>` carrying the gap its children used
+to get from the form. The two-form split costs nothing in layout.
+
+Two generalisations worth more than the bug:
+
+1. **A dead control is not evidence that the dead-looking half is broken.** The report named the
+   highlight and the dates; both were faithful renderings of a range the button had failed to change.
+   Fixing what the report points at would have produced a filter that lies.
+2. **`RangeFilter` had no test at all, and the four grep-shaped fences over `src/app/admin/**` could
+   not see this** — they read source text, and this bug is a property of the rendered form tree.
+   `renderToStaticMarkup` plus "what does a submit send" is the cheap instrument; `ReadingView.test.ts`
+   and `legal.test.ts` were already the precedent for it in a `environment: 'node'` project.
+
+**Still open, and deliberately not fixed here:** on `/admin/users` a preset press drops `?q=` (the
+search term) and vice versa, because the search box is a third GET form and neither preserves the
+other's params. Dropping `offset` on a range change is right; dropping the search is not. It is a
+different file (`AdminUserTable.tsx`, A5) and a different decision — hidden inputs in both forms —
+and it was not part of the report.
+
 ## The per-user everything page (A5), v0.5.0
 
 **`/admin/users`, `/admin/users/[id]`, four audited API routes, and the ordering that makes a
