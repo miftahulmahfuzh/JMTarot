@@ -312,9 +312,9 @@ function Kpis({
           tokenDelta === null ? undefined : `${signedPct(tokenDelta)} ${OVERVIEW.kpi.deltaVs(days)}`
         }
         deltaGlyph={deltaGlyph(tokenDelta)}
-        // The half-blindness, RENDERED rather than hidden: on z.ai `input_tokens` comes back
-        // as 0 and is stored NULL, so this is very nearly every row -- and a token total that
-        // does not say so invites the reader to conclude the app has no prompt cost.
+        // The unmeasured calls, RENDERED rather than hidden: a token total with no count of
+        // what it could not see invites the reader to treat it as complete. This was nearly
+        // every row until 2026-07-30, when the adapter started reading the right SSE event.
         note={OVERVIEW.kpi.tokensNullNote(int(tokens.nullInputCalls))}
       />
       <StatTile

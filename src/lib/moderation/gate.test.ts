@@ -66,7 +66,7 @@ function fakeProvider(opts: { firstChunkMs?: number; chunks?: string[]; failFirs
     }
 
     return Object.assign(iterate(), {
-      usage: Promise.resolve({ inputTokens: null, outputTokens: 12 }),
+      usage: Promise.resolve({ inputTokens: null, outputTokens: 12, cachedInputTokens: null }),
     });
   };
 
@@ -349,7 +349,11 @@ describe('gateReading()', () => {
     const result = await gateReading({ question: 'halo', locale: 'id', start: provider.start });
     if (result.blocked) throw new Error('expected a clean verdict');
 
-    expect(await result.stream.usage).toEqual({ inputTokens: null, outputTokens: 12 });
+    expect(await result.stream.usage).toEqual({
+      inputTokens: null,
+      outputTokens: 12,
+      cachedInputTokens: null,
+    });
   });
 
   it('raises a distinguishable error when the reading dies while still gated', async () => {

@@ -101,13 +101,48 @@ describe('streamReading', () => {
   it('reads usage from the final chunk, which only exists because we asked', async () => {
     /*
      * `stream_options: { include_usage: true }`. Without it there is no usage
-     * frame at all and `readings.token_output` is null forever -- the same
-     * half-blindness z.ai imposes, except self-inflicted.
+     * frame at all and `readings.token_output` is null forever -- self-inflicted
+     * blindness, and the same SHAPE of bug as reading the wrong SSE event on the
+     * Anthropic wire: the number never arrives and nothing says so.
      */
     vi.stubGlobal('fetch', streamingFetch([frame('hi'), usageFrame(1163, 128), 'data: [DONE]\n\n']));
     const stream = createOpenAIProvider().streamReading(PROMPT);
     await drain(stream);
-    expect(await stream.usage).toEqual({ inputTokens: 1163, outputTokens: 128 });
+    expect(await stream.usage).toEqual({
+      inputTokens: 1163,
+      outputTokens: 128,
+      cachedInputTokens: null,
+    });
+  });
+
+  it('DOES NOT SUM THE CACHED HALF -- on this wire prompt_tokens already includes it', async () => {
+    /*
+     * **THE NEGATIVE CONTROL FOR THE ONE ASYMMETRY BETWEEN THE ADAPTERS.**
+     *
+     * `anthropic.ts` MUST sum, because there `input_tokens` excludes what came
+     * from cache. Here `prompt_tokens` ALREADY INCLUDES `cached_tokens`, so the
+     * same arithmetic would report 1800 for a 1000-token prompt.
+     *
+     * This test is what fails when somebody later "makes the two adapters
+     * consistent". The expected value is 1000. It is not a typo.
+     */
+    const cachedUsage = `data: ${JSON.stringify({
+      choices: [],
+      usage: {
+        prompt_tokens: 1000,
+        completion_tokens: 50,
+        prompt_tokens_details: { cached_tokens: 800 },
+      },
+    })}\n\n`;
+
+    vi.stubGlobal('fetch', streamingFetch([frame('hi'), cachedUsage, 'data: [DONE]\n\n']));
+    const stream = createOpenAIProvider().streamReading(PROMPT);
+    await drain(stream);
+    expect(await stream.usage).toEqual({
+      inputTokens: 1000,
+      outputTokens: 50,
+      cachedInputTokens: 800,
+    });
   });
 
   it('SETTLES usage even when the request fails', async () => {
@@ -120,7 +155,7 @@ describe('streamReading', () => {
     vi.stubGlobal('fetch', streamingFetch([], 500));
     const stream = createOpenAIProvider().streamReading(PROMPT);
     await expect(drain(stream)).rejects.toThrow();
-    expect(await stream.usage).toEqual({ inputTokens: null, outputTokens: null });
+    expect(await stream.usage).toEqual({ inputTokens: null, outputTokens: null, cachedInputTokens: null });
   });
 
   it('SETTLES usage when the consumer breaks out early', async () => {
@@ -129,7 +164,7 @@ describe('streamReading', () => {
     vi.stubGlobal('fetch', streamingFetch([frame('a'), frame('b'), frame('c')]));
     const stream = createOpenAIProvider().streamReading(PROMPT);
     for await (const _ of stream) break;
-    expect(await stream.usage).toEqual({ inputTokens: null, outputTokens: null });
+    expect(await stream.usage).toEqual({ inputTokens: null, outputTokens: null, cachedInputTokens: null });
   });
 
   it('CALLING IT STARTS NOTHING -- no request until something pulls', async () => {
@@ -386,9 +421,9 @@ describe('the request body', () => {
 describe('complete', () => {
   it('returns the text and real token counts', async () => {
     /*
-     * `input_tokens` is REAL here, unlike z.ai's `0` -- which is why `nonZero()`
-     * is deliberately not copied from `anthropic.ts`. Half the cost model stops
-     * being blind the moment this provider is selected.
+     * `nonZero()` is deliberately not copied from `anthropic.ts`: a genuine
+     * zero-token prompt is impossible, so a zero from this provider would be a
+     * fact worth seeing rather than noise worth hiding.
      */
     vi.stubGlobal(
       'fetch',
@@ -402,7 +437,10 @@ describe('complete', () => {
       }) as unknown as Response),
     );
     const out = await createOpenAIProvider().complete({ system: 's', user: 'u', maxTokens: 48 }, { op: 'gist' });
-    expect(out).toEqual({ text: 'OK', usage: { inputTokens: 36, outputTokens: 16 } });
+    expect(out).toEqual({
+      text: 'OK',
+      usage: { inputTokens: 36, outputTokens: 16, cachedInputTokens: null },
+    });
   });
 
   it('returns empty text rather than throwing on a shape it did not expect', async () => {

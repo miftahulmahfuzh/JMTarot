@@ -105,9 +105,18 @@ export type TokenSeries = {
   input: Maybe[];
   output: Maybe[];
   /** Calls whose provider reported no tokens at all, summed over the range.
-   *  **Rendered beside the series, never hidden** -- on z.ai this is nearly every row. */
+   *  **Rendered beside the series, never hidden.** */
   nullInputCalls: number;
   nullOutputCalls: number;
+  /** Numerator of the cache-hit rate. */
+  cacheReadTokens: number;
+  /**
+   * Denominator: input tokens **of rows that reported a cache figure**, never the
+   * whole `input` series. `0` means nothing in this range was measured, which the
+   * page must render as an empty state rather than as a 0% hit rate -- those are
+   * different claims and only one of them is true.
+   */
+  cachedBasisTokens: number;
 };
 
 /**
@@ -115,9 +124,9 @@ export type TokenSeries = {
  *
  * **THE FOLD IS ACROSS MODELS AND THE NULL COUNTS ARE SUMMED, NOT RECOMPUTED.** A3 groups by
  * model because *a single `sum(output_tokens)` for a day that spanned two models is
- * unpriceable*; the CHART does not price anything, so it may sum -- but the half-blindness
- * has to survive the fold, or a token chart invites the reader to conclude the app has no
- * prompt cost. `nullInputCalls` is what `copy.ts` prints under the chart.
+ * unpriceable*; the CHART does not price anything, so it may sum -- but the count of what
+ * could NOT be measured has to survive the fold, or a token chart reads as complete.
+ * `nullInputCalls` is what `copy.ts` prints under the chart.
  *
  * The bucket list is built from the RANGE and not from the rows, so a day with no calls at all
  * is a 0 rather than a missing column -- which is the same zero-fill A3 does for its own
@@ -129,12 +138,22 @@ export function tokenSeries(rows: readonly TokenRow[], from: string, to: string)
   const output = new Map<string, number>();
   let nullInputCalls = 0;
   let nullOutputCalls = 0;
+  let cacheReadTokens = 0;
+  let cachedBasisTokens = 0;
 
   for (const r of rows) {
     input.set(r.bucket, (input.get(r.bucket) ?? 0) + r.inputTokens);
     output.set(r.bucket, (output.get(r.bucket) ?? 0) + r.outputTokens);
     nullInputCalls += r.nullInputCalls;
     nullOutputCalls += r.nullOutputCalls;
+    /*
+     * TWO SEPARATE SUMS, AND THEY ARE NOT NUMERATOR-OVER-`input`. `cachedBasisTokens`
+     * counts only the input tokens of rows that reported a cache figure at all, which
+     * is what keeps the rate honest across the 2026-07-30 boundary -- before it, every
+     * streamed row has NULL here and a real `input_tokens` on the buffered path.
+     */
+    cacheReadTokens += r.cacheReadTokens;
+    cachedBasisTokens += r.cachedBasisTokens;
   }
 
   return {
@@ -143,6 +162,8 @@ export function tokenSeries(rows: readonly TokenRow[], from: string, to: string)
     output: days.map((d) => output.get(d) ?? 0),
     nullInputCalls,
     nullOutputCalls,
+    cacheReadTokens,
+    cachedBasisTokens,
   };
 }
 

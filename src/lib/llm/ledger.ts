@@ -89,9 +89,18 @@ export type LlmCallRecord = {
   status: 'ok' | 'partial' | 'failed' | 'aborted';
   /** `classifyStreamError()`'s output. Never a message, never a driver error. */
   errorKind: string | null;
-  /** NULL, never 0, when the provider reported nothing. */
+  /** NULL, never 0, when the provider reported nothing. TOTAL, cache reads included. */
   inputTokens: number | null;
   outputTokens: number | null;
+  /**
+   * The cached subset of `inputTokens`. **`0` IS A MEASUREMENT AND NULL IS NOT.**
+   *
+   * `0` means usage was reported and nothing came from cache; NULL means the
+   * provider reported nothing at all, or does not report caching. A cache-hit rate
+   * computed over rows that "happened to have a number" would silently exclude
+   * every genuine miss and read close to 100%.
+   */
+  cacheReadTokens: number | null;
   /** The CALL's wall time, not the request's. */
   totalMs: number | null;
   /** `op: 'reading'` and `op: 'gist'` only. */
@@ -165,13 +174,13 @@ export async function usageOrNulls(
     return await Promise.race([
       usage,
       new Promise<ReadingUsage>((resolve) => {
-        timer = setTimeout(() => resolve({ inputTokens: null, outputTokens: null }), ms);
+        timer = setTimeout(() => resolve({ inputTokens: null, outputTokens: null, cachedInputTokens: null }), ms);
       }),
     ]);
   } catch {
     // The interface says `usage` never rejects. If a provider breaks that, null
     // tokens are the right answer and an unhandled rejection is not.
-    return { inputTokens: null, outputTokens: null };
+    return { inputTokens: null, outputTokens: null, cachedInputTokens: null };
   } finally {
     if (timer) clearTimeout(timer);
   }

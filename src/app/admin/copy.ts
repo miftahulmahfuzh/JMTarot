@@ -93,8 +93,9 @@ export const OVERVIEW = {
       'Belum berharga: harga provider cadangan belum pernah dibaca orang (prices.ts, NOTIONAL_MODEL).',
     calls: 'Panggilan model',
     tokens: 'Token (input + output)',
-    /** z.ai returns `input_tokens: 0`, stored NULL, so this column is structurally
-     *  half-blind on the current provider and the tile has to say so. */
+    /** Calls whose provider reported no tokens at all. **No longer nearly every row**
+     *  -- see `types.ts`'s ReadingUsage -- but still the denominator a total needs
+     *  beside it, so the tile keeps saying so. */
     tokensNullNote: (n: string) => `${n} panggilan tanpa laporan token`,
     readings: 'Bacaan selesai',
     p95: 'p95 panggilan bacaan',
@@ -194,9 +195,29 @@ export const TOKENS = {
   ioInput: 'Input',
   ioOutput: 'Output',
   ioHoverLabel: 'Geser untuk membaca token per hari',
-  ioNullNote: (n: string) =>
-    `${n} panggilan tidak melaporkan token. Pada z.ai input_tokens memang kosong, jadi seri input ` +
-    'di bawah ini setengah buta.',
+  /**
+   * **THE OLD TEXT SAID THE INPUT SERIES WAS STRUCTURALLY BLIND ON z.ai, AND THAT WAS
+   * NEVER TRUE** -- `anthropic.ts` read the count from the wrong SSE event. Corrected
+   * 2026-07-30. The count itself stays on screen: it is still the honest denominator,
+   * it is just no longer nearly every row.
+   */
+  ioNullNote: (n: string) => `${n} panggilan tidak melaporkan token sama sekali.`,
+  /**
+   * The cache-hit rate, over MEASURED rows only.
+   *
+   * Worth a line of its own because a prompt-layer change can destroy cache locality
+   * without moving the token chart at all -- and on a per-token provider a cache read
+   * bills at a fraction of a fresh one.
+   */
+  cacheTitle: 'Prompt dari cache',
+  cacheRate: (pct: string) => `${pct} token input dilayani dari cache`,
+  cacheBasis: (n: string) => `Dihitung dari ${n} token input yang melaporkan angka cache.`,
+  /**
+   * **AN EMPTY STATE, NEVER "0%".** A range with no measured rows -- anything before
+   * 2026-07-30 -- has no rate to report, and 0% would read as "caching is not
+   * working", which is a different and false claim.
+   */
+  cacheUnmeasured: 'Belum ada panggilan yang melaporkan angka cache dalam rentang ini.',
 
   trajectoryTitle: 'Menuju batas kuota',
   trajectorySubtitle: 'Garis putus-putus adalah proyeksi, bukan pengukuran.',

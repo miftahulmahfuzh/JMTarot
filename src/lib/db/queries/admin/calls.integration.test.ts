@@ -138,9 +138,10 @@ describe('insertCalls + callTotals', () => {
     withRollback(async (tx) => {
       const userId = await seedUser(tx);
       await insertCalls(tx, [
-        // THE z.ai CASE, and it is expected to be the common one: `nonZero()` turns
-        // `input_tokens: 0` into NULL on both provider paths, so a whole group can be
-        // untokenized. `sum()` over all-NULL is NULL, hence the `coalesce`.
+        // A whole group can be untokenized -- every call in it failed or timed out
+        // before reporting usage. `sum()` over all-NULL is NULL, hence the `coalesce`.
+        // (This comment used to call it "the z.ai case" and expect it to be the common
+        // one. That was a bug in `anthropic.ts`, fixed 2026-07-30, not a provider fact.)
         row({ op: 'lotus', localDate: '2026-07-20', userId }),
         row({ op: 'lotus', localDate: '2026-07-20', userId }),
         row({ op: 'lotus', localDate: '2026-07-20', userId, outputTokens: 90 }),

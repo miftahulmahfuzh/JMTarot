@@ -237,13 +237,13 @@ async function usageOrNulls(source: LLMStream): Promise<ReadingUsage> {
     return await Promise.race([
       source.usage,
       new Promise<ReadingUsage>((resolve) => {
-        timer = setTimeout(() => resolve({ inputTokens: null, outputTokens: null }), USAGE_TIMEOUT_MS);
+        timer = setTimeout(() => resolve({ inputTokens: null, outputTokens: null, cachedInputTokens: null }), USAGE_TIMEOUT_MS);
       }),
     ]);
   } catch {
     // The interface says `usage` never rejects. If a provider breaks that,
     // null tokens are the right answer and an unhandled rejection is not.
-    return { inputTokens: null, outputTokens: null };
+    return { inputTokens: null, outputTokens: null, cachedInputTokens: null };
   } finally {
     if (timer) clearTimeout(timer);
   }

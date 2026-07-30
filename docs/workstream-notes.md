@@ -164,6 +164,17 @@ that writes the row, the client's arrives through `/api/events` on a different r
 a client copy with no matching `readings` row is the only way to detect a lost write. Query
 1 of `docs/analytics-queries.md` is that alarm.
 
+> **RETRACTED 2026-07-30.** This was a bug in `anthropic.ts`, not a provider fact. The
+> adapter read `input_tokens` from `message_start`, where that wire always sends `0`; the
+> real counts arrive in `message_delta`. Re-measured against the live endpoint: a cold
+> prompt reports **1935**, and the same prompt re-sent reports **15 fresh + 1920 cached**,
+> summing to the same total. z.ai also **honours prompt caching**, which three comments in
+> this repository denied. The buffered path was never affected, which is why the claim
+> survived: half the ledger looked plausible. `npm run probe:usage` re-checks it.
+>
+> Left standing below rather than deleted, because the wrong conclusion is one careless
+> reading of `message_start` away from being re-derived.
+
 **z.ai reports `output_tokens` but not `input_tokens`** (measured 2026-07-27). `input_tokens`
 comes back `0` and is stored as NULL so no average is silently wrong; `token_output` is real.
 Half a cost model, not none.
@@ -4691,6 +4702,10 @@ estimate for A3's retention planning: **3–6 rows per reading.**
   `input_tokens: 0` on the stream, which `nonZero()` turns into NULL. The buffered
   classifier reported a real 970 on one run and a real 1 on another, so the buffered path
   does report input tokens — variably.
+  > **RETRACTED 2026-07-30. This was OUR bug and the observation above contains its own
+  > refutation** — "the buffered path does report input tokens" is the tell, and it was
+  > written down and not followed up. The stream reports them too, in `message_delta`;
+  > the adapter read `message_start`. See the retraction under W4 above.
 - **A2-D4 is true rather than asserted:** ledger `total_ms` **5423** < `reading.completed`'s
   `total_ms` **5487**, with TTFT **4518**. Three measurements of three different subjects.
   **A3 must not reconcile them.**
@@ -7507,6 +7522,8 @@ docs/analytics-queries.md     eight queries, all of them executed
   only way to detect a lost write; query 1 is that alarm.
 - **z.ai reports `output_tokens` but not `input_tokens`** (measured 2026-07-27); it comes
   back `0` and is stored as NULL so no average is silently wrong. `token_output` is real.
+  > **RETRACTED 2026-07-30 — a bug in `anthropic.ts`, not a provider fact. See the
+  > retraction under W4.**
 
 **The check that matters most takes ten seconds: stop the database and take a reading.**
 It must stream and complete exactly as normal, with nothing but `[analytics] ...` in the
@@ -8900,3 +8917,86 @@ accounts can sign in. **What blocked publishing was Google's branding requiremen
 app homepage that is not a login page. Signed out, `/` now renders a landing page
 (v0.4.0, S-D5), so that blocker is closed**; what remains is pressing Publish on the
 consent screen. See `## The public surface (v0.4.0)`.
+
+## Input tokens were always on the wire (2026-07-30)
+
+**The request was a workaround. There was nothing to work around.**
+
+Miftah asked for a client-side tokenizer — tiktoken or similar — to estimate the input
+tokens the admin dashboard was missing, because this repository said in about twelve
+places that z.ai does not report them. A probe against the live endpoint, run before
+writing any code, showed the premise was false.
+
+### What was actually wrong
+
+`anthropic.ts` read `input_tokens` from the `message_start` SSE event. On that wire
+`message_start.usage` is a placeholder sent *before the prompt has been counted*, and it
+is always `{input_tokens: 0, output_tokens: 0}`. The real figures arrive in the final
+`message_delta` — **the same event the adapter already opened, to read `output_tokens`
+from.** One `if` block away.
+
+Measured 2026-07-30, `glm-4.6`, via `https://api.z.ai/api/anthropic`:
+
+```
+FRESH prompt          message_delta: input_tokens=1935  cache_read=0
+SAME prompt re-sent   message_delta: input_tokens=15    cache_read=1920
+short prompt (81 tok) message_delta: input_tokens=81    cache_read=0
+```
+
+`15 + 1920 = 1935`. Three further facts fell out of the same run:
+
+1. **z.ai honours prompt caching.** `types.ts`, `anthropic.ts` (twice) and CLAUDE.md all
+   said it accepted the `cache_control` marker and honoured nothing. The marker was doing
+   real work the whole time — for latency, for the rolling 5-hour prompt quota, and for
+   what a fallback provider would bill.
+2. **There is a minimum cacheable length.** An 81-token prompt cached nothing.
+3. **The buffered path was never broken.** `complete()` reads
+   `message.usage.input_tokens` from the non-streaming response, which returns a real
+   figure. So moderation, gist, lotus and persona rows carried real input counts
+   throughout, and **that is why the bug survived a release: half the ledger looked
+   plausible, so the other half read as a provider limitation rather than as a defect.**
+
+### How it was found, and the generalisation
+
+Not by reading the adapter. By asking *"is there a cheaper source of truth than an
+estimate?"* before building the estimate — which took four `fetch` calls and disproved
+the thing the task was premised on.
+
+**The original measurement was not careless. It was taken once, by hand, and written into
+prose that could then never be re-checked.** When it went wrong — or was misread — nothing
+could notice, and eleven copies of the sentence hardened into a fact that a workstream was
+about to be designed around. The evidence was even *in the notes*: W4's own entry said
+"the buffered path does report input tokens — variably", which is the refutation, written
+down and not followed up.
+
+**A number this repository asserts about a provider needs a way to be re-verified, or it
+rots silently.** `scripts/probe-usage.ts` (`npm run probe:usage`) is the cheap version of
+`prices.ts`'s 365-day tripwire: four small calls, ten seconds, run it after any change to
+`LLM_PROVIDER`, `LLM_MODEL`, a base URL or the SDK.
+
+Its own design has one trap worth keeping. **The first version used a single nonce**, so
+the buffered call primed the cache and the "cold" stream came back with 1984 of 2028
+tokens already cached — destroying the one distinction the cold probe exists to draw.
+Two nonces.
+
+### What shipped
+
+- `ReadingUsage.cachedInputTokens`, with `inputTokens` kept as the **total** so `tee.ts`,
+  `persistReading`, `callTotals` and the I/O chart needed no edit.
+- **The two wire formats report caching with opposite semantics**, so each adapter converts
+  itself and no shared helper does it: Anthropic's `input_tokens` EXCLUDES cache reads and
+  is summed; OpenAI's `prompt_tokens` INCLUDES them and must not be. Both directions have a
+  named negative control in the unit tests — the OpenAI one expects `1000`, not `1800`, and
+  is what fails when somebody later makes the adapters "consistent".
+- `llm_calls.cache_read_tokens` (migration `0012`), with three meaningful states: NULL
+  (nothing reported), `0` (reported, nothing cached — **a measurement**) and `> 0` (a hit).
+- A cache-hit rate on `/admin/tokens`, rated over `sum(input_tokens) filter (where
+  cache_read_tokens is not null)` and never over total input. Verified by deleting the
+  filter clause: the integration test failed with `expected 6000 to be 1000`.
+- `ModelPrice.cachedInputPerMTok`, absent meaning full rate. Inert today —
+  `NOTIONAL_MODEL` is null — and `NOTIONAL_MODEL`'s header now names the two callers that
+  still need the split threaded through `CallTotals` on the day it is set.
+
+**No backfill, and no tokenizer.** Every streamed row before 2026-07-30 keeps NULL input
+tokens: that is the honest record of when this app started measuring, and **any average
+over `input_tokens` spanning that date is two different measurements.**

@@ -55,6 +55,17 @@ export type ModelPrice = {
   /** USD per 1,000,000 tokens. Never null -- omit the row instead of guessing. */
   inputPerMTok: number;
   outputPerMTok: number;
+  /**
+   * USD per 1,000,000 input tokens served from the provider's prompt cache.
+   *
+   * **ABSENT MEANS "BILL THEM AT THE FULL INPUT RATE", AND THAT IS DELIBERATE
+   * RATHER THAN A GAP.** Providers discount cache reads heavily -- often to a tenth
+   * -- so guessing a discount is guessing in the direction that UNDERSTATES, and
+   * `costUsd`'s header says understating is the failure that matters here. A number
+   * enters this field only when a human has read it off the pricing page, like
+   * every other rate in this file.
+   */
+  cachedInputPerMTok?: number;
   /** When a human last read this off the provider's own page. */
   verifiedOn: string;
   /** Where they read it. Must be an https URL a reviewer can open. */
@@ -81,6 +92,9 @@ export const PRICES: readonly ModelPrice[] = [
     effectiveFrom: '2026-01-01',
     inputPerMTok: 0,
     outputPerMTok: 0,
+    // Explicit rather than defaulted: a subscription charges nothing either way, and
+    // an omission here would read as "nobody has looked up the cache rate yet".
+    cachedInputPerMTok: 0,
     verifiedOn: '2026-07-30',
     source: 'https://docs.z.ai/devpack/overview',
     note:
@@ -94,6 +108,9 @@ export const PRICES: readonly ModelPrice[] = [
     effectiveFrom: '2026-01-01',
     inputPerMTok: 0,
     outputPerMTok: 0,
+    // Explicit rather than defaulted: a subscription charges nothing either way, and
+    // an omission here would read as "nobody has looked up the cache rate yet".
+    cachedInputPerMTok: 0,
     verifiedOn: '2026-07-30',
     source: 'https://docs.z.ai/devpack/overview',
     note: 'The moderation classifier (MODERATION_MODEL). Same subscription, same zero.',
@@ -116,10 +133,26 @@ export const PRICES: readonly ModelPrice[] = [
  * rather than drifted into.
  *
  * **To turn it on:** open the provider's pricing page, add a `PRICES` row with a real
- * `verifiedOn` and `source`, and set this to that model string. Nothing else changes;
- * `notionalUsd()` starts answering. Until then A4's headline must be a call count
- * (R14 already requires that independently), and an honest empty state beats a
- * confident wrong figure.
+ * `verifiedOn` and `source`, and set this to that model string. `notionalUsd()` starts
+ * answering. Until then A4's headline must be a call count (R14 already requires that
+ * independently), and an honest empty state beats a confident wrong figure.
+ *
+ * ── AND DO ONE MORE THING, WHICH IS EASY TO MISS BECAUSE NOTHING BREAKS ──────
+ *
+ * **THREAD `cache_read_tokens` INTO THE TWO CALLERS.** `notionalUsd()` takes a
+ * `cached` argument that defaults to `null`, and `applyPrice` prices a null split as
+ * ALL-FRESH -- deliberately, because that is the conservative direction. But z.ai
+ * serves the large majority of a prompt from cache (1344 of 1364, measured
+ * 2026-07-30), and a fallback provider discounts cache reads to roughly a tenth. So
+ * a cost quoted without the split **OVERSTATES the input half by close to an order
+ * of magnitude.**
+ *
+ * The two callers are `admin/users/[id]/sections/Tokens.tsx` and
+ * `lib/admin/userList.ts`, and both need `CallTotals` to carry a summed
+ * `cacheReadTokens` first. That threading is deliberately NOT done today: it would be
+ * four files of aggregation in service of a function that provably returns `null`
+ * until this constant changes. **It is listed here rather than done, because the
+ * failure mode is a plausible number nobody questions -- not a crash.**
  */
 export const NOTIONAL_MODEL: string | null = null;
 
@@ -187,11 +220,51 @@ export function costUsd(
   on: string,
   input: number | null,
   output: number | null,
+  cached: number | null = null,
 ): number | null {
   const price = priceFor(model, on);
   if (price === null) return null;
   if (input === null || output === null) return null;
-  return (input * price.inputPerMTok + output * price.outputPerMTok) / 1_000_000;
+  return applyPrice(price, input, output, cached);
+}
+
+/**
+ * The arithmetic, against a price row that is already chosen.
+ *
+ * **EXPORTED FOR THE REASON `pickPrice` IS: EVERY ROW THIS PROJECT SHIPS COSTS
+ * ZERO.** A test of the cache split routed through `costUsd` would multiply by 0
+ * and pass against any formula at all, including one that added the cached tokens
+ * to the total instead of splitting them out. `prices.test.ts` drives this
+ * directly, with a rate table this project does not ship -- so the claim is about
+ * the code that runs rather than about a copy.
+ *
+ * ── `input` IS THE TOTAL AND `cached` IS A SUBSET OF IT ──────────────────────
+ *
+ * So the fresh half is `input - cached`. **A NULL `cached` IS PRICED AS ALL-FRESH,
+ * NEVER AS ALL-CACHED**: null means the provider said nothing about caching, not
+ * that nothing was cached, and the conservative reading of an unknown is the
+ * expensive one. Same reason an absent `cachedInputPerMTok` bills at full rate.
+ *
+ * The clamp exists because `cached > input` would make the fresh half NEGATIVE and
+ * silently REDUCE a fleet total. It should be unreachable -- the adapters return a
+ * total that already includes the cached part -- but a wrong number that lowers the
+ * bill is the one nobody investigates.
+ */
+export function applyPrice(
+  price: ModelPrice,
+  input: number,
+  output: number,
+  cached: number | null,
+): number {
+  const cachedTokens = Math.min(Math.max(cached ?? 0, 0), input);
+  const freshTokens = input - cachedTokens;
+  const cachedRate = price.cachedInputPerMTok ?? price.inputPerMTok;
+  return (
+    (freshTokens * price.inputPerMTok +
+      cachedTokens * cachedRate +
+      output * price.outputPerMTok) /
+    1_000_000
+  );
 }
 
 /**
@@ -208,7 +281,8 @@ export function notionalUsd(
   on: string,
   input: number | null,
   output: number | null,
+  cached: number | null = null,
 ): number | null {
   if (NOTIONAL_MODEL === null) return null;
-  return costUsd(NOTIONAL_MODEL, on, input, output);
+  return costUsd(NOTIONAL_MODEL, on, input, output, cached);
 }
