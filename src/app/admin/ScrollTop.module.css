@@ -1,0 +1,89 @@
+/*
+ * Back to the top of an admin page. 2026-07-30. See `ScrollTop.tsx`.
+ *
+ * **NO NEW HEX, NO NEW FONT SIZE, NO NEW CURVE** (`## Styling`): `--gold-text`,
+ * `--gold-hairline`, `--chart-surface` and `--radius-card` are all existing custom
+ * properties.
+ *
+ * The one literal is the fade's `180ms ease`, and `--dur` is deliberately not used:
+ * 620ms with `--ease-card` is a CARD FLIP, and a control appearing in a corner that
+ * takes that long reads as lag rather than as motion. `Fan.module.css`'s
+ * `filter 0.3s ease` is the precedent for a literal here. It is a duration, not a
+ * curve, so `## Styling`'s list does not bind it -- but it is written down, which is
+ * what that rule actually asks for.
+ *
+ * ── IT IS OPAQUE, AND R8 IS THE SAME REASON A CHART PANEL IS ─────────────────
+ *
+ * `Backdrop` paints a fixed radial, and this button sits over whatever the page has
+ * scrolled under it -- fourteen panels of numbers, on the detail page. A translucent
+ * fill would put a table row through the middle of the arrow. `--chart-surface` is the
+ * opaque panel token A4 introduced for exactly this.
+ */
+
+.button {
+  position: fixed;
+  /* Clear of the safe-area inset, which is what an iPhone home indicator eats. The
+   * operator may well be on a phone looking at why something broke. */
+  right: 20px;
+  bottom: calc(20px + env(safe-area-inset-bottom));
+  /* Above the detail page's sticky anchor nav (`z-index: 2`) and its panels. */
+  z-index: 5;
+
+  /* 44px, the one number iOS actually enforces. */
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+
+  color: var(--gold-text);
+  background: var(--chart-surface);
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-card);
+  cursor: pointer;
+
+  /*
+   * `visibility` and not `display`, because a display change cannot be transitioned and
+   * the fade is the point. `pointer-events: none` so the hidden button cannot be
+   * clicked through the corner of a panel.
+   */
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 180ms ease,
+    visibility 180ms ease;
+}
+
+.shown {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.button:hover,
+.button:focus-visible {
+  border-color: var(--gold-text);
+}
+
+/* The focus ring must be visible against an opaque panel on a dark canvas. */
+.button:focus-visible {
+  outline: 2px solid var(--gold-text);
+  outline-offset: 2px;
+}
+
+.button svg {
+  width: 20px;
+  height: 20px;
+}
+
+/*
+ * The FADE, killed here; the SCROLL is killed in the component, because a JS
+ * `scrollTo({ behavior })` overrides CSS and this rule would have no say over it. Both
+ * halves are needed and neither is redundant -- see `ScrollTop.tsx`'s header.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .button {
+    transition: none;
+  }
+}

@@ -26,14 +26,13 @@
   gap: 20px;
 }
 
-.h1 {
-  margin: 0;
-  font-family: var(--font-display), Georgia, serif;
-  font-size: var(--fs-title);
-  letter-spacing: var(--ls-title);
-  text-transform: uppercase;
-  color: var(--gold-text);
-}
+/*
+ * `.h1` WAS DELETED ON 2026-07-30, NOT LEFT UNUSED. Every admin page's display title is
+ * gone: the four nav pages' were verbatim copies of their own tab label and are now
+ * `.srOnly`, and the three sub-pages' were demoted to `.subject`. The tab row names the
+ * section -- see `AdminTabs.tsx`. **Reinstating a big gold uppercase title here puts the
+ * page's name on screen twice again**, which is the report this change answered.
+ */
 
 .grid {
   display: grid;
@@ -203,5 +202,17 @@
   /* A column of figures a reader compares row by row -- the case tabular digits exist for. */
   font-variant-numeric: tabular-nums;
   color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Visually hidden, still read aloud. The page's `<h1>` uses it: the tab row now carries
+   the page's name visibly (`AdminTabs`, `aria-current`), and a document with no level-1
+   heading leaves a screen-reader operator with no "where am I". */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
   white-space: nowrap;
 }

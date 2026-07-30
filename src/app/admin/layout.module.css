@@ -32,34 +32,12 @@
 }
 
 /*
- * One row, wrapping, and it scrolls rather than pushing the body wide -- the rule
- * from `## Styling`: wide content scrolls inside its own container and the page body
- * never scrolls horizontally.
+ * `.nav` AND `.navLink` WERE DELETED ON 2026-07-30, NOT EMPTIED. The nav is
+ * `AdminTabs`, with its own module -- see `layout.tsx`'s header for why it had to
+ * leave this file, and `AdminTabs.module.css` for why its separating rule is composed
+ * out of per-tab slices rather than being one `border-bottom` here.
+ *
+ * The rules they carried are alive in that file: the 44px tap target (the operator may
+ * well be on a phone looking at why something broke), and `overflow-x: auto` so a wide
+ * tab row scrolls inside its own container instead of pushing the page body wide.
  */
-.nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 20px;
-  align-items: baseline;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--gold-hairline);
-  overflow-x: auto;
-}
-
-.navLink {
-  font-family: var(--font-display);
-  font-size: var(--fs-eyebrow);
-  letter-spacing: var(--ls-section-label);
-  text-transform: uppercase;
-  color: var(--label);
-  text-decoration: none;
-  /* 44px of tap target on a touch screen, because the operator may well be on a
-   * phone looking at why something broke -- the one thing loop 5 cannot measure
-   * and the one number iOS actually enforces. */
-  padding: 14px 2px;
-}
-
-.navLink:hover,
-.navLink:focus-visible {
-  color: var(--gold-text);
-}

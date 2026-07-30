@@ -1,0 +1,248 @@
+/*
+ * The `/admin` tab row. 2026-07-30.
+ *
+ * ── THE RULE IS NOT DRAWN UNDER THE ACTIVE TAB, RATHER THAN ERASED ───────────
+ *
+ * The shape wanted is a folder tab: the hairline that separates the nav from the page
+ * detours up and around the active tab, so the tab reads as part of the page instead
+ * of as a control above it.
+ *
+ *         ╭───────────╮
+ * ────────╯ RINGKASAN ╰────── TOKEN ── PENGGUNA ── TULISAN ──────
+ *
+ * The construction that comes to mind first is: keep `border-bottom` on the nav, give
+ * the active tab three borders, and paint over the segment underneath. **IT CANNOT
+ * WORK HERE, AND THE REASON IS `Backdrop`.** It paints `--bg-radial` at
+ * `position: fixed`, so this shell is transparent over a gradient that is `#221a3a` at
+ * the top of the viewport. `--canvas` is `#0a0812`. Any opaque patch reads as a dark
+ * block sitting in the nav — the same class of mistake as a transparent chart panel
+ * (reconciliation R8), in the other direction.
+ *
+ * So the rule is COMPOSED rather than interrupted:
+ *
+ *   1. `.tabs` has NO `border-bottom`. Each tab draws its own 1px slice with
+ *      `::after`, spanning its full inline size.
+ *   2. **The tabs abut** — `gap` is `0` on the inline axis and the spacing is padding
+ *      — so the slices meet exactly and the rule is unbroken. This is the reason for
+ *      the padding, and a `gap` reintroduced here punches a hole per tab.
+ *   3. The ACTIVE tab draws no slice. It draws a border on three sides instead, and
+ *      its now-free `::before`/`::after` become the two concave fillets.
+ *
+ * ── EVERY BOX ENDS `--fillet` ABOVE THE RULE, INCLUDING THE INACTIVE ONES ────
+ *
+ * A folder tab's straight side stops short of the rule and flares out into it. There
+ * is no way to shorten a border, so the tab's border box itself ends `--fillet` above
+ * the rule (the nav's `padding-bottom`) and the fillets occupy that strip. **Inactive
+ * tabs end there too, and reach the rule with an offset slice** — if only the active
+ * one were lifted, its label would sit 10px higher than its neighbours' on every page.
+ *
+ * A fillet is a `--fillet` square with ONE rounded corner and TWO borders, which
+ * renders as a single quarter-arc from the rule up into the tab's side border: its
+ * top-right endpoint lands on the tab's bottom corner where that border ends, and its
+ * bottom-left endpoint lands on the rule. **That was verified in a harness rather than
+ * recalled** (`## Traps`, *framework behaviour is measured here, never recalled*) —
+ * `public/cards/_admintabs.html`, gitignored like every harness under that path.
+ *
+ * ── EVERY OFFSET HERE CARRIES A `1px`, AND THE HARNESS IS WHY ────────────────
+ *
+ * **AN ABSOLUTELY POSITIONED CHILD RESOLVES ITS INSETS AGAINST THE PADDING BOX, NOT
+ * THE BORDER BOX**, and every tab carries a 1px border (transparent until it lights).
+ * So the arithmetic that reads correct is off by exactly that border on each side, and
+ * the first version of this file was: `inset-inline: 0` left every slice 1px short at
+ * both ends, so **the rule was visibly broken between every pair of tabs**, and each
+ * fillet landed *beside* the tab's side border rather than on it — a 1px jog at the
+ * join and a 1px hole in the rule.
+ *
+ * Neither was visible at 1x and both were obvious at 6x, which is what the harness's
+ * zoom case exists for. **Do not "simplify" a `1px -` or a `-1px -` out of the offsets
+ * below**; each one is a border being crossed.
+ *
+ * ── THE RAIL IS THE REST OF THE RULE, AND IT IS AN ELEMENT ON PURPOSE ────────
+ *
+ * The tabs occupy the left of a 1200px shell, so slices alone stop the rule under the
+ * last tab and leave the separator two-thirds absent. A full-width line on `.tabs`
+ * cannot be the answer — it would cross the active tab, which is the one thing this
+ * whole construction exists to avoid.
+ *
+ * So `.rail` is a `flex: 1` span after the tabs that draws the same slice across
+ * whatever is left. It is an element rather than a pseudo because its width is
+ * "however much is spare", which only the flex layout knows. It is `aria-hidden` and
+ * empty: it is a rule, not a control.
+ *
+ * ── NO NEW TOKEN ─────────────────────────────────────────────────────────────
+ *
+ * `--radius-card` (10px) is both the top corners and the fillet radius,
+ * `--gold-hairline` is every stroke, `--gold-text` and `--label` are the two label
+ * states. `## Styling`'s rule holds: no new hex, no new font size, no new curve.
+ */
+
+.tabs {
+  /* The fillet radius AND the tab's top corners AND the strip the fillets live in.
+   * One value, so the arc cannot stop meeting the corner it is drawn to. */
+  --fillet: var(--radius-card);
+
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  /*
+   * NO INLINE GAP. The tabs abut so their slices form one rule; see the header. The
+   * row gap is for a wrapped second row on a narrow screen.
+   */
+  gap: 4px 0;
+  /* The strip the fillets live in, below every tab's border box. */
+  padding-bottom: var(--fillet);
+  /* Room for the first and last tab's fillets, given back with a negative margin so
+   * the labels still line up with the page content's left edge. */
+  padding-inline: var(--fillet);
+  margin-inline: calc(-1 * var(--fillet));
+  /* Wide content scrolls inside its own container and the page body never scrolls
+   * horizontally (`## Styling`). Four tabs do not need it at 1200px; a fifth might. */
+  overflow-x: auto;
+}
+
+/*
+ * The rule's lead-in and lead-out, covering the nav's own inline padding.
+ *
+ * `2 * --fillet` and not `--fillet`, because the ACTIVE tab reserves `--fillet` of
+ * inline margin for its fillets — so when the FIRST tab is the active one, the first
+ * slice starts `2 * --fillet` in, and a lead-in of one fillet would leave a 1px hole
+ * in the rule. Overlapping the slices when it is not active costs nothing: same
+ * colour, same 1px.
+ */
+.tabs::before,
+.tabs::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  width: calc(2 * var(--fillet));
+  height: 1px;
+  background: var(--gold-hairline);
+}
+
+.tabs::before {
+  left: 0;
+}
+
+.tabs::after {
+  right: 0;
+}
+
+.tab {
+  position: relative;
+  font-family: var(--font-display);
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-section-label);
+  text-transform: uppercase;
+  color: var(--label);
+  text-decoration: none;
+  /*
+   * 44px of tap target once the nav's `padding-bottom` is counted, because the
+   * operator may well be on a phone looking at why something broke -- the one thing
+   * loop 5 cannot measure and the one number iOS actually enforces.
+   */
+  padding: 17px 14px;
+  /*
+   * TRANSPARENT ON EVERY TAB, coloured on the active one. A border that appears only
+   * when a tab lights would move its label 1px on the page it is on.
+   */
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+}
+
+.tab:hover,
+.tab:focus-visible {
+  color: var(--gold-text);
+}
+
+/*
+ * Each tab's slice of the rule, offset down into the nav's padding. The tabs abut, so
+ * the slices do too -- but only because of the `-1px`, which reaches back out over the
+ * tab's own border to the border box. See the header.
+ */
+.tab::after {
+  content: '';
+  position: absolute;
+  inset-inline: -1px;
+  bottom: calc(-1 * var(--fillet));
+  height: 1px;
+  background: var(--gold-hairline);
+}
+
+/* The rest of the rule, across whatever width the tabs did not use. See the header. */
+.rail {
+  position: relative;
+  flex: 1;
+  /* Zero height, so `align-items: flex-end` puts its bottom edge on the same line as
+   * every tab's and the offset below lands on the rule like theirs. */
+  height: 0;
+  /* Never narrower than nothing: a long enough tab row scrolls instead of squeezing
+   * the rail into a negative width. */
+  min-width: 0;
+}
+
+.rail::after {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  bottom: calc(-1 * var(--fillet));
+  height: 1px;
+  background: var(--gold-hairline);
+}
+
+/* ── THE ACTIVE TAB ───────────────────────────────────────────────────────── */
+
+.on {
+  color: var(--gold-text);
+  border-color: var(--gold-hairline);
+  /* The strip the two fillets flare out into. */
+  margin-inline: var(--fillet);
+}
+
+/*
+ * The two concave fillets, replacing the slice this tab does not draw.
+ *
+ * **BOTH ENDS OF THE ARC HAVE TO LAND ON SOMETHING**, and the box is `--fillet + 1px`
+ * on both axes for that reason and no other. The radius stays `--fillet`, so the extra
+ * pixel is 1px of STRAIGHT run at each end of the stroke: one at the bottom-left, where
+ * it meets the neighbour's slice, and one at the top-right, where it **overlaps the
+ * tab's own side border** rather than merely abutting it.
+ *
+ * **THAT OVERLAP IS THE FIX FOR A VISIBLE SEAM, NOT A ROUNDING FUDGE.** Chrome
+ * antialiases the arc's edge and paints the straight border crisp, so two boxes that
+ * merely touch show a sub-pixel notch at the junction — measured at 1x, cropped out of
+ * the harness shot and upscaled 8x, because at 1x it reads as a nick in the hairline
+ * and nothing smaller than real pixels can tell you it is there.
+ *
+ * **A HALF-PIXEL SOFTENING SURVIVES AT THE JOIN AND IS ACCEPTED, NOT MISSED.** The
+ * overlap takes it from a clear 1px step down to the antialiasing boundary itself,
+ * which is the floor for two separately-composited boxes. Removing the last of it
+ * means abandoning borders for an inline SVG or a mask — a much larger commitment,
+ * for a hairline at the bottom of a nav. Do not reopen it without a reason bigger
+ * than tidiness.
+ */
+.on::before,
+.on::after {
+  content: '';
+  position: absolute;
+  bottom: calc(-1 * var(--fillet));
+  width: calc(var(--fillet) + 1px);
+  height: calc(var(--fillet) + 1px);
+  background: none;
+  inset-inline: auto;
+}
+
+.on::before {
+  left: calc(-1px - var(--fillet));
+  border-right: 1px solid var(--gold-hairline);
+  border-bottom: 1px solid var(--gold-hairline);
+  border-bottom-right-radius: var(--fillet);
+}
+
+.on::after {
+  right: calc(-1px - var(--fillet));
+  border-left: 1px solid var(--gold-hairline);
+  border-bottom: 1px solid var(--gold-hairline);
+  border-bottom-left-radius: var(--fillet);
+}

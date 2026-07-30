@@ -53,6 +53,7 @@ import { getForEdit } from '@/lib/db/queries/admin/blog';
 import { isLocale, DEFAULT_LOCALE } from '@/lib/i18n/locale';
 import { SLUG_RE } from '@/lib/content/lint';
 import { AdminPageViewed } from '../../AdminPageViewed';
+import { AdminTabs } from '../../AdminTabs';
 import { BlockEditor } from '../BlockEditor';
 import { BLOG } from '../copy';
 import styles from '../blog.module.css';
@@ -106,6 +107,7 @@ export default async function AdminBlogEditorPage({
 
   return (
     <div className={styles.page}>
+      <AdminTabs active="/admin/blog/[slug]" />
       <AdminPageViewed page="/admin/blog/[slug]" />
 
       <header className={styles.header}>
@@ -113,7 +115,9 @@ export default async function AdminBlogEditorPage({
           <Link className={styles.link} href="/admin/blog" prefetch={false}>
             {BLOG.backToList}
           </Link>
-          <h1 className={styles.h1}>
+          {/* DEMOTED RATHER THAN HIDDEN: the slug is the only thing on this page that says
+              WHICH article is being edited, and no tab can carry it. See `new/page.tsx`. */}
+          <h1 className={styles.subject}>
             <code>{slug}</code>
           </h1>
         </div>

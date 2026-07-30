@@ -75,6 +75,7 @@ import { getPersona } from '@/lib/db/queries/persona';
 import { getProfile } from '@/lib/db/queries/profile';
 import { ChartSkeleton } from '@/components/chart/ChartError';
 import { AdminPageViewed } from '../../AdminPageViewed';
+import { AdminTabs } from '../../AdminTabs';
 import { RangeFilter } from '../../RangeFilter';
 import { parseRange, type ParsedRange } from '../../range';
 import { DETAIL, U } from '../copy';
@@ -107,7 +108,6 @@ const SECTIONS = [
   ['jawaban', DETAIL.answers.heading],
   ['lotus', DETAIL.lotus.heading],
   ['sosok', DETAIL.persona.heading],
-  ['bacaan', DETAIL.readings.heading],
   ['token', DETAIL.tokens.heading],
   ['ringkasan', DETAIL.summaries.heading],
   ['verdict', DETAIL.verdicts.heading],
@@ -116,6 +116,17 @@ const SECTIONS = [
   ['moderasi', DETAIL.moderation.heading],
   ['peristiwa', DETAIL.events.heading],
   ['audit', DETAIL.access.heading],
+  /*
+   * **BACAAN IS LAST ON PURPOSE, AND IT IS THE ONE SECTION WHOSE POSITION IS A DECISION.**
+   * 2026-07-30, the operator's report: it is the paginated one, up to `READINGS_PAGE` rows
+   * long, and sixth of fourteen it buried the eight short panels after it under a screen and
+   * a half of readings. Everything above is scannable in a glance; this is the one you read.
+   *
+   * The order here and the JSX's order are the same list twice and must stay in step --
+   * `page.contract.test.ts` asserts only that all fourteen are MOUNTED, deliberately, because
+   * it is guarding against an orphaned panel and not against a reordering like this one.
+   */
+  ['bacaan', DETAIL.readings.heading],
 ] as const;
 
 export default async function AdminUserDetailPage({
@@ -134,6 +145,7 @@ export default async function AdminUserDetailPage({
     <div className={styles.page}>
       {/* One mount, one event -- see `/admin/users/page.tsx`'s note. The prop is the TEMPLATE,
           never the resolved path, so a subject uuid cannot reach `events.props`. */}
+      <AdminTabs active="/admin/users/[id]" />
       <AdminPageViewed page="/admin/users/[id]" />
       <a className={styles.back} href="/admin/users">
         {U.backToList}
@@ -263,7 +275,17 @@ async function Body({
 
   return (
     <>
-      <h1 className={styles.h1}>{DETAIL.title(identity.email)}</h1>
+      {/*
+        * **THE HEADING IS HIDDEN AND THE SUBJECT IS NAMED IN A LINE INSTEAD** (2026-07-30).
+        * The four nav pages' `<h1>`s were verbatim copies of their own tab and are now
+        * `srOnly`; this one was NOT a copy -- it carries the email, which no tab can -- so it
+        * is still on screen, at the weight of the back link it sits under rather than as a
+        * display title above a page whose own tab row is now doing the naming. The `<h1>`
+        * stays in the document for the same reason it does on the other four: a page with no
+        * level-1 heading leaves a screen-reader operator with no "where am I".
+        */}
+      <h1 className={styles.srOnly}>{DETAIL.title(identity.email)}</h1>
+      <p className={styles.subject}>{DETAIL.title(identity.email)}</p>
       {/*
         * **THE ANCHOR NAV IS BELOW THE TITLE AND INSIDE `Body`, AND THE 1440px SHOT MOVED IT
         * HERE.** It was in the shell, above `<Suspense>`, which put fourteen anchors and a
@@ -283,19 +305,6 @@ async function Body({
       <Answers states={answerStates} userId={id} />
       <Lotus lotus={lotus} answersUpdatedAt={answersUpdatedAt} />
       <Persona persona={persona} answersUpdatedAt={answersUpdatedAt} />
-      <Readings
-        rows={readingPage.rows}
-        costs={costs}
-        userId={id}
-        totalReadings={readingPage.rows.length + (readingPage.nextCursor ? 1 : 0)}
-        nextHref={
-          readingPage.nextCursor
-            ? `/admin/users/${id}?before=${encodeURIComponent(
-                `${readingPage.nextCursor.createdAt}|${readingPage.nextCursor.id}`,
-              )}`
-            : null
-        }
-      />
       <Tokens
         series={series}
         byOp={callsByOpForUser(callTotals)}
@@ -308,6 +317,26 @@ async function Body({
       <Moderation rows={flags} userId={id} />
       <EventStream rows={events} cap={DETAIL_ROW_CAP} />
       <AccessLog rows={accesses} adminEmails={adminEmails} />
+      {/* LAST -- see the note on `SECTIONS`. */}
+      <Readings
+        rows={readingPage.rows}
+        costs={costs}
+        userId={id}
+        totalReadings={readingPage.rows.length + (readingPage.nextCursor ? 1 : 0)}
+        /*
+         * **`#bacaan` IS LOAD-BEARING NOW THAT THIS SECTION IS LAST.** Paging is a
+         * navigation to this same route, so without the fragment the operator lands at the
+         * top of a page whose readings are a screen and a half below -- which is the exact
+         * complaint that moved this section down here, reintroduced through the back door.
+         */
+        nextHref={
+          readingPage.nextCursor
+            ? `/admin/users/${id}?before=${encodeURIComponent(
+                `${readingPage.nextCursor.createdAt}|${readingPage.nextCursor.id}`,
+              )}#bacaan`
+            : null
+        }
+      />
     </>
   );
 }

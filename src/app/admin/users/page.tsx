@@ -34,6 +34,7 @@ import { withAdminRead } from '@/lib/db/queries/admin/timeout';
 import { ChartSkeleton } from '@/components/chart/ChartError';
 import { SEQUENTIAL } from '@/theme/chart';
 import { AdminPageViewed } from '../AdminPageViewed';
+import { AdminTabs } from '../AdminTabs';
 import { RangeFilter } from '../RangeFilter';
 import { compact, int, usd } from '../format';
 import { parseRange, type ParsedRange } from '../range';
@@ -75,8 +76,11 @@ export default async function AdminUsersPage({
         * `/admin` and `/admin/tokens` still double-fire (A4's files, §6). Flagged in
         * `docs/workstream-notes.md`, not fixed here.
         */}
+      <AdminTabs active="/admin/users" />
       <AdminPageViewed page="/admin/users" />
-      <h1 className={styles.h1}>{LIST.title}</h1>
+      {/* Hidden, not deleted -- see `/admin/page.tsx`. The table keeps its own
+          `<caption>`, so it is still named independently of this. */}
+      <h1 className={styles.srOnly}>{LIST.title}</h1>
       <RangeFilter action="/admin/users" parsed={parsed} />
       <AdminUserTable q={q} />
       <Suspense fallback={<ChartSkeleton height={320} label={U.loading} />}>
