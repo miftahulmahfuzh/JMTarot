@@ -19,6 +19,7 @@
 import type { Locale } from '@/data/types';
 import type { DbOrTx } from '@/lib/db/types';
 import { getProvider } from '@/lib/llm';
+import { gistEnabled } from '@/lib/llm/flags';
 import { track } from '@/lib/analytics/track';
 import { fallbackGist, gistPrompt, gistUserTurn, sanitizeGist } from '@/lib/prompt/memory';
 
@@ -58,6 +59,29 @@ export async function extractGist(
    * report -- the failed reading is its own event.
    */
   if (!body) return;
+
+  /*
+   * THE KILL SWITCH, AND IT IS THE HIGHEST-VOLUME ONE IN THE APP -- one model
+   * call per reading, so it tracks reading count rather than user count or day
+   * count. `GIST_ENABLED=0` is the largest reduction available short of switching
+   * off readings themselves, which is why `docs/DEPLOY-VERCEL.md` §2d tells an
+   * operator to reach for it FIRST of the five.
+   *
+   * ABOVE THE `try`, BELOW THE `!body` CHECK, AND RETURNING RATHER THAN FALLING
+   * THROUGH TO `fallbackGist`. The ladder in this file's header has three rungs
+   * and a switch is none of them: rung 2 exists to report that THE MODEL is
+   * failing, via `memory.gist_failed.fell_back`, and an operator's deliberate
+   * choice arriving as that same event makes the one signal that distinguishes
+   * "the provider is broken" from "we turned it off" unreadable. So this writes
+   * nothing and reports nothing -- `readings.gist` stays null, which
+   * `recallableReadings` already treats as "excluded from recall".
+   *
+   * WHAT IT COSTS, PERMANENTLY: a reading taken while this is off never becomes
+   * material for a later reading's `<riwayat>` callback, because nothing
+   * backfills. Accepted deliberately (Miftah, 2026-07-30) as the price of the
+   * biggest lever.
+   */
+  if (!gistEnabled()) return;
 
   let gist: string | null = null;
   let reason: 'call_failed' | 'empty' | 'unusable' | null = null;
