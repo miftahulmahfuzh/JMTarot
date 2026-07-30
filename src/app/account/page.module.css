@@ -220,12 +220,3 @@
   border-color: var(--gold-border);
   outline: none;
 }
-
-.disclaimer {
-  margin: 6px 0 0;
-  font-family: var(--font-body), Georgia, serif;
-  font-style: italic;
-  font-size: var(--fs-hint);
-  color: var(--faint);
-  text-align: center;
-}

@@ -257,22 +257,51 @@ function escapeRe(s: string): string {
 }
 
 /**
- * Card names a writer or a model invents. **SUBSTRING, NOT A WORD LIST OF NOUNS.**
+ * Card names a writer or a model invents. **NEVER A LIST OF ORDINARY NOUNS.**
  *
- * Banning `Kematian` alone would ban the ordinary Indonesian word for death, which
- * lore and article prose legitimately use -- the `lagi` trap in a new costume. Every
- * entry here is a two-word construction that appears in no ordinary sentence about a
- * card, plus `Pulan`, which is the name a model actually invented for The Moon.
+ * **`Kematian` WAS ON THIS LIST AND HAD TO COME OUT** (2026-07-30, on the first real
+ * article anybody tried to write through the editor). It came from
+ * `blog.content.test.ts`, where it never fired because none of the four launch
+ * documents happens to use the word -- and `lore.test.ts` had ALREADY rejected the
+ * noun-list approach, in capitals: *"THE PATTERN IS `Sang ` FOLLOWED BY A CAPITAL, NOT
+ * A LIST OF NOUNS. Banning `Kematian`, `Keadilan` or `Kekuatan` would ban the ordinary
+ * Indonesian words for death, justice and strength, which lore prose legitimately uses
+ * -- the `lagi` trap in a new costume."*
+ *
+ * It refused `kartu "Death" (Kematian)`, which is the CORRECT construction: the card
+ * named in English, glossed once for the reader. And because the match is
+ * case-sensitive, `kematian fisik` passed while `Kematian` at a sentence start failed
+ * -- a position-dependent false positive, which is the worst kind. **A lint that cries
+ * wolf is a lint somebody deletes.**
+ *
+ * What is left is the `Sang X` construction, two-word renamings that appear in no
+ * ordinary sentence, and `Pulan`, which is the name a model actually invented for The
+ * Moon. Every one of them is a phrase used INSTEAD OF the English name.
  */
 const INVENTED_CARD_NAMES = [
   'Sang Pandir',
-  'Kematian',
   'Bulan Tarot',
   'Roda Keberuntungan',
   'Pulan',
   'Sang Bulan',
   'Kartu Bulan',
 ] as const;
+
+/**
+ * A parenthesised match is a GLOSS, not a rename, and is not a violation.
+ *
+ * `kartu "Wheel of Fortune" (Roda Keberuntungan)` names the card in English and
+ * translates it once for a reader who has never seen a deck — which is the thing an
+ * article explaining tarot to a beginner is FOR. **The rule's target is an Indonesian
+ * name used in place of the English one**, and a rename in running prose is never
+ * parenthesised.
+ *
+ * Deliberately looser than "the English name must precede it": that would need the
+ * deck, which this module may not import (A6-3).
+ */
+function isGloss(text: string, name: string): boolean {
+  return new RegExp(`[(\u201c"']\s*${escapeRe(name)}\s*[)\u201d"']`).test(text);
+}
 
 /**
  * How this application works. **LOWERCASED SUBSTRING, NOT WORD-BOUNDED.**
@@ -368,7 +397,9 @@ export function lintTexts(
       hit('closing-offer', 'error', t, CLOSING_OFFER.exec(t.text)![0]);
     }
     if (on('card-names')) {
-      for (const n of INVENTED_CARD_NAMES) if (t.text.includes(n)) hit('card-names', 'error', t, n);
+      for (const n of INVENTED_CARD_NAMES) {
+        if (t.text.includes(n) && !isGloss(t.text, n)) hit('card-names', 'error', t, n);
+      }
     }
     if (on('markup') && MARKUP.test(t.text)) {
       hit('markup', 'error', t, MARKUP.exec(t.text)![0]);

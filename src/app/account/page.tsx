@@ -292,8 +292,6 @@ export default async function AccountPage() {
         <AccountAnswers initial={answers} />
       </section>
 
-      <p className={styles.disclaimer}>{t('common.disclaimer.short')}</p>
-
       <DeleteAccount />
     </main>
   );

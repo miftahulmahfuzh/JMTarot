@@ -37,6 +37,7 @@ import {
 } from '@/lib/db/queries/lotus';
 import { getProfile } from '@/lib/db/queries/profile';
 import { getProvider } from '@/lib/llm';
+import { lotusGenerationEnabled } from '@/lib/llm/flags';
 import type { CallClass } from '@/lib/llm/meter';
 import {
   LOTUS_SOURCE_VERSION,
@@ -55,7 +56,14 @@ export type LotusOutcome = {
   ok: boolean;
   /** True when the stored block is the template rather than the model's. */
   fallback: boolean;
-  reason?: LotusRejectReason | 'no_profile' | 'not_completed' | 'unchanged' | 'error';
+  /** `'disabled'` is `LOTUS_GENERATION_ENABLED=0` and writes nothing. See below. */
+  reason?:
+    | LotusRejectReason
+    | 'no_profile'
+    | 'not_completed'
+    | 'unchanged'
+    | 'error'
+    | 'disabled';
   ms: number;
   model: string;
 };
@@ -102,6 +110,37 @@ export async function generateLotus(
     ms: Date.now() - started,
     model,
   });
+
+  /*
+   * THE KILL SWITCH, AND IT WRITES NOTHING AT ALL -- WHICH IS THE WHOLE DESIGN.
+   *
+   * **IT IS ABOVE EVERY READ ON PURPOSE, AND IT IS NOT `stubbed()`.** The obvious
+   * implementation was to reuse `LOTUS_STUB`'s path below and store
+   * `fallbackLotus(input)`, and it is a trap that survives a green suite:
+   * `store()` writes `input_hash` and `source_version`, and `lotusInputHash` is a
+   * digest of the birth year and the six onboarding answers -- **it never moves
+   * again**. So the row would match its own hash forever, the `unchanged` check
+   * forty lines below would return early for good, and every querent who
+   * onboarded while this was off would feed a TEMPLATE into every reading they
+   * ever take, after the flag went back to `1`, with nothing reporting it. That is
+   * the same class of failure as `LOTUS_STUB` in production, which CLAUDE.md
+   * forbids for exactly this reason -- this flag has to be better than the thing
+   * it replaces, not a production-legal spelling of it.
+   *
+   * Writing nothing makes it SELF-HEALING instead: `getLotusBlock` returns null,
+   * the reading path already documents "NULL IS NORMAL, not an error" and produces
+   * exactly the reading an un-personalised querent gets, and the next reading
+   * after the flag returns schedules a real distillation through
+   * `scheduleLotusRefresh`. No backfill script, no operator checklist.
+   *
+   * **CONTRAST `generatePersona`, WHICH DOES STORE ITS TEMPLATE**, because
+   * `personaInputHash` ends with `readings:<ids>` and therefore moves on every
+   * reading -- so a stored fallback there goes stale by itself. The asymmetry is a
+   * fact about the two hashes, not an inconsistency; see `flags.ts`'s header.
+   */
+  if (!lotusGenerationEnabled()) {
+    return done({ ok: false, fallback: false, reason: 'disabled' });
+  }
 
   try {
     const profile = await getProfile(db, userId);

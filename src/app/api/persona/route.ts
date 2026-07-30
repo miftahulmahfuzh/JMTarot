@@ -225,7 +225,17 @@ export async function GET(request: Request) {
       const outcome = await generatePersona(user.id, locale, 'interactive', material);
       trackGenerated(outcome);
 
-      if (outcome.reason === 'unchanged') {
+      /*
+       * **`'disabled'` JOINS `'unchanged'` HERE, AND FOR THE SAME REASON.** Both
+       * mean "nothing was written", so both leave
+       * `max(onboarding_answers.updated_at)` permanently ahead of
+       * `personas.updated_at` -- which re-enters this branch on every page view
+       * forever. That is cheap (two indexed reads, no model call) but it is still a
+       * flag that cannot clear, and with `PERSONA_GENERATION_ENABLED=0` it is
+       * *guaranteed* rather than incidental: every visit by every querent who has
+       * edited an answer. One `update` closes it.
+       */
+      if (outcome.reason === 'unchanged' || outcome.reason === 'disabled') {
         await touchPersona(db, user.id).catch(logFailure);
       }
 
@@ -290,7 +300,21 @@ function trackGenerated(outcome: {
   fallback: boolean;
   reason?: string;
 }): void {
-  if (outcome.reason === 'unchanged') return;
+  /*
+   * **`'disabled'` IS SILENT HERE, AND LEAVING IT OUT WAS A REAL BUG FOR ONE
+   * DRAFT.** `persona.generated` means a model was reached; with
+   * `PERSONA_GENERATION_ENABLED=0` none was, and the `drift` branch calls this on
+   * EVERY `/account` view -- so emitting it would inflate exactly the metric an
+   * operator scans to confirm the flag took effect, with `fallback: false` and a
+   * `model` naming a model that was never asked. Worse than absent: it reads as
+   * the switch not working.
+   *
+   * The operator's real instruments are unaffected and are better: `llm_calls`
+   * records what actually reached a provider (query 9), and `persona.viewed`
+   * still fires on every branch carrying `fallback`, which goes true for a
+   * querent served the template. Same reason `'unchanged'` has always been silent.
+   */
+  if (outcome.reason === 'unchanged' || outcome.reason === 'disabled') return;
   track('persona.generated', {
     model: outcome.model,
     source_version: PERSONA_SOURCE_VERSION,

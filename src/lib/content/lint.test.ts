@@ -203,12 +203,48 @@ describe('the word lists, and their locale scopes (A6-2)', () => {
 
   it('does not fire on the ordinary Indonesian words the invented names are built from', () => {
     /*
-     * The `lagi` trap in a new costume. Banning `Kematian` alone would ban the
-     * ordinary word for death, which article prose legitimately uses -- so the list
-     * carries two-word constructions that appear in no ordinary sentence.
+     * The `lagi` trap in a new costume. The list carries two-word constructions that
+     * appear in no ordinary sentence, never bare nouns.
      */
     const doc = clean({ body: [para(s('Bulan purnama di atas jalan, dan roda yang berputar.'))] });
     expect(rulesIn(doc)).not.toContain('card-names');
+  });
+
+  it('accepts `Kematian`, the ordinary word for death — THE NAMED CASE', () => {
+    /*
+     * **`Kematian` WAS ON THE LIST AND HAD TO COME OUT**, found on the first real
+     * article anybody tried to write through the editor. `lore.test.ts` had already
+     * rejected the noun-list approach in capitals, naming this exact word, and the
+     * entry survived into `lint.ts` only because none of the four launch documents
+     * happens to use it.
+     *
+     * The match was also case-SENSITIVE, so `kematian fisik` passed while `Kematian` at
+     * a sentence start failed — a position-dependent false positive, which is the worst
+     * kind. This case exists so somebody "restoring" the entry has to argue with it.
+     */
+    const doc = clean({
+      body: [
+        para(s('Kematian jarang berarti kematian fisik dalam pembacaan modern.')),
+        para(s('Kartu "Death" (Kematian) melambangkan akhir dari suatu fase hidup.')),
+      ],
+    });
+    expect(rulesIn(doc)).not.toContain('card-names');
+  });
+
+  it('treats a parenthesised name as a GLOSS and a bare one as a rename', () => {
+    /*
+     * `kartu "Wheel of Fortune" (Roda Keberuntungan)` names the card in English and
+     * translates it once for a reader who has never seen a deck — which is what an
+     * article explaining tarot to a beginner is for. **A rename in running prose is
+     * never parenthesised**, and that is the whole discriminator.
+     */
+    const gloss = clean({
+      body: [para(s('Kartu "Wheel of Fortune" (Roda Keberuntungan) bicara soal siklus.'))],
+    });
+    expect(rulesIn(gloss)).not.toContain('card-names');
+
+    const rename = clean({ body: [para(s('Roda Keberuntungan bicara soal siklus.'))] });
+    expect(rulesIn(rename)).toContain('card-names');
   });
 
   it('refuses a tag and an HTML entity in an authored string', () => {
