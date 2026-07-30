@@ -5,6 +5,436 @@ All notable changes to JMTarot are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.5.0] - 2026-07-30
+
+Six workstreams (A1–A6) planned in `PUBLIC_RELEASE_ROADMAP_v0.5.0.md`, reconciled in
+`docs/plans/2026-07-30-RECONCILIATION-v0.5.0.md` — which found **51 defects in the
+roadmap it was reconciling**, nineteen of them verified against running code, and
+**four that would have shipped** — plus five changes on 2026-07-30 that came from an
+operator using the thing rather than from a plan.
+
+**v0.4.0 built the surface a stranger can see. v0.5.0 builds the surface the operator
+can see.** One `/admin` tree that no crawler, no querent and no signed-in user without
+an allowlisted email may know exists: a signed-in non-admin gets the same **404** as a
+typo, on every page and every API route.
+
+**The thesis, and the one number that explains it: this application made nine distinct
+LLM calls and recorded the token cost of exactly one of them.** `/api/reading` threaded
+`usage` through `tee.ts` into `readings.token_input`/`token_output`; the moderation
+classifier, the gist, the day summary, the frequency verdict, the Lotus distillation,
+the persona and both translation paths each received a fully-populated `usage` object
+from the adapter and destructured it away. **The provider layer was already correct** —
+both adapters resolve `usage` on every exit path, including a consumer `break`. What was
+missing was a table and eight reads. Until `llm_calls` existed there was no answer to
+"what does a user cost", which is the question a public release starts asking every day.
+
+**The second thesis: `LLM_API_KEY` is a fixed annual subscription sold for coding, not a
+wallet, and there is no hard spend cap and never was.** `LLM_WINDOW_CALL_CEILING=280` is
+a count, not a cost, and it is fleet-wide — so nobody could answer "which user burned the
+window", "is consumption growing", or "when does the current trajectory hit the ceiling".
+The risk is quota exhaustion, a denial of service against the querent with no billing
+alert attached, and the comedown is worse: enforcement means key revocation, which takes
+the whole app down at once. A trajectory chart with a stated band is the only early
+warning this project can have.
+
+**The third: prose that only a git commit can change is prose that does not get
+written.** The two launch articles were authored by an agent in a worktree. The blog tab
+exists so the next twenty are authored by a person in a browser — **and it holds the copy
+lint while doing it**, because the lint is the reason the prose is data and a lint needs
+exact strings.
+
+**And the release's own lesson, which was in no plan: a provider fact this repository
+asserts in prose and cannot re-run will rot, and one did for a whole release.** Twelve
+places said *"z.ai reports `input_tokens: 0` and honours no caching"*. Both halves were
+false. The request that uncovered it was for a client-side tokenizer to estimate the
+numbers — a workaround for a premise that four `fetch` calls disproved before a line of
+it was written.
+
+2835 unit tests across 155 files; 478 integration tests across 35. Four migrations on
+top of v0.4.0's eight, taking the schema from thirteen tables to **seventeen**. **No new
+dependency** — the entire chart system is hand-rolled.
+
+### Added
+
+- **`/admin`, invisible rather than protected (A1).** `src/lib/admin/allowlist.ts` is a
+  **zero-import leaf** (the parse and a constant-time compare) and
+  `src/lib/admin/identity.ts` holds `requireAdmin` / `requireAdminPage` /
+  `adminNotFound`. **One file cannot hold both**, because `requireAdmin()` →
+  `currentUser()` → `auth.ts` → `NextAuth()` at module scope → `@/lib/db/client` →
+  `import 'server-only'`, which throws under Vitest — the `origin.ts` / `keys.ts` /
+  `lines.ts` precedent. Identity is `ADMIN_EMAILS`, a list: **no column, no claim, no
+  role model**, and an empty value admits nobody. `/admin` carries `noindex`, is in no
+  sitemap, and `contentAlternates('/admin')` throws.
+- **`admin_access_log` (migration `0009`), and the ordering that makes a reveal fail
+  when its audit row cannot be written.** `recordAdminAccess()` is the one write in this
+  release that **must not swallow** (R30): it throws, and `src/lib/admin/reveal.ts`
+  writes the row *before* responding, so an audit failure costs the reveal rather than
+  producing an unlogged read of the most sensitive string in the product.
+- **`llm_calls` (migration `0010`) — fifteen columns, five indexes, no `updated_at`, and
+  one row per model call (A2).** Nine closed `op` values — `reading`, `moderation`,
+  `gist`, `day_summary`, `frequency`, `lotus`, `persona`, `translation`,
+  `translation_repair` — with `op` **required** on `CompleteOpts`, so a tenth call site
+  cannot ship unattributed. `metered()` records the six buffered sites at one chokepoint
+  with no caller edits; the three streaming sites are threaded by hand.
+  `callClass.test.ts` asserts the `op` at all nine, in both directions.
+- **`src/lib/llm/prices.ts` — PURE, zero imports, hand-maintained, with a 365-day
+  tripwire.** Tokens are stored and **cost is computed at read time** from a committed,
+  versioned table, so a price change never rewrites history. `NOTIONAL_MODEL` is `null`
+  today and an unknown model prices `null`, never zero.
+- **The aggregation layer, and it renders nothing (A3).** `src/lib/analytics/series.ts`
+  (PURE, zero imports: bucket keys, day enumeration, zero-fill, `MAX_RANGE_DAYS`),
+  `forecast.ts` (PURE: OLS, a T95 residual band, `crossing()`, `MIN_FORECAST_DAYS = 14`),
+  and `rollup.ts` for the pure folds — **which live outside `queries/**` because
+  `queries/contract.test.ts` enforces handle-first on every export there and a pure fold
+  has no handle** (R22; the same wall W3 hit with the Lotus cache and W5 with
+  `windowBounds`). Then `queries/admin/{metrics,users,rollup,timeout}.ts`: ten fleet-wide
+  metrics, per-user aggregates, and one eight-statement composite so the page that wakes
+  a suspended Neon compute does it once.
+- **`withAdminRead` — every admin read runs in a read-only transaction**, in
+  `queries/admin/timeout.ts`, with its own savepoint (see *Fixed*).
+- **A chart system with no charting library and no new dependency (A4).**
+  `src/theme/chart.ts` (PURE, one import so two identities are compiler-enforced:
+  `CHART_SURFACE === color.bgRadial[1]` and `DIVERGING.mid === color.label`), the
+  `tokens.css` mirror, `chart.palette.test.ts`, and `src/components/chart/**` —
+  fourteen files, **exactly one `'use client'`**. The architecture is the decision
+  everything falls out of: **paths and polygons in SVG, everything with an intrinsic
+  size in HTML/CSS**, because a uniformly-scaled `viewBox` scales the things whose
+  specification *is* a pixel count — an 11px tick renders at 14–23px, a 24px bar cap
+  becomes 31–50px, and **there is no `vector-effect` for a radius**. So `tickPx` is one
+  constant, and loop 4 measures it as `[11]` at 320, 360, 390 and 1200.
+- **`/admin` and `/admin/tokens`** — the KPI row, the hero figure, the trajectory with
+  its band, per-op and per-model breakdowns, a fuel gauge against the rolling five-hour
+  ceiling, and a cache-hit rate. **Every chart has a table view, every ≥2-series chart
+  has a legend and no 1-series chart does, and colour follows the entity under
+  filtering** rather than the slot. `RangeFilter` is a **server** `<form method="get">`:
+  a range change is a navigation.
+- **`/admin/users` and `/admin/users/[id]` — fourteen sections holding everything (A5).**
+  Identity, facts, the six answers, the Lotus, the persona, readings with their cards and
+  their generation cost, summaries, verdicts, translations, share links, the moderation
+  history, the event stream, and the subject's own access log. Four audited API routes,
+  including `GET /api/admin/users/[id]/reading/[readingId]` — **`resource =
+  'reading_body'` was declared with no route that could ever write it, and a dead audit
+  value reads as a capability that exists** (R28).
+- **`AdminReadingDetail`, which is deliberately not `ReadingView` (R27).** The admin page
+  needs `status`, `model`, `prompt_version`, tokens, `total_ms`, `session_id` and
+  `shared_at`, and **adding any of those to `ReadingViewProps` puts operator-only fields
+  on the component that renders `/s/<slug>` to strangers** — a props type carrying
+  `session_id` is one spread away from a public RSC payload. It keeps the two rules worth
+  keeping: `lang` on the body, none on `choice`, and cards assigned into a sparse array
+  by `position`.
+- **A blog CMS: `blog_posts` + `blog_post_locales` (migration `0011`), a structured block
+  editor, and `/admin/blog/**` (A6).** Create, edit, publish and unpublish an article
+  without a deploy. `src/lib/content/lint.ts` is PURE with **three** callers, not the
+  two the roadmap costed (R43) — the Malay list runs against the `id` half only and the
+  English tic list against the `en` half only, because **running the Malay words against
+  English is theatre**. A zod body schema guards the `Block` union, `link.path` with an
+  `/en/` prefix is refused on save, and `scripts/blog-import.ts` (`npm run blog:import`)
+  moves the four committed documents in.
+- **An auto-translate button on the editor that fills the form and stores nothing.** It
+  is in tension with `## Localization` rule 3 — the English is rewritten, not translated
+  — and **what resolves it is where the output goes**: `POST /api/admin/blog` is still
+  the only writer, so machine output passes the same parse, the same lint and the same
+  resolution as a hand-typed save. **The model never sees the structure**, so it cannot
+  invent a sixth kind, drop a `heading.id` or translate a `link.path`: the document is
+  flattened to a numbered list of human-readable strings and rebuilt positionally, and
+  `parseSegments` reads the **declared** number, so a dropped segment is a hole and
+  therefore a refusal. The round trip is the test —
+  `applySegments(doc, extractSegments(doc))` deep-equals `doc` on every shape the union
+  can take and on all four committed articles.
+- **Five model-call kill switches, in `src/lib/llm/flags.ts` (a LEAF: env only, zero
+  imports).** `GIST_ENABLED`, `FREQUENCY_VERDICT_ENABLED`, `DAILY_SUMMARY_ENABLED`,
+  `PERSONA_GENERATION_ENABLED`, `LOTUS_GENERATION_ENABLED`, all on
+  `ANALYTICS_ENABLED`'s rule: only the literal `'0'` disables, so a typo cannot switch a
+  feature off by accident. **Every flag gates the model call, never the cached read** —
+  off means *write nothing new*, never *hide what exists*. `docs/DEPLOY-VERCEL.md` §2d
+  is the runbook and orders them by what to reach for first.
+- **`ScrollTop` and a folder-tab admin nav**, plus `npm run probe:usage` — four live
+  calls answering what the provider actually reports about tokens — and
+  `tools/admin/probe.sh`, the three-identity gate probe.
+- **`/privacy` gains clauses 3.1 and 8.1 in both locales**, written last, from the
+  shipped code: one key per request, no bulk read, no export, the audit row that gates
+  the reveal, and that a question which was *refused* can be read too.
+
+### Changed
+
+- **`SESSION_TTL_HOURS` 24 → 168, and the sign-in control moved onto `/`.** Miftah
+  reported that a signed-in visitor met the landing page instead of the reader picker.
+  **The routing was correct and had been since S-D5** — verified live with a real Auth.js
+  JWE, which renders the picker — and four other hypotheses died on measurement: CDN
+  caching, the two NextAuth instances disagreeing, the `__Secure-` prefix, and cookie
+  chunking. What he hit was **the 24-hour idle timeout, and S-D5 changed what expiry
+  looks like**: it used to be a `/login` form one tap from restored, and it is now a page
+  addressed to a stranger. So seven days, and `SignInForm` on `/` and `/login` rather
+  than a link between them — **one owner, because it owns the consent line** and a second
+  copy is how two surfaces end up naming different documents. The absolute 30-day cap
+  did not move, and `ttl.ts`'s header now records the three things the wider window
+  widens: a stolen cookie, **admin revocation** (`requireAdmin()` reads the session
+  token, not `users.deleted_at`), and erasure on a second device.
+- **`readings.token_input` / `token_output` stay, and `llm_calls` is the ledger beside
+  them** (A-D17). Two mechanisms, no third, and `tokenLedgerDrift` compares them with
+  `IS DISTINCT FROM` — **`!=` can never fail against a NULL**, which is the state that
+  matters (R15).
+- **The closed event taxonomy grows 67 → 70**, A1 owning it for this release, and
+  `admin.page_viewed` reports a **template name from a closed list**, never a resolved
+  path: a uuid in `events.props` on `/admin/users/<uuid>` would outlive that subject's
+  erasure (R32). `usePathname()` is banned across the whole `/admin` tree and
+  `adminSurface.test.ts` enforces it, so each page names its own tab one line from where
+  it already names its own template.
+- **Admin copy is Indonesian, hardcoded, and never in the i18n catalog** (A-D12), with
+  ~150 strings in `src/app/admin/users/copy.ts` alone. The rule stands on the grep
+  (R33): nothing under `/admin` may call `t()`, and two fences assert it by name so they
+  cannot disagree about one rule.
+- **The four admin nav pages lost their `<h1>` to the tab row — hidden, not deleted.**
+  Every one was a character-for-character copy of its own nav label, so each page said
+  its name twice and marked it zero times. The separating hairline detours up and around
+  the active tab, the titles are `srOnly` because a page with no level-1 heading leaves a
+  screen-reader operator with no *where am I*, and `aria-current="page"` is the other
+  half of the highlight. Where a title said something a tab cannot — the subject's email,
+  the blog slug, *Tulisan baru* — it is demoted to a line rather than hidden.
+- **`sitemap.ts` stops being a full leaf, and exactly one half of the rule bent** (R39,
+  the roadmap's largest single omission: A-D15 made this file's contents a query result
+  while a committed test forbade the import that would make it one). *Must not acquire
+  the message catalog, the auth stack or the share subsystem* is **fully intact**; *must
+  never 500* is now **preserved by a catch rather than by an absence**. There is exactly
+  one database import, named in the test's allowlist, so a second one fails. The
+  asymmetry with the pages is the point: **an outage costs the blog rows and never the
+  file**, while `/blog/<slug>` lets a driver error propagate, because a 404 on an
+  indexable URL is a de-indexing event and a 500 is a retry.
+- **`ReadingUsage.inputTokens` is the total, cache reads included**, and
+  `cachedInputTokens` is a breakdown of it, never a sibling to add. **The two wire
+  formats are opposite and each adapter converts itself**: Anthropic's `input_tokens`
+  excludes cache reads and is summed, OpenAI's `prompt_tokens` includes them and must
+  not be. Both directions carry a named negative control in the unit tests — the OpenAI
+  one expects `1000`, not `1800`, and is what fails when somebody later makes the
+  adapters "consistent".
+- **`llm_calls.cache_read_tokens` has three meaningful states** (migration `0012`): NULL
+  (nothing reported), `0` (reported, nothing cached — **a measurement**) and `> 0` (a
+  hit). The cache-hit rate is rated over `sum(input_tokens) filter (where
+  cache_read_tokens is not null)` and never over total input; deleting the filter clause
+  fails the integration test with `expected 6000 to be 1000`.
+- **`npm run smoke` and `npm run probe:moderation` now set `ANALYTICS_ENABLED=0`**, so a
+  smoke run cannot write ledger rows into whatever database the shell happens to point
+  at.
+- **The five kill switches are `1` in Production and Preview, set rather than left
+  unset** — a switch nobody can find is not a switch — and `1` rather than `true`,
+  because only `'0'` disables and a row reading `true` invites `false`, which does
+  nothing and reports nothing. **Vercel injects at build time**, so a `0` does not reach
+  a lambda that is already running: save, then redeploy.
+- **`CLAUDE.md` grew 102k → 109k** and stayed under the 150k ceiling by its own
+  convention: the rules and the invariants here, the evidence and the measurements in
+  `docs/workstream-notes.md`, which gained six workstream sections and three postmortems.
+- **`resetDb()`'s TRUNCATE list learned the four new tables** (R7 — §6 omitted it), and
+  `llm_calls` joined the nightly sweep with a 400-day retention, `LLM_CALLS_RETENTION_DAYS`.
+  **The binding input is Neon's 0.5 GB, not the row rate** (R19).
+
+### Fixed
+
+- **`input_tokens` were on the wire the whole time, in an event the adapter had already
+  opened.** `anthropic.ts` read them from `message_start`, where `usage` is a placeholder
+  sent *before the prompt has been counted* and is always `{input_tokens: 0,
+  output_tokens: 0}`; the real figures arrive in the final `message_delta` — the event
+  the adapter already parsed to read `output_tokens` from. Measured on `glm-4.6`: a fresh
+  prompt reports 1935/0 cached, the same prompt re-sent reports 15 with 1920 cached, and
+  `15 + 1920 = 1935`. **z.ai honours prompt caching**, which three files and CLAUDE.md
+  denied, and there is a minimum cacheable length — an 81-token prompt caches nothing.
+  **The buffered path was never broken**, which is why this survived a release: half the
+  ledger looked plausible, so the other half read as a provider limitation rather than as
+  a defect. The refutation was even in the notes — W4's own entry said *"the buffered
+  path does report input tokens — variably"* — written down and never followed up.
+- **`admin_access_log.admin_user_id` was `NOT NULL` with an `on delete set null` FK, and
+  that combination aborts the hard delete of any user an admin had ever read about**
+  (R3). `/privacy` clause 8's erasure promise failing for exactly the population most
+  likely to invoke it, visible only in a cron log. Reproduced on a scratch table against
+  the real Postgres 16: **the `23502` names the audit table and its column, never the
+  `delete from users` that triggered it** — the general shape being that an
+  `ON DELETE SET NULL` cascade reports the constraint it violated, never the delete
+  behind it. Both FK columns are nullable now, and the first two cases in
+  `audit.integration.test.ts` fail against the roadmap's literal schema.
+- **The chart palette was validated against a surface `Backdrop` does not paint** (R8,
+  the release's closest call). `#a3423a` measures **2.66:1** against the `#221a3a` at the
+  top of the viewport versus **3.04:1** on an opaque panel — below the 3:1 mark floor —
+  and a test written from the roadmap's §5 would have been green. The chart panel paints
+  `CHART_SURFACE` **opaquely** now, and that is an invariant with the identity
+  compiler-enforced.
+- **`defer()` from inside a deferred job was silently orphaned, and it would have voided
+  a third of the ledger** (R17). `drain()` does `store.deferred.splice(0)` and then
+  iterates the spliced copy; `gist`, `translation_repair` and `frequency` all run there,
+  so **three of nine ops would have recorded nothing, with a green suite**. A2 owns its
+  own buffer, flushed *after* the deferred loop.
+- **`getUserById` filters `isNull(deleted_at)`, so a soft-deleted user was invisible on
+  the admin page that exists to show them** (R29) — and the 30-day restore window would
+  have been invisible with it, as a 404 that reads like a bad id.
+  `adminUserById`/`adminUserList` do not filter, and a soft-deleted user is visible **and
+  labelled**.
+- **`postgres.js` never issues `RELEASE SAVEPOINT`, and that made `withAdminRead` leak.**
+  Its `scope()` emits `savepoint sN` and, on the error path only, `rollback to sN` — on
+  success it simply returns. So a `SET LOCAL` made inside a nested Drizzle transaction
+  persisted to the end of the *outer* one, and the integration suite is one big
+  rolled-back transaction: it went read-only after its first admin read and failed with
+  `cannot execute INSERT in a read-only transaction` on a line nowhere near this file,
+  naming no cause. A psql check said the opposite **because the `RELEASE` was written by
+  hand, which is exactly what the driver does not do** — *a savepoint experiment in psql
+  does not model this driver's nested transactions.* It cannot be undone by setting the
+  GUC back either: that raises an error and **aborts the transaction**, which is worse
+  than the leak. `withAdminRead` opens and releases its own savepoint, with a regression
+  test named for the outcome.
+- **`/admin` rendered a TTFT number under a label reading *"Total waktu panggilan, bukan
+  waktu ke token pertama."*** A3 shipped both halves of the seam and took real trouble
+  over them — two functions, neither called `latency`, each with the warning in its
+  header, plus a test forbidding one chart from plotting both — and then `ServiceShare`'s
+  table borrowed the total-duration tile's copy as the header for `rollup.ttft`'s p95.
+  **Every test passed and no test could have failed:** a label and the provenance of the
+  number beneath it are not comparable by grep. Found by reading the code with the
+  question *"which query does this number come from"*. `ttftByService` grew
+  `group by rollup (service_id)` so the fleet percentile and the three service
+  percentiles come from one predicate — and **`rollup` returns the grand total for an
+  empty input where a plain `group by` returns no rows**, measured before a line was
+  written, so the naive version would have grown a phantom fleet row on any range with no
+  readings.
+- **`nonZero()` was not applied on the buffered path**, so a reported zero and an
+  unreported count were the same row (R16). Two lines in `anthropic.ts`, and A-D17's
+  consistency check depended on it.
+- **`blog.contract.test.ts` failed on the correct implementation** (R40), and
+  `generateStaticParams` + `dynamicParams = false` had to go with the file source (R41).
+  **Publishing `en` first was a 500 on a sitemapped URL** — A-D15 named the unpublish
+  direction and missed its opposite (R42) — and `ContentLocaleLink` linked
+  `/en/blog/<slug>` unconditionally, whether or not an English row existed (R45).
+- **Four `jsonb` round-trip hashes differed on documents nothing had touched.** Postgres
+  parses `jsonb`, **normalises object key order** (by key length, then bytewise), drops
+  duplicates and canonicalises numbers, so `JSON.stringify(row.body)` is a different
+  *string* from `JSON.stringify(doc.body)` while being the same *value*. Deep equality
+  holds on all four. This is why the transform's oracle is a unit test with no database
+  on its path and the row-level one is `toEqual` — the hash is the obvious thing to reach
+  for and it is wrong.
+- **The up-arrow's threshold was unreachable on the page whose scrolling was the
+  report.** At 1440×1200 `/admin/users/[id]` is 2774px tall, so its maximum `scrollY` is
+  ~1717 and the 1800 that "1.5 screens" demands never arrives. One viewport now, which
+  still keeps the button off a short form — and `ScrollTop` reads `data-still` itself,
+  because **a JS `scrollTo({ behavior })` overrides CSS `scroll-behavior`** rather than
+  defaulting from it, exactly as `SwipeDeck.module.css` predicted by name.
+- **Auto-translate's confirmation fired on an empty form**, because `formHasContent`
+  looked for letters in stripped JSON and a new empty paragraph's remaining `"text"`
+  *keys* are letters — **a dialog that always fires is the one people click through**,
+  which is the opposite of the ask. It uses `extractSegments` now. The heading also read
+  *"dari bahasa Inggris"* on the English tab, and `Batal` had no CSS rule at all, so a
+  cancel that did not look pressable made a confirmation with one option.
+- **`tools/e2e/run.sh whoami` reported "signed IN" while driving production, from a
+  cookie scoped to `localhost`.** It matched `authjs.session-token` across every domain
+  with no origin filter, and it cost the session investigation its first wrong turn. It
+  is origin-scoped now and names the domain.
+- **Three admin-nav rendering defects invisible at a glance**, found with an 8× crop of
+  real 1× pixels: `position: absolute` insets resolve against the **padding** box, so
+  every rule slice fell 1px short at both ends and the hairline was broken between every
+  pair of tabs; each fillet landed beside a tab's border instead of on it; and the rule
+  stopped dead after the last tab.
+
+### Removed
+
+- **`AUTH_USERS` is deleted from Vercel.** Checked before deleting: its only reader is
+  inside the `DEV_PASSWORD_LOGIN`-gated provider, already wrapped in a `try`/`catch` that
+  returns `null`, so its absence cannot reach production.
+- **`/api/admin/metrics/[metric]` is deleted from the route table** (R21) — never built,
+  and a route in a table nobody implements reads as a capability.
+- **`generateStaticParams` and `dynamicParams = false` on `/blog/[slug]`**, and nothing
+  is lost (R41): the rows are the source now, and a draft's URL must 404 rather than
+  resolve from a build-time list.
+- **The disclaimer under *About You*.** `common.disclaimer.short` stays in the catalog —
+  five other surfaces render it — and only the account page's copy goes, with the
+  `.disclaimer` rule that had exactly one consumer. The invariant is *under every reading
+  and on both pickers*, and `/account` crosses neither.
+- **`llm_calls.status` is four values; `'refused'` is struck** (R4), and there is no
+  `updated_at` on a fact table.
+- **No tokenizer, and no backfill.** Every streamed row before 2026-07-30 keeps NULL
+  input tokens: that is the honest record of when this app started measuring.
+
+### Security
+
+- **`/admin` answers 404 to a non-admin, never 403** (A-D2). A 403 confirms the surface
+  exists; a 404 does not — **and a 405 confirms it just as surely**, which is why all six
+  admin API routes were closed against the wrong-method leak that A6 found on them.
+- **Full PII access, one key per request, every reveal audited** (A-D16). Nothing bulk:
+  no CSV, no JSON dump, no *download all users*. The list payload carries **no `body`,
+  no `gist` and no decrypted answer**, asserted on the returned object (`'body' in item`
+  is false, the V6 precedent), and the binding reason is VD8 rather than bytes.
+  `queries/admin/moderation.ts` is **the one decrypt site** for
+  `moderation_flags.question`, redacted flags render as redacted, and no path un-redacts.
+- **`/admin` is not a write surface over querent data.** An admin may not edit a reading,
+  a profile, an answer or a persona: there is no honest UI for *we changed what you
+  said*, and the `input_hash` mechanisms behind the Lotus and the persona would silently
+  disagree with the rows they were built from. The only admin writes are blog rows and
+  the audit log.
+- **`/privacy` needed five clauses amended, not the two A-D16 named** (R31), and each of
+  the three it missed is a sentence a reader would call a lie: clause 4's *"three
+  parties, and no others"*, clause 5's honest-limit paragraph — there is now a second
+  limit, and that is the worst place to omit one — and clause 6's retention list, which
+  had no row for a table the sweep is forbidden to touch, so its honest row reads *kept
+  indefinitely*. **No anchor was renumbered**: `/privacy` §4.4 is cited by name in
+  `middleware.ts`, and `legal.test.ts`'s pre-existing anchor-set equality is what makes
+  "both locales" mechanical.
+- **`ADMIN_EMAILS` is Production-only and must not be set on Preview** (R37) — a ruling
+  nobody had made. Preview serves `/admin` over production data.
+- **The reading and the translation get no kill switch, and `flagCoverage.test.ts`
+  asserts the absence by name** — plus that the set of model call sites is **exactly** its
+  two tables, so a tenth site cannot quietly ship unswitchable. A reading is the product
+  and a translation is the bug V2 exists to prevent; the honest tool there is a
+  maintenance page. The moderation classifier is exempt for the opposite reason: it
+  already has `MODERATION_CLASSIFIER_ENABLED`, in `gate.ts`, named there so it cannot
+  read as *moderation off*.
+- **`LOTUS_GENERATION_ENABLED=0` writes nothing; `PERSONA_GENERATION_ENABLED=0` stores
+  the template. The asymmetry is a fact about the two hashes and must not be "tidied".**
+  `lotusInputHash` is the birth year plus the six answers and **never moves again**, so a
+  stored fallback matches its own hash forever — every querent who onboarded during the
+  outage would feed a template into every reading they ever take, after the flag went
+  back to `1`, silently. `personaInputHash` ends with `readings:<ids>`, so it moves on the
+  next reading and heals, and it must write because `/api/persona`'s no-row branch 500s
+  otherwise. Persona also **never overwrites an existing paragraph**, which is the whole
+  difference between a kill switch and a data-degrading one.
+- **`reason: 'disabled'` is not `'unchanged'`, and `persona.generated` stays silent for
+  it** — the `drift` branch calls the generator on every `/account` view, so emitting the
+  event would inflate exactly the metric an operator scans to confirm the flag worked.
+- **The audit trail records the admin, the subject, the resource and the time, and both
+  FK columns are nullable** so neither party's erasure can be blocked by it.
+
+### Known gaps at this tag
+
+- **Nothing here has been deployed.** Four migrations, three of them new tables, are
+  committed and unapplied in production — which is the exact shape of the worst outage
+  this project has had. `npm run build` runs the deploy migration first and fails rather
+  than skipping, so the rail is there; **`ADMIN_EMAILS` and `LLM_CALLS_RETENTION_DAYS`
+  still have to be set, and the five switches redeployed to take effect.**
+- **`src/content/blog/**` is still committed and is no longer the source.** Task 26 is
+  deliberately not done: the plan gates the deletion on the import having run in
+  production. Until then two representations of four articles exist, and the rows are the
+  one that renders.
+- **Nobody has read this dashboard on a screen** — §0.5 of the roadmap, undischarged, and
+  R8 is the evidence that a surface question cannot be answered from a plan. Loop 3 at
+  1440px ran for the nav and the up-arrow; it has not run over the whole overview.
+- **`drain()`'s orphaning is worked around, not fixed** (R17). The next `defer()` from
+  inside a deferred job hits it.
+- **The audit trail has deliberately no `resource` value for the user LIST page.** Fifty
+  audit rows per page load would make the audit panel unreadable, so a list view writes
+  none — **recorded as a stated gap for subject-access answers**, and it is the one place
+  this release's audit is incomplete on purpose.
+- **A per-reading total cost including moderation is not answerable** (R51). The
+  classifier runs *before* the `readings` row exists, so it can never carry a
+  `reading_id`; the figure on the page is *biaya generasi*, and it says so.
+- **`llm_calls` retention is a calculation, not a measurement** (R19) — 400 days at
+  ~1,000 calls/day is ~180 MB of a 0.5 GB plan. Revisit at 100 MB. The `readings`
+  fleet-wide `local_date` index is **declared and unbuilt** (R24), the weekday × hour
+  heatmap's Jakarta-pinned axis is a **labelled approximation** (R12), and two calendar
+  systems in one bucket are stated on screen rather than reconciled (R25).
+- **`/api/memory/summary` may be losing `memory.summary_generated` today** (R18).
+  Pre-existing, W5's, and not A2's to fix.
+- **Everything v0.4.0 left open is still open**, and the two that matter most are
+  unchanged: **signing in with Google from a home-screen installed instance** is still
+  the largest unverified risk in the project, and **no public content route is cached in
+  production**, so all eight `next.config.ts` content entries remain inert. The Google
+  consent screen is still in Testing mode; the branding blocker stays closed.
+- **`npm run test:all` still fails ~12–22 of V9's limiter tests** — a harness race on the
+  one shared `serverless-redis-http`, not a regression. `npm test` passes 2835 and
+  `npm run test:integration` passes 478; run the two projects separately for a true
+  answer.
+
 ## [v0.4.0] - 2026-07-29
 
 Six workstreams (S1–S6) planned in `PUBLIC_RELEASE_ROADMAP_v0.4.0.md`, reconciled
@@ -1121,6 +1551,7 @@ app as it now stands. The iOS tree is preserved on `feat/ios` and
 - Two superseded design exports; the Clickable export is the single visual
   reference. Both remain in history at `d7fdd89`.
 
+[v0.5.0]: https://github.com/miftahulmahfuzh/JMTarot/releases/tag/v0.5.0
 [v0.4.0]: https://github.com/miftahulmahfuzh/JMTarot/releases/tag/v0.4.0
 [v0.3.0]: https://github.com/miftahulmahfuzh/JMTarot/releases/tag/v0.3.0
 [v0.2.0]: https://github.com/miftahulmahfuzh/JMTarot/releases/tag/v0.2.0
