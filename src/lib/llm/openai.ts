@@ -44,11 +44,14 @@ import type {
  * 2. **`system` is a message, not a top-level field.**
  * 3. **Usage arrives in a FINAL CHUNK that only appears if you ask**, via
  *    `stream_options: { include_usage: true }`. Without it a streamed reading
- *    reports null tokens forever and `readings.token_output` is empty -- the same
- *    half-blindness z.ai already imposes, except self-inflicted.
- * 4. **`input_tokens` is REAL here**, unlike z.ai's `0`. So `nonZero()` is
- *    deliberately NOT copied over: a genuine zero-token prompt is impossible and
- *    a zero from OpenAI would be a fact worth seeing, not noise worth hiding.
+ *    reports null tokens forever and `readings.token_output` is empty.
+ * 4. **`nonZero()` is deliberately NOT copied over**: a genuine zero-token prompt
+ *    is impossible, so a zero from this provider would be a fact worth seeing
+ *    rather than noise worth hiding.
+ * 5. **THE CACHE ACCOUNTING IS INVERTED RELATIVE TO `anthropic.ts`, AND THIS IS
+ *    THE ONE DIFFERENCE THAT CORRUPTS DATA IF IT IS "TIDIED".** There
+ *    `input_tokens` EXCLUDES cached tokens and the adapter sums; here
+ *    `prompt_tokens` INCLUDES them and summing double-counts. See `OpenAIUsage`.
  */
 
 /**
@@ -237,8 +240,33 @@ async function* sseLines(res: Response): AsyncGenerator<string> {
 
 type Delta = {
   choices?: Array<{ delta?: { content?: string | null }; finish_reason?: string | null }>;
-  usage?: { prompt_tokens?: number | null; completion_tokens?: number | null } | null;
+  usage?: OpenAIUsage;
 };
+
+/**
+ * This wire format's usage object.
+ *
+ * **`prompt_tokens` ALREADY INCLUDES `prompt_tokens_details.cached_tokens`**, which
+ * is the opposite of the Anthropic wire, where `input_tokens` EXCLUDES the cached
+ * half and `anthropic.ts` therefore sums. **Copying that sum into this file reports
+ * 1800 for a 1000-token prompt.** `openai.test.ts` holds the negative control.
+ */
+type OpenAIUsage = {
+  prompt_tokens?: number | null;
+  completion_tokens?: number | null;
+  prompt_tokens_details?: { cached_tokens?: number | null } | null;
+} | null;
+
+/**
+ * The cached subset of `prompt_tokens`, or null when the provider said nothing.
+ *
+ * A reported `0` survives as `0` -- it means "nothing came from cache", which is a
+ * measurement. Only an absent field is null.
+ */
+function cachedTokens(usage: OpenAIUsage | undefined): number | null {
+  const n = usage?.prompt_tokens_details?.cached_tokens;
+  return typeof n === 'number' ? n : null;
+}
 
 /**
  * Models that reason by default, and therefore return NOTHING at this app's
@@ -318,6 +346,7 @@ export function createOpenAIProvider(): LLMProvider {
         // literally true. See the same comment in `anthropic.ts`.
         let inputTokens: number | null = null;
         let outputTokens: number | null = null;
+        let cachedInputTokens: number | null = null;
         let delivered = 0;
         let finish: string | null = null;
 
@@ -351,8 +380,11 @@ export function createOpenAIProvider(): LLMProvider {
             }
 
             if (event.usage) {
+              // NO SUM HERE. `prompt_tokens` is already the total on this wire --
+              // see `OpenAIUsage`, and the negative control in openai.test.ts.
               inputTokens = event.usage.prompt_tokens ?? null;
               outputTokens = event.usage.completion_tokens ?? null;
+              cachedInputTokens = cachedTokens(event.usage);
             }
 
             finish = event.choices?.[0]?.finish_reason ?? finish;
@@ -381,7 +413,7 @@ export function createOpenAIProvider(): LLMProvider {
            * ANALYTICS_STREAM_TIMEOUT_MS for every failed or abandoned reading.
            * Resolving, never rejecting: nothing awaits this on the hot path.
            */
-          resolveUsage({ inputTokens, outputTokens });
+          resolveUsage({ inputTokens, outputTokens, cachedInputTokens });
         }
       }
 
@@ -406,7 +438,7 @@ export function createOpenAIProvider(): LLMProvider {
 
       const json = (await res.json()) as {
         choices?: Array<{ message?: { content?: string | null } }>;
-        usage?: { prompt_tokens?: number | null; completion_tokens?: number | null };
+        usage?: OpenAIUsage;
       };
 
       return {
@@ -414,6 +446,7 @@ export function createOpenAIProvider(): LLMProvider {
         usage: {
           inputTokens: json.usage?.prompt_tokens ?? null,
           outputTokens: json.usage?.completion_tokens ?? null,
+          cachedInputTokens: cachedTokens(json.usage),
         },
       };
     },

@@ -40,6 +40,8 @@ const tokenRow = (bucket: string, model: string, over: Partial<TokenRow> = {}): 
   outputTokens: 0,
   nullInputCalls: 0,
   nullOutputCalls: 0,
+  cacheReadTokens: 0,
+  cachedBasisTokens: 0,
   ...over,
 });
 
@@ -116,7 +118,7 @@ describe('callSeries / localCallSeries / tail', () => {
   });
 });
 
-describe('tokenSeries -- folds ACROSS models and carries the half-blindness through', () => {
+describe('tokenSeries -- folds ACROSS models and carries the unmeasured counts through', () => {
   it('sums two models on one day into one column', () => {
     /*
      * A3 groups by `(day, model)` because **a single `sum(output_tokens)` for a day that
@@ -132,12 +134,49 @@ describe('tokenSeries -- folds ACROSS models and carries the half-blindness thro
     expect(s.output).toEqual([207]);
   });
 
+  it('RATES THE CACHE OVER MEASURED ROWS ONLY, never over every row', () => {
+    /*
+     * **THE DENOMINATOR IS THE WHOLE TEST.** `cache_read_tokens` is NULL for every
+     * streamed row written before 2026-07-30 and for every call that failed before
+     * reporting usage, and those rows still carry `input_tokens` on the buffered path.
+     * Dividing the cache sum by TOTAL input would silently mix a measured numerator
+     * with an unmeasurable denominator and report a rate that only ever falls.
+     *
+     * Here: one measured day of 1000 input with 900 cached, plus 5000 input tokens
+     * from rows that reported no cache information at all. The rate is 90%, not 15%.
+     */
+    const rows = [
+      tokenRow('2026-07-30', 'a', {
+        inputTokens: 1000,
+        cacheReadTokens: 900,
+        cachedBasisTokens: 1000,
+      }),
+      tokenRow('2026-07-30', 'b', {
+        inputTokens: 5000,
+        cacheReadTokens: 0,
+        cachedBasisTokens: 0,
+      }),
+    ];
+    const s = tokenSeries(rows, '2026-07-30', '2026-07-30');
+    expect(s.cacheReadTokens).toBe(900);
+    expect(s.cachedBasisTokens).toBe(1000);
+    // And the input series still carries everything, because that chart is about volume.
+    expect(s.input).toEqual([6000]);
+  });
+
+  it('has NO cache rate at all when nothing was measured, rather than 0%', () => {
+    // A range entirely before the fix. `null` renders as an empty state; `0` would
+    // read as "caching is not working", which is a different and wrong claim.
+    const rows = [tokenRow('2026-07-30', 'a', { inputTokens: 5000 })];
+    const s = tokenSeries(rows, '2026-07-30', '2026-07-30');
+    expect(s.cachedBasisTokens).toBe(0);
+  });
+
   it('SUMS the null-token counts rather than losing them in the fold', () => {
     /*
-     * z.ai returns `input_tokens: 0`, which both adapters store as NULL, so on the current
-     * provider this count is nearly every row and `input_tokens` is structurally half-blind.
-     * **A token chart that does not carry the null count invites the reader to conclude the
-     * app has no prompt cost.**
+     * A token chart that does not carry the null count invites the reader to conclude
+     * the app has no prompt cost. The count is no longer near-total -- see the header
+     * of `tokensByBucketAndModel` -- but it is still the honest denominator.
      */
     const rows = [
       tokenRow('2026-07-30', 'a', { nullInputCalls: 3, nullOutputCalls: 1 }),

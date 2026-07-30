@@ -43,6 +43,7 @@ import { ChartFrame } from '@/components/chart/ChartFrame';
 import { ChartHover } from '@/components/chart/ChartHover';
 import { Heatmap } from '@/components/chart/Heatmap';
 import { Line } from '@/components/chart/Line';
+import { StatTile } from '@/components/chart/StatTile';
 import { Trajectory } from '@/components/chart/Trajectory';
 import { domainMax, niceTicks, tickIndices } from '@/components/chart/geometry';
 import type { Readout, TableSpec } from '@/components/chart/types';
@@ -143,6 +144,7 @@ async function Body({ parsed }: { parsed: ParsedRange }) {
       <div className={styles.wide}>
         <InputVsOutput series={series} />
       </div>
+      <CacheHitRate series={series} />
       <div className={styles.wide}>
         <TrajectoryCard utc={utc} peakCalls={peak?.calls ?? null} days={parsed.days} />
       </div>
@@ -161,10 +163,18 @@ async function Body({ parsed }: { parsed: ParsedRange }) {
  * the case where two series on one scale is correct -- and `Line` takes a single `yMax`, so
  * there is no shape in which a second scale could arrive.
  *
- * The null-token count rides in the footnote rather than being hidden, because on the current
- * provider `input_tokens` is NULL for very nearly every row: z.ai reports `0` and both adapters
- * store NULL (A2 fixed the asymmetry under R16). **A reader who is not told that will conclude
- * the app has no prompt cost.**
+ * The null-token count rides in the footnote rather than being hidden, because **a reader who
+ * is not told what a series could not see will conclude it is complete.**
+ *
+ * **THAT FOOTNOTE USED TO BLAME THE PROVIDER AND IT WAS WRONG** (corrected 2026-07-30). It
+ * said `input_tokens` was NULL for very nearly every row because z.ai reports `0`; in fact
+ * `anthropic.ts` read the count from `message_start`, where that wire always sends `0`, while
+ * the real figure arrived in `message_delta`. The count stays on screen — it is still the
+ * honest denominator — but it now reads as ordinary rather than as structural.
+ *
+ * **Rows before that date keep NULL and there is no backfill**, so a range spanning it mixes
+ * two measurements. `CacheHitRate` below solves the same problem for its own denominator, in
+ * the only way that works: by counting only the rows that were measured.
  */
 function InputVsOutput({ series }: { series: ReturnType<typeof tokenSeries> }) {
   const chartSeries = [
@@ -219,6 +229,40 @@ function InputVsOutput({ series }: { series: ReturnType<typeof tokenSeries> }) {
         />
       </PlotFrame>
     </ChartFrame>
+  );
+}
+
+/**
+ * **How much of the prompt the provider served from its own cache.**
+ *
+ * ── THE DENOMINATOR IS THE ONLY INTERESTING THING HERE ───────────────────────
+ *
+ * `cachedBasisTokens`, not `totalInput`. `cache_read_tokens` is NULL for every
+ * streamed row written before 2026-07-30 and for every call that died before
+ * reporting usage -- and many of those rows carry a real `input_tokens`, because the
+ * buffered path was never broken. Rating against total input would put a measured
+ * numerator over an unmeasurable denominator and print a figure that only ever falls.
+ *
+ * **AND A RANGE WITH NOTHING MEASURED GETS AN EMPTY STATE, NEVER 0%.** "No calls
+ * reported a cache figure" and "caching is not working" are different claims, and an
+ * operator would act on the second one.
+ *
+ * Worth a tile at all because a prompt-layer edit can destroy cache locality while
+ * the token chart barely moves -- and on a per-token provider that is most of the
+ * input bill.
+ */
+function CacheHitRate({ series }: { series: ReturnType<typeof tokenSeries> }) {
+  const measured = series.cachedBasisTokens > 0;
+  return (
+    <StatTile
+      label={TOKENS.cacheTitle}
+      value={measured ? pct(series.cacheReadTokens / series.cachedBasisTokens) : COMMON.emptyCell}
+      note={
+        measured
+          ? TOKENS.cacheBasis(compact(series.cachedBasisTokens))
+          : TOKENS.cacheUnmeasured
+      }
+    />
   );
 }
 

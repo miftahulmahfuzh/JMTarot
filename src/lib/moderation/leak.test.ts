@@ -173,7 +173,7 @@ describe('the gate', () => {
         throw providerError();
       }
       return Object.assign(iterate(), {
-        usage: Promise.resolve({ inputTokens: null, outputTokens: null }),
+        usage: Promise.resolve({ inputTokens: null, outputTokens: null, cachedInputTokens: null }),
       });
     };
 

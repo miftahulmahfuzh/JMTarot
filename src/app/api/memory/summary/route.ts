@@ -352,6 +352,7 @@ async function generate(args: {
         ...snapshot,
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,
+        cacheReadTokens: usage.cachedInputTokens,
       }),
     );
 

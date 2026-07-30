@@ -11,12 +11,16 @@ import { describe, expect, it, vi } from 'vitest';
 import { USAGE_TIMEOUT_MS, resolvedModel, usageOrNulls } from './ledger';
 import type { ReadingUsage } from './types';
 
-const NULLS: ReadingUsage = { inputTokens: null, outputTokens: null };
+const NULLS: ReadingUsage = { inputTokens: null, outputTokens: null, cachedInputTokens: null };
 
 describe('usageOrNulls', () => {
   it('returns the counts when the provider settles in time', async () => {
-    const usage = Promise.resolve({ inputTokens: 1200, outputTokens: 340 });
-    expect(await usageOrNulls(usage)).toEqual({ inputTokens: 1200, outputTokens: 340 });
+    const usage = Promise.resolve({ inputTokens: 1200, outputTokens: 340, cachedInputTokens: 900 });
+    expect(await usageOrNulls(usage)).toEqual({
+      inputTokens: 1200,
+      outputTokens: 340,
+      cachedInputTokens: 900,
+    });
   });
 
   it('gives up with NULLS rather than hanging, and does not reject', async () => {
@@ -45,7 +49,7 @@ describe('usageOrNulls', () => {
   it('clears its timer, so a settled call leaves nothing pending', async () => {
     vi.useFakeTimers();
     try {
-      await usageOrNulls(Promise.resolve({ inputTokens: 5, outputTokens: 5 }));
+      await usageOrNulls(Promise.resolve({ inputTokens: 5, outputTokens: 5, cachedInputTokens: 0 }));
       // A leaked 2000ms timer per model call keeps a serverless invocation alive for
       // no reason, which is the whole thing the bound exists to prevent.
       expect(vi.getTimerCount()).toBe(0);

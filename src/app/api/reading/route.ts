@@ -766,6 +766,7 @@ export async function POST(request: Request) {
         errorKind: outcome.errorKind,
         inputTokens: outcome.usage.inputTokens,
         outputTokens: outcome.usage.outputTokens,
+        cacheReadTokens: outcome.usage.cachedInputTokens,
         totalMs: Math.round(performance.now() - modelStartedAt),
       });
 
@@ -864,7 +865,7 @@ function streamTimeout(): Promise<ReadingOutcome> {
           firstTokenMs: null,
           totalMs: STREAM_TIMEOUT_MS,
           chars: 0,
-          usage: { inputTokens: null, outputTokens: null },
+          usage: { inputTokens: null, outputTokens: null, cachedInputTokens: null },
           errorKind: 'stream_timeout',
         }),
       STREAM_TIMEOUT_MS,

@@ -56,6 +56,8 @@ npm run build        # DO NOT SKIP -- see the TypeScript trap. Since 2026-07-28 
                      # ALSO applies migrations, but only on Vercel: locally it skips
                      # and touches no database.
 npm run smoke        # one live LLM call: is the key/baseURL/model right?
+npm run probe:usage  # FOUR live calls: what does the provider report about TOKENS?
+                     # Run after ANY provider/model/baseURL/SDK change. See Traps.
 npm run smoke -- --all   # EIGHTEEN readings: 2 locales x 3 readers x 3 services
 npm run smoke -- --all --locale en   # nine, one locale, for iterating
 npm run smoke -- --lotus # one real Lotus distillation, end to end. READ IT.
@@ -255,6 +257,28 @@ not here.**
   off-Vercel on the `VERCEL` guard, not `NODE_ENV`. **Two things it does NOT fix:** concurrent
   builds could both apply one migration (drizzle takes no advisory lock), and a *destructive*
   migration still deploys ahead of the code that tolerates it.
+
+- **A PROVIDER FACT THIS REPO ASSERTS IN PROSE AND CANNOT RE-RUN WILL ROT, AND ONE DID FOR A
+  WHOLE RELEASE.** Twelve places said *"z.ai reports `input_tokens: 0` and honours no
+  caching"*. Both halves were false: `anthropic.ts` read the count from `message_start`, which
+  is a placeholder sent before the prompt is counted, while the real figures arrived in
+  `message_delta` — the event the adapter already opened to read `output_tokens` from. **The
+  buffered path was never affected, so half the ledger looked plausible and the other half read
+  as a provider limitation.** It nearly cost a tokenizer dependency to estimate numbers already
+  on the wire. **`npm run probe:usage` before believing any claim here about what a provider
+  reports**, and after any change to `LLM_PROVIDER`, `LLM_MODEL`, a base URL or the SDK.
+  - **`ReadingUsage.inputTokens` IS THE TOTAL, CACHE READS INCLUDED**, and
+    `cachedInputTokens` is a breakdown of it, never a sibling to add.
+  - **THE TWO WIRE FORMATS ARE OPPOSITE AND EACH ADAPTER CONVERTS ITSELF.** Anthropic's
+    `input_tokens` EXCLUDES cache reads, so `anthropic.ts` sums; OpenAI's `prompt_tokens`
+    INCLUDES them, so `openai.ts` must not. *"Make the adapters consistent"* silently doubles
+    one provider's input numbers; `usage.test.ts` and `openai.test.ts` hold a negative control
+    each.
+  - **`cache_read_tokens` HAS THREE STATES AND `0` IS A MEASUREMENT** — reported, nothing
+    cached — where NULL means nothing was reported. Rate the cache only over rows where it is
+    NOT NULL, or the figure halves across the 2026-07-30 deploy and reads as a regression.
+  - **NO BACKFILL: any average over `input_tokens` spanning 2026-07-30 is two different
+    measurements.** The full account is in `docs/workstream-notes.md`.
 
 - **FRAMEWORK BEHAVIOUR IS MEASURED HERE, NEVER RECALLED.** Two agents produced two confident,
   mutually exclusive, both-wrong answers about React's escaping of a `<script>` text child.

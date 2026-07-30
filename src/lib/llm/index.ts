@@ -147,6 +147,7 @@ function metered(provider: LLMProvider): LLMProvider {
           errorKind: null,
           inputTokens: result.usage.inputTokens,
           outputTokens: result.usage.outputTokens,
+          cacheReadTokens: result.usage.cachedInputTokens,
           totalMs: Math.round(performance.now() - startedAt),
         });
         return result;
@@ -165,9 +166,11 @@ function metered(provider: LLMProvider): LLMProvider {
           status: 'failed',
           errorKind: classifyStreamError(err),
           // NULL rather than 0: nothing was reported, and the tokens the provider may
-          // have charged for are not knowable from here.
+          // have charged for are not knowable from here. That applies to the cache
+          // split too -- a failed call did not measure a miss, it measured nothing.
           inputTokens: null,
           outputTokens: null,
+          cacheReadTokens: null,
           totalMs: Math.round(performance.now() - startedAt),
         });
         /*

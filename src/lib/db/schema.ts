@@ -1197,12 +1197,45 @@ export const llmCalls = pgTable(
     streamed: boolean('streamed').notNull(),
     /**
      * **NULL, NEVER 0, WHEN THE PROVIDER REPORTS NOTHING** -- on the buffered path
-     * too, which is what A2-D5 fixed in `anthropic.ts`. z.ai reports
-     * `input_tokens: 0`, and a literal zero here is indistinguishable from a real
-     * zero in a dump and makes every average silently wrong.
+     * too, which is what A2-D5 fixed in `anthropic.ts`. A literal zero here is
+     * indistinguishable from a real zero in a dump and makes every average
+     * silently wrong.
+     *
+     * **`input_tokens` IS THE TOTAL, `cache_read_tokens` INCLUDED. NEVER ADD THEM.**
+     *
+     * **AND IT IS NULL FOR EVERY STREAMED ROW WRITTEN BEFORE 2026-07-30**, which
+     * is not a data-quality problem to be backfilled but the record of when this
+     * app started measuring. `anthropic.ts` read the count from `message_start`,
+     * where this wire always reports 0, so readings, day summaries and streamed
+     * translations stored nothing while moderation, gist, lotus and persona --
+     * all buffered -- stored real numbers throughout. **Any average over
+     * `input_tokens` spanning that date is two different measurements.**
      */
     inputTokens: integer('input_tokens'),
     outputTokens: integer('output_tokens'),
+    /**
+     * The cached subset of `input_tokens`. **THREE STATES, ALL MEANINGFUL.**
+     *
+     *   - `NULL`  -- nothing was reported: a timeout, a dead stream, or a provider
+     *                that does not report caching.
+     *   - `0`     -- usage WAS reported and nothing came from cache. A measurement.
+     *   - `> 0`   -- a cache hit of that size.
+     *
+     * **THE `0` IS THE POINT AND IT DIFFERS FROM `input_tokens`'s RULE**, where a
+     * reported zero becomes NULL because a prompt cannot really cost nothing. A
+     * cache-hit rate computed over "rows that happened to have a number" would
+     * exclude every genuine miss and read near 100%.
+     *
+     * Worth watching because a prompt-layer change can destroy cache locality
+     * without moving the token chart at all -- and on a per-token provider a cache
+     * read is billed at a fraction of a fresh one, so the split is what makes
+     * `notionalUsd()` honest. Measured on z.ai 2026-07-30: 1344 of a 1364-token
+     * prompt came from cache on the second send.
+     *
+     * No index: it is only ever summed beside `input_tokens`, which the existing
+     * `local_date` and `op` indexes already serve.
+     */
+    cacheReadTokens: integer('cache_read_tokens'),
     /**
      * **`total_ms`, AND IT TIMES THE CALL RATHER THAN THE REQUEST** (A2-D4,
      * reconciliation R5). `readings.latency_ms` is time to FIRST TOKEN; two columns

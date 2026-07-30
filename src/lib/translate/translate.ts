@@ -354,6 +354,7 @@ export function translateStream(
           ...snapshot,
           inputTokens: usage.inputTokens,
           outputTokens: usage.outputTokens,
+          cacheReadTokens: usage.cachedInputTokens,
         }),
       );
 

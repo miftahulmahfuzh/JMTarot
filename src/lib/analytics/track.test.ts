@@ -192,6 +192,7 @@ describe('the ledger buffer (A2, R17)', () => {
     errorKind: null,
     inputTokens: 1200,
     outputTokens: 40,
+    cacheReadTokens: 1000,
     totalMs: 900,
   };
 

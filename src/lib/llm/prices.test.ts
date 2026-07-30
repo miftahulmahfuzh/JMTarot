@@ -13,7 +13,8 @@
  */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { NOTIONAL_MODEL, PRICES, costUsd, notionalUsd, pickPrice, priceFor } from './prices';
+import { NOTIONAL_MODEL, PRICES, applyPrice, costUsd, notionalUsd, pickPrice, priceFor } from './prices';
+import type { ModelPrice } from './prices';
 
 const FAIL_DAYS = 365;
 const daysSince = (iso: string) => (Date.now() - Date.parse(`${iso}T00:00:00Z`)) / 86_400_000;
@@ -71,7 +72,12 @@ describe('every row is verifiable', () => {
     // Zero is legitimate here and is the z.ai case. Negative is not, and NaN would
     // propagate through every sum as NaN rather than as an error.
     for (const p of PRICES) {
-      for (const rate of [p.inputPerMTok, p.outputPerMTok]) {
+      // `cachedInputPerMTok` is included WHEN PRESENT: it is optional, so `undefined`
+      // is legitimate and means "bill at the full rate", but a negative or NaN value
+      // here would flow straight into `applyPrice` and reduce a fleet total.
+      const rates = [p.inputPerMTok, p.outputPerMTok];
+      if (p.cachedInputPerMTok !== undefined) rates.push(p.cachedInputPerMTok);
+      for (const rate of rates) {
         expect({ model: p.model, ok: Number.isFinite(rate) && rate >= 0 }).toEqual({
           model: p.model,
           ok: true,
@@ -252,6 +258,71 @@ describe('costUsd', () => {
   it('prices zero tokens as 0, which is a different answer from null', () => {
     // A real reported zero -- which `openai.ts` deliberately preserves -- is a fact.
     expect(costUsd('glm-4.6', '2026-07-30', 0, 0)).toBe(0);
+  });
+});
+
+/**
+ * The cache split, against a rate table this project does not ship.
+ *
+ * `applyPrice` is exported for the same reason `pickPrice` is, and its header says
+ * so: **a test of a locally reimplemented copy is not a test.** Every z.ai row is
+ * `0`, so cache arithmetic asserted through `costUsd` would pass against any
+ * formula whatsoever, including a wrong one.
+ */
+describe('applyPrice -- the cache split', () => {
+  const DISCOUNTED: ModelPrice = {
+    model: 'test-model',
+    effectiveFrom: '2026-01-01',
+    inputPerMTok: 1,
+    outputPerMTok: 10,
+    cachedInputPerMTok: 0.1,
+    verifiedOn: '2026-07-30',
+    source: 'https://example.invalid/pricing',
+  };
+
+  const NO_CACHE_RATE: ModelPrice = { ...DISCOUNTED, cachedInputPerMTok: undefined };
+
+  it('bills the cached half at the cached rate and the rest at full', () => {
+    // 1364 input, 1344 of it cached: 20 fresh at 1.0 + 1344 at 0.1, per million.
+    const expected = (20 * 1 + 1344 * 0.1 + 100 * 10) / 1_000_000;
+    expect(applyPrice(DISCOUNTED, 1364, 100, 1344)).toBeCloseTo(expected, 15);
+  });
+
+  it('AN ABSENT CACHE RATE BILLS CACHED TOKENS AT FULL PRICE, which OVERSTATES', () => {
+    /*
+     * The direction is the whole decision. An unknown discount guessed generously
+     * understates the bill, and `costUsd`'s own header says understating is the
+     * failure that matters. A rate enters `PRICES` when a human has read it off the
+     * provider's page -- never as a default that flatters us.
+     */
+    const full = (1364 * 1 + 100 * 10) / 1_000_000;
+    expect(applyPrice(NO_CACHE_RATE, 1364, 100, 1344)).toBeCloseTo(full, 15);
+  });
+
+  it('AN UNKNOWN SPLIT IS PRICED AS ALL-FRESH, never as all-cached', () => {
+    // `cached: null` means the provider said nothing, not that nothing was cached.
+    // Same conservative direction.
+    expect(applyPrice(DISCOUNTED, 1364, 100, null)).toBeCloseTo(
+      (1364 * 1 + 100 * 10) / 1_000_000,
+      15,
+    );
+  });
+
+  it('a cached count of 0 is a measured miss and costs full price', () => {
+    expect(applyPrice(DISCOUNTED, 1364, 100, 0)).toBeCloseTo(
+      (1364 * 1 + 100 * 10) / 1_000_000,
+      15,
+    );
+  });
+
+  it('CLAMPS a cached count larger than the input total rather than going negative', () => {
+    /*
+     * `cached > input` should be impossible -- `inputTokens` is the total and the
+     * cache is a subset of it -- but the arithmetic here is `(input - cached)`, and
+     * a provider bug or a future adapter that forgets to sum would produce a
+     * NEGATIVE cost that silently reduces the fleet total. Clamped, not trusted.
+     */
+    expect(applyPrice(DISCOUNTED, 100, 0, 5000)).toBeGreaterThanOrEqual(0);
   });
 });
 
