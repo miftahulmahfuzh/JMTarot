@@ -92,6 +92,18 @@ export default async function AdminBlogEditorPage({
    */
   const slugFrozen = (article?.locales ?? []).some((l) => l.status !== 'draft');
 
+  /*
+   * Is there a document in the OTHER locale to seed this one from? Resolved here because
+   * the editor only ever holds one locale's row, and a button that offers to translate
+   * from nothing is a button that answers with an error.
+   *
+   * **A BODY, NOT MERELY A ROW.** A row with an empty body would spend a model call to
+   * produce an empty document.
+   */
+  const canTranslate = (article?.locales ?? []).some(
+    (l) => l.locale !== locale && l.body.length > 0,
+  );
+
   return (
     <div className={styles.page}>
       <AdminPageViewed page="/admin/blog/[slug]" />
@@ -125,6 +137,7 @@ export default async function AdminBlogEditorPage({
           slug={slug}
           locale={locale}
           slugFrozen={slugFrozen}
+          canTranslate={canTranslate}
           initial={
             row
               ? {

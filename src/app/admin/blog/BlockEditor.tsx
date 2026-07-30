@@ -41,12 +41,21 @@
  */
 import { useState } from 'react';
 import type { Block, Inline, Phrasing } from '@/content/types';
+import { extractSegments } from '@/lib/content/blogSegments';
 import { spansSeparate } from '@/lib/content/lint';
 import { BLOG } from './copy';
 import styles from './blog.module.css';
 
 /** 25s, under the route's `maxDuration = 30` so the server's answer wins the race. */
 const SAVE_ABORT_MS = 25_000;
+/**
+ * 55s, under the translate route's `maxDuration = 60` for the same reason: the SERVER
+ * must lose the race last, so what the operator gets is the sentence that says what
+ * happened rather than a platform timeout with no diagnosis. A 2,000-word article is a
+ * large completion and this is the one admin request that legitimately takes tens of
+ * seconds (§4.2 rule 2).
+ */
+const TRANSLATE_ABORT_MS = 55_000;
 
 const KINDS = ['heading', 'paragraph', 'list', 'quote', 'cardRef'] as const;
 const SPAN_KINDS = ['text', 'em', 'strong', 'link'] as const;
@@ -57,6 +66,11 @@ export type EditorProps = {
   slug: string;
   locale: string;
   slugFrozen: boolean;
+  /**
+   * Is there a document in the OTHER locale to translate from? Resolved on the server,
+   * because the editor only ever holds one locale's row.
+   */
+  canTranslate: boolean;
   initial: {
     title: string;
     description: string;
@@ -95,13 +109,24 @@ function slugify(text: string): string {
     .slice(0, 60);
 }
 
-export function BlockEditor({ slug, locale, slugFrozen, initial, cardSlugs }: EditorProps) {
+export function BlockEditor({
+  slug,
+  locale,
+  slugFrozen,
+  canTranslate,
+  initial,
+  cardSlugs,
+}: EditorProps) {
   const [title, setTitle] = useState(initial?.title ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
   const [heroCard, setHeroCard] = useState(initial?.heroCardSlug ?? '');
   const [heroAlt, setHeroAlt] = useState(initial?.heroAlt ?? '');
   const [body, setBody] = useState<Block[]>(initial?.body ?? [emptyBlock('paragraph')]);
   const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'failed' | 'timeout'>('idle');
+  const [tr, setTr] = useState<'idle' | 'confirm' | 'running' | 'done' | 'failed' | 'timeout'>(
+    'idle',
+  );
+  const [trNote, setTrNote] = useState('');
   const [violations, setViolations] = useState<{ rule: string; cls: string; field: string; detail: string; excerpt: string }[]>([]);
 
   const isNew = initial === null;
@@ -119,6 +144,94 @@ export function BlockEditor({ slug, locale, slugFrozen, initial, cardSlugs }: Ed
   const removeAt = (i: number) => setBody((b) => b.filter((_, j) => j !== i));
   const insertAfter = (i: number, kind: (typeof KINDS)[number]) =>
     setBody((b) => [...b.slice(0, i + 1), emptyBlock(kind), ...b.slice(i + 1)]);
+
+  /**
+   * **IS THERE ANYTHING TO LOSE?** The confirmation Miftah asked for fires on FORM state,
+   * not on the stored row — that is what auto-translate overwrites, and it is the thing
+   * the server has never seen. An untouched empty form has nothing at stake, and a
+   * confirmation there is a dialog that teaches people to click through dialogs.
+   *
+   * **`extractSegments` RATHER THAN A HAND-ROLLED CHECK, AND THE FIRST DRAFT PROVED WHY.**
+   * It asked whether `JSON.stringify(block)` still had letters in it after the structural
+   * keys were stripped — and a brand-new empty paragraph is
+   * `{"kind":"paragraph","text":[{"kind":"text","text":""}]}`, whose remaining `"text"`
+   * KEYS are letters. **So the confirmation fired on an empty form**, which is precisely
+   * the dialog-that-means-nothing this guard exists to avoid. Found by clicking the
+   * button.
+   *
+   * The function that already knows what a document's human text is is the one that
+   * flattens it for translation. Using it means the guard and the thing it guards can
+   * never disagree about what "content" means.
+   */
+  const formHasContent = extractSegments({
+    locale: 'id',
+    slug,
+    title,
+    description,
+    hero: heroCard ? { cardUrlSlug: heroCard, alt: heroAlt } : null,
+    body,
+  }).some((seg) => seg.trim().length > 0);
+
+  async function translate() {
+    setTr('running');
+    setTrNote('');
+    try {
+      const res = await fetch(`/api/admin/blog/${slug}/translate`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        signal: AbortSignal.timeout(TRANSLATE_ABORT_MS),
+        body: JSON.stringify({ to: locale }),
+      });
+      if (!res.ok) {
+        setTr('failed');
+        setTrNote(BLOG.editor.translateFailed);
+        return;
+      }
+      const payload = (await res.json()) as {
+        ok: boolean;
+        detail?: string;
+        segments?: number;
+        violations?: { kind: string }[];
+        doc?: {
+          title: string;
+          description: string;
+          hero: { cardUrlSlug: string; alt: string } | null;
+          body: Block[];
+        };
+      };
+      /*
+       * **A REFUSAL ARRIVES AS A 200 WITH `ok: false` AND ITS OWN SENTENCE** — the reply
+       * was truncated, the model translated a card name, the article is too long. Those
+       * are answers the operator has to read, and rendering the generic failure state
+       * over them would throw away the only useful part.
+       */
+      if (!payload.ok || !payload.doc) {
+        setTr('failed');
+        setTrNote(payload.detail ?? BLOG.editor.translateFailed);
+        return;
+      }
+      setTitle(payload.doc.title);
+      setDescription(payload.doc.description);
+      setHeroCard(payload.doc.hero?.cardUrlSlug ?? '');
+      setHeroAlt(payload.doc.hero?.alt ?? '');
+      setBody(payload.doc.body);
+      // Nothing is stored yet, and the note says so rather than implying a save.
+      const untranslated = (payload.violations ?? []).filter((v) => v.kind === 'untranslated').length;
+      setTr('done');
+      setTrNote(
+        BLOG.editor.translateDone(payload.segments ?? 0) +
+          (untranslated > 0 ? ` ${BLOG.editor.translateUntranslated(untranslated)}` : ''),
+      );
+    } catch (err) {
+      /* A timeout means UNKNOWN, but nothing was written either way, so it is safe to retry. */
+      setTr(err instanceof Error && err.name === 'TimeoutError' ? 'timeout' : 'failed');
+      setTrNote(
+        err instanceof Error && err.name === 'TimeoutError'
+          ? BLOG.editor.translateTimedOut
+          : BLOG.editor.translateFailed,
+      );
+    }
+  }
 
   async function save() {
     setState('saving');
@@ -280,6 +393,58 @@ export function BlockEditor({ slug, locale, slugFrozen, initial, cardSlugs }: Ed
             </li>
           ))}
         </ol>
+
+        {/*
+          **AUTO-TRANSLATE. IT FILLS THE FORM AND STORES NOTHING** — see the route's
+          header. The hint says so, and says the English is meant to be rewritten rather
+          than translated, because a button that looks like a finished answer will be
+          treated as one.
+        */}
+        <section className={styles.translateBox}>
+          <h2 className={styles.h2}>
+            {BLOG.editor.translate} {BLOG.editor.translateFrom(locale)}
+          </h2>
+          <p className={styles.hint}>{BLOG.editor.translateHint}</p>
+
+          {!canTranslate ? (
+            <p className={styles.hint}>{BLOG.editor.translateNoSource}</p>
+          ) : tr === 'confirm' ? (
+            /*
+             * **THE OVERWRITE GUARD, INLINE RATHER THAN `window.confirm`.** A native
+             * confirm blocks the thread, cannot be styled to say what is at stake, and
+             * on Safari drops focus in the way `AccountMenu` records. Two taps, and the
+             * second one names the cost.
+             */
+            <div className={styles.confirm} role="alertdialog" aria-label={BLOG.editor.translateConfirmTitle}>
+              <p className={styles.bad}>{BLOG.editor.translateConfirmTitle}</p>
+              <p className={styles.hint}>{BLOG.editor.translateConfirmBody}</p>
+              <div className={styles.saveRow}>
+                <button type="button" className={styles.primary} onClick={translate}>
+                  {BLOG.editor.translateConfirmYes}
+                </button>
+                <button type="button" onClick={() => setTr('idle')}>
+                  {BLOG.editor.translateConfirmNo}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className={styles.saveRow}>
+              <button
+                type="button"
+                className={styles.primary}
+                disabled={tr === 'running'}
+                onClick={() => (formHasContent ? setTr('confirm') : translate())}
+              >
+                {tr === 'running' ? BLOG.editor.translating : BLOG.editor.translate}
+              </button>
+              {trNote ? (
+                <span className={tr === 'done' ? styles.ok : styles.bad} role="status">
+                  {trNote}
+                </span>
+              ) : null}
+            </div>
+          )}
+        </section>
 
         <div className={styles.saveRow}>
           <button className={styles.primary} type="button" onClick={save} disabled={state === 'saving'}>

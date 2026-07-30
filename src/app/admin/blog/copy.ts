@@ -145,6 +145,35 @@ export const BLOG = {
       'Titik tengah menandai spasi di batas antar-span. Spasi itu tidak ditambahkan oleh apa pun — kalau hilang, dua kata menempel jadi satu.',
     glued: 'Dua span menempel jadi satu kata di sini.',
 
+    // ── auto-translate ────────────────────────────────────────────────────
+    translate: 'Terjemahkan otomatis',
+    /**
+     * **THE ARGUMENT IS THE TAB YOU ARE ON, AND THE ANSWER NAMES THE OTHER ONE.** The
+     * first draft returned the tab's own language, so the English tab offered
+     * *"terjemahkan otomatis dari bahasa Inggris"* — translate English from English.
+     * Caught by reading the heading in a screenshot, which is the only place a label
+     * that is wrong-but-plausible ever shows up.
+     */
+    translateFrom: (currentTab: string) =>
+      currentTab === 'id' ? 'dari bahasa Inggris' : 'dari Bahasa Indonesia',
+    translateHint:
+      'Mengisi formulir ini dari versi bahasa lain memakai model. Hasilnya BELUM tersimpan — baca, perbaiki, lalu Simpan. Tulisan bahasa Inggris seharusnya ditulis ulang, bukan diterjemahkan, jadi anggap ini titik awal dan bukan hasil akhir.',
+    translateNoSource: 'Belum ada versi bahasa lain untuk diterjemahkan.',
+    translating: 'Menerjemahkan…',
+    translateDone: (n: number) => `Selesai: ${n} potongan teks terisi. Belum tersimpan.`,
+    translateFailed: 'Terjemahan gagal.',
+    translateTimedOut:
+      'Permintaan melewati batas waktu. Tidak ada yang berubah — artikel panjang bisa makan waktu, coba lagi.',
+    /** The overwrite guard Miftah asked for. Two taps, and the second one names the cost. */
+    translateConfirmTitle: 'Formulir ini sudah ada isinya.',
+    translateConfirmBody:
+      'Terjemahan otomatis akan MENIMPA seluruh isi formulir bahasa ini — judul, deskripsi, dan semua blok. Yang sudah tersimpan di basis data tidak ikut berubah sampai kamu menekan Simpan.',
+    translateConfirmYes: 'Ya, timpa formulirnya',
+    translateConfirmNo: 'Batal',
+    /** Reported, never blocking — see `verifyBlogTranslation`. */
+    translateUntranslated: (n: number) =>
+      `${n} potongan kembali sama persis dengan aslinya. Biasanya wajar (nama diri, angka), sesekali berarti modelnya melewatkan baris itu.`,
+
     save: 'Simpan',
     saving: 'Menyimpan…',
     saved: 'Tersimpan.',

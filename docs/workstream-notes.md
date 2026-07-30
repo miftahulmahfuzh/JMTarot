@@ -5963,6 +5963,108 @@ the admin, unchanged:  /admin/blog 200, /api/admin/users 200, status POST 200
 **`tools/admin/probe.sh`'s path list and its method coverage are still A1's to extend** —
 it currently sends one verb and knows nothing about A6's two routes.
 
+### Auto-translate, added 2026-07-30 — and it does not settle §8.2
+
+Miftah's request: *"help admin do this easier by facilitating them using LLM
+translation… add Auto translate button below it. and if admin click this but the english
+form is not empty, then we pop up a warning."*
+
+**IT IS IN TENSION WITH A STATED RULE AND SAYING SO IS PART OF THE FEATURE.**
+`## Localization` rule 3 and S6 §8.2 both say the English is **rewritten, not
+translated**, and `blog.content.test.ts` enforced it over the launch pair with four
+assertions that all fail by SAMENESS. R44 narrowed that to the two committed slugs;
+A6-15 made it `divergenceAdvisory()`, surfaced and never blocking.
+
+**What resolves the tension is where the output goes: the button fills the EDITOR FORM
+and stores nothing.** `POST /api/admin/blog` is still the only writer, so machine output
+goes through the same zod parse, the same lint and the same resolution as a hand-typed
+save. The admin edits afterwards — which is what a human translator does anyway — and the
+divergence advisory still reports at publish time. **The blank page is what is being
+removed, not the rewriting.**
+
+#### The model never sees the structure, so it cannot break it
+
+The obvious design hands the model the `Block[]` as JSON. It can then invent a sixth
+kind, drop a `heading.id`, translate a `link.path`, renumber a list, or return something
+that does not parse — every one of which is a defect in a document the admin then saves.
+
+So `blogSegments.ts` flattens a document to a numbered list of human-readable strings and
+rebuilds it positionally. **`heading.id`, `link.path`, `cardRef.slug` and
+`hero.cardUrlSlug` are never in the list**, so they are copied through untouched: an
+anchor is an interface and a path is an address. A count mismatch is a refusal, not a
+merge — *half a translated document is worse than none, because it looks finished.*
+
+`parseSegments` reads the DECLARED number rather than line order, so a dropped segment is
+a HOLE and therefore a refusal. Order-based parsing would shift every later string up one
+slot: paragraph nine under heading eight, which reads as prose and is wrong everywhere.
+
+The round trip is the whole test file: `applySegments(doc, extractSegments(doc))`
+deep-equals `doc` — asserted on a fixture of every shape the union can take **and on all
+four committed articles.**
+
+#### Measured on a live call
+
+```
+POST /api/admin/blog/tarot-trivia/translate {"to":"en"}     7.0s
+ok: true   from: id -> en   segments: 8   violations: []
+heading ids: #nol-sampai-dua-puluh-satu  #awalnya-permainan-bangsawan  #kartu-death
+             — byte-identical, which is the design
+card names: The Fool, Death — preserved
+description: 118 chars, in band
+lint over the result, en rules: 0 violations
+```
+
+#### `op: 'translation'`, and the attribution caveat
+
+Roadmap §11.3: *nine, closed, no tenth and no alias.* This IS a translation, so it reuses
+the value rather than proposing a tenth, which would be a reconciliation question.
+
+**The cost, said out loud:** one article is ~3,000 tokens each way against a reading
+translation's ~150 words, so A3's *cost per `translation`* now mixes two very different
+quantities. `llm_calls.user_id` distinguishes them — an operator against a querent — and
+there is one operator. **If A3's breakdown ever reads wrong, this is why**, and the fix is
+a tenth `op` through reconciliation rather than a filter somebody adds to one query.
+
+**`callClass: 'deferred'`, which is not the obvious choice.** The admin IS waiting, so
+`interactive` looks right and is exactly backwards: that tier exists so a reading a
+QUERENT is waiting for is shed last, and the ceiling is fleet-wide. An operator
+convenience must be shed before somebody's reading is. It is also why `flagCoverage.test.ts`
+lists this site as EXEMPT for a reason unlike the other three — **the tier IS the switch**,
+and it cannot be left off in a dashboard.
+
+#### Four fences fired, and every one of them was right
+
+1. **`callClass.test.ts`** — a new `complete()` site is not in the table. That table
+   exists so *"adding one is a decision rather than an omission"*; a row was added.
+2. **`flagCoverage.test.ts`** — same set, different property. Filed EXEMPT with the
+   `deferred`-is-the-switch reason.
+3. **A5's `page.contract.test.ts`** — the route list, now exhaustive by name, needed the
+   third blog route.
+4. **The same file's A5-23 i18n grep** — it bans `@/lib/i18n/` across `src/app/api/admin/**`
+   with no exception, while `adminCopy.test.ts` already carried the `locale` one. Narrowed
+   the same way, **so the two fences cannot disagree about one rule.**
+
+#### Two defects only clicking the button could find
+
+1. **The overwrite confirmation fired on an EMPTY form.** `formHasContent` asked whether
+   `JSON.stringify(block)` still had letters after the structural keys were stripped —
+   and a brand-new empty paragraph is `{"kind":"paragraph","text":[{"kind":"text","text":""}]}`,
+   whose remaining `"text"` KEYS are letters. A dialog that always fires is the dialog
+   people learn to click through, which is the opposite of what Miftah asked for. It uses
+   `extractSegments` now: **the guard and the thing it guards cannot disagree about what
+   "content" means.**
+
+   That forced the module split — `blogTranslate.ts` imports `namesIn` from
+   `@/lib/translate/contract`, which `clientBoundary.test.ts` fences from client
+   components because it carries prompt prose, so the walk moved to `blogSegments.ts`.
+2. **The heading said "dari bahasa Inggris" on the English tab** — *translate English from
+   English.* The helper took the tab's own locale and named it. Only a screenshot shows a
+   label that is wrong but plausible.
+
+And one from the same screenshot: **`Batal` inherited no CSS rule and rendered as bare
+text** beside a bordered primary — a cancel that does not look pressable is a
+confirmation with one option.
+
 ### Nine deviations, each with its reason
 
 1. **Task 26 is not done.** The plan gates it on the production import; nothing is
@@ -5989,6 +6091,8 @@ it currently sends one verb and knows nothing about A6's two routes.
 9. **The preview is one save behind.** Above.
 10. **Six route files gained method handlers, four of them A5's.** Above — non-negotiable
     1, and additive.
+11. **Auto-translate is new scope, not a plan task.** Miftah's request, 2026-07-30.
+    Above, with its §8.2 tension stated rather than resolved.
 
 ### Still open
 

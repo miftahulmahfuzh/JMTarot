@@ -52,6 +52,23 @@ const COMPLETE_CALLS: Array<{
   why: string;
 }> = [
   {
+    /*
+     * **A6's BLOG AUTO-TRANSLATE, ADDED 2026-07-30, AND THIS ROW IS THE DECISION THIS
+     * TABLE EXISTS TO FORCE.** It reuses `op: 'translation'` rather than proposing a
+     * tenth value -- roadmap seam 3: *nine, closed, no tenth and no alias* -- and the
+     * attribution caveat is recorded in `blogAutoTranslate.ts`: one article is ~3,000
+     * tokens each way against a reading translation's ~150 words, so A3's *cost per
+     * `translation`* mixes two very different quantities. `llm_calls.user_id` is what
+     * tells them apart today, an operator against a querent.
+     */
+    file: 'src/lib/admin/blogAutoTranslate.ts',
+    op: ['translation'],
+    opMarker: "op: 'translation'",
+    expect: 'deferred',
+    marker: "callClass: 'deferred'",
+    why: 'an ADMIN convenience, and the ceiling is fleet-wide -- an operator seeding an English draft must be shed before a querent waiting on a reading is, so `interactive` would be exactly backwards',
+  },
+  {
     file: 'src/lib/moderation/classify.ts',
     op: ['moderation'],
     opMarker: "op: 'moderation'",

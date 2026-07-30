@@ -86,6 +86,24 @@ const EXEMPT: Array<{ file: string; why: string; ownSwitch?: string }> = [
     why: 'THE BACKBONE. V2 exists because the alternative was shipping Indonesian prose to an English querent; a switch here reinstates the bug the workstream was built to remove.',
   },
   {
+    /*
+     * **A6's BLOG AUTO-TRANSLATE. EXEMPT FOR A REASON UNLIKE THE OTHER THREE**, and it
+     * is worth stating rather than filing under "backbone", which it is not.
+     *
+     * A flag here would be a manual switch for a call that ALREADY sheds automatically:
+     * it is the only `deferred` site whose caller is the operator, so under ceiling
+     * pressure it is shed before every querent-facing call by construction. **The tier
+     * IS the switch**, and it cannot be forgotten in a dashboard at 2am.
+     *
+     * The other half: with it off, the button reports a failure the operator reads and
+     * they type the English themselves — which §8.2 says they should be doing anyway.
+     * There is no degraded querent experience to protect, so there is nothing for a flag
+     * to buy.
+     */
+    file: 'src/lib/admin/blogAutoTranslate.ts',
+    why: 'ADMIN-ONLY AND ALREADY SHED FIRST. `callClass: deferred` on the one site whose caller is the operator means the ceiling sheds it before any querent call; a manual flag would duplicate that and could be left off.',
+  },
+  {
     file: 'src/lib/moderation/classify.ts',
     why: 'ALREADY SWITCHABLE, and its switch is deliberately not in flags.ts: MODERATION_CLASSIFIER_ENABLED lives in gate.ts, named there so it cannot be read as "moderation off" — Tier A stays terminal either way.',
     ownSwitch: "process.env.MODERATION_CLASSIFIER_ENABLED !== '0'",

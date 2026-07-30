@@ -414,6 +414,50 @@
   margin-top: 18px;
 }
 
+/*
+ * Auto-translate. A bordered box rather than another row of controls, because what it
+ * does is categorically different from Simpan: it REPLACES the form from somewhere else.
+ * A destructive-ish action that looks like every other button is one people press by
+ * reflex.
+ */
+.translateBox {
+  margin-top: 24px;
+  padding: 14px 16px;
+  border: 1px dashed var(--gold-hairline);
+  border-radius: 10px;
+}
+
+.translateBox .h2,
+.translateBox h2 {
+  margin-top: 0;
+}
+
+/* The confirmation. `--danger` on the heading, because the cost is losing typed work. */
+.confirm {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+}
+
+/*
+ * **BOTH buttons are 44px, including the one that does nothing.** `Batal` inherited no
+ * rule at all in the first draft and rendered as bare text beside a bordered primary --
+ * which reads as "there is one button here", on the control whose entire purpose is
+ * offering a way out. A cancel that does not look pressable is a confirmation with one
+ * option.
+ */
+.confirm button {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--gold-hairline);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
 .ok {
   color: var(--gold);
   font-size: 13px;

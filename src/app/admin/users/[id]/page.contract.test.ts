@@ -57,6 +57,7 @@ describe('the fences are not vacuous', () => {
      */
     expect(ROUTES.map((f) => f.replaceAll('\\', '/')).sort()).toEqual([
       'src/app/api/admin/blog/[slug]/status/route.ts',
+      'src/app/api/admin/blog/[slug]/translate/route.ts',
       'src/app/api/admin/blog/route.ts',
       'src/app/api/admin/users/[id]/answer/[key]/route.ts',
       'src/app/api/admin/users/[id]/moderation/[flagId]/route.ts',
@@ -81,7 +82,20 @@ describe('A5-23 -- no translation machinery anywhere in A5 (A-D12)', () => {
     for (const f of [...APP, REVEAL, 'src/lib/admin/types.ts', 'src/lib/admin/userList.ts']) {
       const src = code(f);
       expect(src, f).not.toMatch(/\bgetT\(|\buseT\(|\btFor\(|\buseLocale\(/);
-      expect(src, f).not.toMatch(/@\/lib\/i18n\//);
+      /*
+       * **ONE NAMED EXCEPTION SINCE A6's AUTO-TRANSLATE: `@/lib/i18n/locale`.** The same
+       * exception `adminCopy.test.ts` carries, and narrowed the same way so the two
+       * fences cannot disagree about one rule — two greps over the same property with
+       * different answers is worse than either.
+       *
+       * A-D12 is about the CATALOG. `locale.ts` is a LEAF whose only imports are types
+       * from `@/data/**`; it holds no prose, no key set and no `t`, and what it exports
+       * is the two locale CODES and `isLocale`. A route that translates BETWEEN locales
+       * has to name them, and the alternative is a hardcoded `['id','en']` in the tree
+       * least likely to be updated when a third lands. `@/lib/i18n/t`, `/catalog` and
+       * `/locales` all still fail.
+       */
+      expect(src, f).not.toMatch(/@\/lib\/i18n\/(?!locale['"])/);
     }
   });
 });
