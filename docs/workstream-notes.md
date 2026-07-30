@@ -6305,6 +6305,166 @@ material for a later reading's `<riwayat>` callback, because nothing backfills.
 - **No `admin` surface reads these.** An operator learns the current state from the Vercel
   dashboard and from `llm_calls` going quiet, not from the app.
 
+## The reading's TTFT, separated from every other duration (2026-07-30)
+
+**A reading STREAMS, so the length of its model call is not a measure of anybody's experience.**
+Miftah's ask: *"for llm generation duration, we can separate the card reading duration. Because card
+reading uses streaming, we can show their TTFT in the admin dashboard. Admin can infer user
+experience by seeing the TTFT data — the smaller the TTFT, the better."* Design:
+`docs/plans/2026-07-30-admin-ttft-design.md`. Files: `src/lib/db/queries/admin/metrics.ts`
+(`ttftByService`), `src/app/admin/{metrics.ts,copy.ts,page.tsx}`, `src/app/admin/ttftSeam.test.ts`
+(new).
+
+### The bug the ask uncovered, which nobody was looking for
+
+A3 shipped both halves of roadmap seam 2 and took real trouble over them: two functions, **neither
+called `latency`**, each with the warning in its header, plus `noDualAxis.test.ts:103` forbidding one
+chart from plotting both.
+
+**And `/admin` still rendered a TTFT number under a label reading *"Total waktu panggilan, bukan
+waktu ke token pertama."*** `ServiceShare`'s table borrowed `OVERVIEW.kpi.p95` — the total-duration
+tile's copy — as the header for `rollup.ttft`'s p95. So the single place TTFT reached the overview
+declared itself to be the one thing it explicitly is not, which is the merge M8 and R5 exist to
+prevent.
+
+**Every test passed, and no test could have failed.** A label and the provenance of the number
+beneath it are not comparable by grep, and no unit test renders a page and asks whether its words are
+true. This is the same class as the `NOTIONAL_MODEL` tile printing `US$0,00` under the word
+"notional" — *a real figure wearing a counterfactual's label* — and it was found the same way: by
+reading the code with the question "which query does this number come from" instead of "does this
+compile".
+
+Three more things were wrong in the same place, all of them omissions rather than lies:
+`ttft[].p50Ms` was computed on every admin request and rendered nowhere; nine ops' `p50Ms`/`p95Ms`
+were computed and exactly one value reached a screen; and **there was no fleet-wide TTFT figure, nor
+any way to fold one** from what shipped.
+
+### The measurement that shaped the query: `rollup()` over an empty input
+
+`ttftByService` grew `group by rollup (service_id)` rather than a sibling query, so the fleet
+percentile and the three service percentiles come from one predicate and `FLEET_ROLLUP_QUERIES`
+stays at 8 — which matters on a page where every request is cold and the first query wakes a
+suspended Neon compute.
+
+Measured against the local Postgres 16 before a line was written, per CLAUDE.md's rule that framework
+behaviour is measured here and never recalled:
+
+```
+-- non-empty:                       -- EMPTY input, same statement:
+ svc     | is_total | n | p50         svc    | is_total | n | p50
+ daily   |        0 | 2 | 200         <null> |        1 | 0 | (null)
+ spread3 |        0 | 1 | 900        (1 row)   <-- ONE row, not zero
+ <null>  |        1 | 3 | 300
+```
+
+**A plain `group by` returns no rows for an empty input; `rollup` returns the grand total.** So the
+naive version would have grown a phantom fleet row on any range with no readings, given "no data" a
+second representation, and broken `metrics.integration.test.ts:506` (*"skips readings with no TTFT
+rather than counting them as 0"*). The mapper drops a total row carrying no readings and a test pins
+it **by name**, because the guard reads as a redundant nullability check.
+
+This is deliberately **not** `peakWindow5h`'s ruling (*"`null` for an empty range, never 0, because
+no calls and no data are different answers"*). That distinction protects a **fuel gauge**, where
+empty is a claim about safety. Here `readings = 0` for the fleet and "no rows" are the same fact, and
+`ms(null)` renders the same em dash either way.
+
+### Three more things in the query that would each ship a wrong number silently
+
+1. **`grouping(service_id)`, never `service_id is null`.** `readings.service_id` is `notNull()`
+   today, so a NULL *is* unambiguously the rollup's total — but the moment anyone relaxes that
+   column, a nullability test starts reporting one service's percentile as the whole fleet's.
+   `grouping()` cannot be wrong about which row it is. The pre-rollup `String(r.service_id)` would
+   also have rendered the total's id as the literal string `'null'`.
+2. **`order by is_total` FIRST**, so the total sorts LAST. It has the most readings of all, so
+   without this it leads on `readings desc` and every caller destructuring `rows[0]` silently
+   changes meaning — including the existing M8 test.
+3. **`ttftServices` narrows `serviceId` to `string` in its RETURN TYPE.** Leaving `string | null`
+   forces each caller to re-handle a case the fold already excluded, and the shortest way through
+   that is an `as string` at the call site — which is exactly where the fleet row reappears as a
+   fourth, colourless entity in a stacked bar.
+
+### Why the card is a table, and two primitives declined for cause
+
+`StatusCard`'s precedent. Both alternatives would have lied:
+
+- **`StackedBar` normalises every row to 100% of its OWN total** — `stackSegments` computes
+  `(value / total) * 100` per row — so three bars of duration would each fill the width and be
+  mutually uncomparable, which is the one thing the card exists to do.
+- **`Meter` needs a `ceiling`**, i.e. a TTFT target nobody has set, feeding a good→warning→critical
+  ramp. Inventing a target to earn a colour is the `US$0,00` mistake again: a judgement wearing a
+  measurement's clothes. **When the number would be a judgement, print the measurement and no hue.**
+
+`ServiceShare`'s duration column was **deleted rather than relabelled**, because `TtftCard` now owns
+per-service TTFT with both percentiles. One owner per number: two cards printing one figure under
+two labels is how a dashboard loses its reader.
+
+### The live numbers, and why the ask was right
+
+Measured on the dev database through loop 5, 30-day range:
+
+| | |
+| --- | --- |
+| `p95 TTFT bacaan` (`readings.latency_ms`) | **3,3 s** |
+| `p95 panggilan bacaan` (`llm_calls.total_ms`, op `reading`) | **6,1 s** |
+
+**The total call is nearly double the wait.** Before this change the only duration on the overview
+was the 6,1 s, and an operator would reasonably have read it as what the querent sat through. Per
+service: `daily` p50 1,6 s / p95 2,7 s, `spread3` 2,8 / 3,3, `yesno` 1,3 / 2,7, fleet 1,8 / 3,3.
+
+**And the fleet p50 of 1,8 s is itself the argument for the rollup**: the three service p50s are
+1,6 / 2,8 / 1,3, whose mean is 1,9 s. A fold would have been wrong by 100ms on this range with three
+services and no way to know it.
+
+### Two things found while verifying, both worth keeping
+
+- **The seam fence's own extractor was vacuously green.** `ttftSeam.test.ts` reads a named function's
+  body out of `page.tsx`; the first version terminated on `\n}`, which a multi-line destructured
+  signature (`function Kpis({\n …\n}: {`) satisfies **before the body starts**. Every `toMatch`
+  against that slice failed and every `not.toMatch` **passed vacuously** — a fence that greps an
+  empty string always agrees with you. Found by running the suite against a deliberately re-broken
+  page; the terminator is now `\n}\n` plus a minimum-length assertion.
+- **The card's two tiles were asymmetric.** Reusing `kpi.ttftP95` inside the card rendered
+  `p50 TTFT` beside `p95 TTFT bacaan`. Both strings are individually correct, so no test objected;
+  it is obvious in a screenshot. The card has its own unqualified pair, and a test now asserts the
+  two differ only in the percentile.
+
+### Verification
+
+Loop 4 (`tools/seo/chartfit.sh`) on the six-tile KPI row — the design claimed `auto-fit
+minmax(150px, 1fr)` needs no media query:
+
+```
+w=320  kpiCols=1  cards=4  overflow=false  offenders=[]
+w=360  kpiCols=1  cards=4  overflow=false  offenders=[]
+w=390  kpiCols=2  cards=4  overflow=false  offenders=[]
+w=1200 kpiCols=6  cards=4  overflow=false  offenders=[]
+```
+
+`cards` 3 → 4 is `TtftCard` mounting. `markBleed` and `under44 a.navLink 42` appear at every width
+**and on `/admin/tokens`, which this change does not touch** — pre-existing, A1's
+`layout.module.css`, already A4's open item 2.
+
+`npm test` 2817 passed (154 files), `npm run test:integration` 475 passed, `npm run typecheck` and
+`npm run build` clean, `audit-secrets` clean.
+
+### Still open
+
+1. **No TTFT trend series.** The level is measured; *"is the experience degrading"* is a different
+   question and needs a `ttftByLocalDate` query, a ninth round trip, and its own ruling on the
+   querent-day/UTC mixture R25 describes. The right shape is a sparkline on the new tile.
+2. **No target, threshold or colour on TTFT until a human states one.** See the `Meter` argument
+   above. The moment somebody writes down "3 seconds is the line", the `Meter` becomes correct and
+   this card should grow one.
+3. **The nine ops' total durations are still computed and unrendered** — eight of nine. Considered
+   and declined for scope: the `reading` op's p95 is the one an operator watches.
+4. **Nobody has read this card on a phone**, which is A4's open item 4 unchanged. Loop 4 measures its
+   width and says nothing about whether a four-column table at 280px of content is worth looking at
+   on glass — and this table is the widest on the overview.
+5. **A fourth service would be dropped from the card and counted in its fleet row**, so the three
+   rows would not sum to `Semua layanan`. `ttftServices` follows `ServiceShare`'s shipped filter and
+   `readings.service_id` is `$type<ServiceId>()`, so this is theoretical today; it is a real
+   divergence the day a service is added.
+
 ---
 
 ---

@@ -99,6 +99,15 @@ export const OVERVIEW = {
     readings: 'Bacaan selesai',
     p95: 'p95 panggilan bacaan',
     p95Note: 'Total waktu panggilan, bukan waktu ke token pertama.',
+    /**
+     * **THE TTFT TILE SITS BESIDE THE `p95` TILE, AND THAT IS WHAT MAKES `p95Note` TRUE.**
+     * That note has always said *"bukan waktu ke token pertama"*; until this tile shipped it
+     * denied a quantity nothing on the page rendered, which is a fact with nowhere to land.
+     * Two tiles, two provenances, one screen -- `readings.latency_ms` here and
+     * `llm_calls.total_ms` there, the seam R5 forbids reconciling.
+     */
+    ttftP95: 'p95 TTFT bacaan',
+    ttftNote: 'Waktu ke token pertama — yang benar-benar ditunggu penanya. Makin kecil makin baik.',
     deltaVs: (days: number) => `vs ${days} hari sebelumnya`,
   },
 
@@ -128,6 +137,39 @@ export const OVERVIEW = {
   querentDayCaveat:
     'Hari penanya. Panggilan tanpa penanya (perbaikan latar) memakai hari UTC, jadi seri ini ' +
     'mencampur dua kalender.',
+
+  /**
+   * ── THE CARD THAT ANSWERS "APA PENGALAMAN PENANYA" ──────────────────────────
+   *
+   * **A TABLE, and the reason is the same shape as §1.6's for `statusTitle`.** Two primitives
+   * could have drawn it and both would have lied: `StackedBar` normalises every row to 100% of
+   * its OWN total (`stackSegments`), so three bars of duration would all fill the width and be
+   * mutually uncomparable; and `Meter` needs a ceiling, i.e. a TTFT target nobody has set, and
+   * its fill runs a good→critical ramp. Inventing a target to earn a colour is `NOTIONAL_MODEL`
+   * printing `US$0,00` under the word "notional" -- a judgement wearing a measurement's
+   * clothes.
+   *
+   * **`ttftTotal` IS THE ROLLUP'S OWN ROW AND NEVER A SUM OF THE THREE ABOVE IT.** A fleet p95
+   * is not the mean of three service p95s; `ttftOverall` returns the row Postgres computed over
+   * the whole population, or nothing.
+   */
+  ttftTitle: 'Waktu ke token pertama',
+  ttftSubtitle:
+    'Dari readings.latency_ms — jeda antara penanya menekan tombol dan huruf pertama muncul. ' +
+    'Bacaan itu streaming, jadi ini ukuran pengalamannya, bukan lama panggilan model.',
+  ttftColumns: { service: 'Layanan', readings: 'Bacaan', p50: 'p50', p95: 'p95' },
+  /** The fleet row's label in the table. Not "Total": the number is a percentile, and a
+   *  reader who sees "Total" over a duration column reads it as a sum. */
+  ttftTotal: 'Semua layanan',
+  /**
+   * The card's own two tile labels, **unqualified on purpose**. `kpi.ttftP95` says *"p95 TTFT
+   * bacaan"* because it sits in the overview's KPI row between notional spend and a call
+   * duration, where "bacaan" is what distinguishes it. Inside a card already titled *"Waktu ke
+   * token pertama"* the word is redundant -- and reusing the KPI key here rendered the pair as
+   * `p50 TTFT` beside `p95 TTFT bacaan`, an asymmetry visible in one screenshot and in no test.
+   */
+  ttftP50: 'p50 TTFT',
+  ttftP95: 'p95 TTFT',
 
   statusTitle: 'Bagaimana panggilan berakhir',
   /**

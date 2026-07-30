@@ -505,6 +505,69 @@ describe('M8 -- the two latencies never merge', () => {
       ]);
       expect(await ttftByService(tx, { from: '2026-07-20', to: '2026-07-20' })).toEqual([]);
     }));
+
+  /*
+   * ── THE FLEET ROW, AND WHY IT IS A `rollup()` RATHER THAN A SECOND QUERY ────
+   *
+   * `/admin`'s TTFT tile needs one number for the whole fleet, and **a fleet p95 is not
+   * the mean of three service p95s** -- there is no fold over the per-service rows that
+   * produces it. Adding `rollup (service_id)` keeps the two answers on ONE predicate
+   * (`rollup.ts`'s opening rule) and keeps `FLEET_ROLLUP_QUERIES` at 8, which matters
+   * because every `/admin` request is a cold one and the first query also wakes a
+   * suspended Neon compute.
+   */
+  it('returns a fleet total row whose percentile is over the whole population', () =>
+    withRollback(async (tx) => {
+      const userId = await seedUser(tx);
+      // Chosen so the fleet p50 (250) equals NEITHER service's p50 (200 and 1000): a
+      // total row that merely copied a service row would pass a weaker fixture.
+      for (const latencyMs of [100, 200, 300]) {
+        await seedReading(tx, userId, { serviceId: 'daily', latencyMs });
+      }
+      await seedReading(tx, userId, { serviceId: 'spread3', latencyMs: 1000 });
+
+      const rows = await ttftByService(tx, { from: '2026-07-20', to: '2026-07-20' });
+      const total = rows.filter((r) => r.serviceId === null);
+      expect(total).toHaveLength(1);
+      expect(total[0].readings).toBe(4);
+      expect(total[0].p50Ms).toBe(250);
+
+      const daily = rows.find((r) => r.serviceId === 'daily');
+      expect(daily?.readings).toBe(3);
+      expect(daily?.p50Ms).toBe(200);
+      expect(rows.find((r) => r.serviceId === 'spread3')?.p50Ms).toBe(1000);
+    }));
+
+  it('sorts the fleet total LAST, so the per-service tiebreak keeps its order', () =>
+    withRollback(async (tx) => {
+      const userId = await seedUser(tx);
+      // `spread3` has fewer readings, so `readings desc` puts `daily` first. The total
+      // has the most readings of all and would lead without `order by is_total` -- which
+      // would make `rows[0]` the fleet, silently changing what every existing caller
+      // destructuring the first row means.
+      for (const latencyMs of [100, 200]) {
+        await seedReading(tx, userId, { serviceId: 'daily', latencyMs });
+      }
+      await seedReading(tx, userId, { serviceId: 'spread3', latencyMs: 400 });
+
+      const rows = await ttftByService(tx, { from: '2026-07-20', to: '2026-07-20' });
+      expect(rows.map((r) => r.serviceId)).toEqual(['daily', 'spread3', null]);
+    }));
+
+  /*
+   * **MEASURED, 2026-07-30, local Postgres 16:** `group by rollup(x)` over an EMPTY input
+   * returns ONE row -- the grand total, `n = 0`, percentiles NULL -- not zero rows. So the
+   * mapper has to drop a total row carrying no readings, or "no data" acquires a second
+   * representation and the sibling test above ("skips readings with no TTFT") starts
+   * failing on a phantom row. The guard looks like a redundant nullability check; this is
+   * what it is actually for.
+   */
+  it('returns NO fleet row when nothing in the range has a TTFT at all', () =>
+    withRollback(async (tx) => {
+      const userId = await seedUser(tx);
+      await seedReading(tx, userId, { serviceId: 'daily', latencyMs: null });
+      expect(await ttftByService(tx, { from: '2026-07-20', to: '2026-07-20' })).toEqual([]);
+    }));
 });
 
 /** A reading, with whatever the test needs pinned. */
