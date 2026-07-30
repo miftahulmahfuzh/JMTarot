@@ -186,25 +186,27 @@ export function BlockEditor({ slug, locale, slugFrozen, initial, cardSlugs }: Ed
         <label className={styles.field}>
           <span className={styles.label}>{BLOG.editor.articleTitle}</span>
           <input className={styles.input} value={title} onChange={(e) => setTitle(e.target.value)} />
-          <span className={styles.hint} data-warn={title.length > 110}>
-            {BLOG.editor.chars(title.length)}
-          </span>
+          <span className={styles.hint}>{BLOG.editor.titleHint}</span>
+          <Meter n={title.length} max={110} />
         </label>
 
         <label className={styles.field}>
           <span className={styles.label}>{BLOG.editor.description}</span>
+          {/*
+            **THE HINT COMES BEFORE THE FIELD, NOT AFTER IT.** This is the one field on
+            the surface whose correct content is not guessable from its label: *"Deskripsi
+            (meta)"* reads as "a summary of the article", and a summary is exactly the
+            wrong thing. It is the two lines Google prints UNDER the title.
+          */}
+          <span className={styles.hint}>{BLOG.editor.descriptionHint}</span>
+          <span className={styles.hint}>{BLOG.editor.descriptionBand}</span>
           <textarea
             className={styles.textarea}
             rows={2}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
-          <span
-            className={styles.hint}
-            data-warn={description.length < 80 || description.length > 158}
-          >
-            {BLOG.editor.chars(description.length)}
-          </span>
+          <Meter n={description.length} min={80} max={158} />
         </label>
 
         <label className={styles.field}>
@@ -231,13 +233,14 @@ export function BlockEditor({ slug, locale, slugFrozen, initial, cardSlugs }: Ed
         {heroCard ? (
           <label className={styles.field}>
             <span className={styles.label}>{BLOG.editor.heroAlt}</span>
+            <span className={styles.hint}>{BLOG.editor.heroAltHint}</span>
             <textarea
               className={styles.textarea}
               rows={2}
               value={heroAlt}
               onChange={(e) => setHeroAlt(e.target.value)}
             />
-            <span className={styles.hint}>{BLOG.editor.heroAltHint}</span>
+            <Meter n={heroAlt.trim().length} min={60} />
           </label>
         ) : null}
 
@@ -292,6 +295,45 @@ export function BlockEditor({ slug, locale, slugFrozen, initial, cardSlugs }: Ed
         <LintPanel violations={violations} />
       </section>
     </div>
+  );
+}
+
+/**
+ * A live character count **against its target**, not on its own.
+ *
+ * **`126 karakter` DOES NOT TELL ANYBODY WHETHER 126 IS RIGHT**, which is what the field
+ * showed before: a bare number that turned red at a boundary the operator could not see.
+ * This prints `126 / 80–158 karakter · pas` and names the direction when it is out, so
+ * the target is on screen at the moment the decision is being made rather than in a
+ * refusal after the fact.
+ *
+ * **IT IS A HINT, NOT A REFUSAL** (A6-17). Every band it renders is warning-class: they
+ * are properties of a FINISHED article, and refusing to save a half-written draft is
+ * refusing to let somebody write. The publish gate is where they bite, and this is what
+ * makes that later refusal predictable instead of surprising.
+ *
+ * `role="status"` so a screen reader hears the count change rather than only seeing it.
+ */
+function Meter({ n, min, max }: { n: number; min?: number; max?: number }) {
+  const short = min !== undefined && n < min;
+  const long = max !== undefined && n > max;
+  const label =
+    min !== undefined && max !== undefined
+      ? BLOG.editor.charsOf(n, min, max)
+      : max !== undefined
+        ? BLOG.editor.charsMax(n, max)
+        : BLOG.editor.charsMin(n, min!);
+  /*
+   * An EMPTY field says nothing. A "terlalu pendek" on a field somebody has not started
+   * is a warning about not having done the work yet, which trains people to ignore the
+   * colour.
+   */
+  const verdict = n === 0 ? '' : short ? BLOG.editor.tooShort : long ? BLOG.editor.tooLong : BLOG.editor.justRight;
+  return (
+    <span className={styles.hint} role="status" data-warn={n > 0 && (short || long)}>
+      {label}
+      {verdict ? ` · ${verdict}` : ''}
+    </span>
   );
 }
 

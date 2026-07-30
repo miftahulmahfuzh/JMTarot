@@ -77,15 +77,39 @@ export const BLOG = {
     slugHint: 'Huruf kecil dan tanda hubung. Sama di kedua bahasa, dan dalam bahasa Inggris.',
     localeTab: (l: string) => (l === 'id' ? 'Bahasa Indonesia' : 'English'),
     articleTitle: 'Judul',
+    titleHint:
+      'Judul artikel. Ini yang muncul sebagai baris pertama di hasil pencarian Google, jadi tulis kalimatnya untuk orang yang belum tahu apa-apa soal isinya.',
     /** The heading BLOCK's own text. Not the document's title — see `BlockFields`. */
     headingText: 'Teks judul bagian',
     description: 'Deskripsi (meta)',
+    /**
+     * **THE FIELD MOST LIKELY TO BE FILLED IN WRONG, AND THE BAND IS INVISIBLE WITHOUT
+     * THIS.** It is not a summary of the article — it is the two lines Google prints
+     * UNDER the title, and the only job of those two lines is to earn the click.
+     *
+     * The numbers are not arbitrary and the hint says why in the operator's own terms:
+     * under 80 characters Google ignores it and pulls a sentence out of the body
+     * instead, over 158 it truncates mid-word. A bare "80–158" tells somebody the rule
+     * without telling them the reason, and a rule with no reason is one people round
+     * off.
+     */
+    descriptionHint:
+      'Dua baris yang muncul DI BAWAH judul di hasil pencarian Google. Bukan ringkasan artikel — ini kalimat yang bikin orang mau mengklik.',
+    descriptionBand:
+      'Panjangnya harus 80–158 karakter. Di bawah 80, Google mengabaikannya dan mengambil kalimat acak dari isi artikel; di atas 158, kalimatnya dipotong di tengah.',
+    /** `126 / 80–158 karakter`, so the target is on screen beside the count. */
+    charsOf: (n: number, min: number, max: number) => `${n} / ${min}–${max} karakter`,
+    charsMax: (n: number, max: number) => `${n} / maks. ${max} karakter`,
+    charsMin: (n: number, min: number) => `${n} / min. ${min} karakter`,
+    tooShort: 'terlalu pendek',
+    tooLong: 'terlalu panjang',
+    justRight: 'pas',
     chars: (n: number) => `${n} karakter`,
     heroCard: 'Gambar utama',
     heroNone: '(tanpa gambar)',
     heroAlt: 'Teks alternatif gambar',
     heroAltHint:
-      'Gambarkan lukisannya, jangan ulangi nama kartunya — namanya sudah ada di judul dan di teks.',
+      'Gambarkan lukisannya untuk orang yang tidak bisa melihatnya, jangan ulangi nama kartunya — namanya sudah ada di judul dan di teks. Minimal 60 karakter.',
 
     blocks: 'Blok',
     addBelow: 'Tambah blok di bawah',
