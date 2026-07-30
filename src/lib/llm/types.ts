@@ -69,11 +69,45 @@ export type CompletionPrompt = Omit<ReadingPrompt, 'promptVersion'>;
 /**
  * Token counts, when the provider reports them.
  *
- * NULLABLE ON PURPOSE. z.ai accepts Anthropic's `cache_control` marker and
- * honours no caching -- the probe came back with `input_tokens: 0` -- so a
- * number here cannot be assumed present or meaningful while pointed at it.
+ * NULLABLE ON PURPOSE: a provider may report nothing, and a stream may die before
+ * the event that carries the counts. Absence is stored as absence, never as 0.
+ *
+ * ── `inputTokens` IS THE TOTAL, CACHE READS INCLUDED ─────────────────────────
+ *
+ * That is what every consumer means by it -- `tee.ts`, `persistReading`,
+ * `callTotals`, the I/O chart -- and keeping it the total is what let the cache
+ * figure be added without touching any of them. `cachedInputTokens` is a BREAKDOWN
+ * of `inputTokens`, never a sibling to be added to it.
+ *
+ * ── THE TWO WIRE FORMATS REPORT CACHING WITH OPPOSITE SEMANTICS ──────────────
+ *
+ * **AND THIS IS WHY EACH ADAPTER CONVERTS ITSELF AND NO SHARED HELPER DOES IT.**
+ *
+ *   - **Anthropic wire (and z.ai):** `input_tokens` EXCLUDES cached tokens. The
+ *     total is `input_tokens + cache_read_input_tokens + cache_creation_input_tokens`.
+ *   - **OpenAI wire:** `prompt_tokens` ALREADY INCLUDES them;
+ *     `prompt_tokens_details.cached_tokens` is a breakdown of it. Summing there
+ *     double-counts the cached half.
+ *
+ * *"Make the two adapters consistent"* is therefore the tidy-up that silently
+ * doubles one provider's input numbers with a green suite. `usage.test.ts` holds a
+ * negative control for each direction.
  */
-export type ReadingUsage = { inputTokens: number | null; outputTokens: number | null };
+export type ReadingUsage = {
+  /** TOTAL input tokens, cache reads included. */
+  inputTokens: number | null;
+  outputTokens: number | null;
+  /**
+   * The subset of `inputTokens` served from the provider's prompt cache.
+   *
+   * **`0` IS A REAL MEASUREMENT HERE, UNLIKE `inputTokens`**, where a reported zero
+   * becomes NULL because a prompt cannot really cost nothing. `0` means "usage was
+   * reported and nothing came from cache"; NULL means "nothing was reported at
+   * all". Only that distinction lets a cache-hit rate be computed over the right
+   * denominator.
+   */
+  cachedInputTokens: number | null;
+};
 
 /**
  * WHICH CALL THIS IS. Nine values for nine call sites, and the set is CLOSED.

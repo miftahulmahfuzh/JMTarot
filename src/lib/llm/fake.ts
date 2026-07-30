@@ -51,6 +51,7 @@ export function fakeStream(chunks: string[], opts: FakeStreamOpts = {}): LLMStre
       resolveUsage({
         inputTokens: opts.usage?.inputTokens ?? null,
         outputTokens: opts.usage?.outputTokens ?? null,
+        cachedInputTokens: opts.usage?.cachedInputTokens ?? null,
       });
     }
   }

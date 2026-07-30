@@ -271,6 +271,7 @@ describe('flushCalls', () => {
     errorKind: null,
     inputTokens: null,
     outputTokens: 12,
+    cacheReadTokens: null,
     totalMs: 903,
     ...over,
   });

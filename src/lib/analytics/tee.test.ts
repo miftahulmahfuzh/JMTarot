@@ -51,7 +51,7 @@ describe('teeReading', () => {
     expect(outcome.chars).toBe(chunks.join('').length);
     expect(outcome.firstTokenMs).toBeTypeOf('number');
     expect(outcome.errorKind).toBe(null);
-    expect(outcome.usage).toEqual({ inputTokens: 900, outputTokens: 42 });
+    expect(outcome.usage).toEqual({ inputTokens: 900, outputTokens: 42, cachedInputTokens: null });
   });
 
   it('2. mid-stream failure: the notice reaches the screen and NEVER the body', async () => {
@@ -188,7 +188,7 @@ describe('teeReading', () => {
     await drain(stream);
 
     const outcome = await within(done);
-    expect(outcome.usage).toEqual({ inputTokens: null, outputTokens: null });
+    expect(outcome.usage).toEqual({ inputTokens: null, outputTokens: null, cachedInputTokens: null });
     expect(outcome.body).toBe('halo');
     err.mockRestore();
   });

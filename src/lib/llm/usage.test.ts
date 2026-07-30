@@ -60,23 +60,33 @@ const PROMPT = { system: 's', user: 'u', maxTokens: 100, promptVersion: 'id-v1.0
 
 describe('streamReading usage', () => {
   it('yields the text and resolves usage with the reported counts', async () => {
+    // An UNCACHED send: the whole prompt is fresh, so `cache_read_input_tokens`
+    // is a reported 0 -- a measurement, not an absence.
     scripted = events([
-      { type: 'message_start', message: { usage: { input_tokens: 1234 } } },
+      { type: 'message_start', message: { usage: { input_tokens: 0, output_tokens: 0 } } },
       textDelta('Hai '),
       textDelta('kamu.'),
-      { type: 'message_delta', usage: { output_tokens: 88 }, delta: { stop_reason: 'end_turn' } },
+      {
+        type: 'message_delta',
+        usage: { input_tokens: 1234, output_tokens: 88, cache_read_input_tokens: 0 },
+        delta: { stop_reason: 'end_turn' },
+      },
       { type: 'message_stop' },
     ]);
 
     const stream = createAnthropicProvider().streamReading(PROMPT);
     expect(await drain(stream)).toBe('Hai kamu.');
-    await expect(stream.usage).resolves.toEqual({ inputTokens: 1234, outputTokens: 88 });
+    await expect(stream.usage).resolves.toEqual({
+      inputTokens: 1234,
+      outputTokens: 88,
+      cachedInputTokens: 0,
+    });
   });
 
-  it('THE z.ai CASE: input_tokens 0 resolves to null, never 0', async () => {
-    // This is the one that will actually happen. A literal 0 in the column
-    // would make every average silently wrong and would be indistinguishable
-    // from a real zero.
+  it('a genuinely absent input count is null, never 0', async () => {
+    // A provider that reports an output count and nothing about the input side.
+    // A literal 0 in the column would be indistinguishable from a real zero and
+    // would make every average silently wrong.
     scripted = events([
       { type: 'message_start', message: { usage: { input_tokens: 0 } } },
       textDelta('halo'),
@@ -85,7 +95,39 @@ describe('streamReading usage', () => {
 
     const stream = createAnthropicProvider().streamReading(PROMPT);
     await drain(stream);
-    await expect(stream.usage).resolves.toEqual({ inputTokens: null, outputTokens: 12 });
+    await expect(stream.usage).resolves.toEqual({
+      inputTokens: null,
+      outputTokens: 12,
+      cachedInputTokens: null,
+    });
+  });
+
+  it('THE REAL z.ai SHAPE: the input count arrives in message_delta, not message_start', async () => {
+    /*
+     * THE BUG THIS FILE EXISTED ALONGSIDE FOR A WHOLE RELEASE. `message_start`
+     * carries `input_tokens: 0` on every z.ai stream and the real number arrives
+     * later, in `message_delta` -- the same event the adapter already opens to read
+     * `output_tokens` from. Measured 2026-07-30 against the live endpoint.
+     *
+     * Asserting 1364 and not 20 is the whole point: reading `input_tokens` alone
+     * from the delta looks correct and undercounts by the cached majority.
+     */
+    scripted = events([
+      { type: 'message_start', message: { usage: { input_tokens: 0, output_tokens: 0 } } },
+      textDelta('halo'),
+      {
+        type: 'message_delta',
+        usage: { input_tokens: 20, output_tokens: 24, cache_read_input_tokens: 1344 },
+      },
+    ]);
+
+    const stream = createAnthropicProvider().streamReading(PROMPT);
+    await drain(stream);
+    await expect(stream.usage).resolves.toEqual({
+      inputTokens: 1364,
+      outputTokens: 24,
+      cachedInputTokens: 1344,
+    });
   });
 
   it('settles usage when the consumer breaks out of the for-await early', async () => {
@@ -105,12 +147,18 @@ describe('streamReading usage', () => {
       break;
     }
 
+    /*
+     * ALL THREE NULL, and that is the honest answer rather than a regression: the
+     * counts ride on `message_delta`, which an abandoned stream never reaches. The
+     * settling is what matters here -- a promise that never resolves parks the
+     * after() callback on its timeout for every reading a client walked away from.
+     */
     await expect(
       Promise.race([
         stream.usage,
         new Promise((_, reject) => setTimeout(() => reject(new Error('never settled')), 500)),
       ]),
-    ).resolves.toEqual({ inputTokens: 5, outputTokens: null });
+    ).resolves.toEqual({ inputTokens: null, outputTokens: null, cachedInputTokens: null });
   });
 
   it('settles usage on a thrown stream and does NOT reject it', async () => {
@@ -126,7 +174,9 @@ describe('streamReading usage', () => {
 
       const stream = createAnthropicProvider().streamReading(PROMPT);
       await expect(drain(stream)).rejects.toThrow('upstream died');
-      await expect(stream.usage).resolves.toMatchObject({ inputTokens: 7 });
+      // A stream that died before `message_delta` reported no counts at all. The
+      // property under test is that it RESOLVES rather than rejects.
+      await expect(stream.usage).resolves.toMatchObject({ inputTokens: null });
 
       // Give the loop a turn: an unhandled rejection is reported asynchronously.
       await new Promise((r) => setImmediate(r));
@@ -177,7 +227,7 @@ describe('complete() usage', () => {
     });
 
     const out = await createAnthropicProvider().complete(COMPLETION, OP);
-    expect(out.usage).toEqual({ inputTokens: null, outputTokens: 40 });
+    expect(out.usage).toEqual({ inputTokens: null, outputTokens: 40, cachedInputTokens: null });
   });
 
   it('reports both counts when the provider reports both', async () => {
@@ -187,13 +237,28 @@ describe('complete() usage', () => {
     });
 
     const out = await createAnthropicProvider().complete(COMPLETION, OP);
-    expect(out.usage).toEqual({ inputTokens: 1200, outputTokens: 64 });
+    expect(out.usage).toEqual({ inputTokens: 1200, outputTokens: 64, cachedInputTokens: null });
   });
 
-  it('an absent usage object is two nulls, not two zeroes', async () => {
+  it('sums the cached half on the buffered path too', async () => {
+    /*
+     * The buffered path is the one that was NEVER broken, which is why the stream
+     * bug survived a release: half the ledger looked plausible. It still has to
+     * sum, because a cached buffered call reports the same split shape.
+     */
+    scriptedCreate = async () => ({
+      content: [{ type: 'text', text: 'ok' }],
+      usage: { input_tokens: 20, output_tokens: 64, cache_read_input_tokens: 256 },
+    });
+
+    const out = await createAnthropicProvider().complete(COMPLETION, OP);
+    expect(out.usage).toEqual({ inputTokens: 276, outputTokens: 64, cachedInputTokens: 256 });
+  });
+
+  it('an absent usage object is all nulls, not zeroes', async () => {
     scriptedCreate = async () => ({ content: [{ type: 'text', text: 'ok' }] });
 
     const out = await createAnthropicProvider().complete(COMPLETION, OP);
-    expect(out.usage).toEqual({ inputTokens: null, outputTokens: null });
+    expect(out.usage).toEqual({ inputTokens: null, outputTokens: null, cachedInputTokens: null });
   });
 });
