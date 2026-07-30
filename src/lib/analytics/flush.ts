@@ -310,6 +310,7 @@ export async function flushCalls(
       streamed: row.streamed,
       inputTokens: row.inputTokens,
       outputTokens: row.outputTokens,
+      cacheReadTokens: row.cacheReadTokens,
       totalMs: row.totalMs,
       status: row.status,
       errorKind: row.errorKind,

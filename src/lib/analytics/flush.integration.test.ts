@@ -367,6 +367,41 @@ describe('flushCalls', () => {
     });
   });
 
+  it('STORES THE CACHE SPLIT, and keeps a reported 0 distinct from NULL', async () => {
+    /*
+     * The three states have to survive the round trip, because the whole reason the
+     * column exists is a hit RATE -- and a rate computed over "rows that happened to
+     * have a number" would drop every genuine miss and read near 100%.
+     *
+     *   > 0   a cache hit of that size
+     *   0     usage was reported and nothing came from cache -- A MEASUREMENT
+     *   NULL  nothing was reported at all
+     */
+    await withRollback(async (tx) => {
+      const userId = await seedUser(tx);
+      await flushCalls(
+        ctx(userId),
+        [
+          record({ op: 'reading', inputTokens: 1364, cacheReadTokens: 1344 }),
+          record({ op: 'gist', inputTokens: 1364, cacheReadTokens: 0 }),
+          record({ op: 'lotus', inputTokens: null, cacheReadTokens: null }),
+        ],
+        tx,
+      );
+
+      const stored = await tx.select().from(llmCalls);
+      const by = (op: string) => stored.find((r) => r.op === op);
+      expect(by('reading')?.cacheReadTokens).toBe(1344);
+      // `toBe(0)` and not a truthiness check: the bug this guards is a `|| null`
+      // somewhere in the write path turning a measured miss into an absence.
+      expect(by('gist')?.cacheReadTokens).toBe(0);
+      expect(by('lotus')?.cacheReadTokens).toBeNull();
+
+      // And the total is the TOTAL: 1364 with 1344 of it cached, never 2708.
+      expect(by('reading')?.inputTokens).toBe(1364);
+    });
+  });
+
   it('accepts a NULL user id, which is the R49 Lotus case', async () => {
     await withRollback(async (tx) => {
       // Three W3 onboarding routes have a real querent and no `withAnalytics` scope,
