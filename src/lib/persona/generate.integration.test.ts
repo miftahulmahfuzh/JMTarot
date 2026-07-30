@@ -87,6 +87,7 @@ beforeEach(async () => {
   await resetDb();
   complete.mockReset();
   delete process.env.PERSONA_STUB;
+  delete process.env.PERSONA_GENERATION_ENABLED;
   process.env.PERSONA_MODEL = 'test-model';
 });
 
@@ -215,6 +216,122 @@ describe('generatePersona', () => {
     expect(complete).not.toHaveBeenCalled();
     expect(out.fallback).toBe(true);
     expect((await getPersona(testDb, userId))?.model).toBe('fallback');
+  });
+
+  /*
+   * PERSONA_GENERATION_ENABLED (2026-07-30). Three assertions, and the second is a
+   * REGRESSION TEST for a bug the first draft shipped: `/api/persona`'s `drift`
+   * branch calls this in an `after()` behind a response that has already served a
+   * true paragraph, so a guard that reused `stubbed()`'s unconditional store would
+   * have replaced every querent's real persona with a template the moment an
+   * operator set the flag to `0`.
+   */
+  describe('PERSONA_GENERATION_ENABLED=0', () => {
+    it('makes no provider call and writes the template on a first visit', async () => {
+      process.env.PERSONA_GENERATION_ENABLED = '0';
+      const userId = await seed();
+
+      const out = await generatePersona(userId, 'id');
+
+      expect(complete).not.toHaveBeenCalled();
+      expect(out.reason).toBe('disabled');
+      expect(out.fallback).toBe(true);
+      /*
+       * IT MUST WRITE. `/api/persona`'s no-row branch reads the row straight back
+       * and answers 500 when there is nothing there, so a generator that wrote
+       * nothing would turn this flag into a broken `/account` for every querent who
+       * had not opened it yet.
+       */
+      expect((await getPersona(testDb, userId))?.model).toBe('fallback');
+    });
+
+    it('NEVER overwrites a paragraph that is already stored', async () => {
+      const userId = await seed();
+      complete.mockResolvedValue({ text: CLEAN, usage: {} });
+      await generatePersona(userId, 'id');
+      expect((await getPersona(testDb, userId))?.body).toBe(CLEAN);
+
+      /*
+       * A fact changes, so `input_hash` moves and this is no longer `unchanged` --
+       * which is what makes the assertion meaningful rather than vacuous. This is
+       * the `drift` shape: the route would call exactly this, in an `after()`.
+       */
+      const { upsertProfileFacts } = await import('@/lib/db/queries/profile');
+      process.env.PERSONA_GENERATION_ENABLED = '0';
+      await upsertProfileFacts(testDb, userId, {
+        fullName: 'Miftahul Mahfuzh',
+        nickname: 'Fuzh',
+        birthDate: '1994-03-14',
+      });
+      complete.mockClear();
+
+      const out = await generatePersona(userId, 'id');
+
+      expect(complete).not.toHaveBeenCalled();
+      expect(out.reason).toBe('disabled');
+      // THE ASSERTION. A kill switch that degrades stored prose is worse than the
+      // quota it protects.
+      expect((await getPersona(testDb, userId))?.body).toBe(CLEAN);
+      expect((await getPersona(testDb, userId))?.model).toBe('test-model');
+    });
+
+    /*
+     * **THE FLAG FLIPPING BACK IS NOT BY ITSELF ENOUGH, AND THAT IS WORTH A TEST
+     * RATHER THAN A COMMENT.** The first-visit write stores the template under the
+     * CURRENT `input_hash`, so until that hash moves the `unchanged` check matches
+     * and returns early -- exactly the mechanism that makes the same write
+     * permanent in `generateLotus`, whose hash never moves at all.
+     *
+     * What rescues it here is that `personaInputHash` ends with `readings:<ids>`:
+     * any reading, or any facts edit, moves it. So the template survives at most
+     * until the querent's next reading, which is the claim these two tests pin
+     * down. A first draft asserted the flag flip alone was sufficient; it is not,
+     * and believing it would have left a comment in `flags.ts` that was false.
+     */
+    it('still serves the template while nothing has moved the hash', async () => {
+      process.env.PERSONA_GENERATION_ENABLED = '0';
+      const userId = await seed();
+      await generatePersona(userId, 'id');
+      expect((await getPersona(testDb, userId))?.model).toBe('fallback');
+
+      delete process.env.PERSONA_GENERATION_ENABLED;
+      complete.mockResolvedValue({ text: CLEAN, usage: {} });
+
+      const out = await generatePersona(userId, 'id');
+
+      // Idempotence wins: no model call, and the template is still what is stored.
+      expect(complete).not.toHaveBeenCalled();
+      expect(out.reason).toBe('unchanged');
+      expect((await getPersona(testDb, userId))?.model).toBe('fallback');
+    });
+
+    it('regenerates for real once the hash moves, with no backfill', async () => {
+      process.env.PERSONA_GENERATION_ENABLED = '0';
+      const userId = await seed();
+      await generatePersona(userId, 'id');
+      expect((await getPersona(testDb, userId))?.model).toBe('fallback');
+
+      /*
+       * A facts edit stands in for the commoner trigger -- a reading, which appends
+       * to `readings:<ids>`. Either moves the hash, and that is the whole
+       * self-healing mechanism: nobody runs a backfill.
+       */
+      const { upsertProfileFacts } = await import('@/lib/db/queries/profile');
+      delete process.env.PERSONA_GENERATION_ENABLED;
+      await upsertProfileFacts(testDb, userId, {
+        fullName: 'Miftahul Mahfuzh',
+        nickname: 'Fuzh',
+        birthDate: '1994-03-14',
+      });
+      complete.mockResolvedValue({ text: CLEAN, usage: {} });
+
+      const out = await generatePersona(userId, 'id');
+
+      expect(complete).toHaveBeenCalledTimes(1);
+      expect(out.fallback).toBe(false);
+      expect((await getPersona(testDb, userId))?.body).toBe(CLEAN);
+      expect((await getPersona(testDb, userId))?.model).toBe('test-model');
+    });
   });
 
   it('does not throw when the provider throws', async () => {

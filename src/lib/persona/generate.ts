@@ -59,6 +59,7 @@ import { answersUpdatedAt, getAnswers } from '@/lib/db/queries/onboarding';
 import { getPersona, upsertPersona } from '@/lib/db/queries/persona';
 import { getProfile } from '@/lib/db/queries/profile';
 import { getProvider } from '@/lib/llm';
+import { personaGenerationEnabled } from '@/lib/llm/flags';
 import type { CallClass } from '@/lib/llm/meter';
 import { correspondencesFor } from '@/lib/numerology';
 import {
@@ -84,7 +85,19 @@ export type PersonaOutcome = {
   ok: boolean;
   /** True when the stored body is the template rather than the model's. */
   fallback: boolean;
-  reason?: PersonaRejectReason | 'no_profile' | 'not_completed' | 'unchanged' | 'error';
+  /**
+   * `'disabled'` is `PERSONA_GENERATION_ENABLED=0`. DISTINCT FROM `'unchanged'`
+   * on purpose: `/api/persona` calls `touchPersona` for both, so that the
+   * `user-edit` branch terminates either way, but reporting an operator's switch
+   * as idempotence would make `persona.generated` lie about why nothing moved.
+   */
+  reason?:
+    | PersonaRejectReason
+    | 'no_profile'
+    | 'not_completed'
+    | 'unchanged'
+    | 'error'
+    | 'disabled';
   ms: number;
   model: string;
   locale: Locale;
@@ -331,6 +344,51 @@ export async function generatePersona(
       return done({ ok: true, fallback: false, reason: 'unchanged' }, material.facets, material.facts.readingCount);
     }
 
+    /*
+     * THE KILL SWITCH, AND IT BRANCHES ON WHETHER A PARAGRAPH ALREADY EXISTS.
+     * Below the `unchanged` check, so an idempotent call is still free.
+     *
+     * **AN EXISTING BODY IS NEVER OVERWRITTEN WITH A TEMPLATE.** Without that
+     * half, `/api/persona`'s `drift` branch -- which fires `generatePersona` in
+     * `after()` behind a response that has already served a true paragraph -- would
+     * replace the querent's real persona with `fallbackPersona`'s deterministic one
+     * the moment an operator set this to `0`. A kill switch that DEGRADES stored
+     * prose is worse than the quota it protects, and this is the shape in which
+     * that happens by accident.
+     *
+     * **A FIRST VISIT DOES STORE THE TEMPLATE, AND IT HAS TO.** `/api/persona`'s
+     * no-row branch reads the row straight back after generating and answers
+     * **500** when there is nothing there -- its comment says "only reachable when
+     * the WRITE failed" -- so a generator that writes nothing would turn this flag
+     * into a broken `/account` for every querent who had not opened it yet.
+     *
+     * **AND STORING IT IS SAFE HERE, UNLIKE IN `generateLotus`**, which returns
+     * without writing for precisely the reason this may write: `personaInputHash`
+     * ends with `readings:<ids>`, so it MOVES ON EVERY READING. A `lotus` hash never
+     * moves, so the same write there would be permanent.
+     *
+     * **THE BOUND IS THE NEXT READING, NOT THE FLAG FLIP** -- be exact, because a
+     * first draft of this comment was not. The template is written under the hash
+     * that is current now, so while nothing moves it the `unchanged` check above
+     * returns early even after the flag is back at `1`. Any reading, or any facts
+     * edit, moves it and `drift` then regenerates. Nobody runs a backfill; a querent
+     * who never reads again keeps the template, which is the accepted cost.
+     * `generate.integration.test.ts` asserts both halves separately.
+     *
+     * `reason: 'disabled'`, NOT `'unchanged'` -- the route distinguishes them, and
+     * a switch reported as idempotence is a lie an operator reads in the analytics.
+     */
+    if (!personaGenerationEnabled()) {
+      if (existing) {
+        return done(
+          { ok: true, fallback: existing.model === 'fallback', reason: 'disabled' },
+          material.facets,
+          material.facts.readingCount,
+        );
+      }
+      return await store(userId, fallbackPersona(input), input, material, model, done, true, 'disabled');
+    }
+
     if (stubbed()) {
       return await store(userId, fallbackPersona(input), input, material, model, done, true, undefined);
     }
@@ -399,7 +457,8 @@ async function store(
     readingCount?: number,
   ) => PersonaOutcome,
   fallback: boolean,
-  reason: PersonaRejectReason | undefined,
+  /** `'disabled'` is the flag's first-visit write; see the guard in the caller. */
+  reason: PersonaRejectReason | 'disabled' | undefined,
 ): Promise<PersonaOutcome> {
   await upsertPersona(db, {
     userId,

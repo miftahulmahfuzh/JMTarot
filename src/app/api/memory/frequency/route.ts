@@ -32,6 +32,7 @@ import {
 } from '@/lib/db/queries/frequency';
 import { getProfile } from '@/lib/db/queries/profile';
 import { getProvider } from '@/lib/llm';
+import { frequencyVerdictEnabled } from '@/lib/llm/flags';
 import { parseLocalDate, SESSION_HEADER, validSessionId } from '@/lib/analytics/localdate';
 import { track, withAnalytics, type AnalyticsContext } from '@/lib/analytics/track';
 import {
@@ -169,13 +170,37 @@ export async function GET(request: Request) {
         cached: true,
       });
 
-      if (state === 'still-true') {
+      if (state === 'still-true' && frequencyVerdictEnabled()) {
         // Counts moved. Regenerate behind the response; nothing waits for it.
+        // Skipped entirely when switched off -- the line on screen is still TRUE,
+        // which is what `still-true` means, so there is nothing to protect here.
         after(() => generate(user.id, locale, result).catch(logFailure));
       }
 
       return text(cached.body);
     }
+
+    /*
+     * THE KILL SWITCH. Reached only after the cache has been consulted, so
+     * **`FREQUENCY_VERDICT_ENABLED=0` COSTS NOBODY THE LINE THEY ALREADY HAVE** --
+     * `sharingEnabled()`'s rule ("it gates minting only; existing links keep
+     * resolving") applied to a cached sentence. A kill switch that blanks a screen
+     * is a worse outage than the quota it was protecting.
+     *
+     * 204 IS NOT AN ERROR PATH HERE, IT IS THIS ROUTE'S COMMON ANSWER -- most
+     * users, most days, have no pattern worth naming. `FrequencyLine` renders
+     * nothing until it has something and nothing forever if it never does (M14),
+     * so there is no empty state to design, no error copy to write and nothing on
+     * the reader picker that moves. Which is also why the querent cannot tell this
+     * from an ordinary quiet day, deliberately.
+     *
+     * BELOW `deleteVerdicts`, ABOVE `generate`. The gate-failure branch above
+     * still prunes stale rows: that is one statement on a path already doing no
+     * other work, it reaches no model, and skipping it would leave a line naming a
+     * pair the querent's window no longer has -- a false statement about them,
+     * which is the one thing worse than silence.
+     */
+    if (!frequencyVerdictEnabled()) return NO_CONTENT;
 
     /*
      * No row, or a row naming the wrong pair. Generate now: serving a line that

@@ -6013,6 +6013,196 @@ it currently sends one verb and knows nothing about A6's two routes.
 
 ---
 
+## The five model-call kill switches (2026-07-30)
+
+**Miftah's ask:** feature flags to reduce LLM calls, settable to `false` on Vercel in times
+of need, *"card reading services and translation feature must not be disabled because these 2
+are the backbone of our system."*
+
+`src/lib/llm/flags.ts` (a LEAF: env only, zero imports), `flags.test.ts`,
+`flagCoverage.test.ts`, five guarded call sites, `lotus.generate.integration.test.ts` and
+`gist.generate.integration.test.ts` (both new), `.env.example`'s new section and
+`docs/DEPLOY-VERCEL.md` §2d.
+
+### What "weekly summary" turned out to be
+
+The ask named `ENABLE_WEEKLY_SUMMARY` and `ENABLE_DAILY_SUMMARY`. **There is no weekly summary
+in this codebase and there never was** — grepping code and `docs/` for `weekly`, `mingguan`
+and `pekan` finds only A3's admin analytics, which reach no model. Asked, and the answer was
+*"the thing below 'choose your reader' text"*: that is `<FrequencyLine />` at
+`src/app/page.tsx:129`, directly under `picker.reader.hint`, which fetches
+`GET /api/memory/frequency` — **the card-frequency verdict**.
+
+It reads as weekly because `week` is the first rung of `VERDICT_LADDER`. It is not weekly: the
+ladder walks `week`, `d3`, `d13`, `d666`, `month`, `quarter`, `year`, `birthday`. So the flag
+is `FREQUENCY_VERDICT_ENABLED` and **not** `WEEKLY_SUMMARY_ENABLED`, because a future operator
+reading the latter would take it to govern one window out of eight. The mental model is
+preserved where it is needed instead — `.env.example` names it *"the thing that reads as a
+weekly summary"* and quotes the on-screen sentence above it.
+
+### Naming, and why the ask's own spelling lost
+
+Asked, and Miftah chose the repo convention. `ENABLE_X` was the ask; `X_ENABLED` is what
+`ANALYTICS_ENABLED`, `SHARING_ENABLED` and `MODERATION_CLASSIFIER_ENABLED` already use, and
+those three annotations cross-reference each other's defaulting rule in `.env.example` — a
+second convention in the same file would have broken that chain for a cosmetic preference.
+
+`PERSONA_GENERATION_ENABLED` and `LOTUS_GENERATION_ENABLED` carry the `_GENERATION_` infix and
+the other three do not. That is `MODERATION_CLASSIFIER_ENABLED`'s lesson applied ("named so it
+cannot be misread as 'moderation off'"): those two are the only ones where the feature still
+RENDERS with the flag off, from a stored row or a deterministic template. A bare
+`PERSONA_ENABLED` reads as "the block disappears", which is not what it does.
+
+### The two design rules, and the precedents they came from
+
+1. **Gate the model call, never the cached read.** `sharingEnabled()`'s annotation is explicit
+   that it "gates minting only; existing links keep resolving", and the same logic transfers:
+   a querent who already has a verdict, a summary or a persona keeps seeing it, served free
+   out of the row that is already there. Off means *write nothing new*. Both `/api/memory/*`
+   routes therefore check their flag **below** the cache read and above `generate()`, and
+   `NO_CONTENT` is not an error path but each route's own documented common answer, with
+   `FrequencyLine` and `DaySummary` rendering nothing on it by M14.
+
+   **AND THE TWO ROUTES TREAT A *STALE* CACHED ROW OPPOSITELY, WHICH IS THE PART TO NOT
+   "TIDY".** Caught reviewing the diff, not by a test — the first draft had both returning a
+   flat 204 past the cache check, which for the summary took the panel away from exactly the
+   querent who *had* one that morning and then took a fourth reading.
+   - **`/api/memory/summary` serves the stale copy.** `isStale` fires when a new reading has
+     landed past the throttle, or on a prompt-version bump; the stored paragraph is still a
+     true account of the readings it knew about, merely one short. That file's header calls
+     serve-stale "forgetful" and refuses it on the normal path — but with the flag off the
+     alternative is not a fresher summary, it is *no* summary, and forgetful beats absent.
+   - **`/api/memory/frequency` returns 204 for its `stale` state.** Not the same thing: a
+     cached verdict is `stale` when it names a card pair the querent's window no longer has at
+     the top, which is a **false statement about them**, and silence is strictly better than
+     that. Its `still-true` state — same pair, moved counts — *is* served, with the behind-the-
+     response regeneration skipped.
+
+   The discriminator is "is the cached row still TRUE", not "is it current".
+2. **A disabled generator must not leave behind a row that will look current later.** This is
+   the one that took the work, and it resolved in opposite directions for the two generators.
+
+### The trap: `LOTUS_STUB`'s path is not a production-legal kill switch
+
+The obvious implementation is to reuse the `stubbed()` branch each generator already has and
+store the deterministic template. It survives a green suite, a green typecheck and a manual
+test, **and for the Lotus it is a permanent data defect.**
+
+`store()` writes `input_hash` and `source_version` alongside the body, and `lotusInputHash` is
+a digest of the birth year and the six onboarding answers — **nothing that ever changes
+again**. So the row matches its own hash forever, `generateLotus`'s `unchanged` check returns
+early for good, and every querent who onboarded while the flag was off feeds a TEMPLATE into
+every reading they ever take, *after the flag goes back to `1`*, with nothing reporting it.
+That is exactly why CLAUDE.md forbids `LOTUS_STUB` in production, and a production-legal flag
+has to be better than the variable it replaces rather than a rename of it.
+
+**So `LOTUS_GENERATION_ENABLED=0` returns above every read and writes nothing.**
+`getLotusBlock` then returns null, where the reading path already documents *"NULL IS NORMAL,
+not an error"* and produces exactly the reading an un-personalised querent gets, and the next
+reading after the flag returns distils properly via `scheduleLotusRefresh`. Self-healing, no
+backfill script.
+
+**The persona is the opposite and it is not an inconsistency.** `personaInputHash` ends with
+`readings:${input.readingIds.join(',')}`, so it moves on every reading; a stored template goes
+stale by itself and `personaStaleness`'s `drift` arm regenerates it. And it *must* write
+something: `/api/persona`'s no-row branch reads the row straight back and answers **500** when
+there is nothing there — its own comment says "only reachable when the WRITE failed" — so a
+generator that wrote nothing would turn this flag into a broken `/account` for every querent
+who had not opened it yet.
+
+**Be exact about the bound, because a first draft of the comment was not.** The persona
+template is written under the hash that is current at the time, so the flag flipping back to
+`1` is *not by itself* enough — the hash has to move. An integration test asserted immediate
+healing, failed, and was the thing that caught the imprecision; it is now two tests, one for
+each half. A querent who never reads again keeps the template, which is the accepted cost.
+
+### Persona must never overwrite a paragraph that exists
+
+`/api/persona`'s `drift` branch fires `generatePersona` inside an `after()`, *behind a response
+that has already served a true paragraph*. A guard that stored the template unconditionally
+would therefore replace every querent's real persona with a template the moment an operator
+set the flag to `0` — a kill switch that degrades stored prose, which is worse than the quota
+it was protecting. Hence the `if (existing)` arm returning `'disabled'` without writing, and
+`generate.integration.test.ts`'s test named *"NEVER overwrites a paragraph that is already
+stored"*, which moves a profile fact first so the assertion is not vacuous on `unchanged`.
+
+### `reason: 'disabled'` is not `'unchanged'`, and one event had to go quiet
+
+Reporting the switch as idempotence would be a lie an operator reads in the analytics, so it
+is its own reason. Two consequences:
+
+- **`persona.generated` must NOT fire for it.** The `drift` branch calls the generator on every
+  `/account` view, so emitting the event would have inflated exactly the metric somebody scans
+  to confirm the flag took effect — with `fallback: false` and a `model` naming a model that
+  was never asked. It reads as the switch not working. `llm_calls` (query 9) is the honest
+  instrument and is unaffected; `persona.viewed` still fires everywhere and carries `fallback`.
+- **`/api/persona` calls `touchPersona` for `'disabled'` as well as `'unchanged'`**, or the
+  `user-edit` branch never clears and is re-entered on every page view forever. With the flag
+  off that is guaranteed rather than incidental.
+
+### Gist: the biggest lever, and the fallback that was declined
+
+`GIST_ENABLED` is the only one whose volume tracks **reading count** rather than user count or
+day count — one model call per reading — so it is worth more than the other four together on a
+busy day, and DEPLOY-VERCEL §2d tells an operator to reach for it first. It was also the one
+missing from the options first offered; raised as a follow-up and accepted.
+
+Degrading to `fallbackGist(body)` — the reading's own last sentence, deterministic and free —
+was offered as an alternative and **declined deliberately**. Rung 2 of that file's ladder
+exists to report that THE MODEL is failing, via `memory.gist_failed.fell_back`, and an
+operator's deliberate choice arriving as the same event makes the one signal that separates
+"the provider is broken" from "we turned it off" unreadable. So the guard returns before the
+call *and* before the write: `readings.gist` stays null, which `recallableReadings` already
+treats as excluded from recall.
+
+**The permanent cost, offered and accepted:** a reading taken while this is off never becomes
+material for a later reading's `<riwayat>` callback, because nothing backfills.
+
+### How it is verified, and the one test that matters most
+
+- **`flags.test.ts` — 74 tests.** The defaulting rule per flag, including nine mistyped values
+  (`false`, `off`, `no`, `''`, `'0 '`, …) each asserted to leave the feature **ON**, plus
+  read-at-call-time and the no-imports leaf property.
+- **`flagCoverage.test.ts` is the important one.** It greps
+  `getProvider().(complete|streamReading)` across `src/` and asserts the set of call sites is
+  **exactly** its two tables — five flagged, three exempt with written reasons. `callClass.test.ts`
+  asserts the same set for a different property; two tables over one set of files is duplication
+  on purpose, because they fail for different reasons. **What this catches is the tenth model
+  call site**, added by some future workstream, that is unswitchable by default and would cost
+  quota during exactly the outage these flags exist for while passing every other test in the
+  repo. It also fails in the inverse direction: a flag declared in `.env.example` and wired to
+  nothing reads as a working kill switch to whoever sets it at 2am.
+- **Two new integration suites**, because none of the five files can be imported under Vitest —
+  every one reaches `@/lib/llm`, which starts with `import 'server-only'`. `gist.generate` takes
+  an optional handle (W4's writer convention) so its suite uses `withRollback` directly;
+  `lotus.generate` reaches the `db` singleton, so its suite mocks the client to the test handle
+  as `generate.integration.test.ts` does.
+- **Non-vacuity was proven by removing both guards and watching five assertions fail** — the
+  flag-off tests went red while the "mistyped value stays enabled" tests correctly stayed green.
+  Worth recording because these tests were written *after* their implementations, so the RED step
+  had to be recovered rather than observed.
+- One caveat on that check: the Lotus's *"WRITES NOTHING"* test still passes with the guard
+  removed, because the bare `complete` mock returns `undefined`, the destructure throws, and the
+  error path also writes nothing. The test that actually distinguishes the guard is *"distils for
+  real the moment the flag comes back"*, and it is the one to keep.
+- 2766 unit, 472 integration, `npm run typecheck` clean, `npm run build` clean, `audit:secrets`
+  clean.
+
+### Not done
+
+- **Nothing has been exercised against a real deployment with a flag set.** The routes' guards
+  are single-line early returns immediately above their `generate()` calls and the 204 was
+  already each route's documented path, but no `curl` has confirmed a 204 from a deployed lambda
+  with `FREQUENCY_VERDICT_ENABLED=0` set in the dashboard. That is loop 5 (`tools/e2e/run.sh`)
+  or a phone, and it is the honest gap.
+- **The two route flags have no behavioural test**, only the grep — a route handler behind
+  `requireUser()` needs a session, which the unit project cannot mint. `POST /api/auth/dev-session`
+  plus loop 5 is the available instrument if it ever seems worth it.
+- **No `admin` surface reads these.** An operator learns the current state from the Vercel
+  dashboard and from `llm_calls` going quiet, not from the app.
+
+---
+
 ---
 
 # Part II — the full prior text of CLAUDE.md's sections, moved 2026-07-29

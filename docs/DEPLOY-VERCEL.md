@@ -503,6 +503,104 @@ extra job, no extra query and no extra endpoint.
 
 ---
 
+## 2d. Shedding features to save quota — the five kill switches
+
+**THIS IS THE THING TO DO WHEN §2b's RISK ACTUALLY ARRIVES**, and it needs no
+deploy, no code change and no database work: five environment variables in the
+Vercel dashboard, each of which stops one feature from reaching a model. Set,
+Redeploy, done.
+
+§2b's controls are all *automatic* — the limiter, the rolling ceiling, the soft
+tier. They protect the quota without anybody watching, and by the time you are
+reading this section they have not been enough. These five are the manual lever:
+you decide which features are worth their model calls this week.
+
+`src/lib/llm/flags.ts` holds them, `.env.example` carries the full annotation for
+each, and `flagCoverage.test.ts` is what stops a future feature from quietly
+becoming unswitchable.
+
+### The rule they all share
+
+**ONLY THE EXACT STRING `0` DISABLES.** `ANALYTICS_ENABLED`'s convention, and note
+it points the *opposite* way to `RATELIMIT_BACKEND`: there a typo must not disable
+enforcement, so only `memory` does anything; here a typo must not silently cost
+every querent a feature, so only `0` does. **`false`, `off`, `no`, `FALSE` and an
+empty value all leave the feature ON.** If you mean to switch something off, type
+a zero and nothing else.
+
+**And `1` is not required to enable** — unset is enabled. You never have to add
+these variables to turn anything on; you add them to turn something off, and the
+tidy-up afterwards is deleting them again.
+
+### What to reach for, in order
+
+Work down this table. It is ordered by **quota saved per unit of harm**, which is
+not the order the features were built in and not the order they appear in
+`.env.example`'s file layout.
+
+| # | Variable | Volume | What a querent loses |
+|---|----------|--------|----------------------|
+| 1 | `GIST_ENABLED=0` | **one call per reading** | Nothing they can see today. A future reading will not call back to one taken during the outage. |
+| 2 | `FREQUENCY_VERDICT_ENABLED=0` | per changed card pair, per window, cached | The line under *"Pilih pembaca yang cocok denganmu"*. Cached lines keep showing. |
+| 3 | `DAILY_SUMMARY_ENABLED=0` | per querent, per reader, per day | The second swipe panel on the reader page. Today's, if already generated, keeps showing. |
+| 4 | `PERSONA_GENERATION_ENABLED=0` | per `/account` visit past the staleness floor | Their persona paragraph stops updating. The one they have is kept, unchanged. |
+| 5 | `LOTUS_GENERATION_ENABLED=0` | per onboarding, per answer edit | **Every reading they take is less personal.** Reach for this last. |
+
+**`GIST_ENABLED` first, and it is not close.** It is the only one whose volume
+tracks *reading count* rather than user count or day count, so on any busy day it
+is worth more than the other four together — and it is the one nobody notices,
+because the gist is prompt material for a later reading and never appears on a
+screen.
+
+**`LOTUS_GENERATION_ENABLED` last.** The Lotus block is read into *every* reading
+prompt, so switching it off degrades the actual product for anyone who onboards
+while it is off, in a way that shows up in the prose rather than in a missing
+panel.
+
+### What none of them do
+
+**They gate the model call, not the cached read.** `SHARING_ENABLED`'s rule
+("existing links keep resolving"). A querent who already has a verdict, a summary
+or a persona keeps seeing it, served free out of the row that is already there.
+Off means *write nothing new*, never *hide what exists* — a kill switch that blanks
+a screen is a worse outage than the quota it was protecting.
+
+**They never leave a row behind that will look current later.** This is the part
+that took the most care, and the two generators behave differently on purpose:
+
+- `LOTUS_GENERATION_ENABLED=0` **writes nothing at all.** `lotusInputHash` digests
+  the birth year and the six onboarding answers and nothing else, so it never
+  moves again — a template stored under it would still match after the flag went
+  back to `1`, and that querent would feed a template into every reading they ever
+  took. Writing nothing makes it self-healing: the next reading distils properly.
+- `PERSONA_GENERATION_ENABLED=0` **stores the template on a first visit only**, and
+  never overwrites a paragraph that already exists. It has to write something —
+  `/api/persona` answers 500 with no row — and it is safe to, because
+  `personaInputHash` includes the reading list and therefore moves on the querent's
+  next reading.
+
+### Turning them back on
+
+Delete the variables (or set them to `1`) and Redeploy. Nothing needs backfilling:
+
+- **Gists** do not backfill. Readings taken during the outage stay unrecallable,
+  permanently. That is the accepted cost of the biggest lever.
+- **Frequency verdicts** and **day summaries** generate on the next request that
+  needs one.
+- **Personas** and the **Lotus** regenerate on the querent's next reading, which is
+  what moves the hash. A querent who never reads again keeps what they have.
+
+### Checking it worked
+
+**`llm_calls` is the instrument, not the analytics events.** Query 9 in
+`docs/analytics-queries.md` breaks model calls down by `op`; with a flag off, that
+`op` should go to zero and stay there. The feature-level events are deliberately
+quieter — `persona.generated` does **not** fire for a switched-off persona, because
+an event claiming a generation that never happened would inflate exactly the number
+you are checking.
+
+---
+
 ## 3. Verify the deployment
 
 - **`/` returns 200 and shows the LANDING PAGE while signed out.** It used to

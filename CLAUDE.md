@@ -152,6 +152,37 @@ through a deployment from scratch. Only the rules that bite are repeated here:
 - **Losing `FIELD_ENCRYPTION_KEY` does not break the app** — encrypted onboarding answers
   decrypt to `null` and read as "skipped" — but the data is gone for good, and there is
   deliberately no re-encryption path.
+- **FIVE FEATURES HAVE A MODEL-CALL KILL SWITCH AND TWO NEVER MAY** (2026-07-30, Miftah's
+  ruling). `src/lib/llm/flags.ts` — a LEAF, env only, zero imports — holds `GIST_ENABLED`,
+  `FREQUENCY_VERDICT_ENABLED`, `DAILY_SUMMARY_ENABLED`, `PERSONA_GENERATION_ENABLED` and
+  `LOTUS_GENERATION_ENABLED`, all on `ANALYTICS_ENABLED`'s rule (only the literal `'0'`
+  disables). `docs/DEPLOY-VERCEL.md` §2d is the runbook and orders them by what to reach
+  for first; the full account is in `docs/workstream-notes.md`.
+  - **THE READING AND THE TRANSLATION ARE THE BACKBONE AND GET NO FLAG.** A reading is the
+    product; a translation is the bug V2 exists to prevent. The honest tool there is a
+    maintenance page. **`flagCoverage.test.ts` asserts the absence by name, and asserts the
+    set of model call sites is EXACTLY its two tables** — so a tenth call site cannot
+    quietly ship unswitchable. The moderation classifier is absent for the opposite reason:
+    it already has `MODERATION_CLASSIFIER_ENABLED`, in `gate.ts`, named there so it cannot
+    read as "moderation off".
+  - **EVERY FLAG GATES THE MODEL CALL, NEVER THE CACHED READ** (`sharingEnabled()`'s rule).
+    Off means "write nothing new", never "hide what exists" — both `/api/memory/*` routes
+    serve their cached row and only then 204, which is already their documented common path.
+  - **`LOTUS_GENERATION_ENABLED=0` WRITES NOTHING; `PERSONA_GENERATION_ENABLED=0` STORES THE
+    TEMPLATE. THE ASYMMETRY IS A FACT ABOUT THE TWO HASHES AND MUST NOT BE "TIDIED".**
+    `lotusInputHash` is birth year + the six answers and **never moves again**, so a stored
+    fallback matches its own hash forever and every querent who onboarded during the outage
+    would feed a template into every reading they ever take, after the flag went back to `1`.
+    `personaInputHash` ends with `readings:<ids>`, so it moves on the next reading and heals
+    — and it **must** write, because `/api/persona`'s no-row branch 500s otherwise. Persona
+    also **never overwrites an existing paragraph**: the read path regenerates in an
+    `after()`, so without that guard the flag would degrade stored prose.
+    `lotus.generate.integration.test.ts` is the regression test for the trap.
+  - **`reason: 'disabled'` IS NOT `'unchanged'`, AND `persona.generated` MUST STAY SILENT FOR
+    IT** — the `drift` branch calls the generator on every `/account` view, so emitting the
+    event would inflate exactly the metric an operator scans to confirm the flag worked.
+    `llm_calls` (query 9) is the instrument. `/api/persona` does `touchPersona` for both, or
+    the `user-edit` branch never clears.
 
 ## How to verify things here
 

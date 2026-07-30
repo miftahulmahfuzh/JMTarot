@@ -39,6 +39,7 @@ import {
 import { db } from '@/lib/db/client';
 import { getDailySummary, putDailySummary, readingsOnDay } from '@/lib/db/queries/summary';
 import { getProvider } from '@/lib/llm';
+import { dailySummaryEnabled } from '@/lib/llm/flags';
 import { recordCall, usageOrNulls } from '@/lib/llm/ledger';
 import { reserveModelCall } from '@/lib/llm/meter';
 import { isStale } from '@/lib/memory/summary';
@@ -110,6 +111,44 @@ export async function GET(request: Request) {
     const ids = readings.map((r) => r.id);
 
     if (cached && !isStale(cached, ids, new Date())) {
+      track('memory.summary_shown', {
+        reader_id: reader,
+        source_count: readings.length,
+        cached: true,
+        chars: cached.body.length,
+      });
+      return text(cached.body);
+    }
+
+    /*
+     * THE KILL SWITCH. Below the cache read, so **`DAILY_SUMMARY_ENABLED=0` costs
+     * nobody the summary they already have today** -- `sharingEnabled()`'s rule
+     * ("it gates minting only; existing links keep resolving") applied to a cached
+     * paragraph. Off means "write nothing new", never "hide what exists".
+     *
+     * **IT SERVES A STALE COPY RATHER THAN NOTHING, AND THE FIRST DRAFT DID NOT.**
+     * Staleness here is not falsity: `isStale` fires when a NEW reading has landed
+     * past the throttle, or on a prompt-version bump -- so the stored paragraph is
+     * still a true account of the readings it knew about, merely one short. A plain
+     * 204 would therefore have taken the panel away from precisely the querent who
+     * HAD a summary this morning and then took a fourth reading, which is the
+     * opposite of what a kill switch is for. This file's own header calls
+     * serve-stale "forgetful" and refuses it on the normal path; with the flag off
+     * the alternative is not a fresher summary, it is no summary, and forgetful
+     * beats absent. `/api/memory/frequency` makes the OPPOSITE call for its
+     * `stale` state on purpose -- a verdict naming a pair the querent's window no
+     * longer has is a false statement about them, not an incomplete one.
+     *
+     * `cached: true` is honest: nothing was generated. The 204 below is then only
+     * for a querent with no row at all, where it is this route's ordinary
+     * first-time answer -- `DaySummary` renders nothing on it, so `ReaderDeck`
+     * passes a one-element array and the deck is exactly as tall as the bio with no
+     * dots (V5's M14 contract). **A deck with a second, blank panel would be the
+     * empty state roadmap §5 forbids**, so this must never become a 200 with an
+     * empty body.
+     */
+    if (!dailySummaryEnabled()) {
+      if (!cached) return NO_CONTENT;
       track('memory.summary_shown', {
         reader_id: reader,
         source_count: readings.length,
