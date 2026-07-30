@@ -19,8 +19,37 @@
  * the year 275760.
  */
 
-/** 24 hours, per roadmap D3. */
-const DEFAULT_TTL_HOURS = 24;
+/**
+ * 168 hours -- seven days. **Roadmap D3 said 24 and this is a deliberate
+ * amendment**, made on 2026-07-30 after a returning querent reported the landing
+ * page where they expected the reader picker.
+ *
+ * ── WHY IT MOVED, WHICH IS NOT THE REASON IT LOOKS LIKE ─────────────────────
+ *
+ * Nothing was broken. `/` has dual-rendered since S-D5 and does so correctly; the
+ * report was a 24-hour idle timeout doing exactly what it says. What changed is
+ * what expiry LOOKS like: before the landing page, an expired session 302'd to
+ * `/login`, and one tap on a Google button restored it almost instantly because
+ * Google's own session persists — it read as "the app remembered me". Now the
+ * same expiry presents a page addressed to a stranger. A one-day idle window is
+ * simply too short for an app somebody opens most days but not every day.
+ *
+ * ── WHAT IT WIDENS. THREE THINGS, ALL OF THEM REAL ──────────────────────────
+ *
+ *   1. A STOLEN COOKIE stays useful for up to seven idle days instead of one.
+ *      `SESSION_ABSOLUTE_TTL_DAYS` is unchanged at 30 and is still the only hard
+ *      bound, because there is no server-side revocation on the JWT path.
+ *   2. ADMIN REVOCATION (A-D1/R38). `requireAdmin()` reads the session token and
+ *      not `users.deleted_at`, so demoting an admin — including deleting the
+ *      admin's own account — is bounded by THIS value. One day becomes seven.
+ *   3. ERASURE ON A SECOND DEVICE. `DELETE /api/account` clears the cookie it can
+ *      see; a session in another browser survives until idle expiry. Inside the
+ *      30-day restore grace, but seven days rather than one.
+ *
+ * **Do not raise it to 720 to match the absolute cap.** At that point the sliding
+ * window does no work at all and all three costs above stretch to a month.
+ */
+const DEFAULT_TTL_HOURS = 168;
 
 /** 30 days, per reconciliation R11. */
 const DEFAULT_ABSOLUTE_TTL_DAYS = 30;

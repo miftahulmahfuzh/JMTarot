@@ -54,22 +54,19 @@
   margin: 0;
 }
 
+/*
+ * The sign-in slot. **A POSITIONING WRAPPER ONLY, SINCE 2026-07-30** -- it used to
+ * style the gold pill itself, when the CTA was a `<Link href="/login">`. The
+ * control is now `SignInForm`, which owns the button, its 44px tap target and the
+ * consent line; this page owns only where it sits. Do not restore the button
+ * declarations here, or two files style one control and the login page's copy is
+ * the one that stops matching.
+ */
 .cta {
   align-self: center;
-  font-family: var(--font-display), serif;
-  font-size: var(--fs-eyebrow);
-  letter-spacing: var(--ls-button);
-  text-transform: uppercase;
-  color: var(--button-text);
-  background: var(--gold-wash-strong);
-  border: 1px solid var(--gold-border);
-  border-radius: var(--radius-chip);
-  padding: 14px 24px;
-  text-decoration: none;
-}
-
-.cta:hover {
-  color: var(--gold-text);
+  display: flex;
+  justify-content: center;
+  width: 100%;
 }
 
 .block {

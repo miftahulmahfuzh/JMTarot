@@ -1,0 +1,64 @@
+/*
+ * The sign-in control, on `/login` and on the signed-out `/`.
+ *
+ * Lifted verbatim from `login.module.css`'s `.form`, `.submit` and `.legal` when
+ * the button gained a second surface, so `/login` is unchanged pixel for pixel.
+ * The two pages own their own POSITION -- the login card stretches it full width,
+ * the landing page centres it -- and this file owns the control itself.
+ *
+ * `max-width` rather than a bare `width: 100%`: on the landing page the form is a
+ * child of a wide column rather than of a 320px card, and a full-width gold slab
+ * across a reading-width page is not the same control.
+ */
+.form {
+  width: 100%;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+/* 16px of padding on a 12px-ish cap-height line clears the 44px tap target --
+   which is the minimum `PublicShare` is a known 36px short of, so do not trim
+   it here. */
+.submit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--button-text);
+  border: 1px solid var(--gold-border);
+  background: var(--gold-wash);
+  border-radius: var(--radius-chip);
+  padding: 16px;
+}
+
+.submit:hover:not(:disabled) {
+  background: var(--gold-wash-strong);
+}
+
+.submit:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* One sentence with two inline anchors, not three stacked lines: it reads as a
+   sentence somebody agreed to rather than as a list of documents. */
+.legal {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+  text-align: center;
+  margin: 0;
+}
+
+.legal a {
+  color: var(--gold);
+}

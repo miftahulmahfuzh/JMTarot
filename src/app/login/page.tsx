@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
-import { signIn } from '@/lib/auth/auth';
 import { ERASURE_GRACE_DAYS } from '@/lib/account/grace';
 import { LocaleSwitch } from '@/components/LocaleSwitch';
+import { SignInForm } from '@/components/SignInForm';
 import { currentUser } from '@/lib/auth/server';
 import type { TFunction } from '@/lib/i18n/format';
 import { localeSwitcherEnabled } from '@/lib/i18n/resolve';
@@ -115,27 +115,12 @@ export default async function Login({
           </p>
         ) : null}
 
-        <form
-          className={styles.form}
-          action={async () => {
-            'use server';
-            await signIn('google', { redirectTo });
-          }}
-        >
-          <button className={styles.submit} type="submit">
-            <GoogleMark />
-            {t('login.google')}
-          </button>
-        </form>
-
-        {/* Four keys rather than one sentence, because two of its words are
-            links and `t()` returns a string. The limitation is real and named in
-            `id.ts`: a locale wanting a different clause order cannot get one
-            from these parts. W7 owns the documents behind the two hrefs. */}
-        <p className={styles.legal}>
-          {t('login.legal.lead')} <a href="/terms">{t('common.terms')}</a>{' '}
-          {t('login.legal.and')} <a href="/privacy">{t('common.privacy')}</a>.
-        </p>
+        {/* THE BUTTON AND ITS CONSENT LINE MOVED TO `SignInForm` (2026-07-30), so
+            the landing page can carry the same control without a second copy of
+            the legal sentence. This page is unchanged pixel for pixel; the styles
+            went with it. `redirectTo` is still THIS page's validated callbackUrl,
+            which is the whole reason the component takes it as a prop. */}
+        <SignInForm redirectTo={redirectTo} />
 
         <p className={styles.disclaimer}>{t('login.disclaimer')}</p>
 
@@ -152,39 +137,5 @@ export default async function Login({
         {localeSwitcherEnabled() ? <LocaleSwitch variant="names" /> : null}
       </div>
     </main>
-  );
-}
-
-/**
- * Google's four-colour "G".
- *
- * THE ONE PLACE IN THIS APP WITH HEX VALUES THAT ARE NOT DESIGN TOKENS, and it is
- * not an oversight: this is a trademark asset and the colours are Google's, not
- * ours to harmonise. Do not "fix" it to var(--gold).
- *
- * Inline rather than fetched, because a strict no-external-hosts posture is already
- * load-bearing here -- next/font self-hosts, the art is local -- and a remote logo
- * would be the only third-party request the app makes, on its most sensitive page.
- */
-function GoogleMark() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" focusable="false">
-      <path
-        fill="#4285F4"
-        d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.91c1.7-1.57 2.69-3.88 2.69-6.62z"
-      />
-      <path
-        fill="#34A853"
-        d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.26c-.81.54-1.84.86-3.05.86-2.34 0-4.32-1.58-5.03-3.71H.96v2.33A9 9 0 0 0 9 18z"
-      />
-      <path
-        fill="#FBBC05"
-        d="M3.97 10.71A5.41 5.41 0 0 1 3.68 9c0-.59.1-1.17.29-1.71V4.96H.96A9 9 0 0 0 0 9c0 1.45.35 2.83.96 4.04l3.01-2.33z"
-      />
-      <path
-        fill="#EA4335"
-        d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.59C13.46.89 11.43 0 9 0A9 9 0 0 0 .96 4.96l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z"
-      />
-    </svg>
   );
 }

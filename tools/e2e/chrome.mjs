@@ -387,16 +387,76 @@ async function status() {
  * account: anything that puts it in a log or a transcript has handed over the
  * session. Length and expiry are enough to tell it apart from absence.
  */
+/**
+ * Whether a cookie's domain covers a host, the way the browser decides it.
+ *
+ * A leading dot means "and every subdomain"; anything else is host-only. Written
+ * out rather than approximated with `includes`, because `endsWith('jmtarot.site')`
+ * would also accept `evil-jmtarot.site` and the whole point of this function is to
+ * stop one origin's cookie being reported as another's.
+ */
+function domainCovers(domain, host) {
+  const d = String(domain ?? '').replace(/^\./, '').toLowerCase();
+  const h = host.toLowerCase();
+  return d === h || h.endsWith(`.${d}`);
+}
+
 async function whoami() {
   await withPage(async (cdp) => {
     const { cookies } = await cdp.send('Network.getAllCookies');
-    const session = cookies.find((c) => /authjs\.session-token/.test(c.name));
+
+    /*
+     * ── SCOPED TO THE CURRENT ORIGIN, AND IT WAS NOT ON 2026-07-30 ─────────────
+     *
+     * `Network.getAllCookies` returns EVERY cookie in the profile, for every
+     * domain it has ever visited. The old line was
+     *
+     *     cookies.find((c) => /authjs\.session-token/.test(c.name))
+     *
+     * with no domain filter, so a `localhost` session left over from
+     * `E2E_BASE=http://localhost:3001` made `whoami` print **signed IN while
+     * driving production**, where there was no session token at all. It cost a
+     * production investigation its first wrong turn: the landing page was correct
+     * behaviour for a signed-out visitor and this verb said the visitor was signed
+     * in.
+     *
+     * **A HARNESS THAT LIES ABOUT STATE IS WORSE THAN ONE THAT CANNOT SEE IT**,
+     * because every measurement taken afterwards is attributed to the wrong cause.
+     * The domain is printed for the same reason -- so the next reader can tell
+     * WHICH session they are holding without trusting this comment.
+     *
+     * Auth.js prefixes `__Secure-` on https, so the pattern must stay unanchored at
+     * the front; a `^authjs\.` would report a production session as absent.
+     */
+    const url = await evaluate(cdp, 'location.href').catch(() => '');
+    let host = '';
+    try {
+      host = new URL(url).hostname;
+    } catch {
+      /* about:blank and friends: no origin, so nothing can be in scope */
+    }
+
+    const session = host
+      ? cookies.find((c) => /authjs\.session-token/.test(c.name) && domainCovers(c.domain, host))
+      : undefined;
+
     if (!session) {
-      console.log('signed OUT (no authjs.session-token cookie)');
+      const elsewhere = cookies.filter((c) => /authjs\.session-token/.test(c.name)).length;
+      console.log(
+        `signed OUT (no authjs.session-token for ${host || 'no origin -- goto something first'})`,
+      );
+      // Naming the count and not the domains: the point is "you are not signed in
+      // HERE", and listing other hosts invites reading it as a session anyway.
+      if (elsewhere > 0) {
+        console.log(`  (${elsewhere} session cookie(s) in this profile for OTHER origins)`);
+      }
       return;
     }
+
     const exp = session.expires > 0 ? new Date(session.expires * 1000).toISOString() : 'session';
-    console.log(`signed IN  cookie=${session.name} ${session.value.length}B expires=${exp}`);
+    console.log(
+      `signed IN  cookie=${session.name} ${session.value.length}B domain=${session.domain} expires=${exp}`,
+    );
     console.log('  (value deliberately not printed -- it is a bearer credential)');
 
     const me = await evaluate(

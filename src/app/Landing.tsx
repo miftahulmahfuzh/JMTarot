@@ -1,6 +1,7 @@
 import { Eyebrow } from '@/components/Eyebrow';
 import { JsonLd } from '@/components/JsonLd';
 import { PublicShell } from '@/components/PublicShell';
+import { SignInForm } from '@/components/SignInForm';
 import { PublicPageViewed } from '@/components/PublicPageViewed';
 import { TrackLink } from '@/components/TrackLink';
 import { CARDS, cardImage } from '@/data/deck';
@@ -139,14 +140,26 @@ export async function Landing() {
 
       <p className={styles.lede}>{t('landing.lede')}</p>
 
-      <TrackLink
-        href="/login"
-        className={styles.cta}
-        name="public.link_clicked"
-        props={{ from: 'landing', to: 'sign_in', slug: null }}
-      >
-        {t('landing.signIn')}
-      </TrackLink>
+      {/*
+        ── THE REAL GOOGLE BUTTON, SINCE 2026-07-30 (was a link to `/login`) ─────
+
+        A returning querent whose session had lapsed paid TWO taps to get back in,
+        and that is what the report "it doesn't go straight to the reader picker"
+        actually was: the routing is correct and has been since S-D5, but a 24-hour
+        idle timeout used to present as a login form and now presents as this page.
+
+        `from="landing"` keeps `public.link_clicked` firing, from INSIDE the server
+        action rather than from a client `onClick` racing a navigation -- so this
+        page's primary control now ships no client JavaScript at all, and the
+        taxonomy gained no name. `redirectTo="/"` lands on the picker.
+
+        **`/login` IS STILL A ROUTE AND STILL LINKED-TO BY MIDDLEWARE.** This is a
+        second entry point; see `SignInForm`'s header for the three mechanisms that
+        name that path.
+      */}
+      <div className={styles.cta}>
+        <SignInForm redirectTo="/" from="landing" />
+      </div>
 
       <section className={styles.block}>
         <h2>{t('landing.gallery.title')}</h2>
