@@ -202,7 +202,7 @@ describe('M3 -- tokensByBucketAndModel', () => {
     withRollback(async (tx) => {
       await tx.insert(llmCalls).values([
         row({ op: 'reading', localDate: '2026-07-20', inputTokens: 1200, outputTokens: 400 }),
-        // The z.ai shape: `input_tokens: 0` on the wire, stored NULL.
+        // A call that died before reporting usage: absence stored as absence.
         row({ op: 'gist', localDate: '2026-07-20', inputTokens: null, outputTokens: 90 }),
         row({
           op: 'moderation',
@@ -236,7 +236,65 @@ describe('M3 -- tokensByBucketAndModel', () => {
         expect(typeof r.inputTokens).toBe('number');
         expect(typeof r.outputTokens).toBe('number');
         expect(typeof r.nullInputCalls).toBe('number');
+        expect(typeof r.cacheReadTokens).toBe('number');
+        expect(typeof r.cachedBasisTokens).toBe('number');
       }
+    }));
+
+  it('SUMS THE CACHE BASIS OVER MEASURED ROWS ONLY, in real SQL', () =>
+    withRollback(async (tx) => {
+      /*
+       * **THE `filter (where cache_read_tokens is not null)` CLAUSE, AGAINST POSTGRES.**
+       *
+       * The unit test in `metrics.test.ts` asserts the FOLD; this asserts the SQL, and
+       * the two are different failures. A `coalesce(sum(input_tokens), 0)` without the
+       * filter would compile, run, and report a plausible denominator that includes
+       * every row written before the cache column existed -- so the hit rate would
+       * halve on a range that spans the deploy and look like a caching regression.
+       *
+       * 1000 input of which 900 cached, plus 5000 input with no cache figure at all.
+       * The basis is 1000. It is not 6000.
+       */
+      await tx.insert(llmCalls).values([
+        row({
+          op: 'reading',
+          localDate: '2026-07-21',
+          inputTokens: 1000,
+          outputTokens: 10,
+          cacheReadTokens: 900,
+        }),
+        row({
+          op: 'reading',
+          localDate: '2026-07-21',
+          inputTokens: 5000,
+          outputTokens: 10,
+          cacheReadTokens: null,
+        }),
+      ]);
+
+      const [r] = await tokensByBucketAndModel(tx, { from: '2026-07-21', to: '2026-07-21' });
+      expect(r.inputTokens).toBe(6000);
+      expect(r.cacheReadTokens).toBe(900);
+      expect(r.cachedBasisTokens).toBe(1000);
+    }));
+
+  it('keeps a measured 0 in the basis, because a MISS is a measurement', () =>
+    withRollback(async (tx) => {
+      // `cache_read_tokens = 0` means usage was reported and nothing came from cache.
+      // Its input tokens belong in the denominator, or the rate reads 100% forever.
+      await tx.insert(llmCalls).values([
+        row({
+          op: 'reading',
+          localDate: '2026-07-22',
+          inputTokens: 800,
+          outputTokens: 10,
+          cacheReadTokens: 0,
+        }),
+      ]);
+
+      const [r] = await tokensByBucketAndModel(tx, { from: '2026-07-22', to: '2026-07-22' });
+      expect(r.cacheReadTokens).toBe(0);
+      expect(r.cachedBasisTokens).toBe(800);
     }));
 
   it('sums to 0 -- not null, not NaN -- when EVERY row is NULL', () =>

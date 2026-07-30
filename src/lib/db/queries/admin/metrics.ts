@@ -205,6 +205,19 @@ export type TokenRow = {
   /** Calls whose `input_tokens` was NULL. **Not cosmetic** -- see below. */
   nullInputCalls: number;
   nullOutputCalls: number;
+  /** Summed `cache_read_tokens`, NULLs counted as 0. The NUMERATOR of the hit rate. */
+  cacheReadTokens: number;
+  /**
+   * Summed `input_tokens` **RESTRICTED TO ROWS THAT REPORTED A CACHE FIGURE AT ALL**.
+   * The DENOMINATOR, and it is a separate sum for a reason.
+   *
+   * `cache_read_tokens` is NULL on every streamed row written before 2026-07-30 and
+   * on every call that failed before reporting usage -- and plenty of those rows do
+   * carry `input_tokens`, because the buffered path was never broken. Dividing the
+   * cache sum by TOTAL input would put a measured numerator over an unmeasurable
+   * denominator, and the resulting rate would only ever fall.
+   */
+  cachedBasisTokens: number;
 };
 
 /**
@@ -235,7 +248,14 @@ export async function tokensByBucketAndModel(
            coalesce(sum(input_tokens),  0)                  as input_tokens,
            coalesce(sum(output_tokens), 0)                  as output_tokens,
            count(*) filter (where input_tokens  is null)    as null_input_calls,
-           count(*) filter (where output_tokens is null)    as null_output_calls
+           count(*) filter (where output_tokens is null)    as null_output_calls,
+           coalesce(sum(cache_read_tokens), 0)              as cache_read_tokens,
+           -- The denominator is RESTRICTED to rows that reported a cache figure.
+           -- See cachedBasisTokens on TokenRow: a measured numerator over an
+           -- unmeasurable denominator is a rate that only ever falls.
+           -- (No backticks in here -- this is inside a JS template literal.)
+           coalesce(sum(input_tokens) filter (where cache_read_tokens is not null), 0)
+                                                            as cached_basis_tokens
       from llm_calls
      where local_date >= ${range.from}
        and local_date <= ${range.to}
@@ -251,6 +271,8 @@ export async function tokensByBucketAndModel(
     outputTokens: num(r.output_tokens),
     nullInputCalls: num(r.null_input_calls),
     nullOutputCalls: num(r.null_output_calls),
+    cacheReadTokens: num(r.cache_read_tokens),
+    cachedBasisTokens: num(r.cached_basis_tokens),
   }));
 }
 

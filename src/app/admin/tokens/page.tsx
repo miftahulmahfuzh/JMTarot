@@ -43,6 +43,7 @@ import { ChartFrame } from '@/components/chart/ChartFrame';
 import { ChartHover } from '@/components/chart/ChartHover';
 import { Heatmap } from '@/components/chart/Heatmap';
 import { Line } from '@/components/chart/Line';
+import { StatTile } from '@/components/chart/StatTile';
 import { Trajectory } from '@/components/chart/Trajectory';
 import { domainMax, niceTicks, tickIndices } from '@/components/chart/geometry';
 import type { Readout, TableSpec } from '@/components/chart/types';
@@ -140,6 +141,7 @@ async function Body({ parsed }: { parsed: ParsedRange }) {
       <div className={styles.wide}>
         <InputVsOutput series={series} />
       </div>
+      <CacheHitRate series={series} />
       <div className={styles.wide}>
         <TrajectoryCard utc={utc} peakCalls={peak?.calls ?? null} days={parsed.days} />
       </div>
@@ -216,6 +218,40 @@ function InputVsOutput({ series }: { series: ReturnType<typeof tokenSeries> }) {
         />
       </PlotFrame>
     </ChartFrame>
+  );
+}
+
+/**
+ * **How much of the prompt the provider served from its own cache.**
+ *
+ * ── THE DENOMINATOR IS THE ONLY INTERESTING THING HERE ───────────────────────
+ *
+ * `cachedBasisTokens`, not `totalInput`. `cache_read_tokens` is NULL for every
+ * streamed row written before 2026-07-30 and for every call that died before
+ * reporting usage -- and many of those rows carry a real `input_tokens`, because the
+ * buffered path was never broken. Rating against total input would put a measured
+ * numerator over an unmeasurable denominator and print a figure that only ever falls.
+ *
+ * **AND A RANGE WITH NOTHING MEASURED GETS AN EMPTY STATE, NEVER 0%.** "No calls
+ * reported a cache figure" and "caching is not working" are different claims, and an
+ * operator would act on the second one.
+ *
+ * Worth a tile at all because a prompt-layer edit can destroy cache locality while
+ * the token chart barely moves -- and on a per-token provider that is most of the
+ * input bill.
+ */
+function CacheHitRate({ series }: { series: ReturnType<typeof tokenSeries> }) {
+  const measured = series.cachedBasisTokens > 0;
+  return (
+    <StatTile
+      label={TOKENS.cacheTitle}
+      value={measured ? pct(series.cacheReadTokens / series.cachedBasisTokens) : COMMON.emptyCell}
+      note={
+        measured
+          ? TOKENS.cacheBasis(compact(series.cachedBasisTokens))
+          : TOKENS.cacheUnmeasured
+      }
+    />
   );
 }
 
