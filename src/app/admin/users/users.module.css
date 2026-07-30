@@ -16,14 +16,13 @@
   gap: 16px;
 }
 
-.h1 {
-  margin: 0;
-  font-family: var(--font-display), Georgia, serif;
-  font-size: var(--fs-title);
-  letter-spacing: var(--ls-title);
-  text-transform: uppercase;
-  color: var(--gold-text);
-}
+/*
+ * `.h1` WAS DELETED ON 2026-07-30, NOT LEFT UNUSED. Every admin page's display title is
+ * gone: the four nav pages' were verbatim copies of their own tab label and are now
+ * `.srOnly`, and the three sub-pages' were demoted to `.subject`. The tab row names the
+ * section -- see `AdminTabs.tsx`. **Reinstating a big gold uppercase title here puts the
+ * page's name on screen twice again**, which is the report this change answered.
+ */
 
 /* OPAQUE, R8: `Backdrop`'s radial is `#221a3a` at the top of the viewport and the palette was
    validated against `#130f22`. This panel carries a sequential mark in every row. */

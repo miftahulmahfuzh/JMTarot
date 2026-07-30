@@ -29,12 +29,13 @@
   flex-wrap: wrap;
 }
 
-.h1 {
-  font-family: var(--font-display);
-  font-size: 24px;
-  color: var(--gold);
-  margin: 4px 0 0;
-}
+/*
+ * `.h1` WAS DELETED ON 2026-07-30, NOT LEFT UNUSED. Every admin page's display title is
+ * gone: the four nav pages' were verbatim copies of their own tab label and are now
+ * `.srOnly`, and the three sub-pages' were demoted to `.subject`. The tab row names the
+ * section -- see `AdminTabs.tsx`. **Reinstating a big gold uppercase title here puts the
+ * page's name on screen twice again**, which is the report this change answered.
+ */
 
 .h2 {
   font-family: var(--font-display);
@@ -517,4 +518,30 @@
   color: var(--muted);
   font-size: 13px;
   margin: 0 0 16px;
+}
+
+/* Visually hidden, still read aloud. The page's `<h1>` uses it: the tab row now carries
+   the page's name visibly (`AdminTabs`, `aria-current`), and a document with no level-1
+   heading leaves a screen-reader operator with no "where am I". */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/*
+ * The page's subject, at the weight of the back link it sits under rather than as a
+ * display title. The `<h1>` above it is `srOnly`: the tab row names the SECTION and this
+ * names the ROW. See `AdminTabs.tsx`.
+ */
+.subject {
+  margin: 0;
+  padding: 0 10px;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 13px;
+  color: var(--label);
+  overflow-wrap: anywhere;
 }

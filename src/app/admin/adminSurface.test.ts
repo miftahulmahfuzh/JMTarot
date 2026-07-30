@@ -166,8 +166,57 @@ describe('the shell owns the only <main> and the only robots field (§1.4, A-D3)
     // A1-18 / R32 at the call site: a resolved pathname on `/admin/users/<uuid>`
     // would put a subject's uuid into `events.props`, which survives that
     // subject's erasure with `user_id` nulled.
+    //
+    // **THIS BAN IS ABSOLUTE AND 2026-07-30 DID NOT WEAKEN IT.** The tab row needs
+    // to know which tab is on, which is exactly what `usePathname()` answers -- so
+    // instead the page passes its own template to `AdminTabs`, and the two
+    // assertions below are what make that safe to rely on. If you are here because
+    // you want one exception: the exception is the mechanism that already exists.
     for (const f of ALL) {
       expect(code(f), f).not.toMatch(/usePathname/);
+    }
+  });
+});
+
+describe('the tab row is mounted by every page, and lights the tab that page claims', () => {
+  /** `<AdminTabs active="X" />` -> X, for each occurrence in a file. */
+  function tabsActive(file: string): string[] {
+    return [...code(file).matchAll(/<AdminTabs\s+active="([^"]+)"/g)].map((m) => m[1]);
+  }
+
+  /** `<AdminPageViewed page="X" />` -> X. */
+  function viewedPage(file: string): string[] {
+    return [...code(file).matchAll(/<AdminPageViewed\s+page="([^"]+)"/g)].map((m) => m[1]);
+  }
+
+  it('mounts AdminTabs exactly once in every page', () => {
+    // The nav left the layout on 2026-07-30, so it is no longer inherited. **A page
+    // that forgets it renders with no tab row at all**, which is a whole missing
+    // navigation and nothing in a diff to notice -- the one cost of that move, paid
+    // here. Twice is worse than never: two rows, both claiming to be the nav.
+    for (const f of PAGES) {
+      expect(tabsActive(f), `${f} must mount <AdminTabs active="..."> exactly once`).toHaveLength(
+        1,
+      );
+    }
+  });
+
+  it('lights the same template it reports', () => {
+    // A page whose tab says `Pengguna` while its event says `/admin/blog` is a page
+    // that lies to the operator or to the analytics, and only one of those is visible.
+    for (const f of PAGES) {
+      expect(tabsActive(f)[0], `${f}: AdminTabs active must equal AdminPageViewed page`).toBe(
+        viewedPage(f)[0],
+      );
+    }
+  });
+
+  it('never renders a display title, so the tab row is the only thing naming the page', () => {
+    // Every admin page's `<h1>` was its own tab label, verbatim. They are `.srOnly` now
+    // (or `.subject`, where the title said something a tab cannot). **`styles.h1` coming
+    // back is the page naming itself twice again**, which is the report this answered.
+    for (const f of ALL) {
+      expect(code(f), `${f} renders a display title again`).not.toMatch(/styles\.h1\b/);
     }
   });
 });

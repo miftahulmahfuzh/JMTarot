@@ -44,6 +44,7 @@ import { listAllArticles } from '@/lib/db/queries/admin/blog';
 import { publishedSlugs } from '@/lib/db/queries/blog';
 import { LOCALES, type Locale } from '@/lib/i18n/locale';
 import { AdminPageViewed } from '../AdminPageViewed';
+import { AdminTabs } from '../AdminTabs';
 import { BLOG } from './copy';
 import { StatusControl } from './StatusControl';
 import styles from './blog.module.css';
@@ -98,11 +99,14 @@ export default async function AdminBlogListPage() {
 
   return (
     <div className={styles.page}>
+      <AdminTabs active="/admin/blog" />
       <AdminPageViewed page="/admin/blog" />
 
       <header className={styles.header}>
         <div>
-          <h1 className={styles.h1}>{BLOG.title}</h1>
+          {/* Hidden, not deleted -- see `/admin/page.tsx`. The lede stays visible: it says
+              something the tab does not. */}
+          <h1 className={styles.srOnly}>{BLOG.title}</h1>
           <p className={styles.lede}>{BLOG.lede}</p>
         </div>
         <Link className={styles.primary} href="/admin/blog/new" prefetch={false}>

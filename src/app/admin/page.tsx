@@ -59,6 +59,7 @@ import { Hero, KpiRow, StatTile } from '@/components/chart/StatTile';
 import { domainMax, niceTicks, tickIndices } from '@/components/chart/geometry';
 import type { Readout, TableSpec } from '@/components/chart/types';
 import { AdminPageViewed } from './AdminPageViewed';
+import { AdminTabs } from './AdminTabs';
 import { RangeFilter } from './RangeFilter';
 import { COMMON, OVERVIEW } from './copy';
 import { compact, day, deltaGlyph, int, ms, pct, signedPct, usd } from './format';
@@ -113,8 +114,12 @@ export default async function AdminOverviewPage({
 
   return (
     <div className={styles.page}>
+      <AdminTabs active="/admin" />
       <AdminPageViewed page="/admin" />
-      <h1 className={styles.h1}>{OVERVIEW.title}</h1>
+      {/* HIDDEN, NOT DELETED: the tab row carries this word visibly now, and it was a
+          character-for-character copy of the tab. A page with no level-1 heading leaves a
+          screen-reader operator with no "where am I" -- see `AdminTabs.tsx`. */}
+      <h1 className={styles.srOnly}>{OVERVIEW.title}</h1>
       <RangeFilter action="/admin" parsed={parsed} />
       <Suspense fallback={<Loading />}>
         <Body parsed={parsed} />

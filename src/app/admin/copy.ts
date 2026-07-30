@@ -52,6 +52,12 @@ export const COMMON = {
   rangeApply: 'Terapkan',
   rangeFellBack: 'Rentang di URL tidak bisa dipakai, jadi ini rentang bawaan.',
   rangeShown: (from: string, to: string) => `${from} – ${to}`,
+  /*
+   * `ScrollTop`'s accessible name. **A LABEL, NOT A DESCRIPTION** -- it says what the
+   * control does, in the active voice, and it keeps that name wherever the button
+   * appears. The button has no visible text; this is the whole of its name.
+   */
+  toTop: 'Ke atas halaman',
 } as const;
 
 /**

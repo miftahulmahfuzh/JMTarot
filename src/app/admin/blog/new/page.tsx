@@ -35,6 +35,7 @@ import { requireAdminPage } from '@/lib/admin/identity';
 import { SLUG_RE } from '@/lib/content/lint';
 import { DEFAULT_LOCALE } from '@/lib/i18n/locale';
 import { AdminPageViewed } from '../../AdminPageViewed';
+import { AdminTabs } from '../../AdminTabs';
 import { BLOG } from '../copy';
 import styles from '../blog.module.css';
 
@@ -66,6 +67,7 @@ export default async function AdminBlogNewPage({
 
   return (
     <div className={styles.page}>
+      <AdminTabs active="/admin/blog/new" />
       <AdminPageViewed page="/admin/blog/new" />
 
       <header className={styles.header}>
@@ -73,7 +75,10 @@ export default async function AdminBlogNewPage({
           <Link className={styles.link} href="/admin/blog" prefetch={false}>
             {BLOG.backToList}
           </Link>
-          <h1 className={styles.h1}>{BLOG.newArticle}</h1>
+          {/* DEMOTED RATHER THAN HIDDEN, and the distinction is whether the tab already
+              says it. `Tulisan` does not say `Tulisan baru`, so this stays on screen -- as
+              a line beside the back link, not a display title competing with the tab row. */}
+          <h1 className={styles.subject}>{BLOG.newArticle}</h1>
         </div>
       </header>
 

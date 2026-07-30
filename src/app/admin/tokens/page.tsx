@@ -48,6 +48,7 @@ import { Trajectory } from '@/components/chart/Trajectory';
 import { domainMax, niceTicks, tickIndices } from '@/components/chart/geometry';
 import type { Readout, TableSpec } from '@/components/chart/types';
 import { AdminPageViewed } from '../AdminPageViewed';
+import { AdminTabs } from '../AdminTabs';
 import { RangeFilter } from '../RangeFilter';
 import { COMMON, TOKENS } from '../copy';
 import { compact, day, dayWithYear, int, ms, oneDp, pct, shortId } from '../format';
@@ -69,8 +70,10 @@ export default async function AdminTokensPage({
 
   return (
     <div className={styles.page}>
+      <AdminTabs active="/admin/tokens" />
       <AdminPageViewed page="/admin/tokens" />
-      <h1 className={styles.h1}>{TOKENS.title}</h1>
+      {/* Hidden, not deleted -- see `/admin/page.tsx`. */}
+      <h1 className={styles.srOnly}>{TOKENS.title}</h1>
       <RangeFilter action="/admin/tokens" parsed={parsed} />
       <Suspense fallback={<Loading />}>
         <Body parsed={parsed} />
