@@ -6,7 +6,13 @@
  * the mapping in one file.
  */
 import { describe, expect, it } from 'vitest';
-import type { LocalDateRow, OpTotals, TokenRow, UtcDayRow } from '@/lib/db/queries/admin/metrics';
+import type {
+  LocalDateRow,
+  OpTotals,
+  TokenRow,
+  TtftRow,
+  UtcDayRow,
+} from '@/lib/db/queries/admin/metrics';
 import type { LeagueRow } from '@/lib/db/queries/admin/users';
 import { OP_ORDER, OTHER } from '@/lib/analytics/rollup';
 import { CATEGORICAL, OTHER_SLOT, slotColor } from '@/theme/chart';
@@ -19,6 +25,8 @@ import {
   opRows,
   tail,
   tokenSeries,
+  ttftOverall,
+  ttftServices,
   weekdayHeat,
 } from './metrics';
 
@@ -271,5 +279,73 @@ describe('league -- biggest first, and a null userId is a REAL row', () => {
   it('breaks a tie deterministically, so two page loads agree', () => {
     const out = league([row('b', 5), row('a', 5)]);
     expect(out.map((r) => r.userId)).toEqual(['a', 'b']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TTFT -- the fleet row and the per-service rows
+// ---------------------------------------------------------------------------
+
+const ttft = (serviceId: string | null, over: Partial<TtftRow> = {}): TtftRow => ({
+  serviceId,
+  readings: 1,
+  p50Ms: 100,
+  p95Ms: 200,
+  ...over,
+});
+
+describe('ttftServices', () => {
+  it('excludes the fleet total row', () => {
+    const out = ttftServices([ttft('daily'), ttft(null, { readings: 9 })]);
+    expect(out.map((r) => r.serviceId)).toEqual(['daily']);
+  });
+
+  it('orders by SERVICE_SLOT and NOT by readings, so a table does not reshuffle', () => {
+    /*
+     * A3 returns `readings desc`. Rank order means two services swap places between page
+     * loads as counts move, and it reads as the data changing -- the reason `opRows` takes
+     * `OP_ORDER` and `foldedOps` never sorts by magnitude. Colour already follows the
+     * entity through `slotFor`, so only the ROW order was left to pin.
+     */
+    const out = ttftServices([
+      ttft('yesno', { readings: 90 }),
+      ttft('daily', { readings: 2 }),
+      ttft('spread3', { readings: 50 }),
+    ]);
+    expect(out.map((r) => r.serviceId)).toEqual(['daily', 'spread3', 'yesno']);
+  });
+
+  it('drops a service id that has no slot, exactly as ServiceShare already did', () => {
+    // `slotFor` has three slots and an unknown id has no colour. Matching the shipped
+    // filter rather than inventing a fourth entity keeps the two cards consistent.
+    expect(ttftServices([ttft('tarot-roulette'), ttft('daily')]).map((r) => r.serviceId)).toEqual([
+      'daily',
+    ]);
+  });
+
+  it('is empty for an empty range', () => {
+    expect(ttftServices([])).toEqual([]);
+  });
+});
+
+describe('ttftOverall', () => {
+  it('returns the fleet row', () => {
+    const out = ttftOverall([ttft('daily'), ttft(null, { readings: 4, p50Ms: 250, p95Ms: 895 })]);
+    expect(out).toEqual({ serviceId: null, readings: 4, p50Ms: 250, p95Ms: 895 });
+  });
+
+  it('is null when the range produced no rows at all', () => {
+    expect(ttftOverall([])).toBeNull();
+  });
+
+  it('NEVER falls back to a service row when the total is absent', () => {
+    /*
+     * The whole reason the query grew a `rollup()` is that **a fleet percentile is not
+     * derivable from the per-service rows.** A fold that returned the only service row, or
+     * the largest one, would put a single service's p95 under a tile labelled for the
+     * fleet -- and with one service live it would even look right. `null` renders the
+     * empty cell, which is the honest answer.
+     */
+    expect(ttftOverall([ttft('daily', { readings: 7, p95Ms: 6000 })])).toBeNull();
   });
 });

@@ -394,11 +394,17 @@ export async function peakWindow5h(db: DbOrTx, range: Range): Promise<PeakWindow
 // M8 -- two latency metrics that must never merge
 // ---------------------------------------------------------------------------
 
-export type TtftRow = { serviceId: string; readings: number; p50Ms: number | null; p95Ms: number | null };
+export type TtftRow = {
+  /** The service, or **`null` for the fleet total** -- see `ttftByService`'s rollup. */
+  serviceId: string | null;
+  readings: number;
+  p50Ms: number | null;
+  p95Ms: number | null;
+};
 
 /**
- * **TIME TO FIRST TOKEN, from `readings.latency_ms`, by service.** Query 3 of
- * `analytics-queries.md`, promoted to code.
+ * **TIME TO FIRST TOKEN, from `readings.latency_ms`, by service AND for the fleet.**
+ * Query 3 of `analytics-queries.md`, promoted to code.
  *
  * **NEITHER THIS NOR `callsByOp` IS CALLED `latency`, AND A SINGLE CHART MAY NOT PLOT
  * BOTH.** They share a unit and would look combinable; they measure different
@@ -406,11 +412,41 @@ export type TtftRow = { serviceId: string; readings: number; p50Ms: number | nul
  * `llm_calls.total_ms` is how long a call took, timed from above `gateReading` rather
  * than from the top of the handler -- so **expect `llm_calls.total_ms <
  * reading.completed.total_ms` and do not reconcile them** (R5).
+ *
+ * ── THE FLEET ROW IS A `rollup()`, NOT A SECOND QUERY ───────────────────────
+ *
+ * `/admin`'s TTFT tile needs one figure for the whole fleet, and **a fleet p95 is not the
+ * mean of three service p95s** -- no fold over the rows below produces it. A rollup keeps
+ * both answers on ONE predicate, so the tile and the table cannot drift the way a
+ * dashboard and a documented query drift, and it keeps `FLEET_ROLLUP_QUERIES` at 8 on a
+ * page where every request is cold and the first query wakes a suspended Neon compute.
+ *
+ * Three things that would each ship a wrong number silently:
+ *
+ *   1. **`grouping(service_id)`, NEVER `service_id is null`.** `readings.service_id` is
+ *      `notNull()` today, so a NULL *is* unambiguously the rollup's total -- but the
+ *      moment anyone relaxes that column, a nullability test starts reporting one
+ *      service's percentile as the whole fleet's. `grouping()` cannot be wrong about
+ *      which row it is. (And the pre-rollup `String(r.service_id)` would have rendered
+ *      the total's id as the literal string `'null'`.)
+ *   2. **`order by is_total` FIRST**, so the total sorts LAST and the `readings desc,
+ *      service_id` tiebreak keeps its total order -- the same reason `callsByOp` has an
+ *      `op` tiebreak. The total has the most readings of all, so without this it would
+ *      lead, and every caller destructuring `rows[0]` would silently change meaning.
+ *   3. **A TOTAL ROW WITH NO READINGS IS DROPPED, AND THAT IS NOT A REDUNDANT NULL
+ *      CHECK.** Measured on the local Postgres 16, 2026-07-30: `group by rollup(x)` over
+ *      an **empty** input returns ONE row -- the grand total, `n = 0`, percentiles NULL --
+ *      where a plain `group by` returns none. Without the guard a range with no readings
+ *      grows a phantom fleet row and "no data" acquires a second representation. This is
+ *      deliberately NOT `peakWindow5h`'s ruling (*"`null` for an empty range, never 0"*):
+ *      that distinction protects a fuel GAUGE, where empty is a claim about safety, and
+ *      here `readings = 0` for the fleet and "no rows" are the same fact.
  */
 export async function ttftByService(db: DbOrTx, range: Range): Promise<TtftRow[]> {
   if (!usable(range)) return [];
   const rows = await db.execute(sql`
     select service_id                                               as service_id,
+           grouping(service_id)                                     as is_total,
            count(*)                                                 as readings,
            percentile_cont(0.5)  within group (order by latency_ms) as p50_ms,
            percentile_cont(0.95) within group (order by latency_ms) as p95_ms
@@ -418,16 +454,22 @@ export async function ttftByService(db: DbOrTx, range: Range): Promise<TtftRow[]
      where local_date >= ${range.from}
        and local_date <= ${range.to}
        and latency_ms is not null
-     group by 1
-     order by readings desc, service_id
+     group by rollup (service_id)
+     order by is_total, readings desc, service_id
   `);
 
-  return (rows as unknown as Array<Record<string, unknown>>).map((r) => ({
-    serviceId: String(r.service_id),
-    readings: num(r.readings),
-    p50Ms: numOrNull(r.p50_ms),
-    p95Ms: numOrNull(r.p95_ms),
-  }));
+  return (rows as unknown as Array<Record<string, unknown>>)
+    .map((r) => {
+      const isTotal = num(r.is_total) === 1;
+      return {
+        serviceId: isTotal ? null : String(r.service_id),
+        readings: num(r.readings),
+        p50Ms: numOrNull(r.p50_ms),
+        p95Ms: numOrNull(r.p95_ms),
+      };
+    })
+    // See rule 3 above: the rollup emits a zero-reading total over an empty input.
+    .filter((r) => r.serviceId !== null || r.readings > 0);
 }
 
 // ---------------------------------------------------------------------------

@@ -62,7 +62,14 @@ import { AdminPageViewed } from './AdminPageViewed';
 import { RangeFilter } from './RangeFilter';
 import { COMMON, OVERVIEW } from './copy';
 import { compact, day, deltaGlyph, int, ms, pct, signedPct, usd } from './format';
-import { assertDense, callSeries, tail, tokenSeries } from './metrics';
+import {
+  assertDense,
+  callSeries,
+  tail,
+  tokenSeries,
+  ttftOverall,
+  ttftServices,
+} from './metrics';
 import { parseRange, previousPeriod, type ParsedRange } from './range';
 import styles from './page.module.css';
 
@@ -188,6 +195,7 @@ async function Body({ parsed }: { parsed: ParsedRange }) {
         <CallsPerDay rollup={rollup} />
       </div>
       <ServiceShare rollup={rollup} />
+      <TtftCard rollup={rollup} />
       <StatusCard rollup={rollup} />
     </div>
   );
@@ -261,6 +269,9 @@ function Kpis({
   const readings = sum(rollup.readings.map((r) => r.ok + r.partial));
   const prevReadings = sum(prev.readings.map((r) => r.ok + r.partial));
   const p95 = rollup.byOp.find((r) => r.op === 'reading')?.p95Ms ?? null;
+  // The FLEET row, from the rollup -- never folded from the per-service rows, because the mean
+  // of three p95s is not a p95. `null` when the range produced no measured reading at all.
+  const ttftP95 = ttftOverall(rollup.ttft)?.p95Ms ?? null;
 
   const callsDelta = periodDelta(calls, prevCalls);
   const tokenDelta = periodDelta(tokenTotal, prevTokenTotal);
@@ -316,6 +327,22 @@ function Kpis({
         }
         deltaGlyph={deltaGlyph(readingDelta)}
         spark={{ values: tail(rollup.readings.map((r) => r.readings)), slot: SERVICE_SLOT.spread3 }}
+      />
+      {/*
+       * TWO DURATION TILES, IN THIS ORDER, AND THE ORDER IS THE ARGUMENT. TTFT first because
+       * it is the number about a PERSON -- the wait a querent sat through -- and the call
+       * duration second because it is a number about a call. Before this pair shipped, the
+       * only duration on the overview was `llm_calls.total_ms` for the `reading` op, whose
+       * note denied being TTFT while nothing on the page rendered TTFT at all.
+       *
+       * They are never plotted together and never reconciled (R5): `total_ms` is timed from
+       * above `gateReading`, so it is legitimately SMALLER than `reading.completed.total_ms`
+       * and unrelated to the moment the first byte reached a phone.
+       */}
+      <StatTile
+        label={OVERVIEW.kpi.ttftP95}
+        value={ms(ttftP95)}
+        note={OVERVIEW.kpi.ttftNote}
       />
       <StatTile
         label={OVERVIEW.kpi.p95}
@@ -384,7 +411,10 @@ function CallsPerDay({ rollup }: { rollup: FleetRollup }) {
  * population the moderation gate exists for."*
  */
 function ServiceShare({ rollup }: { rollup: FleetRollup }) {
-  const known = rollup.ttft.filter((r) => (SERVICES as readonly string[]).includes(r.serviceId));
+  // `ttftServices` drops the rollup's fleet row and pins the order to `SERVICE_SLOT`, which is
+  // the same filter this card used to spell inline -- and the only thing that kept the fleet
+  // row out of a stacked bar as a fourth, colourless segment.
+  const known = ttftServices(rollup.ttft);
   const total = sum(known.map((r) => r.readings));
   const slot = (id: string) => slotFor(id as (typeof SERVICES)[number], SERVICES);
 
@@ -409,6 +439,20 @@ function ServiceShare({ rollup }: { rollup: FleetRollup }) {
     values: [r.readings],
   }));
 
+  /*
+   * ── THIS TABLE COUNTS READINGS AND NOTHING ELSE, SINCE 2026-07-30 ───────────
+   *
+   * It used to carry a third column of `r.p95Ms` -- a TTFT value from `readings.latency_ms` --
+   * under `OVERVIEW.kpi.p95`, whose own text reads *"Total waktu panggilan, bukan waktu ke
+   * token pertama."* **So the one place TTFT reached the overview declared itself to be the
+   * thing it explicitly is not**, which is the merge M8 and R5 exist to prevent, and no test
+   * could see it: a label and the provenance of the number beneath it are not comparable by
+   * grep.
+   *
+   * The column is DELETED rather than relabelled, because `TtftCard` now owns per-service
+   * TTFT with both percentiles. One owner per number: two cards printing one figure under two
+   * labels is how the next reader decides the dashboard cannot be trusted.
+   */
   const table: TableSpec = {
     caption: OVERVIEW.serviceTitle,
     toggleLabel: COMMON.tableToggle,
@@ -416,10 +460,9 @@ function ServiceShare({ rollup }: { rollup: FleetRollup }) {
     columns: [
       { label: OVERVIEW.statusColumns.op },
       { label: OVERVIEW.kpi.readings, numeric: true },
-      { label: OVERVIEW.kpi.p95, numeric: true },
     ],
     rows: known.map((r) => ({
-      cells: [r.serviceId, int(r.readings), ms(r.p95Ms)],
+      cells: [r.serviceId, int(r.readings)],
       swatch: slotColor(slot(r.serviceId)),
     })),
   };
@@ -432,6 +475,84 @@ function ServiceShare({ rollup }: { rollup: FleetRollup }) {
       table={table}
     >
       <StackedBar rows={rows} />
+    </ChartFrame>
+  );
+}
+
+/**
+ * **Time to first token — the wait a querent actually sat through.** From
+ * `readings.latency_ms`, per service, plus the rollup's fleet row.
+ *
+ * ── WHY THIS CARD EXISTS ────────────────────────────────────────────────────
+ *
+ * A reading STREAMS, so its `llm_calls.total_ms` is not a measure of anybody's experience:
+ * the querent starts reading at the first token and the call keeps running for seconds
+ * afterwards. TTFT is the number that moves with how the app FEELS, and until 2026-07-30 the
+ * overview rendered p50 nowhere and p95 only in `ServiceShare`'s table, mislabelled as total
+ * call time. Smaller is better, which is the opposite direction from every other number on
+ * this page and the reason the tile's note says so in words.
+ *
+ * ── A TABLE, AND TWO PRIMITIVES WERE DECLINED FOR CAUSE ─────────────────────
+ *
+ * `StackedBar` sends every row through `stackSegments`, which normalises each row to 100% of
+ * **its own** total -- so three bars of duration would each fill the width and could not be
+ * compared, which is the one thing this card is for. `Meter` would need a `ceiling`: a TTFT
+ * target, which nobody has set, feeding a good→warning→critical ramp. Inventing one to earn a
+ * colour is `NOTIONAL_MODEL` rendering `US$0,00` under the word "notional", and the same
+ * discipline applies -- when the number would be a judgement, print the measurement and no
+ * hue. `StatusCard` is the precedent for the form.
+ *
+ * **THE FLEET ROW IS `ttftOverall`, NEVER A SUM OR A MEAN OF THE THREE ABOVE IT.** That is the
+ * entire reason `ttftByService` grew a `rollup()`; see its header. `null` prints the em dash.
+ */
+function TtftCard({ rollup }: { rollup: FleetRollup }) {
+  const services = ttftServices(rollup.ttft);
+  const overall = ttftOverall(rollup.ttft);
+  const slot = (id: string) => slotFor(id as (typeof SERVICES)[number], SERVICES);
+
+  const rows = services.map((r) => ({
+    cells: [r.serviceId, int(r.readings), ms(r.p50Ms), ms(r.p95Ms)],
+    swatch: slotColor(slot(r.serviceId)),
+  }));
+
+  const table: TableSpec = {
+    caption: OVERVIEW.ttftTitle,
+    toggleLabel: COMMON.tableToggle,
+    emptyCell: COMMON.emptyCell,
+    columns: [
+      { label: OVERVIEW.ttftColumns.service },
+      { label: OVERVIEW.ttftColumns.readings, numeric: true },
+      { label: OVERVIEW.ttftColumns.p50, numeric: true },
+      { label: OVERVIEW.ttftColumns.p95, numeric: true },
+    ],
+    // The fleet row is appended LAST and carries no swatch -- it is not an entity in the
+    // palette, and giving it one would read as a fourth service.
+    rows: overall
+      ? [
+          ...rows,
+          {
+            cells: [
+              OVERVIEW.ttftTotal,
+              int(overall.readings),
+              ms(overall.p50Ms),
+              ms(overall.p95Ms),
+            ],
+          },
+        ]
+      : rows,
+  };
+
+  return (
+    <ChartFrame
+      title={OVERVIEW.ttftTitle}
+      subtitle={OVERVIEW.ttftSubtitle}
+      series={[]}
+      table={table}
+    >
+      <KpiRow>
+        <StatTile label={OVERVIEW.ttftP50} value={ms(overall?.p50Ms ?? null)} />
+        <StatTile label={OVERVIEW.ttftP95} value={ms(overall?.p95Ms ?? null)} />
+      </KpiRow>
     </ChartFrame>
   );
 }

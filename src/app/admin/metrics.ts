@@ -38,11 +38,17 @@
  * series itself and says so.
  */
 import type { LLMOp } from '@/lib/llm/types';
-import type { LocalDateRow, OpTotals, TokenRow, UtcDayRow } from '@/lib/db/queries/admin/metrics';
+import type {
+  LocalDateRow,
+  OpTotals,
+  TokenRow,
+  TtftRow,
+  UtcDayRow,
+} from '@/lib/db/queries/admin/metrics';
 import type { LeagueRow } from '@/lib/db/queries/admin/users';
 import { OP_ORDER, OTHER, foldOps, type FoldedOp } from '@/lib/analytics/rollup';
 import { enumerateDays, weekStart } from '@/lib/analytics/series';
-import { OTHER_SLOT } from '@/theme/chart';
+import { OTHER_SLOT, SERVICE_SLOT } from '@/theme/chart';
 import type { Maybe } from '@/components/chart/types';
 
 // ---------------------------------------------------------------------------
@@ -179,6 +185,63 @@ export function foldedOps(rows: readonly { op: LLMOp; value: number }[]): Folded
 export function opRows(rows: readonly OpTotals[]): OpTotals[] {
   const byOp = new Map(rows.map((r) => [r.op, r]));
   return OP_ORDER.map((op) => byOp.get(op)).filter((r): r is OpTotals => r !== undefined);
+}
+
+// ---------------------------------------------------------------------------
+// TTFT -- the fleet row and the per-service rows
+// ---------------------------------------------------------------------------
+
+/**
+ * The service order for anything TTFT-shaped: `SERVICE_SLOT`'s keys, which is also what
+ * `slotFor` colours by. **Not the query's `readings desc`** -- see `ttftServices`.
+ */
+const SERVICE_ORDER = Object.keys(SERVICE_SLOT) as (keyof typeof SERVICE_SLOT)[];
+
+/**
+ * The per-service TTFT rows, **fleet total excluded, in `SERVICE_SLOT` order**.
+ *
+ * A3 returns `readings desc`, and rank order means two services swap places between page
+ * loads as their counts move -- which reads as the data changing rather than as a
+ * reordering. That is the same argument `opRows` makes for `OP_ORDER` and `foldedOps`
+ * makes for never sorting by magnitude. Colour was already stable (it follows the entity
+ * through `slotFor`); only the row order was left to pin.
+ *
+ * A service id with no slot is dropped, matching the `SERVICES.includes` filter
+ * `ServiceShare` has always applied -- three slots, three services, and a fourth entity
+ * would have no colour. It stays counted in `ttftOverall`, which is a fact about the
+ * fleet and not about the table.
+ */
+export type TtftServiceRow = TtftRow & { serviceId: string };
+
+export function ttftServices(rows: readonly TtftRow[]): TtftServiceRow[] {
+  /*
+   * **THE RETURN TYPE NARROWS `serviceId` TO `string`, AND THAT IS NOT COSMETIC.** Every
+   * caller wants to reach `slotFor(r.serviceId, SERVICES)` and colour a row by it; leaving
+   * `string | null` in the type forces each of them to re-handle a case this function has
+   * already excluded, and the shortest way through that is a `!` or an `as string` at the
+   * call site -- which is exactly where the fleet row would reappear as a fourth entity
+   * with no colour.
+   */
+  const known = new Map<string, TtftServiceRow>();
+  for (const r of rows) {
+    if (r.serviceId !== null) known.set(r.serviceId, { ...r, serviceId: r.serviceId });
+  }
+  return SERVICE_ORDER.map((id) => known.get(id)).filter(
+    (r): r is TtftServiceRow => r !== undefined,
+  );
+}
+
+/**
+ * The fleet TTFT row, or `null`.
+ *
+ * **IT NEVER FALLS BACK TO A SERVICE ROW, AND THAT IS THE WHOLE POINT OF THE ROLLUP.** A
+ * fleet percentile is not derivable from the per-service rows -- the mean of three p95s is
+ * not a p95 -- so a fold that returned "the only one" or "the biggest one" would put a
+ * single service's number under a tile labelled for the fleet, and **with one service live
+ * it would even look right.** `null` renders the empty cell, which is honest.
+ */
+export function ttftOverall(rows: readonly TtftRow[]): TtftRow | null {
+  return rows.find((r) => r.serviceId === null) ?? null;
 }
 
 // ---------------------------------------------------------------------------
