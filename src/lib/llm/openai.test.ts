@@ -101,8 +101,9 @@ describe('streamReading', () => {
   it('reads usage from the final chunk, which only exists because we asked', async () => {
     /*
      * `stream_options: { include_usage: true }`. Without it there is no usage
-     * frame at all and `readings.token_output` is null forever -- the same
-     * half-blindness z.ai imposes, except self-inflicted.
+     * frame at all and `readings.token_output` is null forever -- self-inflicted
+     * blindness, and the same SHAPE of bug as reading the wrong SSE event on the
+     * Anthropic wire: the number never arrives and nothing says so.
      */
     vi.stubGlobal('fetch', streamingFetch([frame('hi'), usageFrame(1163, 128), 'data: [DONE]\n\n']));
     const stream = createOpenAIProvider().streamReading(PROMPT);

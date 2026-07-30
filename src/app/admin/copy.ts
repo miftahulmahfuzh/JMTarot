@@ -93,8 +93,9 @@ export const OVERVIEW = {
       'Belum berharga: harga provider cadangan belum pernah dibaca orang (prices.ts, NOTIONAL_MODEL).',
     calls: 'Panggilan model',
     tokens: 'Token (input + output)',
-    /** z.ai returns `input_tokens: 0`, stored NULL, so this column is structurally
-     *  half-blind on the current provider and the tile has to say so. */
+    /** Calls whose provider reported no tokens at all. **No longer nearly every row**
+     *  -- see `types.ts`'s ReadingUsage -- but still the denominator a total needs
+     *  beside it, so the tile keeps saying so. */
     tokensNullNote: (n: string) => `${n} panggilan tanpa laporan token`,
     readings: 'Bacaan selesai',
     p95: 'p95 panggilan bacaan',

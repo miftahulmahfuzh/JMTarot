@@ -15,11 +15,17 @@ docker exec -it jmtarot-pg psql -U jmtarot -d jmtarot
 
 Two facts to have in mind before reading any of these:
 
-- **`token_input` is NULL on z.ai and `token_output` is not.** Measured
-  2026-07-27 against `glm-4.6`: `input_tokens` comes back as `0`, which the
-  adapter stores as NULL so no average is silently wrong; `output_tokens` is
-  reported honestly. Any cost query is therefore half-blind while
-  `LLM_PROVIDER=zai`.
+- **`token_input` IS NULL ON EVERY STREAMED ROW WRITTEN BEFORE 2026-07-30, AND
+  THE CAUSE WAS OURS.** This document previously recorded it as a z.ai fact,
+  measured 2026-07-27. It was not: `anthropic.ts` read `input_tokens` from
+  `message_start`, where that wire always sends `0`, while the real counts
+  arrived in `message_delta`. Re-measured 2026-07-30 — a cold prompt reports
+  1935 and the same prompt re-sent reports 15 fresh + 1920 cached — and fixed.
+  **Buffered calls were never affected**, so moderation, gist, lotus and persona
+  rows carry real input counts throughout, which is why half the table looked
+  plausible. There is no backfill: **any average over `token_input` spanning
+  that date is two different measurements.** `npm run probe:usage` re-checks it
+  in ten seconds; the old claim stood for a release because nothing could.
 - **`local_date` is the querent's calendar day, never the server's.** Group by
   it, never by `created_at::date`, or every window is seven hours wrong for a
   Jakarta user — the specific bug roadmap §7 exists to prevent.
@@ -557,11 +563,14 @@ reporting layer over that, and the production read is owed the same way query 12
 
 Two things to have in mind, both of which change how these read:
 
-- **`input_tokens` is structurally half-blind on z.ai.** The provider reports
-  `input_tokens: 0`, which both adapters store as NULL (A2-D5 fixed the buffered
-  path so the two agree). So `null_input_calls` is very nearly every row and a
-  cost figure built on `input_tokens` alone is missing the prompt side entirely.
-  **Every query below that touches tokens carries that count beside them.**
+- **`null_input_calls` was very nearly every row until 2026-07-30**, for the
+  reason at the top of this document — a bug in this repository, not a provider
+  fact. It is now the ordinary count of calls that reported nothing: timeouts,
+  dead streams, refusals. **Every query below that touches tokens still carries
+  it beside them**, because a token total with no count of what it could not see
+  reads as complete. `llm_calls.cache_read_tokens` is the companion column, and
+  it has three states: NULL (nothing reported), `0` (reported, nothing cached —
+  a measurement) and `> 0` (a hit). Rate it only over rows where it is NOT NULL.
 - **A fleet-wide `group by local_date` sums two calendar systems** (R25). A call
   with no querent behind it — a cron-driven repair pass, or one of the three W3
   onboarding routes R49 left unattributed — stores the **UTC** date, while every
@@ -606,9 +615,11 @@ select op,
 
 **How to read it.**
 
-- **`input_tokens: 0` with `null_input` equal to `calls` is the z.ai signature, not a
-  free prompt.** The one row with a real input figure is on `gpt-5.6-luna`, because
-  that provider reports it. Do not divide by `input_tokens` here.
+- **`null_input` equal to `calls` for a STREAMED op is the pre-2026-07-30 signature,
+  not a free prompt and not a provider limitation.** See the top of this document. On
+  rows written since, both providers report an input count; if a whole streamed op
+  still shows all-NULL, run `npm run probe:usage` before concluding anything about the
+  provider.
 - **`ORDER BY calls desc, op` — the `op` tiebreak makes the order TOTAL.** Without it
   the five one-row `op`s swap places between runs and it reads as the data changing.
   Same reason `topCardAllTime` breaks its tie on `card_id`.

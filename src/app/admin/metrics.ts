@@ -118,9 +118,9 @@ export type TokenSeries = {
  *
  * **THE FOLD IS ACROSS MODELS AND THE NULL COUNTS ARE SUMMED, NOT RECOMPUTED.** A3 groups by
  * model because *a single `sum(output_tokens)` for a day that spanned two models is
- * unpriceable*; the CHART does not price anything, so it may sum -- but the half-blindness
- * has to survive the fold, or a token chart invites the reader to conclude the app has no
- * prompt cost. `nullInputCalls` is what `copy.ts` prints under the chart.
+ * unpriceable*; the CHART does not price anything, so it may sum -- but the count of what
+ * could NOT be measured has to survive the fold, or a token chart reads as complete.
+ * `nullInputCalls` is what `copy.ts` prints under the chart.
  *
  * The bucket list is built from the RANGE and not from the rows, so a day with no calls at all
  * is a 0 rather than a missing column -- which is the same zero-fill A3 does for its own

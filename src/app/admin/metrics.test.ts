@@ -110,7 +110,7 @@ describe('callSeries / localCallSeries / tail', () => {
   });
 });
 
-describe('tokenSeries -- folds ACROSS models and carries the half-blindness through', () => {
+describe('tokenSeries -- folds ACROSS models and carries the unmeasured counts through', () => {
   it('sums two models on one day into one column', () => {
     /*
      * A3 groups by `(day, model)` because **a single `sum(output_tokens)` for a day that

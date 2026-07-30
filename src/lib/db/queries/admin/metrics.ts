@@ -228,11 +228,15 @@ export type TokenRow = {
  * and the number that would be produced anyway is the one that silently understates
  * the bill. The roadmap does not state this; it is a real constraint on the shape.
  *
- * **`null_input_calls` IS THE HALF-BLINDNESS MADE VISIBLE.** z.ai returns
- * `input_tokens: 0`, which both adapters now store as NULL, so on `LLM_PROVIDER=zai`
- * this column is very nearly every row and `input_tokens` is structurally half-blind.
- * `analytics-queries.md` opens with that fact. A token chart that does not carry the
- * null count invites the reader to conclude the app has no prompt cost.
+ * **`null_input_calls` IS WHAT COULD NOT BE MEASURED, MADE VISIBLE.** A token chart
+ * that does not carry it invites the reader to treat the series as complete.
+ *
+ * **IT WAS NEARLY EVERY ROW UNTIL 2026-07-30 AND THE CAUSE WAS OURS, NOT THE
+ * PROVIDER'S.** `anthropic.ts` read the streamed input count from `message_start`,
+ * where that wire always sends `0`; the real counts were in `message_delta` all
+ * along. Buffered calls -- moderation, gist, lotus, persona -- were never affected,
+ * which is why half the table looked plausible. **Any average over `input_tokens`
+ * spanning that date is two different measurements**, and no backfill is possible.
  *
  * Bucketed by `local_date`, so M2's two-calendar warning applies here too.
  */

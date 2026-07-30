@@ -220,8 +220,15 @@ Today, one provider fact is recorded two different ways by one adapter:
       };
 ```
 
-z.ai reports `input_tokens: 0`. So a streamed call stores NULL and a buffered call stores
-`0`, from the same provider, for the same absence. **Fix it.** Three reasons:
+> **CORRECTION, 2026-07-30.** The premise below — *"z.ai reports `input_tokens: 0`"* — is
+> false and was false when this plan was written. `anthropic.ts` read the streamed count from
+> `message_start`, where that wire always sends `0`; the real counts were in `message_delta`.
+> The buffered path was never affected. **The decision this section reaches is still right**
+> (absence is NULL, never `0`), so it is left standing with the reasoning intact — only its
+> factual premise is retracted. `npm run probe:usage` is the re-check that did not exist.
+
+z.ai appears to report `input_tokens: 0`. So a streamed call stores NULL and a buffered call
+stores `0`, from the same provider, for the same absence. **Fix it.** Three reasons:
 
 1. **The roadmap's own worry is empty.** §12.6 hesitates because "fixing it changes existing
    behaviour on a path nothing currently reads" — and *nothing currently reads it* is the

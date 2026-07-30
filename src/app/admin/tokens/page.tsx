@@ -160,10 +160,18 @@ async function Body({ parsed }: { parsed: ParsedRange }) {
  * the case where two series on one scale is correct -- and `Line` takes a single `yMax`, so
  * there is no shape in which a second scale could arrive.
  *
- * The null-token count rides in the footnote rather than being hidden, because on the current
- * provider `input_tokens` is NULL for very nearly every row: z.ai reports `0` and both adapters
- * store NULL (A2 fixed the asymmetry under R16). **A reader who is not told that will conclude
- * the app has no prompt cost.**
+ * The null-token count rides in the footnote rather than being hidden, because **a reader who
+ * is not told what a series could not see will conclude it is complete.**
+ *
+ * **THAT FOOTNOTE USED TO BLAME THE PROVIDER AND IT WAS WRONG** (corrected 2026-07-30). It
+ * said `input_tokens` was NULL for very nearly every row because z.ai reports `0`; in fact
+ * `anthropic.ts` read the count from `message_start`, where that wire always sends `0`, while
+ * the real figure arrived in `message_delta`. The count stays on screen — it is still the
+ * honest denominator — but it now reads as ordinary rather than as structural.
+ *
+ * **Rows before that date keep NULL and there is no backfill**, so a range spanning it mixes
+ * two measurements. `CacheHitRate` below solves the same problem for its own denominator, in
+ * the only way that works: by counting only the rows that were measured.
  */
 function InputVsOutput({ series }: { series: ReturnType<typeof tokenSeries> }) {
   const chartSeries = [
