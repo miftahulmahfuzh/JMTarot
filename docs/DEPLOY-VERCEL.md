@@ -528,9 +528,23 @@ every querent a feature, so only `0` does. **`false`, `off`, `no`, `FALSE` and a
 empty value all leave the feature ON.** If you mean to switch something off, type
 a zero and nothing else.
 
-**And `1` is not required to enable** — unset is enabled. You never have to add
-these variables to turn anything on; you add them to turn something off, and the
-tidy-up afterwards is deleting them again.
+**Unset is also enabled** — the code needs no variable to run a feature. But **all
+five are nevertheless SET TO `1` in Production and Preview as of 2026-07-30**, and
+that is deliberate: a kill switch nobody can find is not a kill switch. They are in
+the dashboard so that whoever needs one at 2am sees five named rows and changes a
+`1` to a `0`, instead of having to know from a document that five variables could
+have existed.
+
+**So the lifecycle is edit-in-place, never add-and-delete.** Change the `1` to a
+`0` to shed a feature; change it back to `1` to restore it. **Do not delete the
+rows** — deleting works (unset means enabled) and it would quietly undo the
+discoverability they were added for.
+
+**AND A CHANGE TAKES EFFECT ONLY ON THE NEXT DEPLOYMENT.** Vercel injects
+environment variables at build time, so setting a `0` does nothing to the lambdas
+already running: **Save, then Redeploy.** This is also why setting them all to `1`
+did not require a redeploy of its own — `1` and unset behave identically, so there
+was nothing to propagate.
 
 ### What to reach for, in order
 
@@ -581,7 +595,8 @@ that took the most care, and the two generators behave differently on purpose:
 
 ### Turning them back on
 
-Delete the variables (or set them to `1`) and Redeploy. Nothing needs backfilling:
+Set the value back to `1` and **Redeploy** — do not delete the row, for the reason
+above. Nothing needs backfilling:
 
 - **Gists** do not backfill. Readings taken during the outage stay unrecallable,
   permanently. That is the accepted cost of the biggest lever.
