@@ -47,12 +47,37 @@ describe('the landing page', () => {
     expect(CODE).not.toContain('/en/');
   });
 
-  it('offers a sign-in route to /login and nothing cleverer', () => {
-    // A `signIn()` server action here would put @auth/core's provider machinery --
-    // and therefore bcryptjs -- into the homepage's module graph. `/login` already
-    // owns the one button and ships zero auth JavaScript; link to it.
-    expect(CODE).toContain('href="/login"');
+  it('mounts the shared SignInForm rather than linking to /login', () => {
+    /*
+     * ── THIS ASSERTION WAS THE OPPOSITE UNTIL 2026-07-30, AND THE REASON IT GAVE
+     *    WAS ALREADY VOID ───────────────────────────────────────────────────────
+     *
+     * It required `href="/login"` and forbade a `signIn()` action here, because
+     * *"a `signIn()` server action would put @auth/core's provider machinery --
+     * and therefore bcryptjs -- into the homepage's module graph."*
+     *
+     * **That machinery is in this route's graph either way.** `page.tsx` imports
+     * `currentUser` from `@/lib/auth/server`, which imports `./auth`, which
+     * statically imports `Credentials` and `verifyCredentials`; `users.ts`'s own
+     * header says it *"ships in the Node lambda whether or not the flag is on."*
+     * So the old fence was protecting a property the route did not have, and a
+     * `SignInForm` import would have slipped past its regex without argument.
+     * Restated rather than deleted, because the cost it was worried about — the
+     * landing page acquiring auth concerns — is still worth fencing.
+     *
+     * The link is gone because it cost a returning querent a second tap.
+     */
+    expect(CODE).toContain('<SignInForm');
+    expect(CODE).toContain("from '@/components/SignInForm'");
+    expect(CODE).not.toContain('href="/login"');
+  });
+
+  it('still reaches auth only THROUGH SignInForm, never directly', () => {
+    // The narrowed fence. `signIn` and the provider config belong to one component
+    // on two surfaces; a second copy here is how the consent line gets forgotten.
     expect(CODE).not.toContain("from '@/lib/auth/auth'");
+    expect(CODE).not.toContain("signIn('google'");
+    expect(CODE).not.toContain('login.legal');
   });
 
   it('uses only keys that exist in the source catalog', () => {

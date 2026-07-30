@@ -11,33 +11,33 @@ describe('sessionMaxAgeSeconds', () => {
     expect(sessionMaxAgeSeconds('168')).toBe(168 * HOUR);
   });
 
-  it('defaults to 24 hours when unset or blank', () => {
+  it('defaults to 168 hours -- seven days -- when unset or blank', () => {
     // `SESSION_TTL_HOURS=` -- set but empty -- is exactly what an .env.example
     // line looks like, and `Number('')` is 0. Without the blank check first this
     // would mint a session that has already expired, and the symptom would be
     // "sign-in works and then immediately bounces to /login".
-    expect(sessionMaxAgeSeconds(undefined)).toBe(24 * HOUR);
-    expect(sessionMaxAgeSeconds('')).toBe(24 * HOUR);
-    expect(sessionMaxAgeSeconds('   ')).toBe(24 * HOUR);
+    expect(sessionMaxAgeSeconds(undefined)).toBe(168 * HOUR);
+    expect(sessionMaxAgeSeconds('')).toBe(168 * HOUR);
+    expect(sessionMaxAgeSeconds('   ')).toBe(168 * HOUR);
   });
 
   it('rejects zero and negatives rather than honouring them', () => {
-    expect(sessionMaxAgeSeconds('0')).toBe(24 * HOUR);
-    expect(sessionMaxAgeSeconds('-1')).toBe(24 * HOUR);
+    expect(sessionMaxAgeSeconds('0')).toBe(168 * HOUR);
+    expect(sessionMaxAgeSeconds('-1')).toBe(168 * HOUR);
   });
 
   it('rejects anything that is not a finite integer', () => {
-    expect(sessionMaxAgeSeconds('abc')).toBe(24 * HOUR);
-    expect(sessionMaxAgeSeconds('Infinity')).toBe(24 * HOUR);
-    expect(sessionMaxAgeSeconds('NaN')).toBe(24 * HOUR);
-    expect(sessionMaxAgeSeconds('0.5')).toBe(24 * HOUR);
-    expect(sessionMaxAgeSeconds('24.5')).toBe(24 * HOUR);
+    expect(sessionMaxAgeSeconds('abc')).toBe(168 * HOUR);
+    expect(sessionMaxAgeSeconds('Infinity')).toBe(168 * HOUR);
+    expect(sessionMaxAgeSeconds('NaN')).toBe(168 * HOUR);
+    expect(sessionMaxAgeSeconds('0.5')).toBe(168 * HOUR);
+    expect(sessionMaxAgeSeconds('24.5')).toBe(168 * HOUR);
   });
 
   it('rejects an absurd value, which is a unit confusion and not an intention', () => {
     // 100000 hours is 11 years. The likeliest way to get here is writing seconds
     // into a variable that wants hours.
-    expect(sessionMaxAgeSeconds('100000')).toBe(24 * HOUR);
+    expect(sessionMaxAgeSeconds('100000')).toBe(168 * HOUR);
   });
 
   it('never returns NaN, zero or a negative for any input', () => {

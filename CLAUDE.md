@@ -757,10 +757,29 @@ alike. `user.id` is `users.id` and is the only key anything joins on.
 `/api/auth/login` and `/logout`: with Auth.js owning sessions a function named
 `verifySession` here would send someone to the wrong file at the worst moment.
 
-Sessions are a **24-hour sliding idle timeout** (`SESSION_TTL_HOURS`) with a **30-day hard
-cap** (`SESSION_ABSOLUTE_TTL_DAYS`). There is no server-side revocation and there cannot be
-on the JWT path — the cap is the only thing bounding a stolen cookie, and rotating
+Sessions are a **7-day sliding idle timeout** (`SESSION_TTL_HOURS`, 168 since 2026-07-30 —
+it was 24, and roadmap D3's 24 is amended) with a **30-day hard cap**
+(`SESSION_ABSOLUTE_TTL_DAYS`). There is no server-side revocation and there cannot be on
+the JWT path — the cap is the only thing bounding a stolen cookie, and rotating
 `AUTH_SECRET` is the only kill switch, which signs out everybody.
+
+**`SESSION_TTL_HOURS` BOUNDS TWO THINGS BESIDES CONVENIENCE, so read `ttl.ts`'s header
+before moving it again.** It is what bounds **admin revocation** (A-D1/R38: `requireAdmin()`
+reads the session token, not `users.deleted_at`) and how long an **erased account** stays
+usable in a second browser (`DELETE /api/account` clears only the cookie it can see). Do not
+raise it to 720 to match the cap: the sliding window would then do no work at all.
+**It is UNSET in Vercel, so the default governs production** — and `.env.local` sets 24, so
+local does not follow the default.
+
+**The sign-in control is `SignInForm`, on `/` and `/login`, and it OWNS THE CONSENT LINE.**
+The landing page's CTA was a link to `/login`, which cost a returning querent two taps. One
+owner because a second copy of *"Dengan masuk, kamu setuju pada…"* is how the two surfaces
+end up naming different documents; `SignInForm.test.ts` greps all three files for it.
+**`/login` is NOT redundant and must not be deleted** — middleware's `?callbackUrl=`,
+`pages.signIn` and `pages.error` all name it, and the last is what keeps a failed token
+exchange off @auth/core's unstyled English 500 page. The event fires **inside the server
+action**, so the landing page's primary control ships no client JavaScript; `from` is
+`'landing'` or absent, never `'login'`, which is not in the prop union.
 
 ### The five traps W2 paid for
 
