@@ -25,6 +25,18 @@
  * nothing"* is the state in which somebody opens `db:studio` and edits a row by hand**
  * — so a silent no-op here is not a cosmetic failure, it is how the state that 500s a
  * sitemapped URL gets reached.
+ *
+ * ── THE `Publik` CHIP IS A LINK, AND `publicHref` IS A PROP ────────────────
+ *
+ * The list said an article was public and gave no way to go and look at it. The chip is
+ * now the way: `published` renders an anchor to the article's own address, in a new tab,
+ * so the list this page came from is still there behind it.
+ *
+ * **The href is BUILT ON THE SERVER and arrives as a prop**, the rule `GalleryTile`
+ * states for the same shape: a client component would have to know the locale prefix
+ * maths, and `@/lib/i18n/prefix` is what A-D12's grep keeps out of this subtree. It is
+ * `null` for every status but `published`, so *whether* there is a public address to
+ * offer is decided by the same server render that knows the row.
  */
 import { useActionState } from 'react';
 import type { BlogStatus } from '@/lib/content/blogStatus';
@@ -37,12 +49,22 @@ export function StatusControl({
   locale,
   status,
   unreachable,
+  publicHref,
 }: {
   slug: string;
   locale: string;
   status: BlogStatus;
   /** A6-22: published, but `id` is not, so the URL 404s by derivation. */
   unreachable: boolean;
+  /**
+   * The article's own public address, or `null` when there is none to offer.
+   *
+   * **A6-22 IS WHY THIS IS STILL A LINK WHEN `unreachable` IS TRUE.** The row records
+   * what the operator asked for and the URL 404s by derivation; the address it names is
+   * the one that 404s, and following it is how you confirm that rather than guessing.
+   * The label beside it already says which one it is.
+   */
+  publicHref: string | null;
 }) {
   const [state, action, pending] = useActionState<StatusActionState, FormData>(setBlogStatus, {});
   const to: BlogStatus = status === 'published' ? 'unpublished' : 'published';
@@ -50,9 +72,25 @@ export function StatusControl({
 
   return (
     <div className={styles.statusCell}>
-      <span className={styles.chip} data-status={status}>
-        {BLOG.status[status]}
-      </span>
+      {publicHref !== null ? (
+        <a
+          className={styles.chipLink}
+          data-status={status}
+          href={publicHref}
+          target="_blank"
+          rel="noreferrer"
+          title={BLOG.openPublic}
+          aria-label={`${BLOG.status[status]} — ${BLOG.openPublic}`}
+        >
+          {BLOG.status[status]}
+          {/* Decoration: the accessible name above already says a tab opens. */}
+          <span aria-hidden="true">↗</span>
+        </a>
+      ) : (
+        <span className={styles.chip} data-status={status}>
+          {BLOG.status[status]}
+        </span>
+      )}
       {unreachable ? (
         <span className={styles.unreachable} title={BLOG.unreachableWhy}>
           {BLOG.unreachable}

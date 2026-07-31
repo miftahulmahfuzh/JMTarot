@@ -135,6 +135,60 @@ describe('A6-21 -- there is no delete, and no path back to draft', () => {
   });
 });
 
+describe('the `Publik` chip links to the article, and only that chip does', () => {
+  /*
+   * The list said an article was public and gave no way to read it. The fix is one anchor;
+   * these are the three ways it could ship wrong, and none of them would look wrong.
+   */
+
+  it('builds the href through `blogPostPath`, never by hand', () => {
+    /*
+     * `blog.contract.test.ts`'s rule over the public tree, applied here: **every internal
+     * href goes through `localePath()`.** A `locale === 'en' ? '/en/blog/…' : '/blog/…'` in
+     * this subtree is a second definition of the prefix maths in the tree least likely to
+     * be revisited when a third locale lands — and A-D12's grep (`adminCopy.test.ts`)
+     * forbids importing `@/lib/i18n/prefix` here, so the seam is S6's builder.
+     */
+    const page = code('src/app/admin/blog/page.tsx');
+    expect(importsOf(page)).toContain('@/lib/seo/blog');
+    expect(page).toContain('blogPostPath(');
+    for (const f of FILES) {
+      // No hand-rolled prefix, in either direction, anywhere in the subtree.
+      expect(code(f), f).not.toMatch(/['"`]\/en\/blog/);
+    }
+  });
+
+  it('decides on the SERVER whether there is a public address', () => {
+    /*
+     * `GalleryTile`'s rule: a client component would have to know the locale prefix maths.
+     * `publicHref` is `null` for `draft` and `unpublished` — a link to a 404 rendered AS
+     * the status would say the opposite of what the chip says — and the page is what
+     * computes it, so the decision sits with the render that knows the row.
+     */
+    expect(code('src/app/admin/blog/page.tsx')).toMatch(/publicHref=\{/);
+    const control = code('src/app/admin/blog/StatusControl.tsx');
+    expect(control).toMatch(/publicHref: string \| null/);
+    // The client component only ever renders it. It must not derive one.
+    expect(control).not.toContain('blogPostPath');
+    expect(control).not.toMatch(/['"`]\/blog\//);
+  });
+
+  it('opens a new tab, says so, and is 44px of target', () => {
+    /*
+     * The accessible name is `Publik` alone without the label — a link named after a state.
+     * And the chip is a 20px pill: fine for a label, under the one number iOS enforces for
+     * a target, which every other control in `/admin` carries.
+     */
+    const control = code('src/app/admin/blog/StatusControl.tsx');
+    expect(control).toContain('target="_blank"');
+    expect(control).toContain('rel="noreferrer"');
+    expect(control).toContain('BLOG.openPublic');
+    expect(readFileSync('src/app/admin/blog/copy.ts', 'utf8')).toMatch(/openPublic: '[^']*tab baru/);
+    const css = readFileSync('src/app/admin/blog/blog.module.css', 'utf8');
+    expect(css).toMatch(/\.chipLink \{[^}]*min-height: 44px/);
+  });
+});
+
 describe('A6-16 / A6-31 -- the span predicate has ONE definition', () => {
   it('imports `spansSeparate` rather than reimplementing it', () => {
     /*
