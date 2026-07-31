@@ -37,20 +37,27 @@ describe('the module contract', () => {
     expect(code).not.toContain('@/lib/db');
   });
 
-  it('names all nine ops and no tenth', () => {
+  it('names all ten ops and no eleventh', () => {
     /*
      * The COMPILE-TIME guard is `_MissingOps` in the module, which is what actually
      * fails when A2's union grows. This is the other direction: a value in `OP_ORDER`
      * that is not an op would be caught by `satisfies`, and the count is here so a
      * deletion is loud too.
+     *
+     * **IT WENT 9 -> 10 ON 2026-07-31, FOR A7's `insight`**, and the compile-time guard
+     * is what forced this edit rather than a reviewer noticing: `Exclude<LLMOp,
+     * OP_ORDER[number]>` stopped being `never` the moment the union grew. The argument
+     * for spending a value is in `@/lib/llm/types` — the dashboard's own cost table has
+     * to be able to say what the insight button costs.
      */
-    expect(OP_ORDER).toHaveLength(9);
-    expect(new Set(OP_ORDER).size).toBe(9);
+    expect(OP_ORDER).toHaveLength(10);
+    expect(new Set(OP_ORDER).size).toBe(10);
     expect([...OP_ORDER].sort()).toEqual(
       [
         'day_summary',
         'frequency',
         'gist',
+        'insight',
         'lotus',
         'moderation',
         'persona',
@@ -61,7 +68,7 @@ describe('the module contract', () => {
     );
   });
 
-  it("'Other' is a fold marker and not a tenth op", () => {
+  it("'Other' is a fold marker and not an op", () => {
     expect(OP_ORDER).not.toContain(OTHER as unknown as LLMOp);
   });
 });
@@ -116,7 +123,7 @@ describe('foldOps', () => {
     expect(out.at(-1)).toEqual({ op: OTHER, value: 4 });
   });
 
-  it('folds five and nine down to top-3 + Other', () => {
+  it('folds five and ten down to top-3 + Other', () => {
     const five = foldOps([
       row('reading', 10),
       row('gist', 8),
@@ -127,10 +134,10 @@ describe('foldOps', () => {
     expect(five).toHaveLength(4);
     expect(five.at(-1)).toEqual({ op: OTHER, value: 6 });
 
-    const nine = foldOps(OP_ORDER.map((op, i) => row(op, i + 1)));
-    expect(nine).toHaveLength(4);
-    // 1..9 sums to 45; the top three are 9, 8 and 7.
-    expect(nine.at(-1)).toEqual({ op: OTHER, value: 45 - 24 });
+    const all = foldOps(OP_ORDER.map((op, i) => row(op, i + 1)));
+    expect(all).toHaveLength(4);
+    // 1..10 sums to 55; the top three are 10, 9 and 8.
+    expect(all.at(-1)).toEqual({ op: OTHER, value: 55 - 27 });
   });
 
   it('returns the kept ops in OP_ORDER, never in rank order', () => {

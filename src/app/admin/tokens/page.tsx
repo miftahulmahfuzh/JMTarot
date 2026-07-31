@@ -24,10 +24,11 @@
  * change in the daily series at all: the ceiling then arrives early while the chart looks
  * unchanged.
  */
-import { Suspense } from 'react';
+import { Suspense, type ReactNode } from 'react';
 import { requireAdminPage } from '@/lib/admin/identity';
 import { db } from '@/lib/db/client';
 import { callsByOp, modelsSeen, tokensByBucketAndModel, peakWindow5h, callsByUtcDay } from '@/lib/db/queries/admin/metrics';
+import { insightsForRange } from '@/lib/db/queries/admin/insights';
 import { userCostLeague } from '@/lib/db/queries/admin/users';
 import { withAdminRead } from '@/lib/db/queries/admin/timeout';
 import { burstiness, meanCallsPerDay } from '@/lib/analytics/rollup';
@@ -49,7 +50,13 @@ import { domainMax, niceTicks, tickIndices } from '@/components/chart/geometry';
 import type { Readout, TableSpec } from '@/components/chart/types';
 import { AdminPageViewed } from '../AdminPageViewed';
 import { AdminTabs } from '../AdminTabs';
+import { InsightBox } from '../InsightBox';
 import { RangeFilter } from '../RangeFilter';
+import {
+  TOKEN_PANEL_IDS,
+  tokenInsightStates,
+  type TokenPanelId,
+} from '../insight/panels';
 import { COMMON, TOKENS } from '../copy';
 import { compact, day, dayWithYear, int, ms, oneDp, pct, shortId } from '../format';
 import { assertDense, callSeries, league, opRows, tokenSeries, weekdayHeat } from '../metrics';
@@ -66,7 +73,9 @@ export default async function AdminTokensPage({
 }) {
   await requireAdminPage();
   const params = await searchParams;
-  const parsed = parseRange(params, todayUtc());
+  /* Once per request -- see `/admin/page.tsx`'s copy of this. */
+  const today = todayUtc();
+  const parsed = parseRange(params, today);
 
   return (
     <div className={styles.page}>
@@ -76,7 +85,7 @@ export default async function AdminTokensPage({
       <h1 className={styles.srOnly}>{TOKENS.title}</h1>
       <RangeFilter action="/admin/tokens" parsed={parsed} />
       <Suspense fallback={<Loading />}>
-        <Body parsed={parsed} />
+        <Body parsed={parsed} today={today} />
       </Suspense>
     </div>
   );
@@ -95,7 +104,7 @@ function Loading() {
   );
 }
 
-async function Body({ parsed }: { parsed: ParsedRange }) {
+async function Body({ parsed, today }: { parsed: ParsedRange; today: string }) {
   track('admin.page_viewed', { page: '/admin/tokens' });
 
   let data: {
@@ -105,6 +114,7 @@ async function Body({ parsed }: { parsed: ParsedRange }) {
     models: Awaited<ReturnType<typeof modelsSeen>>;
     leagueRows: Awaited<ReturnType<typeof userCostLeague>>;
     peak: Awaited<ReturnType<typeof peakWindow5h>>;
+    stored: Awaited<ReturnType<typeof insightsForRange>>;
   } | null = null;
 
   try {
@@ -115,15 +125,23 @@ async function Body({ parsed }: { parsed: ParsedRange }) {
        * series or TTFT. Composing `fleetRollup` here would issue two of its queries for
        * nothing on the page whose queries are the heaviest.
        */
-      const [tokens, utc, ops, models, leagueRows, peak] = await Promise.all([
+      const [tokens, utc, ops, models, leagueRows, peak, stored] = await Promise.all([
         tokensByBucketAndModel(tx, parsed.range),
         callsByUtcDay(tx, parsed.range),
         callsByOp(tx, parsed.range),
         modelsSeen(tx, parsed.range),
         userCostLeague(tx, parsed.range),
         peakWindow5h(tx, parsed.range),
+        /*
+         * A7. **A SEVENTH STATEMENT, AND IT IS NOT ONE OF THE SIX THE COMMENT ABOVE
+         * COUNTS** -- those are the page's numbers, this is the cached prose about
+         * them. One statement for all seven panels, read here so the box's first frame
+         * is server-rendered and R21 survives: the only fetch on this page is the one a
+         * button press causes.
+         */
+        insightsForRange(tx, parsed.range, TOKEN_PANEL_IDS),
       ]);
-      return { tokens, utc, ops, models, leagueRows, peak };
+      return { tokens, utc, ops, models, leagueRows, peak, stored };
     });
   } catch {
     // No driver error is logged: every `catch` that touches the database is a potential PII
@@ -131,7 +149,7 @@ async function Body({ parsed }: { parsed: ParsedRange }) {
     return <ChartError message={COMMON.chartFailed} detail={COMMON.chartFailedDetail} />;
   }
 
-  const { tokens, utc, ops, models, leagueRows, peak } = data;
+  const { tokens, utc, ops, models, leagueRows, peak, stored } = data;
   const density = assertDense(utc.map((r) => r.bucket), parsed.range.from, parsed.range.to);
   if (!density.dense) {
     return <ChartError message={COMMON.chartFailed} detail={COMMON.chartFailedDetail} />;
@@ -139,24 +157,48 @@ async function Body({ parsed }: { parsed: ParsedRange }) {
 
   const series = tokenSeries(tokens, parsed.range.from, parsed.range.to);
 
+  /* A7. Pure, and it only hashes panels that already have a row -- `insight/panels.ts`. */
+  const insights = tokenInsightStates(
+    { tokens, utc, ops, models, leagueRows, peak },
+    { from: parsed.range.from, to: parsed.range.to, days: parsed.days },
+    stored,
+    today,
+  );
+  const box = (panel: TokenPanelId) => (
+    <InsightBox
+      panel={panel}
+      from={parsed.range.from}
+      to={parsed.range.to}
+      initial={insights[panel]}
+    />
+  );
+
   return (
     <div className={styles.grid}>
       <div className={styles.wide}>
-        <InputVsOutput series={series} />
+        <InputVsOutput series={series} insight={box('tokens.io')} />
       </div>
-      <CacheHitRate series={series} />
+      <CacheHitRate series={series} insight={box('tokens.cache')} />
       <div className={styles.wide}>
-        <TrajectoryCard utc={utc} peakCalls={peak?.calls ?? null} days={parsed.days} />
+        <TrajectoryCard
+          utc={utc}
+          peakCalls={peak?.calls ?? null}
+          days={parsed.days}
+          insight={box('tokens.trajectory')}
+        />
       </div>
-      <OpTable ops={ops} />
-      <LeagueTable rows={leagueRows} />
-      <ModelTable models={models} rangeEnd={parsed.range.to} />
+      <OpTable ops={ops} insight={box('tokens.ops')} />
+      <LeagueTable rows={leagueRows} insight={box('tokens.league')} />
+      <ModelTable models={models} rangeEnd={parsed.range.to} insight={box('tokens.models')} />
       <div className={styles.wide}>
-        <WhenBusy utc={utc} />
+        <WhenBusy utc={utc} insight={box('tokens.heat')} />
       </div>
     </div>
   );
 }
+
+/** The `insight` slot every panel below takes. See `/admin/page.tsx`'s copy of this. */
+type WithInsight = { insight: ReactNode };
 
 /**
  * **Input against output: two series, ONE axis** (A-D11, I-7). They share a unit, so this is
@@ -176,7 +218,10 @@ async function Body({ parsed }: { parsed: ParsedRange }) {
  * two measurements. `CacheHitRate` below solves the same problem for its own denominator, in
  * the only way that works: by counting only the rows that were measured.
  */
-function InputVsOutput({ series }: { series: ReturnType<typeof tokenSeries> }) {
+function InputVsOutput({
+  series,
+  insight,
+}: { series: ReturnType<typeof tokenSeries> } & WithInsight) {
   const chartSeries = [
     { key: 'input', slot: DIRECTION_SLOT.input, label: TOKENS.ioInput, values: series.input },
     { key: 'output', slot: DIRECTION_SLOT.output, label: TOKENS.ioOutput, values: series.output },
@@ -214,6 +259,7 @@ function InputVsOutput({ series }: { series: ReturnType<typeof tokenSeries> }) {
       table={table}
       footnote={TOKENS.ioNullNote(int(series.nullInputCalls))}
       legendMark="line"
+      insight={insight}
     >
       <PlotFrame>
         <AxisY ticks={ticks.map((t) => ({ at: t.at, label: compact(t.value) }))} />
@@ -251,18 +297,30 @@ function InputVsOutput({ series }: { series: ReturnType<typeof tokenSeries> }) {
  * the token chart barely moves -- and on a per-token provider that is most of the
  * input bill.
  */
-function CacheHitRate({ series }: { series: ReturnType<typeof tokenSeries> }) {
+function CacheHitRate({
+  series,
+  insight,
+}: { series: ReturnType<typeof tokenSeries> } & WithInsight) {
   const measured = series.cachedBasisTokens > 0;
   return (
-    <StatTile
-      label={TOKENS.cacheTitle}
-      value={measured ? pct(series.cacheReadTokens / series.cachedBasisTokens) : COMMON.emptyCell}
-      note={
-        measured
-          ? TOKENS.cacheBasis(compact(series.cachedBasisTokens))
-          : TOKENS.cacheUnmeasured
-      }
-    />
+    /*
+     * **THE ONE PANEL WITH NO CARD OF ITS OWN**, so the insight row needs the opaque
+     * surface `.panel` paints -- R8: this tile can sit high in the viewport where
+     * `Backdrop`'s radial is `#221a3a`, and a bare `StatTile` was already relying on the
+     * grid cell around it. `styles.panel` is the same class the KPI row uses on `/admin`.
+     */
+    <div className={styles.panel}>
+      <StatTile
+        label={TOKENS.cacheTitle}
+        value={measured ? pct(series.cacheReadTokens / series.cachedBasisTokens) : COMMON.emptyCell}
+        note={
+          measured
+            ? TOKENS.cacheBasis(compact(series.cachedBasisTokens))
+            : TOKENS.cacheUnmeasured
+        }
+      />
+      {insight}
+    </div>
   );
 }
 
@@ -290,11 +348,12 @@ function TrajectoryCard({
   utc,
   peakCalls,
   days,
+  insight,
 }: {
   utc: Awaited<ReturnType<typeof callsByUtcDay>>;
   peakCalls: number | null;
   days: number;
-}) {
+} & WithInsight) {
   const values = callSeries(utc);
   const buckets = utc.map((r) => r.bucket);
   const fit = forecast(values.map((v, t) => ({ t, y: v ?? 0 })));
@@ -346,6 +405,7 @@ function TrajectoryCard({
       series={[]}
       table={table}
       footnote={footnoteFor(fit, k, cross)}
+      insight={insight}
     >
       <PlotFrame>
         <AxisY ticks={yMax.ticks.map((t) => ({ at: t.at, label: compact(t.value) }))} />
@@ -400,7 +460,10 @@ function footnoteFor(
  * value-ramp on a nominal category: `op` has no natural order, so nothing here is
  * darker-where-bigger.
  */
-function OpTable({ ops }: { ops: Awaited<ReturnType<typeof callsByOp>> }) {
+function OpTable({
+  ops,
+  insight,
+}: { ops: Awaited<ReturnType<typeof callsByOp>> } & WithInsight) {
   const rows = opRows(ops);
   const max = rows.reduce((a, r) => Math.max(a, r.calls), 0);
 
@@ -421,7 +484,13 @@ function OpTable({ ops }: { ops: Awaited<ReturnType<typeof callsByOp>> }) {
   };
 
   return (
-    <ChartFrame title={TOKENS.opTitle} subtitle={TOKENS.opSubtitle} series={[]} table={table}>
+    <ChartFrame
+      title={TOKENS.opTitle}
+      subtitle={TOKENS.opSubtitle}
+      series={[]}
+      table={table}
+      insight={insight}
+    >
       <InlineBars
         rows={rows.map((r) => ({
           key: r.op,
@@ -448,7 +517,10 @@ function OpTable({ ops }: { ops: Awaited<ReturnType<typeof callsByOp>> }) {
  * adds the consequence this page must state, and the footnote states it: cost-per-user
  * denominators shift over time.
  */
-function LeagueTable({ rows }: { rows: Awaited<ReturnType<typeof userCostLeague>> }) {
+function LeagueTable({
+  rows,
+  insight,
+}: { rows: Awaited<ReturnType<typeof userCostLeague>> } & WithInsight) {
   const top = league(rows, 10);
   const max = top.reduce((a, r) => Math.max(a, r.tokens), 0);
 
@@ -479,6 +551,7 @@ function LeagueTable({ rows }: { rows: Awaited<ReturnType<typeof userCostLeague>
       series={[]}
       table={table}
       footnote={TOKENS.leagueCaveat}
+      insight={insight}
     >
       <InlineBars
         rows={top.map((r) => ({
@@ -499,10 +572,11 @@ function LeagueTable({ rows }: { rows: Awaited<ReturnType<typeof userCostLeague>
 function ModelTable({
   models,
   rangeEnd,
+  insight,
 }: {
   models: Awaited<ReturnType<typeof modelsSeen>>;
   rangeEnd: string;
-}) {
+} & WithInsight) {
   const table: TableSpec = {
     caption: TOKENS.modelsTitle,
     toggleLabel: COMMON.tableToggle,
@@ -530,6 +604,7 @@ function ModelTable({
       subtitle={TOKENS.modelsSubtitle}
       series={[]}
       table={table}
+      insight={insight}
     >
       <InlineBars
         rows={models.map((m) => ({
@@ -553,7 +628,10 @@ function ModelTable({
  * from `local_date`, correct, no zone involved."* No pinning, no approximation and no label
  * narrowing a claim. `copy.ts` says so on the card.
  */
-function WhenBusy({ utc }: { utc: Awaited<ReturnType<typeof callsByUtcDay>> }) {
+function WhenBusy({
+  utc,
+  insight,
+}: { utc: Awaited<ReturnType<typeof callsByUtcDay>> } & WithInsight) {
   const heat = weekdayHeat(utc.map((r) => r.bucket), callSeries(utc));
 
   const table: TableSpec = {
@@ -573,6 +651,7 @@ function WhenBusy({ utc }: { utc: Awaited<ReturnType<typeof callsByUtcDay>> }) {
       subtitle={TOKENS.heatSubtitle}
       series={[]}
       table={table}
+      insight={insight}
     >
       <Heatmap
         cells={heat.cells.map((c) => ({

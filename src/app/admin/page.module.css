@@ -108,6 +108,18 @@
   background: var(--chart-surface);
 }
 
+/*
+ * A7's insight row inside `.lead`.
+ *
+ * `.lead` becomes a two-column grid above 520px, so a third child would land in the
+ * hero's `max-content` column and wrap a paragraph to roughly its own width. `1 / -1`
+ * spans every column at any count, which is the same trick `.wide` uses on the page
+ * grid and needs no knowledge of how many columns there are.
+ */
+.leadInsight {
+  grid-column: 1 / -1;
+}
+
 @container (min-width: 520px) {
   .lead {
     grid-template-columns: max-content 1fr;

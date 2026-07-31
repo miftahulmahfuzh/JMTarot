@@ -37,10 +37,11 @@
  * flagging it instead). The SERVICE dimension is answerable, from `ttftByService`, and ships
  * **labelled as readings rather than as calls**, because that is what it counts.
  */
-import { Suspense } from 'react';
+import { Suspense, type ReactNode } from 'react';
 import { requireAdminPage } from '@/lib/admin/identity';
 import { db } from '@/lib/db/client';
 import { callTotals } from '@/lib/db/queries/admin/calls';
+import { insightsForRange } from '@/lib/db/queries/admin/insights';
 import { fleetRollup, type FleetRollup } from '@/lib/db/queries/admin/rollup';
 import { withAdminRead } from '@/lib/db/queries/admin/timeout';
 import { periodDelta, priceRollup, slotFor } from '@/lib/analytics/rollup';
@@ -60,7 +61,13 @@ import { domainMax, niceTicks, tickIndices } from '@/components/chart/geometry';
 import type { Readout, TableSpec } from '@/components/chart/types';
 import { AdminPageViewed } from './AdminPageViewed';
 import { AdminTabs } from './AdminTabs';
+import { InsightBox } from './InsightBox';
 import { RangeFilter } from './RangeFilter';
+import {
+  OVERVIEW_PANEL_IDS,
+  overviewInsightStates,
+  type OverviewPanelId,
+} from './insight/panels';
 import { COMMON, OVERVIEW } from './copy';
 import { compact, day, deltaGlyph, int, ms, pct, signedPct, usd } from './format';
 import {
@@ -110,7 +117,11 @@ export default async function AdminOverviewPage({
 }) {
   await requireAdminPage();
   const params = await searchParams;
-  const parsed = parseRange(params, todayUtc());
+  /* ONCE PER REQUEST, at the top of the page -- never inside a component's render.
+     `Body` needs it too, for A7's staleness rule, so it is threaded rather than
+     re-read. See `todayUtc` at the foot of this file. */
+  const today = todayUtc();
+  const parsed = parseRange(params, today);
 
   return (
     <div className={styles.page}>
@@ -122,7 +133,7 @@ export default async function AdminOverviewPage({
       <h1 className={styles.srOnly}>{OVERVIEW.title}</h1>
       <RangeFilter action="/admin" parsed={parsed} />
       <Suspense fallback={<Loading />}>
-        <Body parsed={parsed} />
+        <Body parsed={parsed} today={today} />
       </Suspense>
     </div>
   );
@@ -141,26 +152,38 @@ function Loading() {
   );
 }
 
-async function Body({ parsed }: { parsed: ParsedRange }) {
+async function Body({ parsed, today }: { parsed: ParsedRange; today: string }) {
   // `track()` returns void and is NEVER awaited (I-23). The void return is the enforcement:
   // a function that cannot usefully be awaited does not acquire an `await` at 11pm.
   track('admin.page_viewed', { page: '/admin' });
 
   let data:
-    | { rollup: FleetRollup; prev: FleetRollup; cost: ReturnType<typeof priceRollup> }
+    | {
+        rollup: FleetRollup;
+        prev: FleetRollup;
+        cost: ReturnType<typeof priceRollup>;
+        stored: Awaited<ReturnType<typeof insightsForRange>>;
+      }
     | null = null;
 
   try {
     const previous = previousPeriod(parsed.range);
     data = await withAdminRead(db, async (tx) => {
-      const [rollup, prev, totals] = await Promise.all([
+      const [rollup, prev, totals, stored] = await Promise.all([
         fleetRollup(tx, parsed.range),
         // The previous EQUAL-LENGTH period, immediately before. Equal length is what makes
         // `periodDelta` compare like with like.
         fleetRollup(tx, previous),
         callTotals(tx, parsed.range),
+        /*
+         * A7. **THE CACHED INSIGHTS ARE READ HERE, WITH THE NUMBERS, AND R21 SURVIVES:**
+         * the box's first frame is server-rendered like everything else on this page and
+         * the only fetch on it is the one a button press causes. One statement for all
+         * six panels — see `queries/admin/insights.ts`.
+         */
+        insightsForRange(tx, parsed.range, OVERVIEW_PANEL_IDS),
       ]);
-      return { rollup, prev, cost: priceRollup(totals, notionalLookup) };
+      return { rollup, prev, cost: priceRollup(totals, notionalLookup), stored };
     });
   } catch {
     /*
@@ -173,7 +196,7 @@ async function Body({ parsed }: { parsed: ParsedRange }) {
     return <ChartError message={COMMON.chartFailed} detail={COMMON.chartFailedDetail} />;
   }
 
-  const { rollup, prev, cost } = data;
+  const { rollup, prev, cost, stored } = data;
 
   // A sparse series is an ERROR, not a gap to fill: filling one invents data, and a chart
   // missing its left-hand side says nothing about it.
@@ -186,25 +209,56 @@ async function Body({ parsed }: { parsed: ParsedRange }) {
     return <ChartError message={COMMON.chartFailed} detail={COMMON.chartFailedDetail} />;
   }
 
+  /*
+   * A7. **PURE, AND IT ONLY HASHES PANELS THAT HAVE A ROW** — see
+   * `insight/panels.ts`. The staleness question ("do these numbers still match the
+   * prose?") cannot be asked in SQL, because the hash is over facts that exist only
+   * once the rollup has been rendered, and the rollup is right here.
+   */
+  const insights = overviewInsightStates(
+    { rollup, prev, cost },
+    { from: parsed.range.from, to: parsed.range.to, days: parsed.days },
+    stored,
+    today,
+  );
+  const box = (panel: OverviewPanelId) => (
+    <InsightBox
+      panel={panel}
+      from={parsed.range.from}
+      to={parsed.range.to}
+      initial={insights[panel]}
+    />
+  );
+
   return (
     <div className={styles.grid}>
       <div className={styles.wide}>
-        <QuotaLead rollup={rollup} />
+        <QuotaLead rollup={rollup} insight={box('overview.quota')} />
       </div>
       {/* The KPI row's tiles carry SPARKLINES, which are palette marks -- so the row needs an
           opaque panel of its own or they sit on the radial (R8). See `page.module.css`. */}
       <div className={`${styles.wide} ${styles.panel}`}>
-        <Kpis rollup={rollup} prev={prev} cost={cost} days={parsed.days} />
+        <Kpis
+          rollup={rollup}
+          prev={prev}
+          cost={cost}
+          days={parsed.days}
+          insight={box('overview.kpis')}
+        />
       </div>
       <div className={styles.wide}>
-        <CallsPerDay rollup={rollup} />
+        <CallsPerDay rollup={rollup} insight={box('overview.calls')} />
       </div>
-      <ServiceShare rollup={rollup} />
-      <TtftCard rollup={rollup} />
-      <StatusCard rollup={rollup} />
+      <ServiceShare rollup={rollup} insight={box('overview.services')} />
+      <TtftCard rollup={rollup} insight={box('overview.ttft')} />
+      <StatusCard rollup={rollup} insight={box('overview.status')} />
     </div>
   );
 }
+
+/** The `insight` slot every panel below takes. Named so the six signatures read alike
+ *  and so a panel that forgot one is visible at the call site rather than only here. */
+type WithInsight = { insight: ReactNode };
 
 /**
  * The hero and the meter: **calls in the worst rolling five-hour window against 280** (R14).
@@ -227,7 +281,7 @@ async function Body({ parsed }: { parsed: ParsedRange }) {
  * whole job is early warning.* So the hero prints the em dash and the meter reads 0 with its
  * "Aman" word -- the ratio text beside it is what distinguishes the two states.
  */
-function QuotaLead({ rollup }: { rollup: FleetRollup }) {
+function QuotaLead({ rollup, insight }: { rollup: FleetRollup } & WithInsight) {
   const ceiling = _ceilings().hard;
   const used = rollup.peak5h?.calls ?? 0;
   const ratio = ceiling > 0 ? used / ceiling : 0;
@@ -249,6 +303,9 @@ function QuotaLead({ rollup }: { rollup: FleetRollup }) {
         ratioLabel={`${int(used)} / ${int(ceiling)}`}
         caveat={OVERVIEW.meterCaveat}
       />
+      {/* Spans both columns above 520px. A third grid child would otherwise land in the
+          hero's `max-content` column and wrap a paragraph to nothing. */}
+      <div className={styles.leadInsight}>{insight}</div>
     </div>
   );
 }
@@ -259,12 +316,13 @@ function Kpis({
   prev,
   cost,
   days,
+  insight,
 }: {
   rollup: FleetRollup;
   prev: FleetRollup;
   cost: ReturnType<typeof priceRollup>;
   days: number;
-}) {
+} & WithInsight) {
   const calls = sum(rollup.callsByUtcDay.map((r) => r.calls));
   const prevCalls = sum(prev.callsByUtcDay.map((r) => r.calls));
   const tokens = tokenSeries(rollup.tokens, rollup.range.from, rollup.range.to);
@@ -283,6 +341,7 @@ function Kpis({
   const readingDelta = periodDelta(readings, prevReadings);
 
   return (
+    <>
     <KpiRow>
       {/*
        * TILE 1 IS NOTIONAL SPEND, DEMOTED FROM THE HERO BY R14 -- and it keeps both
@@ -357,11 +416,13 @@ function Kpis({
         note={OVERVIEW.kpi.p95Note}
       />
     </KpiRow>
+    {insight}
+    </>
   );
 }
 
 /** Model calls per UTC day -- the one daily series that may be related to the quota. */
-function CallsPerDay({ rollup }: { rollup: FleetRollup }) {
+function CallsPerDay({ rollup, insight }: { rollup: FleetRollup } & WithInsight) {
   const values = callSeries(rollup.callsByUtcDay);
   const buckets = rollup.callsByUtcDay.map((r) => r.bucket);
   const { ticks, yMax } = niceTicks(domainMax([{ values }]));
@@ -392,6 +453,7 @@ function CallsPerDay({ rollup }: { rollup: FleetRollup }) {
       subtitle={OVERVIEW.callsSubtitle}
       series={series}
       table={table}
+      insight={insight}
     >
       <PlotFrame>
         <AxisY ticks={ticks.map((t) => ({ at: t.at, label: compact(t.value) }))} />
@@ -415,7 +477,7 @@ function CallsPerDay({ rollup }: { rollup: FleetRollup }) {
  * *"a readings-per-day series built from `llm_calls` would silently exclude exactly the
  * population the moderation gate exists for."*
  */
-function ServiceShare({ rollup }: { rollup: FleetRollup }) {
+function ServiceShare({ rollup, insight }: { rollup: FleetRollup } & WithInsight) {
   // `ttftServices` drops the rollup's fleet row and pins the order to `SERVICE_SLOT`, which is
   // the same filter this card used to spell inline -- and the only thing that kept the fleet
   // row out of a stacked bar as a fourth, colourless segment.
@@ -478,6 +540,7 @@ function ServiceShare({ rollup }: { rollup: FleetRollup }) {
       subtitle={OVERVIEW.readingsSubtitle}
       series={series}
       table={table}
+      insight={insight}
     >
       <StackedBar rows={rows} />
     </ChartFrame>
@@ -510,7 +573,7 @@ function ServiceShare({ rollup }: { rollup: FleetRollup }) {
  * **THE FLEET ROW IS `ttftOverall`, NEVER A SUM OR A MEAN OF THE THREE ABOVE IT.** That is the
  * entire reason `ttftByService` grew a `rollup()`; see its header. `null` prints the em dash.
  */
-function TtftCard({ rollup }: { rollup: FleetRollup }) {
+function TtftCard({ rollup, insight }: { rollup: FleetRollup } & WithInsight) {
   const services = ttftServices(rollup.ttft);
   const overall = ttftOverall(rollup.ttft);
   const slot = (id: string) => slotFor(id as (typeof SERVICES)[number], SERVICES);
@@ -553,6 +616,7 @@ function TtftCard({ rollup }: { rollup: FleetRollup }) {
       subtitle={OVERVIEW.ttftSubtitle}
       series={[]}
       table={table}
+      insight={insight}
     >
       <KpiRow>
         <StatTile label={OVERVIEW.ttftP50} value={ms(overall?.p50Ms ?? null)} />
@@ -573,7 +637,7 @@ function TtftCard({ rollup }: { rollup: FleetRollup }) {
  * The three visible tiles are the summary; the per-op breakdown is in the table view, because a
  * card whose whole content lives inside a closed `<details>` is a card that looks empty.
  */
-function StatusCard({ rollup }: { rollup: FleetRollup }) {
+function StatusCard({ rollup, insight }: { rollup: FleetRollup } & WithInsight) {
   const calls = sum(rollup.byOp.map((r) => r.calls));
   const failed = sum(rollup.byOp.map((r) => r.failed));
   const aborted = sum(rollup.byOp.map((r) => r.aborted));
@@ -599,6 +663,7 @@ function StatusCard({ rollup }: { rollup: FleetRollup }) {
       subtitle={OVERVIEW.statusSubtitle}
       series={[]}
       table={table}
+      insight={insight}
     >
       <KpiRow>
         <StatTile label={OVERVIEW.statusColumns.calls} value={int(calls)} />

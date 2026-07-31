@@ -92,6 +92,13 @@
       "when": 1785381454908,
       "tag": "0012_v13-llm-calls-cache-read",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1785483695869,
+      "tag": "0013_a7-admin-insights",
+      "breakpoints": true
     }
   ]
 }

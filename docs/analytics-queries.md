@@ -561,7 +561,15 @@ measured; **no rate, ratio or percentile below is a fact about traffic.** A2 ver
 all nine ops live against the running app and read them out of psql; this is the
 reporting layer over that, and the production read is owed the same way query 12's is.
 
-Two things to have in mind, both of which change how these read:
+Three things to have in mind, all of which change how these read:
+
+- **THERE ARE TEN `op` VALUES SINCE 2026-07-31, NOT NINE.** The paragraph above is the
+  provenance of a run made on 2026-07-30 and is left as it was — it describes what was
+  seeded that day. A7 added `insight`: the `Insight` button on each subpanel of `/admin`
+  and `/admin/tokens`, `deferred`, one call per press. **It is the only `op` with no
+  querent behind it**, so it is the one row in every per-`op` breakdown that measures the
+  dashboard rather than the app, and a "cost per reading" denominator must exclude it.
+  Expect its `user_id` to be the operator's on every row.
 
 - **`null_input_calls` was very nearly every row until 2026-07-30**, for the
   reason at the top of this document — a bug in this repository, not a provider

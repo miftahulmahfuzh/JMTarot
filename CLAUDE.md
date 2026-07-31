@@ -1315,6 +1315,43 @@ person*, and per-answer clearing. `src/lib/account/{delete,grace}.ts`,
   the answer sheet is unmeasured on a real phone (a textarea with the keyboard up inside a `90dvh`
   sheet is the geometry WSL cannot answer).
 
+## Admin panel insights (A7, 2026-07-31)
+
+An `Insight` button on all thirteen subpanels of `/admin` and `/admin/tokens`, with the
+model's reading of that panel in a box under it and the time it was written beside the
+button. `src/app/admin/insight/panels.ts` (the registry), `src/app/admin/InsightBox.tsx`,
+`src/lib/admin/{insightPrompt,insight}.ts`, `src/lib/db/queries/admin/insights.ts`,
+`src/app/api/admin/insight/{route,shared}.ts`, migration `0013`. The design is
+`docs/plans/2026-07-31-admin-panel-insights-design.md`.
+
+- **`insight` IS THE TENTH `LLMOp` AND THE SET IS CLOSED AT TEN.** Roadmap seam 3's *nine,
+  closed, no tenth and no alias* was put as a question and Miftah granted it on
+  2026-07-31, because the button is a recurring model call with no querent behind it and
+  `/admin/tokens`' own cost table has to be able to say what it costs. **It is the one op
+  that measures the dashboard rather than the app**, so a cost-per-reading denominator
+  must exclude it. `OP_ORDER`'s `AssertNever` makes an eleventh a compile error.
+- **NO ENTRY IN `flags.ts`** — it joins `blogAutoTranslate` in `flagCoverage.test.ts`'s
+  `EXEMPT` table. `callClass: 'deferred'` on a site whose caller IS the operator means the
+  fleet-wide ceiling sheds it before any querent call, so **the tier is the switch** and it
+  cannot be left off at 2am. A third admin-only site should get one
+  `ADMIN_MODEL_CALLS_ENABLED` for the class, not a third exemption.
+- **THE ROUTE RE-DERIVES THE NUMBERS AND NEVER TRUSTS THE POSTED BODY**, which carries
+  `{ panel, from, to, force }` and no figures. W3's completion-route rule, applied to a
+  prompt. **R21 also survives**: the cached row is read in each page's own `withAdminRead`,
+  so the box's first frame is server-rendered and the only fetch is the press.
+- **PRESSING THE BUTTON CHANGES THE PANEL IT DESCRIBES**, because the insight's own
+  `llm_calls` row is dated today — measured 53 → 54 four seconds apart. So the stale flag
+  **only ever fires on a CLOSED range** (`range.to < today`); on a live range the timestamp
+  is what says how old the prose is. Excluding `op: 'insight'` from the metric queries would
+  fix it and would undo the whole reason the tenth op was spent.
+- **`validateInsight` REFUSES SHAPE, NOT TRUTH, AND SAYS SO.** Empty, over-long, or answered
+  in markdown is never stored; there is no cheap test for *"this sentence about a trend is
+  true"*, and the honest instruments are the timestamp, the stale line and the table view
+  directly underneath.
+- **`stamp()` IS THE ONE FORMATTER IN `format.ts` PINNED TO JAKARTA, NOT UTC** — it renders
+  an instant a person asks a wall-clock question about, and the explicit zone is also what
+  makes it hydration-safe in a client component.
+
 ## Trust, safety and secrets (W7)
 
 A moderation gate that refuses harm without refusing tarot, two legal documents, and a tripwire that

@@ -28,12 +28,18 @@
 import type { LLMOp } from '@/lib/llm/types';
 
 /**
- * The nine, in the order a chart or a legend renders them. **Not by rank** -- an order
+ * The ten, in the order a chart or a legend renders them. **Not by rank** -- an order
  * that changes with the data reads as the data changing, which is the same reason M4's
  * SQL breaks its `calls desc` tie on `op` and `topCardAllTime` breaks its on `card_id`.
  *
  * The order is the request's own shape: what a reading costs, in the order a reading
  * incurs it, then the two background generators, then the two translation passes.
+ *
+ * **`insight` IS LAST BECAUSE IT IS THE ONLY OP WITH NO QUERENT BEHIND IT** (A7,
+ * 2026-07-31). Every other value is incurred by somebody taking a reading, directly or
+ * in its wake; this one is incurred by the operator reading the dashboard. Putting it
+ * at the end keeps the nine querent-side rows in the shape they have always had, so a
+ * table that grew a row does not also look reordered.
  */
 export const OP_ORDER = [
   'moderation',
@@ -45,6 +51,7 @@ export const OP_ORDER = [
   'persona',
   'translation',
   'translation_repair',
+  'insight',
 ] as const satisfies readonly LLMOp[];
 
 /**

@@ -9056,3 +9056,148 @@ Two nonces.
 **No backfill, and no tokenizer.** Every streamed row before 2026-07-30 keeps NULL input
 tokens: that is the honest record of when this app started measuring, and **any average
 over `input_tokens` spanning that date is two different measurements.**
+
+## Admin panel insights (A7, 2026-07-31)
+
+**An `Insight` button on all thirteen subpanels of `/admin` and `/admin/tokens`, with the
+model's reading of that panel in a box under it and the time it was written beside the
+button.** CLAUDE.md's `## Admin panel insights (A7)` is the short form; the design and the
+rejected alternatives are in `docs/plans/2026-07-31-admin-panel-insights-design.md`. This
+section is the account of what the build actually cost.
+
+### The file map
+
+```
+src/lib/admin/insightPrompt.ts      PURE. PanelFacts, the serializer, the hash, the
+                                    prompt, validateInsight. Everything npm test reaches.
+src/lib/admin/insight.ts            server-only. The one complete() call.
+src/app/admin/insight/panels.ts     The registry: 2 loaders, 13 renderers, the state
+                                    helpers the pages call.
+src/app/admin/InsightBox.tsx        'use client'. Button, timestamp, box, five states.
+src/app/admin/InsightBox.module.css
+src/app/api/admin/insight/route.ts  POST. The other four verbs are refuseMethod.
+src/app/api/admin/insight/shared.ts NO_STORE, ok(), unavailable(), refuseMethod.
+src/lib/db/queries/admin/insights.ts  insightsForRange (one statement per page), putInsight.
+src/lib/db/migrations/0013_a7-admin-insights.sql
+```
+
+Edited: `llm/types.ts` (+`insight`), `analytics/rollup.ts` (+`OP_ORDER`), both admin
+`page.tsx`, `admin/copy.ts`, `admin/format.ts` (+`stamp`), `admin/page.module.css`,
+`components/chart/ChartFrame.tsx` (+an optional `insight` slot), and five test files that
+exist to be updated deliberately.
+
+### The tenth `op`, and why it was asked for rather than taken
+
+Roadmap seam 3 says *nine, closed, no tenth and no alias*, and `A3 must not invent one`.
+A7 is not A3, but the rule is about the column rather than about who writes it — so the
+tenth was **put as a question and granted on 2026-07-31**.
+
+The argument that won: the button is a **new recurring model call with no querent behind
+it**, and `/admin/tokens`' own *Biaya per keperluan* table is the surface that has to be
+able to say what it costs. Folding it into `translation` or `persona` would make the
+dashboard hide the price of its own newest feature. `blogAutoTranslate` made the opposite
+call for a one-off editor button and **recorded the cost in its own header** rather than
+setting a precedent; that record is what made this decision cheap to reason about.
+
+Spending a value is not free, and the machinery proved it: `OP_ORDER`'s
+`AssertNever<Exclude<LLMOp, …>>` failed to compile the moment the union grew, and
+`callClass.test.ts` stayed red until the new site declared its tier. Neither needed a
+reviewer to notice anything.
+
+### What a live run found that nothing else could
+
+**PRESSING THE BUTTON CHANGES THE PANEL IT DESCRIBES.** An insight is a model call with
+`op: 'insight'` and today's `local_date`, so its `llm_calls` row lands inside any range
+ending today — nine of the thirteen panels and the default filter. Measured on the dev
+database:
+
+```
+press overview.calls   -> "total 53 panggilan"      input_hash 4ceca84c0a624a96
+press again, 15s later -> "total 54 panggilan"      input_hash 5ced1ba3d06b36ef
+```
+
+The fifty-fourth call **was the press.** Reloading the page put *"Angka di panel ini sudah
+berubah sejak insight ini dibuat"* under prose four seconds old.
+
+Nothing in the suite could see this. The unit tests hash literals, the integration tests
+never call a model, and the typecheck has no opinion. **It took one press and one reload.**
+
+The fix that shipped: **the stale flag only fires on a CLOSED range** (`range.to < today`).
+The question it answers is *"has a settled period been re-measured since this was
+written?"*, and a range ending today is not settled by anybody's definition — it moves
+whenever a querent takes a reading, so the flag would be noise there even if the button
+cost nothing. On a live range the **timestamp** does the work.
+
+The two rejected fixes, for the next person who reaches for one:
+
+- **Exclude `op: 'insight'` from the metric queries.** It works, and it undoes the entire
+  argument for spending the tenth `op`. It is also an edit to `queries/admin/**`, A3's by
+  §7.
+- **Drop the flag.** Then a settled month's insight can be silently wrong about a range
+  that was later corrected, which is the case the flag exists for.
+
+### Three fences fired before this shipped, and all three were somebody else's
+
+1. **`page.contract.test.ts`** (A5's, globbing the whole `/api/admin/**` tree rather than
+   A5's own files) refused the route's first draft twice: it imported `next/server` and
+   built a bare `NextResponse.json`. That is why `insight/shared.ts` exists, and it is the
+   clearest evidence in the release that A5's decision to glob the surface was right.
+2. **`adminCopy.test.ts`** refused a literal `280` in a note the model reads. The ceiling
+   is interpolated from `_ceilings()` now — the derivation (400 prompts × 70%) lives beside
+   it in `meter.ts` and a copy would go stale on a plan-tier change.
+3. **`ttftSeam.test.ts`** pinned `<TtftCard rollup={rollup} />` character for character and
+   went red on an added prop. Loosened to match the tag and its `rollup` prop only, with
+   the reason written at the assertion: what that test is FOR is that the card is mounted.
+
+A fourth, self-inflicted: **`**/` inside a block comment terminates it.** `shared.ts`'s
+header said *"no file under `src/app/api/admin/**/route.ts`"* and the compiler reported
+five errors on lines that were prose, ending in *"Unterminated template literal"*. The
+message names nothing useful. `blog/shared.ts` avoids the sequence by accident; this one
+was rewritten to say *"no `route.ts` anywhere under `src/app/api/admin`"*.
+
+### Measured, dev database, 2026-07-31
+
+| | |
+| --- | --- |
+| first press, cold | 2.9s |
+| second press | 5.0s |
+| input / output tokens | 830 / 138 |
+| `cache_read_tokens`, second press | **448 of 830** |
+| `call_class` / `status` | `deferred` / `ok` |
+
+The cache figure is worth keeping: the system half is identical between presses, so the
+provider served more than half the prompt from its own cache on the second call — the same
+behaviour `types.ts` records for readings, on a prompt nobody tuned for it.
+
+Five panels were read by hand (`overview.quota`, `overview.calls`, `tokens.trajectory`,
+`tokens.cache`, `tokens.league`). Every figure cited was present in its block; the quota
+panel correctly reported that the counter is a lower bound; the trajectory panel named the
+converted daily ceiling and a crossing month. **`tokens.cache` came closest to the line**,
+suggesting the prompt layer be inspected — grounded, because that panel's own `purpose`
+names prompt-layer changes as the thing it detects, but worth re-reading after a model
+change.
+
+### Small things worth not re-deciding
+
+- **`PanelFacts` is NOT the panel's `TableSpec`**, though every `ChartFrame` carries one
+  for free (I-13). That table is written for somebody reading THAT chart and omits, on
+  purpose, what a model most needs — the previous period, the ceiling, `k`, the
+  denominators in a footnote. The cost is a second spelling of the labels, and
+  `panels.test.ts` keeps the two sets of panels from diverging in membership.
+- **`unchanged` is a guard, not a hot path.** `force` is true whenever prose is already on
+  screen, so the arm needs a client with no state and a matching row — two tabs, or a lost
+  render. The saving that matters is the page RELOAD, which serves the row and reaches no
+  model.
+- **`stamp()` is the one formatter in `format.ts` pinned to `Asia/Jakarta`.** Every other
+  one is UTC because it renders `local_date`, a string; this renders an instant somebody
+  asks a wall-clock question about. The explicit zone is also what makes it hydration-safe
+  in a client component, where the default would be the lambda's UTC on one side and the
+  operator's zone on the other.
+- **`.live` is a plain flex column, not `display: none` and not `display: contents`.** A
+  region announced into existence is not announced; `display: contents`'s treatment in the
+  accessibility tree is inconsistent across engines. The cost is 8px of nothing under a
+  button on a panel with no insight, paid deliberately.
+- **`--gold-dim` IS NOT DEFINED IN `tokens.css`** and `blog.module.css` uses it six times,
+  so those controls inherit their parent's colour. Noticed while writing
+  `InsightBox.module.css`, which uses `--gold-text` instead. **Not fixed** — A6's file, §6
+  ownership — and recorded here because it is invisible on screen and will be found again.
