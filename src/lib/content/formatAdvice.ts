@@ -46,6 +46,17 @@ import type { Block } from '@/content/types';
 export const DESCRIPTION_MIN = 80;
 export const DESCRIPTION_MAX = 158;
 
+/**
+ * `lint.ts`'s `title-length` boundary, and `BlogDoc.title`'s *"under 110 characters —
+ * Google's headline cap"*.
+ *
+ * **THE HARD LIMIT IS THE LINT'S, AND THE PROMPT ASKS FOR MUCH SHORTER.** Accepting up to
+ * 110 means a title the lint would not warn about; asking for ~70 means a title that fits a
+ * search result. Validating at the prompt's target instead would refuse titles that are
+ * merely long, which costs the operator a title they could have shortened themselves.
+ */
+export const TITLE_MAX = 110;
+
 /** A heading longer than this is a paragraph somebody mislabelled. */
 const MAX_HEADING_CHARS = 90;
 
@@ -68,16 +79,30 @@ export type FormatAdvice = {
   anchors: { at: number; id: string }[];
   /** The meta description, 80–158 characters. */
   description: string;
+  /**
+   * The article's `<h1>` and `<title>`, **in the article's own language**.
+   *
+   * Empty when none was asked for or none survived validation. **The caller uses it ONLY
+   * when the title field is empty** — see the route. An admin who typed a title has made an
+   * editorial decision, and a model overwriting it is the `user-edit` failure V8 records
+   * against `personaStaleness`.
+   */
+  title: string;
 };
 
 /** Why the model is being consulted, or `null` when it is not. */
-export type AdviceReason = 'no-sections' | 'no-description' | 'derived-anchors';
+export type AdviceReason = 'no-title' | 'no-sections' | 'no-description' | 'derived-anchors';
 
 /**
  * Which questions the parse left open. `[]` means **do not call a model.**
  *
  * Each reason is a thing code cannot answer:
  *
+ *   `no-title`         the Judul field is empty. **The most common state there is**, because
+ *                      an operator asks Gemini for an article and pastes the body — the
+ *                      title is a separate question nobody thought to copy. Code cannot
+ *                      answer it: a title is a reading of the whole article, and the first
+ *                      heading is not one (it names section one, not the piece).
  *   `no-sections`      a wall of text has no `##` in it, and where the sections are is a
  *                      reading of the prose. Fewer than two level-2 headings, because one
  *                      heading is not an outline and the public page's own table of
@@ -88,17 +113,24 @@ export type AdviceReason = 'no-sections' | 'no-description' | 'derived-anchors';
  *                      apa')` — English ids on Indonesian headings, which slugify cannot
  *                      produce and a human chose. An anchor is a permanent address.
  */
-export function adviceNeeded(
-  body: readonly Block[],
-  description: string,
-  derivedAnchorAt: readonly number[],
-): AdviceReason[] {
+export function adviceNeeded(input: {
+  body: readonly Block[];
+  title: string;
+  description: string;
+  derivedAnchorAt: readonly number[];
+}): AdviceReason[] {
   const out: AdviceReason[] = [];
-  const sections = body.filter((b) => b.kind === 'heading' && b.level === 2).length;
+  /*
+   * **A TITLE IS ASKED FOR ONLY WHEN THE FIELD IS EMPTY**, never when it is merely long or
+   * odd. The admin pastes an article and presses one button; a title they typed is a
+   * decision, and the reason list is what stops the model being invited to revisit it.
+   */
+  if (input.title.trim() === '') out.push('no-title');
+  const sections = input.body.filter((b) => b.kind === 'heading' && b.level === 2).length;
   if (sections < 2) out.push('no-sections');
-  const d = description.trim().length;
+  const d = input.description.trim().length;
   if (d < DESCRIPTION_MIN || d > DESCRIPTION_MAX) out.push('no-description');
-  if (derivedAnchorAt.length > 0) out.push('derived-anchors');
+  if (input.derivedAnchorAt.length > 0) out.push('derived-anchors');
   return out;
 }
 
@@ -124,7 +156,7 @@ export type AdviceValidation = {
  */
 export function validateAdvice(raw: unknown, body: readonly Block[]): AdviceValidation {
   const rejected: string[] = [];
-  const advice: FormatAdvice = { headings: [], anchors: [], description: '' };
+  const advice: FormatAdvice = { headings: [], anchors: [], description: '', title: '' };
 
   if (raw === null || typeof raw !== 'object') {
     return { advice, rejected: ['the reply was not an object'] };
@@ -225,6 +257,29 @@ export function validateAdvice(raw: unknown, body: readonly Block[]): AdviceVali
       rejected.push('description spans more than one line');
     } else {
       advice.description = description;
+    }
+  }
+
+  /* ── title ─────────────────────────────────────────────────────────────── */
+  const title = typeof r.title === 'string' ? r.title.trim() : '';
+  if (title !== '') {
+    /*
+     * **`TITLE_MAX` IS THE LINT'S BOUNDARY, NOT THE PROMPT'S TARGET.** See its declaration:
+     * refusing at ~70 would reject a title that is merely long, which the operator can
+     * shorten, and the whole point is to remove the blank field rather than to be fussy.
+     *
+     * **A NEWLINE IS REFUSED**, because this string is the `<h1>` AND the `<title>` tag: a
+     * line break renders as a space in one and as nothing in the other, so the two would
+     * disagree about a string `blog.content.test.ts` reads.
+     */
+    if (title.length > TITLE_MAX) {
+      rejected.push(`title is ${title.length} characters, over ${TITLE_MAX}`);
+    } else if (looksLikeMarkup(title)) {
+      rejected.push('title carries markdown');
+    } else if (title.includes('\n')) {
+      rejected.push('title spans more than one line');
+    } else {
+      advice.title = title;
     }
   }
 

@@ -44,6 +44,7 @@ import { track, withAnalytics } from '@/lib/analytics/track';
 import { db } from '@/lib/db/client';
 import {
   adminNotFound,
+  errorClass,
   logBlogFailure,
   ok,
   refused,
@@ -100,7 +101,7 @@ async function save(request: Request, intent: 'create' | 'update') {
     result = await saveDocument(db, intent, raw);
   } catch (err) {
     logBlogFailure('save', err, { intent });
-    return unavailable();
+    return unavailable('save', errorClass(err));
   }
 
   if (result.kind === 'invalid') return refused(result.violations);

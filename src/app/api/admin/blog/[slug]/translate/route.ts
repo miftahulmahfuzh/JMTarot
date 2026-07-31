@@ -36,7 +36,15 @@ import type { LintDoc } from '@/lib/content/lint';
 import { db } from '@/lib/db/client';
 import { getForEdit } from '@/lib/db/queries/admin/blog';
 import { isLocale, LOCALES, type Locale } from '@/lib/i18n/locale';
-import { adminNotFound, logBlogFailure, ok, refuseMethod, requireAdmin, unavailable } from '../../shared';
+import {
+  adminNotFound,
+  errorClass,
+  logBlogFailure,
+  ok,
+  refuseMethod,
+  requireAdmin,
+  unavailable,
+} from '../../shared';
 
 export const runtime = 'nodejs';
 /**
@@ -80,7 +88,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ slug: stri
     article = await getForEdit(db, slug);
   } catch (err) {
     logBlogFailure('translate read', err, { slug, to });
-    return unavailable();
+    return unavailable('read', errorClass(err));
   }
 
   const row = article?.locales.find((l) => l.locale === from);

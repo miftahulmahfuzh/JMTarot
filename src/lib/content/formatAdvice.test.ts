@@ -6,9 +6,13 @@ import {
   applyAdvice,
   DESCRIPTION_MAX,
   DESCRIPTION_MIN,
+  TITLE_MAX,
   validateAdvice,
   type FormatAdvice,
 } from './formatAdvice';
+
+/** A non-empty title, so every case below is about the field it names and not about `no-title`. */
+const TITLED = 'Trivia Tarot yang Jarang Diceritakan';
 
 /**
  * `docs/plans/2026-07-31-blog-markdown-editor-design.md` §5.1.
@@ -28,7 +32,7 @@ const BODY: Block[] = [
 const GOOD_DESCRIPTION =
   'Penjelasan tarot untuk yang belum pernah menyentuhnya: apa isinya, dari mana asalnya, dan apa yang bisa kamu dapat.';
 
-const empty = (): FormatAdvice => ({ headings: [], anchors: [], description: '' });
+const empty = (): FormatAdvice => ({ headings: [], anchors: [], description: '', title: '' });
 
 describe('adviceNeeded — the predicate that keeps the common press free', () => {
   it('asks nothing when the paste is already sectioned and described', () => {
@@ -38,18 +42,18 @@ describe('adviceNeeded — the predicate that keeps the common press free', () =
      * call per article and `admin.blog_saved.model_called` is the instrument that says so.
      */
     const sectioned = [h2('what-tarot-is', 'Tarot itu apa'), ...BODY, h2('myths', 'Mitos')];
-    expect(adviceNeeded(sectioned, GOOD_DESCRIPTION, [])).toEqual([]);
+    expect(adviceNeeded({ body: sectioned, title: TITLED, description: GOOD_DESCRIPTION, derivedAnchorAt: [] })).toEqual([]);
   });
 
   it('asks for sections on a wall of text', () => {
-    expect(adviceNeeded(BODY, GOOD_DESCRIPTION, [])).toEqual(['no-sections']);
+    expect(adviceNeeded({ body: BODY, title: TITLED, description: GOOD_DESCRIPTION, derivedAnchorAt: [] })).toEqual(['no-sections']);
   });
 
   it('treats ONE heading as no outline', () => {
     // The public page's own table of contents does not render below three anchors
     // (`blog/[slug]/page.tsx`), so one heading is not a sectioned article.
     const one = [h2('a-b', 'Satu'), ...BODY];
-    expect(adviceNeeded(one, GOOD_DESCRIPTION, [])).toEqual(['no-sections']);
+    expect(adviceNeeded({ body: one, title: TITLED, description: GOOD_DESCRIPTION, derivedAnchorAt: [] })).toEqual(['no-sections']);
   });
 
   it('ignores level-3 headings when counting sections', () => {
@@ -59,16 +63,16 @@ describe('adviceNeeded — the predicate that keeps the common press free', () =
       { kind: 'heading', level: 3, id: 'b', text: 'Dua' },
       ...BODY,
     ];
-    expect(adviceNeeded(threes, GOOD_DESCRIPTION, [])).toContain('no-sections');
+    expect(adviceNeeded({ body: threes, title: TITLED, description: GOOD_DESCRIPTION, derivedAnchorAt: [] })).toContain('no-sections');
   });
 
   it('asks for a description that is absent or outside the lint’s band', () => {
     const sectioned = [h2('a-b', 'Satu'), h2('c-d', 'Dua'), ...BODY];
-    expect(adviceNeeded(sectioned, '', [])).toEqual(['no-description']);
-    expect(adviceNeeded(sectioned, 'x'.repeat(DESCRIPTION_MIN - 1), [])).toEqual(['no-description']);
-    expect(adviceNeeded(sectioned, 'x'.repeat(DESCRIPTION_MAX + 1), [])).toEqual(['no-description']);
-    expect(adviceNeeded(sectioned, 'x'.repeat(DESCRIPTION_MIN), [])).toEqual([]);
-    expect(adviceNeeded(sectioned, 'x'.repeat(DESCRIPTION_MAX), [])).toEqual([]);
+    expect(adviceNeeded({ body: sectioned, title: TITLED, description: '', derivedAnchorAt: [] })).toEqual(['no-description']);
+    expect(adviceNeeded({ body: sectioned, title: TITLED, description: 'x'.repeat(DESCRIPTION_MIN - 1), derivedAnchorAt: [] })).toEqual(['no-description']);
+    expect(adviceNeeded({ body: sectioned, title: TITLED, description: 'x'.repeat(DESCRIPTION_MAX + 1), derivedAnchorAt: [] })).toEqual(['no-description']);
+    expect(adviceNeeded({ body: sectioned, title: TITLED, description: 'x'.repeat(DESCRIPTION_MIN), derivedAnchorAt: [] })).toEqual([]);
+    expect(adviceNeeded({ body: sectioned, title: TITLED, description: 'x'.repeat(DESCRIPTION_MAX), derivedAnchorAt: [] })).toEqual([]);
   });
 
   it('asks for anchors when an id was derived rather than chosen', () => {
@@ -78,15 +82,106 @@ describe('adviceNeeded — the predicate that keeps the common press free', () =
      * a permanent address, so a derived one is worth one model call to improve.
      */
     const sectioned = [h2('a-b', 'Satu'), h2('c-d', 'Dua'), ...BODY];
-    expect(adviceNeeded(sectioned, GOOD_DESCRIPTION, [0])).toEqual(['derived-anchors']);
+    expect(adviceNeeded({ body: sectioned, title: TITLED, description: GOOD_DESCRIPTION, derivedAnchorAt: [0] })).toEqual(['derived-anchors']);
   });
 
   it('can ask for all three at once', () => {
-    expect(adviceNeeded(BODY, '', [0])).toEqual([
+    expect(adviceNeeded({ body: BODY, title: TITLED, description: '', derivedAnchorAt: [0] })).toEqual([
       'no-sections',
       'no-description',
       'derived-anchors',
     ]);
+  });
+});
+
+describe('adviceNeeded — the title', () => {
+  const sectioned = [h2('a-b', 'Satu'), h2('c-d', 'Dua'), ...BODY];
+
+  it('asks for a title when the field is empty, and that is the common case', () => {
+    /*
+     * **THE STATE AN OPERATOR IS ACTUALLY IN.** They ask Gemini for an article and paste the
+     * body; the title is a separate question nobody thought to copy. Code cannot answer it —
+     * a title is a reading of the whole article, and the first heading names section one.
+     */
+    expect(adviceNeeded({ body: sectioned, title: '', description: GOOD_DESCRIPTION, derivedAnchorAt: [] })).toEqual([
+      'no-title',
+    ]);
+    expect(adviceNeeded({ body: sectioned, title: '   ', description: GOOD_DESCRIPTION, derivedAnchorAt: [] })).toEqual([
+      'no-title',
+    ]);
+  });
+
+  it('never asks when a title is there, however odd or long it is', () => {
+    // A typed title is an editorial decision. The reason list is what stops the model being
+    // invited to revisit it -- V8's `user-edit` failure, in a new place.
+    for (const t of [TITLED, 'x', 'x'.repeat(300), 'JUDUL SEMENTARA jangan lupa ganti']) {
+      expect(
+        adviceNeeded({ body: sectioned, title: t, description: GOOD_DESCRIPTION, derivedAnchorAt: [] }),
+        t.slice(0, 20),
+      ).toEqual([]);
+    }
+  });
+
+  it('comes first in the reason list, so the prompt reads in field order', () => {
+    expect(adviceNeeded({ body: BODY, title: '', description: '', derivedAnchorAt: [0] })).toEqual([
+      'no-title',
+      'no-sections',
+      'no-description',
+      'derived-anchors',
+    ]);
+  });
+});
+
+describe('validateAdvice — the title', () => {
+  const t = (title: unknown) => validateAdvice({ title }, BODY);
+
+  it('accepts a plain one-line title', () => {
+    expect(t(TITLED).advice.title).toBe(TITLED);
+    expect(t(`  ${TITLED}  `).advice.title).toBe(TITLED);
+  });
+
+  it('accepts up to the LINT’s boundary rather than the prompt’s target', () => {
+    /*
+     * The prompt asks for under 70 characters; `TITLE_MAX` is `lint.ts`'s `title-length`
+     * boundary. **Refusing at the target would reject a title that is merely long**, which the
+     * operator can shorten — and the point is to remove the blank field, not to be fussy.
+     */
+    expect(t('x'.repeat(TITLE_MAX)).advice.title).toHaveLength(TITLE_MAX);
+    expect(t('x'.repeat(TITLE_MAX + 1)).advice.title).toBe('');
+    expect(t('x'.repeat(TITLE_MAX + 1)).rejected[0]).toContain(`over ${TITLE_MAX}`);
+  });
+
+  it('refuses markdown, a newline, and a non-string', () => {
+    /*
+     * A newline matters more here than anywhere else: this string is the `<h1>` AND the
+     * `<title>` tag, and a break renders as a space in one and as nothing in the other — so
+     * the two would disagree about a string `blog.content.test.ts` reads.
+     */
+    expect(t('## Judul').advice.title).toBe('');
+    expect(t('**Judul**').advice.title).toBe('');
+    expect(t('- Judul').advice.title).toBe('');
+    expect(t('Judul\nkedua').advice.title).toBe('');
+    expect(t(42).advice.title).toBe('');
+    expect(t(null).advice.title).toBe('');
+  });
+
+  it('is empty rather than absent when the model returns nothing', () => {
+    // The route treats `''` as "no advice" and keeps whatever the operator typed, so an empty
+    // string has to be the shape rather than `undefined`.
+    expect(validateAdvice({}, BODY).advice.title).toBe('');
+    expect(t('').advice.title).toBe('');
+    expect(t('   ').advice.title).toBe('');
+  });
+
+  it('does not stop the other fields being accepted when it is refused', () => {
+    const out = validateAdvice(
+      { title: '## bad', description: GOOD_DESCRIPTION, headings: [{ at: 0, text: 'Baik', id: 'baik' }] },
+      BODY,
+    );
+    expect(out.advice.title).toBe('');
+    expect(out.advice.description).toBe(GOOD_DESCRIPTION);
+    expect(out.advice.headings).toHaveLength(1);
+    expect(out.rejected).toEqual(['title carries markdown']);
   });
 });
 
@@ -288,6 +383,7 @@ describe('applyAdvice — code owns every word of prose', () => {
       headings: [{ at: 1, text: 'Bagian dua', id: 'bagian-dua' }],
       anchors: [],
       description: '',
+      title: '',
     });
     expect(out).toHaveLength(BODY.length + 1);
     expect(out[1]).toEqual({ kind: 'heading', level: 2, id: 'bagian-dua', text: 'Bagian dua' });
@@ -309,6 +405,7 @@ describe('applyAdvice — code owns every word of prose', () => {
       ],
       anchors: [],
       description: '',
+      title: '',
     });
     expect(out.map((b) => (b.kind === 'heading' ? b.text : b.kind))).toEqual([
       'Satu',
@@ -325,6 +422,7 @@ describe('applyAdvice — code owns every word of prose', () => {
       headings: [{ at: BODY.length, text: 'Akhir', id: 'akhir' }],
       anchors: [],
       description: '',
+      title: '',
     });
     expect(out.at(-1)).toEqual({ kind: 'heading', level: 2, id: 'akhir', text: 'Akhir' });
   });
@@ -335,6 +433,7 @@ describe('applyAdvice — code owns every word of prose', () => {
       headings: [],
       anchors: [{ at: 0, id: 'what-tarot-is' }],
       description: '',
+      title: '',
     });
     expect(out[0]).toEqual({ kind: 'heading', level: 2, id: 'what-tarot-is', text: 'Tarot itu apa' });
   });
@@ -342,7 +441,7 @@ describe('applyAdvice — code owns every word of prose', () => {
   it('leaves a non-heading alone even if an anchor names it', () => {
     // Re-checked rather than trusted: the function is exported and a second caller is a
     // matter of time.
-    const out = applyAdvice(BODY, { headings: [], anchors: [{ at: 0, id: 'x-y' }], description: '' });
+    const out = applyAdvice(BODY, { headings: [], anchors: [{ at: 0, id: 'x-y' }], description: '', title: '' });
     expect(out).toEqual(BODY);
   });
 
@@ -359,6 +458,7 @@ describe('applyAdvice — code owns every word of prose', () => {
       ],
       anchors: [{ at: 0, id: 'ignored' }],
       description: GOOD_DESCRIPTION,
+      title: '',
     });
     expect(out.filter((b) => b.kind !== 'heading')).toEqual(BODY);
   });
@@ -369,7 +469,7 @@ describe('applyAdvice — code owns every word of prose', () => {
 
   it('does not mutate its input', () => {
     const before = structuredClone(BODY);
-    applyAdvice(BODY, { headings: [{ at: 0, text: 'X', id: 'x-y' }], anchors: [], description: '' });
+    applyAdvice(BODY, { headings: [{ at: 0, text: 'X', id: 'x-y' }], anchors: [], description: '', title: '' });
     expect(BODY).toEqual(before);
   });
 });

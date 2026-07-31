@@ -107,6 +107,8 @@ export function MarkdownEditor({
   const [seoOpen, setSeoOpen] = useState(false);
 
   const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'failed' | 'timeout'>('idle');
+  /** Why the save failed, when `state` alone cannot say. See `save()`. */
+  const [saveNote, setSaveNote] = useState('');
   const [fmt, setFmt] = useState<'idle' | 'running' | 'done' | 'failed' | 'timeout'>('idle');
   const [fmtNote, setFmtNote] = useState('');
   const [tr, setTr] = useState<'idle' | 'confirm' | 'running' | 'done' | 'failed' | 'timeout'>(
@@ -160,31 +162,78 @@ export function MarkdownEditor({
         }),
       });
 
-      const payload = (await res.json().catch(() => ({}))) as {
+      /*
+       * **`unreadable` DISTINGUISHES "NO JSON" FROM "JSON SAYING NOTHING".** `.catch(() => ({}))`
+       * collapsed those two, and they need different sentences: an empty object means the route
+       * answered and had nothing to add, while a parse failure means it crashed before it
+       * answered or something is between us and it.
+       */
+      let payload: {
         ok?: boolean;
         reason?: string;
         detail?: string;
         markdown?: string;
         description?: string;
+        title?: string;
+        titleGenerated?: boolean;
         headingsAdded?: number;
         rejected?: string[];
         violations?: Violation[];
-      };
+        stage?: string;
+        errorClass?: string;
+        errorCode?: string;
+      } = {};
+      let unreadable = false;
+      try {
+        payload = await res.json();
+      } catch {
+        unreadable = true;
+      }
+
+      if (unreadable) {
+        setFmt('failed');
+        setFmtNote(BLOG.editor.formatUnreadable(res.status));
+        return;
+      }
 
       /*
-       * **A 422 IS THE LINT REFUSING, AND IT LANDS IN THE ONE `LintPanel`** — the same
-       * shape the save route returns, so there is one place violations are rendered and
-       * one thing to read whichever button produced them.
+       * **A 422 IS THE LINT OR ZOD REFUSING, AND IT LANDS IN THE ONE `LintPanel`** — the same
+       * shape the save route returns, so there is one place violations are rendered whichever
+       * button produced them. The NOTE names the count and the fields, because a panel below
+       * the fold is a panel nobody scrolls to unless something points at it.
        */
       if (res.status === 422) {
-        setViolations(payload.violations ?? []);
+        const v = payload.violations ?? [];
+        setViolations(v);
         setFmt('failed');
-        setFmtNote(BLOG.editor.formatFailed);
+        setFmtNote(
+          v.length > 0
+            ? BLOG.editor.formatInvalid(
+                v.length,
+                [...new Set(v.map((x) => BLOG.editor.field[x.field as keyof typeof BLOG.editor.field] ?? x.field))].join(', '),
+              )
+            : BLOG.editor.formatFailed,
+        );
         return;
       }
       if (!res.ok) {
+        /*
+         * **THE STATUS CODE AND THE STAGE ARE THE WHOLE DIAGNOSTIC.** A 503 from this route is
+         * either the read or the save; without knowing which, the first thing anybody does is
+         * guess. `errorClass` is `err.name` and never the driver's message — see
+         * `shared.ts`'s `unavailable()`.
+         */
         setFmt('failed');
-        setFmtNote(BLOG.editor.formatFailed);
+        setFmtNote(
+          [
+            BLOG.editor.formatHttp(res.status),
+            payload.stage && payload.errorClass
+              ? BLOG.editor.formatStage(payload.stage, payload.errorClass, payload.errorCode)
+              : '',
+          ]
+            .filter(Boolean)
+            .join(' '),
+        );
         return;
       }
       /*
@@ -207,6 +256,12 @@ export function MarkdownEditor({
        */
       if (typeof payload.markdown === 'string') setMarkdown(payload.markdown);
       if (typeof payload.description === 'string') setDescription(payload.description);
+      /*
+       * **THE TITLE COMES BACK BECAUSE THE FIELD MAY HAVE BEEN EMPTY.** The route only ever
+       * sends the one it stored, and it only generates when the field was blank — so assigning
+       * unconditionally cannot overwrite something the operator typed.
+       */
+      if (typeof payload.title === 'string' && payload.title !== '') setTitle(payload.title);
       setViolations(payload.violations ?? []);
 
       const added = payload.headingsAdded ?? 0;
@@ -216,7 +271,11 @@ export function MarkdownEditor({
         BLOG.editor.formatDone(
           typeof payload.markdown === 'string' ? parseMarkdown(payload.markdown).length : blockCount,
           added,
-        ) + (rejected.length > 0 ? ` ${BLOG.editor.formatRejected(rejected.length)}` : ''),
+          payload.titleGenerated === true,
+        ) +
+          (rejected.length > 0
+            ? ` ${BLOG.editor.formatRejected(rejected.length, rejected[0])}`
+            : ''),
       );
       /*
        * **THE PREVIEW IS SERVER-RENDERED FROM THE STORED ROW, SO IT NEEDS A RELOAD TO
@@ -234,7 +293,17 @@ export function MarkdownEditor({
        */
       const timedOut = err instanceof Error && err.name === 'TimeoutError';
       setFmt(timedOut ? 'timeout' : 'failed');
-      setFmtNote(timedOut ? BLOG.editor.formatTimedOut : BLOG.editor.formatFailed);
+      /*
+       * **A NON-TIMEOUT THROW HERE IS A NETWORK FAILURE, NOT A SERVER ONE**, and the two need
+       * different sentences: the request never arrived, so nothing was written and the thing to
+       * check is whether the dev server is still up. `err.name` is `TypeError` for a refused
+       * connection, which is unhelpful on its own and useful next to that sentence.
+       */
+      setFmtNote(
+        timedOut
+          ? BLOG.editor.formatTimedOut
+          : BLOG.editor.formatNetwork(err instanceof Error ? err.name : typeof err),
+      );
     }
   }
 
@@ -297,6 +366,7 @@ export function MarkdownEditor({
 
   async function save() {
     setState('saving');
+    setSaveNote('');
     setViolations([]);
     try {
       const res = await fetch('/api/admin/blog', {
@@ -313,15 +383,68 @@ export function MarkdownEditor({
           body: parseMarkdown(markdown),
         }),
       });
-      const payload = (await res.json().catch(() => ({}))) as { violations?: Violation[] };
+      /*
+       * **THE SAME DIAGNOSTIC TREATMENT AS `autoFormat`**, sharing its copy builders rather
+       * than growing a second spelling of *"HTTP 503"*. `saveNote` carries it, because
+       * `state` alone cannot say which of five outcomes happened.
+       */
+      let payload: {
+        violations?: Violation[];
+        error?: string;
+        stage?: string;
+        errorClass?: string;
+        errorCode?: string;
+      } = {};
+      let unreadable = false;
+      try {
+        payload = await res.json();
+      } catch {
+        unreadable = true;
+      }
+
       setViolations(payload.violations ?? []);
-      setState(res.ok ? 'saved' : 'failed');
-      if (res.ok && isNew) {
-        window.location.href = `/admin/blog/${slug}?locale=${locale}`;
+
+      if (res.ok) {
+        setState('saved');
+        setSaveNote('');
+        if (isNew) window.location.href = `/admin/blog/${slug}?locale=${locale}`;
+        return;
+      }
+
+      setState('failed');
+      if (unreadable) {
+        setSaveNote(BLOG.editor.formatUnreadable(res.status));
+      } else if (res.status === 422) {
+        const v = payload.violations ?? [];
+        setSaveNote(
+          v.length > 0
+            ? BLOG.editor.formatInvalid(
+                v.length,
+                [...new Set(v.map((x) => BLOG.editor.field[x.field as keyof typeof BLOG.editor.field] ?? x.field))].join(', '),
+              )
+            : BLOG.editor.saveFailed,
+        );
+      } else if (res.status === 409) {
+        setSaveNote(BLOG.editor.saveExists);
+      } else {
+        setSaveNote(
+          [
+            BLOG.editor.formatHttp(res.status),
+            payload.stage && payload.errorClass
+              ? BLOG.editor.formatStage(payload.stage, payload.errorClass, payload.errorCode)
+              : '',
+          ]
+            .filter(Boolean)
+            .join(' '),
+        );
       }
     } catch (err) {
       /* A timeout is the one outcome that means UNKNOWN: the request may have committed. */
-      setState(err instanceof Error && err.name === 'TimeoutError' ? 'timeout' : 'failed');
+      const timedOut = err instanceof Error && err.name === 'TimeoutError';
+      setState(timedOut ? 'timeout' : 'failed');
+      setSaveNote(
+        timedOut ? '' : BLOG.editor.formatNetwork(err instanceof Error ? err.name : typeof err),
+      );
     }
   }
 
@@ -348,6 +471,14 @@ export function MarkdownEditor({
           <span className={styles.label}>{BLOG.editor.articleTitle}</span>
           <input className={styles.input} value={title} onChange={(e) => setTitle(e.target.value)} />
           <span className={styles.hint}>{BLOG.editor.titleHint}</span>
+          {/*
+            An empty Judul is a SUPPORTED path now, not a 422 — Auto Format writes one in the
+            article's language. The line says so, because a required-looking field that can be
+            left blank is a field people fill in badly rather than leave.
+          */}
+          {title.trim() === '' ? (
+            <span className={styles.hint}>{BLOG.editor.titleAutoHint}</span>
+          ) : null}
           <Meter n={title.length} max={110} />
         </label>
 
@@ -504,7 +635,11 @@ export function MarkdownEditor({
             {state === 'saving' ? BLOG.editor.saving : BLOG.editor.save}
           </button>
           {state === 'saved' ? <span className={styles.ok}>{BLOG.editor.saved}</span> : null}
-          {state === 'failed' ? <span className={styles.bad}>{BLOG.editor.saveFailed}</span> : null}
+          {state === 'failed' ? (
+            <span className={styles.bad} role="status">
+              {saveNote || BLOG.editor.saveFailed}
+            </span>
+          ) : null}
           {state === 'timeout' ? (
             <span className={styles.bad}>{BLOG.editor.saveTimedOut}</span>
           ) : null}

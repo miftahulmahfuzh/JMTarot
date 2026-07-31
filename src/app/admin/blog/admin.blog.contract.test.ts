@@ -374,6 +374,86 @@ describe('§4.2 -- the client bound that makes `maxDuration` mean something', ()
   });
 });
 
+describe('every failure says WHICH failure it is (2026-07-31)', () => {
+  /*
+   * Miftah's report: *"right now i just receive this generic error: Format otomatis gagal.
+   * this is bad engineering practice."* Four distinguishable outcomes printed one sentence.
+   *
+   * **THE RULE THIS MUST NOT BREAK IS "NEVER THE DRIVER'S WORDS", AND IT DOES NOT.** A
+   * postgres error quotes the failing statement AND its bound parameters, which on this path
+   * are a whole article body. `stage` is a literal we wrote and `errorClass` is `err.name`,
+   * which cannot carry a parameter — the same two things CLAUDE.md already permits to be
+   * logged (*"ids, attempt, SQLSTATE and the error's class"*).
+   */
+  it('never renders the bare generic note as the only branch', () => {
+    const editor = code('src/app/admin/blog/MarkdownEditor.tsx');
+    // Each of the five distinguishable outcomes has its own builder at the call site.
+    for (const builder of [
+      'formatInvalid(',
+      'formatHttp(',
+      'formatStage(',
+      'formatUnreadable(',
+      'formatNetwork(',
+    ]) {
+      expect(editor, builder).toContain(builder);
+    }
+    // The generic one survives only as a fallback, never as the sole arm of a branch.
+    expect(editor).toContain('BLOG.editor.formatFailed');
+  });
+
+  it('distinguishes "no JSON" from "JSON with nothing in it"', () => {
+    /*
+     * `.catch(() => ({}))` collapsed those two, and they need different sentences: an empty
+     * object means the route answered and had nothing to add, while a parse failure means it
+     * crashed before answering or something is between the browser and it.
+     */
+    const editor = code('src/app/admin/blog/MarkdownEditor.tsx');
+    expect(editor).toContain('let unreadable = false');
+    expect(editor).not.toContain('res.json().catch(() => ({}))');
+  });
+
+  it('carries a stage and an error class on every 503 in the tree, and never a message', () => {
+    const shared = code('src/app/api/admin/blog/shared.ts');
+    expect(shared).toContain('export function errorClass');
+    // `err.name`, never `err.message` — the distinction IS the rule.
+    expect(shared).toContain('err.name');
+    for (const f of ['src/app/api/admin/blog/route.ts',
+                     'src/app/api/admin/blog/[slug]/format/route.ts',
+                     'src/app/api/admin/blog/[slug]/status/route.ts',
+                     'src/app/api/admin/blog/[slug]/translate/route.ts']) {
+      const src = code(f);
+      expect(src, f).not.toMatch(/unavailable\(\)/);
+      expect(src, f).toMatch(/unavailable\('[a-z]+', errorClass\(/);
+    }
+    for (const f of [...FILES, 'src/app/api/admin/blog/shared.ts']) {
+      expect(code(f), f).not.toContain('err.message');
+    }
+  });
+
+  it('says the Judul field may be left empty, because that is now a supported path', () => {
+    /*
+     * Before Auto Format could write one, an empty title produced a zod 422 reading
+     * `markup / title / Too small: expected string to have >=1 characters` — accurate and
+     * useless. The route now answers with its own sentence, and the field says so up front.
+     */
+    const copy = readFileSync('src/app/admin/blog/copy.ts', 'utf8');
+    expect(copy).toContain('titleAutoHint');
+    expect(code('src/app/admin/blog/MarkdownEditor.tsx')).toContain('BLOG.editor.titleAutoHint');
+    expect(code('src/app/api/admin/blog/[slug]/format/route.ts')).toContain("reason: 'no-title'");
+  });
+
+  it('uses the model’s title ONLY when the field was empty', () => {
+    /*
+     * A typed title is an editorial decision, and a model overwriting it is V8's `user-edit`
+     * failure. The check is in the route as well as in `adviceNeeded`, because *whether to ask*
+     * and *whether to use* are different questions — a model can ignore "return an empty
+     * string" and send one anyway.
+     */
+    const route = code('src/app/api/admin/blog/[slug]/format/route.ts');
+    expect(route).toMatch(/const finalTitle = title\.trim\(\) !== '' \? title : \(advice\?\.title \?\? ''\)/);
+  });
+});
+
 describe('§9 -- the table of contents has ONE definition, and both surfaces mount it', () => {
   /*
    * **IT WAS AUTOMATIC SINCE S6 AND NO OPERATOR HAD EVER SEEN IT.** The feature request was
