@@ -9,6 +9,7 @@ import {
   blogPostingGraph,
   blogPostingNode,
   blogPostingUrl,
+  blogPostPath,
 } from './blog';
 
 const ORIGIN = 'https://www.jmtarot.site';
@@ -54,6 +55,22 @@ describe('blogPostingNode', () => {
     expect(blogPostingUrl(ORIGIN, SLUG, 'id')).toBe(canonical);
     expect(blogPostingUrl(ORIGIN, SLUG, 'en')).toBe(`${ORIGIN}/en/blog/${SLUG}`);
     expect(blogIndexUrl(ORIGIN, 'en')).toBe(`${ORIGIN}/en/blog`);
+  });
+
+  it('offers the same address origin-free, for `/admin/blog`', () => {
+    /*
+     * The chip on `/admin/blog` links here, and it must be RELATIVE: an operator on a
+     * preview deployment following an absolute URL built from `NEXT_PUBLIC_SITE_ORIGIN`
+     * lands on production, sees the old article, and reads it as a failed publish.
+     *
+     * Asserted against `blogPostingUrl` as well as by string, so the two cannot drift into
+     * naming different addresses for one article.
+     */
+    expect(blogPostPath(SLUG, 'id')).toBe(`/blog/${SLUG}`);
+    expect(blogPostPath(SLUG, 'en')).toBe(`/en/blog/${SLUG}`);
+    for (const locale of ['id', 'en'] as const) {
+      expect(`${ORIGIN}${blogPostPath(SLUG, locale)}`).toBe(blogPostingUrl(ORIGIN, SLUG, locale));
+    }
   });
 
   it('takes the canonical rather than deriving it', () => {

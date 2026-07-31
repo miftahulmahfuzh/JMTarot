@@ -148,6 +148,42 @@
 }
 
 /*
+ * The `Publik` chip when it is a LINK to the article — the only chip that ever is, because
+ * it is the only status with a public address.
+ *
+ * **44px TALL, AND THAT IS WHY IT DOES NOT LOOK LIKE ITS NEIGHBOURS.** The static chip is
+ * 20px, which is a fine label and an unacceptable target: `/admin` is desktop-first and the
+ * operator may still be on a phone (`users.module.css`, `RangeFilter.module.css`,
+ * `ScrollTop.module.css` all carry the same number, and `PublicShare`'s 36px is the known
+ * defect none of them copy). **The 24px it adds to the cell is deliberate**: a small pill
+ * with a link inside it is the shape of a target that misses, and the pseudo-element trick
+ * that would keep the 20px look extends the hit area over the publish button 6px below it —
+ * a control that steals its neighbour's taps is worse than a tall chip.
+ *
+ * Being visibly bigger than `Draf` and `Ditarik` is the affordance, not a regression: the
+ * one status you can go and look at is the one that looks pressable.
+ */
+.chipLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--gold);
+  color: var(--gold);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.chipLink:hover,
+.chipLink:focus-visible {
+  text-decoration: underline;
+}
+
+/*
  * A6-22. The row says `published` and the URL 404s, because reachability is DERIVED from
  * `id` rather than cascaded. Without this label nobody understands why the page 404s.
  */

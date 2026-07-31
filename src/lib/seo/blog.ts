@@ -49,9 +49,29 @@ import { breadcrumbList, graph, imageObject, organizationId, type JsonLdNode } f
  * two files agreeing about a name.
  */
 
+/**
+ * `/blog/slug` for `id`, `/en/blog/slug` for `en`. **The origin-free twin.**
+ *
+ * Exported because `/admin/blog` needs the address of an article on the host the
+ * operator is actually looking at — a preview, `localhost:3001`, production — and
+ * `blogPostingUrl`'s absolute form would send them to whatever
+ * `NEXT_PUBLIC_SITE_ORIGIN` says, which on a preview is the wrong deployment and
+ * looks like the article failed to publish.
+ *
+ * It lives HERE rather than in the admin tree for the reason
+ * `blog.contract.test.ts` states as a rule: **every internal href is built through
+ * `localePath()`, never by hand.** A `locale === 'en' ? '/en/blog/…' : '/blog/…'`
+ * under `src/app/admin/**` is a second definition of the prefix maths, in the tree
+ * least likely to be revisited when a third locale lands — and A-D12's grep
+ * forbids that subtree from importing `@/lib/i18n/prefix` directly.
+ */
+export function blogPostPath(slug: string, locale: Locale): string {
+  return localePath(locale, `/blog/${slug}`);
+}
+
 /** `https://host/blog/slug` for `id`, `https://host/en/blog/slug` for `en`. */
 export function blogPostingUrl(origin: string, slug: string, locale: Locale): string {
-  return `${origin}${localePath(locale, `/blog/${slug}`)}`;
+  return `${origin}${blogPostPath(slug, locale)}`;
 }
 
 export function blogIndexUrl(origin: string, locale: Locale): string {

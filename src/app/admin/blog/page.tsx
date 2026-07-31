@@ -43,6 +43,7 @@ import { db } from '@/lib/db/client';
 import { listAllArticles } from '@/lib/db/queries/admin/blog';
 import { publishedSlugs } from '@/lib/db/queries/blog';
 import { LOCALES, type Locale } from '@/lib/i18n/locale';
+import { blogPostPath } from '@/lib/seo/blog';
 import { AdminPageViewed } from '../AdminPageViewed';
 import { AdminTabs } from '../AdminTabs';
 import { BLOG } from './copy';
@@ -154,6 +155,27 @@ export default async function AdminBlogListPage() {
                             unreachable={
                               row.status === 'published' &&
                               !isReachable(locale as Locale, row.status, article.idStatus)
+                            }
+                            /*
+                             * The chip becomes a link to the article itself, so the list
+                             * can be used to READ what it says is public.
+                             *
+                             * **RELATIVE, AND BUILT HERE.** Relative because the operator
+                             * is on some host — production, a preview, `localhost:3001` —
+                             * and the absolute `blogPostingUrl` would send them to
+                             * whatever `NEXT_PUBLIC_SITE_ORIGIN` names, which on a preview
+                             * is another deployment and reads as a failed publish. Here
+                             * because `StatusControl` is a client component and the prefix
+                             * maths lives in a module A-D12's grep keeps out of this tree.
+                             *
+                             * `null` for `draft` and `unpublished`: neither has a public
+                             * address, and a link to a 404 offered as the state itself
+                             * would say the opposite of what the chip says.
+                             */
+                            publicHref={
+                              row.status === 'published'
+                                ? blogPostPath(article.slug, locale as Locale)
+                                : null
                             }
                           />
                           <p className={styles.meta}>

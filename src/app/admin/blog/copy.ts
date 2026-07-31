@@ -50,6 +50,15 @@ export const BLOG = {
   publish: 'Terbitkan',
   unpublish: 'Tarik dari publikasi',
   /**
+   * The `Publik` chip is a LINK to the page it describes, in a new tab — the one thing
+   * this list could not do was let the operator read what they had just published.
+   *
+   * **It says "tab baru" because it opens one**, and a link that opens a tab without
+   * saying so is the one an operator middle-clicks a second time. Rendered as `title`
+   * and folded into the accessible name, because `Publik` alone is not a link label.
+   */
+  openPublic: 'Buka halaman publiknya di tab baru',
+  /**
    * A6-22. **The `en` row says `published` and the URL still 404s**, because
    * reachability is derived from `id` rather than cascaded. Nobody will understand the
    * page 404ing without this label.
