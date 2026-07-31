@@ -1352,6 +1352,71 @@ button. `src/app/admin/insight/panels.ts` (the registry), `src/app/admin/Insight
   an instant a person asks a wall-clock question about, and the explicit zone is also what
   makes it hydration-safe in a client component.
 
+## The markdown editor for /admin/blog (2026-07-31)
+
+**Three fields and a paste box.** Judul, Gambar Utama, Konten, an `Auto Format` button and
+`Simpan`. `BlockEditor.tsx` is DELETED. `src/lib/content/{markdown,formatAdvice,heroAlt}.ts`,
+`src/lib/admin/blogFormat.ts`, `src/app/api/admin/blog/[slug]/format/route.ts`,
+`src/app/admin/blog/MarkdownEditor.tsx`, `src/components/ArticleToc.tsx`. The design is
+`docs/plans/2026-07-31-blog-markdown-editor-design.md`; its §15 records the divergences and
+the live verification, and the evidence is in `docs/workstream-notes.md`.
+
+- **MARKDOWN IS A PROJECTION OF THE DOCUMENT, NEVER THE RECORD OF IT.** `body` stays
+  `Block[]`, `Prose` stays the one renderer, and there is **no `markdown` block kind, no
+  `raw`, no `dangerouslySetInnerHTML`** — A-D10's CSP argument is untouched.
+  `serializeMarkdown` rebuilds the textarea from the stored blocks on every page load. **No
+  migration, no column.**
+- **`parseMarkdown ∘ serializeMarkdown` IS IDENTITY, AND THAT PROPERTY IS WHAT LICENSED
+  DELETING 880 LINES.** Asserted over the four committed articles as fixtures.
+  `serializeMarkdown ∘ parseMarkdown` is NOT identity and must not be forced to be —
+  formatting normalises. **The parser emits `Inline[]` always, so a stored bare-string
+  paragraph is promoted; `markdown.test.ts` asserts that changes no `plainText()` byte.**
+- **`{#anchor-id}` IS NOT DECORATION AND `cardRef`'s RULE IS EXACT, NOT HEURISTIC.** The four
+  articles carry English ids on Indonesian headings, which `slugify` cannot derive; an anchor
+  is a permanent address. And a `cardRef` is a paragraph whose **entire** content is an
+  `/arcana/<slug>` link — *"contains such a link"* would swallow the six mid-sentence ones in
+  the launch articles.
+- **THE MODEL RETURNS METADATA, NEVER THE AUTHOR'S WORDS** — headings, anchor ids, a
+  description, and code splices them. `effectiveYesNo()`/`validateChoice`'s rule for a new
+  direction of travel. `parseMarkdown`'s output is already valid, so **rejecting all the
+  advice is a correct outcome**, and `applyAdvice` inserts high-index-first or a heading lands
+  inside the paragraph it introduces.
+- **AN ALREADY-SECTIONED PASTE MAKES NO MODEL CALL** (`adviceNeeded()` returns `[]`) —
+  measured at 1.44s against 3.32s. `admin.blog_saved.model_called` is the instrument: true on
+  nearly every press means the PARSER is missing something.
+- **`blog_format` IS THE ELEVENTH `LLMOp`, AND THE SET GREW TWICE ON 2026-07-31.** The rule
+  was never that ten is a magic number — a new value is a question for Miftah. **Two ops now
+  measure the dashboard and the CMS rather than the app, so a cost-per-reading denominator
+  must exclude `insight` AND `blog_format`.**
+- **`flagCoverage.test.ts`'s ADMIN-ONLY EXEMPTION NOW HAS THREE MEMBERS AND IS OWED A CLASS
+  SWITCH.** `callClass: 'deferred'` is the switch — the fleet-wide ceiling sheds an operator's
+  press before any querent call. **The FOURTH admin-only call site must bring one
+  `ADMIN_MODEL_CALLS_ENABLED` and collapse all three entries into it.**
+- **THE HERO `alt` IS DERIVED FROM `LoreDoc.imageAlt` AND THERE IS NO FIELD FOR IT.** All four
+  committed articles shipped the bare card name — `'The World'` — which is both halves of
+  `hero-pair` on four indexed pages. **The generalisation: `hero-pair` is warning class and
+  `blog-import.ts` sets `status: 'published'` directly, so the gate was never on the path that
+  made the rows.** Re-running that script is the repair. `heroAltFor` returns `null` as a
+  REFUSAL, never `''`; `changeStatus` lints the DERIVED value so legacy rows can still be
+  published; and **`hero.alt` left the translation segment walk** — translating it would mint a
+  third description of one painting.
+- **`heroAlt.ts` CARRIES NO `server-only` AND IS ONE HOP FROM 44 LORE DOCUMENTS.**
+  `clientBoundary.test.ts` checks DIRECT imports only, so `heroAlt.test.ts` asserts no client
+  component reaches it. That assertion is the whole protection.
+- **AUTO FORMAT WRITES AND `Terjemahkan Otomatis` DOES NOT.** Two adjacent buttons, opposite
+  storage behaviour, and **the copy is the only thing that tells them apart** — a test greps
+  both hints. Auto Format's timeout copy says the draft MAY be stored and to reload, because a
+  timeout on a write path means UNKNOWN. Three fetches, three client bounds (25s/55s/45s), and
+  the COUNT is asserted so a fourth unbounded one is red.
+- **THE TABLE OF CONTENTS WAS ALWAYS AUTOMATIC — THE PREVIEW WAS WHAT DID NOT SHOW IT.**
+  `ArticleToc` is one component with two mounts and its label is a PROP, because
+  `adminCopy.test.ts` forbids `t()` across the admin tree. `previewStale` is DELETED, not
+  reworded; `previewHref` stays.
+- **Still open:** the model wrote *"Kartu Arcana Major"*, reversing *Major Arcana* — a TERM
+  that neither the prompt rule nor the `card-names` lint covers, and **`validateAdvice`
+  refuses shape, not truth.** The `.content` textarea is unmeasured on a phone. The four launch
+  rows keep their old `alt` until `blog-import.ts` is re-run.
+
 ## Trust, safety and secrets (W7)
 
 A moderation gate that refuses harm without refusing tarot, two legal documents, and a tripwire that

@@ -446,3 +446,77 @@ spans with the empty string.
 6. `MarkdownEditor.tsx`; delete `BlockEditor.tsx`.
 7. §9 — the shared TOC component, drop `previewStale`.
 8. The `admin.blog_formatted` fold request to A1.
+
+---
+
+## §15. What was built, and where it diverged from this plan
+
+**Implemented 2026-07-31, all eight steps, verified end to end against a live provider.**
+Recorded here rather than in a fresh document, because a plan whose divergences live
+somewhere else is a plan a future session trusts wrongly.
+
+### Divergences, and why
+
+1. **`admin.blog_formatted` WAS NOT ADDED. `admin.blog_saved` GAINED TWO PROPS INSTEAD.**
+   §10 asked for a new name; the register's 70-name ceiling refused it, and the refusal was
+   right for a reason §10 had missed: **Auto Format WRITES, so a separate name would have
+   meant a save that fired no `admin.blog_saved` and an undercounted save metric.** `via`
+   and `model_called` landed; `headings_added`, `advice_rejected` and `outcome` were
+   dropped as diagnostics the operator already reads in the response. This is V3's
+   precedent — zero names, widened shapes.
+2. **`flagCoverage`'s admin-only exemption was stretched a THIRD time.** Its own entry said
+   not to without saying so. §6 assumed this would be the second; `blogAutoTranslate` and
+   `insight` were already two. The stretch is argued in the test file — `blogFormat` shares
+   a surface, a gate and an editor with `blogAutoTranslate`, so a flag covering one and not
+   the other is unreasonable — and **the class switch is now a debt with a trigger: the
+   fourth admin-only call site must bring `ADMIN_MODEL_CALLS_ENABLED` and collapse all
+   three.**
+3. **The markdown grammar needed escaping, which §4.1's table did not mention.** Two holes,
+   both silent, both firing when somebody opens a stored article to fix a typo: a regex read
+   `2 * 3 * 4` as an `em` span, and a paragraph beginning `- lima kesalahan` came back as a
+   list. Fixed with `ESCAPABLE` and a hand-rolled scanner rather than a regex; the round
+   trip is what surfaced both.
+4. **`changeStatus` lints the DERIVED `alt`, which §7 did not specify.** Without it the four
+   launch rows — written by `blog-import.ts` with the card name and `status: 'published'`
+   set directly — could no longer be published, because `hero-pair` would refuse them for a
+   defect this change had already fixed on the write path.
+5. **`heroAlt.ts` needed a client fence of its own.** `clientBoundary.test.ts` checks direct
+   imports only, and this module is one hop from all forty-four lore documents.
+
+### What §1.2 turned out to be
+
+Worse than described. **All four committed articles ship `alt` = the bare card name** —
+`'The World'`, `'The High Priestess'`, `'The Hermit'`, `'The High Priestess'` — nine to
+eighteen characters against a 60-character floor, opening with the card name. Both halves of
+`hero-pair`, on four indexed pages, live. `blog-import.ts`'s own header called it *"a real
+defect in v0.4.0's prose"* and imported it anyway. Re-running that script is the repair.
+
+### Live verification (loop 5-ish: dev server, real session, real provider)
+
+| Check | Result |
+|---|---|
+| Unauthenticated `POST`/`GET` on the new route | 401 both, middleware refusing before the handler (R36) |
+| Already-sectioned paste, good description | `modelCalled: false`, 1.44s, **no provider call**, 0 violations |
+| Markdown round trip through the route | byte-identical, `{#origins}`, `*em*`, `**strong**`, `[link](/gallery)` all intact |
+| `cardRef` on a real paste | stored as `cardRef`, not as a paragraph — kinds were `heading,paragraph,list,heading,paragraph,cardRef,heading,paragraph` |
+| Stored `hero_alt` | `Bulan penuh berwajah menunduk tergantung di antara dua men…` — the derived lore description, not `The Moon` |
+| Raw-txt paste, no headings, no description | `modelCalled: true`, 3.32s, **4 headings added**, description 133 chars in band, 0 rejected |
+| The author's prose after a model call | **5 paragraphs sent, 5 back, byte-identical** — R1's property, live |
+| Anchor ids the model chose | `{#tarot-card-structure}`, `{#major-arcana}`, `{#reading-obstacles}` — English on Indonesian headings, as asked |
+| `llm_calls` row | `blog_format \| deferred \| ok \| 798 in \| 163 out` |
+| `events` rows | two `admin.blog_saved`, `via: auto_format`, `model_called` true and false |
+| Rendered editor page | TOC with 3 anchors, `previewStale` gone, `previewHref` present, no alt field, derived-alt line shown, SEO `<details>`, `{#…}` visible in the textarea |
+
+### Still open
+
+- **The model wrote *"Kartu Arcana Major"*, reversing *Major Arcana*.** Card NAMES are
+  protected by a prompt rule and by the `card-names` lint; *Major Arcana* is a TERM and
+  neither covers it. A heading that reverses it is wrong in a way no test will catch. The
+  cheap fix is one more line in `systemPrompt`; the honest note is that §5.1 refuses shape,
+  not truth, and this is exactly the class it cannot see.
+- **Nobody has used this on a phone.** The `.content` textarea is 480px tall with the
+  keyboard up, and §12 already names that geometry as the one WSL cannot answer.
+- **The four launch rows still hold the old `alt`** until `blog-import.ts` is re-run.
+- **`MAX_HEADINGS_ADDED` only bites on a body of 12+ blocks**, because one-heading-per-index
+  caps it below that. Not a defect; recorded because the first test of it passed for the
+  wrong reason.

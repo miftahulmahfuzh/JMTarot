@@ -9291,3 +9291,163 @@ change.
   so those controls inherit their parent's colour. Noticed while writing
   `InsightBox.module.css`, which uses `--gold-text` instead. **Not fixed** — A6's file, §6
   ownership — and recorded here because it is invisible on screen and will be found again.
+
+## The markdown editor for /admin/blog (2026-07-31)
+
+**Design: `docs/plans/2026-07-31-blog-markdown-editor-design.md`, whose §15 records what
+diverged and the live verification table. This section is the evidence.**
+
+Miftah's report was two bugs and a request to *"discuss something more drastic"*: the
+locale buttons only changed the preview; the hero alt field asked for text that should be
+static; and *"writing the article is too complicated, while in actuality admin just want to
+copy paste Gemini/chatgpt generated content anyway."* Five rulings came out of the
+discussion (design §2) and all eight implementation steps landed the same day.
+
+### The locale tabs were writing one locale's body into the other's row
+
+**The report undersold it.** The tabs are `<Link>`s, so pressing one is a soft navigation
+within the same route segment: the server re-renders and the preview pane updates — which is
+exactly why it read as *"only Pratinjau konten changes"* — but React reconciles the editor as
+the same element and every field is `useState(initial?.… ?? '')`. An initialiser runs on
+mount and never again.
+
+`save()` posts `{ slug, locale }` with the NEW locale. So `?locale=id` → **English** →
+**Simpan** stored the Indonesian document as the English one, silently, on a published
+article.
+
+Three things worth keeping:
+
+1. **The fix is `key={locale}` and the assertion is source-level**, because the behaviour
+   needs a soft navigation — loop 5, not Vitest. A second case asserts the editor still
+   seeds from a prop, so the guard and its precondition fail together rather than the guard
+   rotting alone. Verified red with the key removed.
+2. **The key survived the block editor's deletion.** The defect is not the block editor's: a
+   `<textarea>` seeded from a prop has it identically.
+3. **This is the third instance of one class in CLAUDE.md's traps** — `shuffleDeck()` in a
+   `useState` initialiser, `todayKey()` during render, and now this. *State seeded from a
+   prop that later changes.* All three present as a working-looking screen.
+
+### The four launch articles ship a broken hero `alt`, and the gate was never on that path
+
+Measured, not inferred:
+
+```
+what-tarot-is.id      the-world            alt: 'The World'
+what-tarot-is.en      the-high-priestess   alt: 'The High Priestess'
+how-to-read-tarot.id  the-hermit           alt: 'The Hermit'
+how-to-read-tarot.en  the-high-priestess   alt: 'The High Priestess'
+```
+
+Nine to eighteen characters against a 60-character floor, each opening with the card name —
+**both halves of `lint.ts`'s `hero-pair`, on four indexed pages.** `LoreDoc.imageAlt`
+forbids exactly this in its own words: *"A DESCRIPTION OF THE PAINTING, NEVER THE CARD NAME
+REPEATED … a fourth copy in `alt` is noise to a screen reader and to a crawler."*
+
+**The generalisation is the part worth carrying forward: `hero-pair` is warning class, and
+`scripts/blog-import.ts` writes `status: 'published'` directly rather than through
+`changeStatus`. So the gate that would have caught it was never on the path that made the
+rows.** A warning-class rule plus a write path that bypasses the gate is a rule that does
+not exist. The script's own header called it *"a real defect in v0.4.0's prose"* and imported
+it anyway — the note was honest and it was not a fix.
+
+The 44 strings already existed. Deriving rather than re-authoring is the same argument the
+shared-`@id` trap made twice in v0.4.0: *two owners of one fact, and a consumer picks one
+silently.*
+
+### `parse ∘ serialize` is what licensed deleting 880 lines, and it found two holes
+
+The property is the safety net for R4, so it was written before the deletion and the
+deletion waited on it. It is asserted over the four committed articles as fixtures — 33 and
+55 phrasing runs, every span kind, one `cardRef` each, `bullets` and `steps`, and English
+`heading.id`s against Indonesian headings so `{#…}` is exercised on every heading rather
+than on a contrived one.
+
+**Measured before trusting them as fixtures:** zero bare-string paragraphs and zero newlines
+inside a span across all four, so `normalizeBlocks` is the identity there and the assertion
+is exact rather than up-to-normalisation.
+
+Two holes the first draft shipped, both silent, both firing when somebody opens a **stored**
+article to fix a typo:
+
+1. **`2 * 3 * 4`** — a regex `\*([^*]+)\*` reads `* 3 *` as an `em` span.
+2. **A paragraph beginning `- lima kesalahan`** — serialized at the start of a line it comes
+   back as a list. The block changes KIND, and the only witness is a preview nobody is
+   looking at.
+
+Fixed with an `ESCAPABLE` set and a hand-rolled scanner. **A regex alternation cannot be
+taught to skip an escaped delimiter without placeholder substitution, which is itself a
+second escaping scheme to keep correct.**
+
+**`cardRef` is recognised exactly, and the near-miss is the load-bearing test.** The tempting
+heuristic is *"contains an `/arcana/` link"*, which would swallow the six mid-sentence
+`/arcana/` links inside the launch articles and tear those sentences in half. Removing the
+exactness turns 7 tests red including the four-article round trip; all four negative controls
+were verified red.
+
+### The table of contents already existed and no operator had ever seen it
+
+The request was *"the LLM automatically generate a clickable Table of Contents"*. The public
+page has built one since S6, from every level-2 heading with an id, whenever there are more
+than two. **Nobody authored it and nobody ever had.** What was missing was the preview, which
+mounted `Prose` alone without the page chrome — so the one surface somebody looks at while
+writing was the one that did not show it.
+
+**The generalisation: a preview that renders less than the page is a feature report waiting
+to be filed.** The fix was one component with two mounts, markup and CSS lifted verbatim
+because the box renders on four published pages.
+
+Its label is a **prop**, and that is two fences rather than laziness: `adminCopy.test.ts`
+forbids `getT`/`useT` across the admin tree because that surface is deliberately
+Indonesian-only, so a component calling `t()` could not be mounted there at all.
+
+### The event register refused a name, and the refusal found a bug
+
+`admin.blog_formatted` was drafted with five props. The 70-name ceiling refused it, and
+trying to justify it surfaced a defect instead: **Auto Format WRITES, so a separate name
+meant a save that fired no `admin.blog_saved` and an undercounted save metric.**
+
+So `admin.blog_saved` gained `via: 'form' | 'auto_format'` and `model_called: boolean`, and
+`headings_added`, `advice_rejected` and `outcome` were dropped as diagnostics the operator
+already reads in the response. **Zero new names — V3's precedent, and the register's own rule
+working as designed rather than as an obstacle.**
+
+`model_called` is the instrument that decides whether the eleventh `op` was worth spending:
+false on nearly every press confirms the parser is doing the work; true on nearly every press
+means the parser is missing something, and *that* is the fix rather than a bigger prompt.
+
+### The eleventh `op`, and a flag exemption stretched a third time
+
+`LLMOp` grew twice on 2026-07-31 — `insight` then `blog_format`. **Two values in one day is
+the thing to be suspicious of, so `rollup.test.ts` spells the count out rather than deriving
+it**: the rule was never that ten is a magic number, it is that a new value is a question for
+Miftah. Both were put and both were granted.
+
+`flagCoverage.test.ts`'s admin-only exemption now has three members, and its own second entry
+said *"if a third admin-only site ever lands, the honest move is a single
+`ADMIN_MODEL_CALLS_ENABLED` covering the class — not three flags, and not this exemption
+stretched a third time without saying so."* **It is stretched, and the saying-so is in the
+test file**: `blogFormat` shares a surface, a gate and an editor with `blogAutoTranslate`, so
+a flag covering one and not the other is a switch nobody could reason about. **The class
+switch is now a debt with a trigger: the FOURTH admin-only call site must bring it and
+collapse all three entries.**
+
+### Live verification, and the one thing it caught that no test could
+
+Driven against `localhost:3001` with a real `dev-session` admin cookie and the real provider.
+The full table is in design §15. The three numbers that matter:
+
+- **An already-sectioned paste made NO provider call** — `modelCalled: false`, 1.44s. That is
+  §5.3's whole premise, and it is the difference between one model call per article and one
+  per press.
+- **A raw-txt paste added 4 headings with English anchor ids on Indonesian headings**, wrote a
+  133-character description inside the band, rejected nothing, in 3.32s. `llm_calls` recorded
+  `blog_format | deferred | ok | 798 in | 163 out`.
+- **The author's prose came back byte-identical** — 5 paragraphs sent, 5 back, equal. R1's
+  property, on a live call rather than on a fixture.
+
+**What the live run caught: the model wrote *"Kartu Arcana Major"*, reversing *Major
+Arcana*.** Card NAMES are protected by a prompt rule and by the `card-names` lint; *Major
+Arcana* is a TERM and neither covers it. A heading that reverses it is wrong in a way no test
+in this repo will catch — which is `validateInsight`'s lesson arriving in a new place:
+**shape is checkable and truth is not, and the honest instrument is somebody reading the
+preview.**
