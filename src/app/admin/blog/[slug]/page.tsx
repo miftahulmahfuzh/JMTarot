@@ -171,7 +171,8 @@ export default async function AdminBlogEditorPage({
                   title: row.title,
                   description: row.description,
                   heroCardSlug: row.heroCardSlug,
-                  heroAlt: row.heroAlt,
+                  // `heroAlt` is NOT passed: the editor has no field for it and the save
+                  // path derives it from the card's lore document. See §7 of the design.
                   body: row.body,
                 }
               : null

@@ -36,6 +36,10 @@
  * **`link.path`, `cardRef.slug` AND `hero.cardUrlSlug` ARE ADDRESSES.** A translated
  * path is a 404; `resolveViolations` would catch it on save, and not being able to
  * produce it at all is better than catching it.
+ *
+ * **`hero.alt` IS DERIVED AND LEFT THE LIST ON 2026-07-31.** It is the card's own
+ * `LoreDoc.imageAlt` in the target locale, so a translation of it would be a third
+ * description of one painting. See the `hero` line in `walk` and `@/lib/content/heroAlt`.
  */
 import type { Block, Inline, Phrasing } from '@/content/types';
 import type { LintDoc } from './lint';
@@ -118,8 +122,22 @@ function walk(doc: LintDoc, visit: (s: string) => string): LintDoc {
     ...doc,
     title: visit(doc.title),
     description: visit(doc.description),
-    // `cardUrlSlug` is an ADDRESS and is copied, never visited.
-    hero: doc.hero ? { cardUrlSlug: doc.hero.cardUrlSlug, alt: visit(doc.hero.alt) } : null,
+    /*
+     * **NEITHER HERO FIELD IS A SEGMENT. `cardUrlSlug` IS AN ADDRESS AND `alt` IS
+     * DERIVED**, so both are copied through like `heading.id`.
+     *
+     * `alt` used to be visited, and it must not be: it comes from the card's own lore
+     * document in the TARGET locale (`heroAltFor`), which is a string a human wrote while
+     * looking at the painting and which `lore.test.ts` already checks. Translating it
+     * would produce a THIRD description of one image, differing from both lore documents
+     * — the shared-`@id` failure S3 and S4 paid for twice, arriving through a new door.
+     *
+     * **THIS CHANGED THE SEGMENT COUNT BY ONE FOR EVERY DOCUMENT WITH A HERO**, which is
+     * the contract `applySegments` refuses a mismatch on. That is the contract working:
+     * the count is derived from this one walk, so both directions moved together and
+     * `blogSegments.test.ts`'s round trip is what re-asserts it.
+     */
+    hero: doc.hero ? { cardUrlSlug: doc.hero.cardUrlSlug, alt: doc.hero.alt } : null,
     body,
   };
 }

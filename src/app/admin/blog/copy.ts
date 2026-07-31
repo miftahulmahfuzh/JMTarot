@@ -116,9 +116,13 @@ export const BLOG = {
     chars: (n: number) => `${n} karakter`,
     heroCard: 'Gambar utama',
     heroNone: '(tanpa gambar)',
-    heroAlt: 'Teks alternatif gambar',
-    heroAltHint:
-      'Gambarkan lukisannya untuk orang yang tidak bisa melihatnya, jangan ulangi nama kartunya — namanya sudah ada di judul dan di teks. Minimal 60 karakter.',
+    /*
+     * `heroAlt` and `heroAltHint` are DELETED, not emptied. The field asked an admin to
+     * write a string that already exists in the card's own lore document, and all four
+     * committed articles answered it with the card's name -- the one thing
+     * `LoreDoc.imageAlt` forbids. `@/lib/content/heroAlt` derives it now.
+     */
+    heroDerived: 'Teks alternatifnya diambil dari halaman kartu ini, jadi tidak perlu ditulis.',
 
     blocks: 'Blok',
     addBelow: 'Tambah blok di bawah',

@@ -75,7 +75,6 @@ export type EditorProps = {
     title: string;
     description: string;
     heroCardSlug: string | null;
-    heroAlt: string | null;
     body: Block[];
   } | null;
   /** The 22 URL slugs, resolved on the SERVER so the client never sees the deck. */
@@ -120,7 +119,6 @@ export function BlockEditor({
   const [title, setTitle] = useState(initial?.title ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
   const [heroCard, setHeroCard] = useState(initial?.heroCardSlug ?? '');
-  const [heroAlt, setHeroAlt] = useState(initial?.heroAlt ?? '');
   const [body, setBody] = useState<Block[]>(initial?.body ?? [emptyBlock('paragraph')]);
   const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'failed' | 'timeout'>('idle');
   const [tr, setTr] = useState<'idle' | 'confirm' | 'running' | 'done' | 'failed' | 'timeout'>(
@@ -168,7 +166,7 @@ export function BlockEditor({
     slug,
     title,
     description,
-    hero: heroCard ? { cardUrlSlug: heroCard, alt: heroAlt } : null,
+    hero: heroCard ? { cardUrlSlug: heroCard, alt: '' } : null,
     body,
   }).some((seg) => seg.trim().length > 0);
 
@@ -213,7 +211,6 @@ export function BlockEditor({
       setTitle(payload.doc.title);
       setDescription(payload.doc.description);
       setHeroCard(payload.doc.hero?.cardUrlSlug ?? '');
-      setHeroAlt(payload.doc.hero?.alt ?? '');
       setBody(payload.doc.body);
       // Nothing is stored yet, and the note says so rather than implying a save.
       const untranslated = (payload.violations ?? []).filter((v) => v.kind === 'untranslated').length;
@@ -246,7 +243,7 @@ export function BlockEditor({
           locale,
           title,
           description,
-          hero: heroCard ? { cardUrlSlug: heroCard, alt: heroAlt } : null,
+          hero: heroCard ? { cardUrlSlug: heroCard } : null,
           body,
         }),
       });
@@ -343,19 +340,6 @@ export function BlockEditor({
           </select>
         </label>
 
-        {heroCard ? (
-          <label className={styles.field}>
-            <span className={styles.label}>{BLOG.editor.heroAlt}</span>
-            <span className={styles.hint}>{BLOG.editor.heroAltHint}</span>
-            <textarea
-              className={styles.textarea}
-              rows={2}
-              value={heroAlt}
-              onChange={(e) => setHeroAlt(e.target.value)}
-            />
-            <Meter n={heroAlt.trim().length} min={60} />
-          </label>
-        ) : null}
 
         <h2 className={styles.h2}>{BLOG.editor.blocks}</h2>
         <ol className={styles.blockList}>
