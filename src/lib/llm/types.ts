@@ -142,6 +142,22 @@ export type ReadingUsage = {
  * accepted knowingly when it reused `translation`, and recorded as a caveat in its
  * own header rather than as a precedent to copy.
  *
+ * ── `blog_format` IS THE ELEVENTH, 2026-07-31, AND IT WAS ASKED FOR TOO ──────
+ *
+ * The paragraph above closed the set at ten and this one opened it again the same day,
+ * which is worth stating rather than quietly appending: **the rule is that a new value is
+ * a question for Miftah, not that ten is a magic number.** It was put and granted, on the
+ * argument `insight` established rather than on a new one.
+ *
+ * Auto Format on `/admin/blog` is a recurring call with no querent behind it, and
+ * `/admin/tokens`' *Biaya per keperluan* table has to be able to say what it costs. The
+ * alternative was reusing `translation`, which is what `blogAutoTranslate` did and what
+ * ITS header records as a known caveat rather than a precedent — a third unrelated feature
+ * behind one cost row.
+ *
+ * **TWO OPS NOW MEASURE THE DASHBOARD AND THE CMS RATHER THAN THE APP**, so a
+ * cost-per-reading denominator must exclude `insight` AND `blog_format`.
+ *
  * Adding a value here is deliberately not free: `OP_ORDER` in
  * `@/lib/analytics/rollup` carries a type-level `AssertNever` over `Exclude`, so a
  * value with no place in the render order is a COMPILE error, and
@@ -157,7 +173,8 @@ export type LLMOp =
   | 'persona'
   | 'translation'
   | 'translation_repair'
-  | 'insight';
+  | 'insight'
+  | 'blog_format';
 
 export type LLMCallOpts = {
   signal?: AbortSignal;

@@ -37,23 +37,29 @@ describe('the module contract', () => {
     expect(code).not.toContain('@/lib/db');
   });
 
-  it('names all ten ops and no eleventh', () => {
+  it('names all eleven ops and no twelfth', () => {
     /*
      * The COMPILE-TIME guard is `_MissingOps` in the module, which is what actually
      * fails when A2's union grows. This is the other direction: a value in `OP_ORDER`
      * that is not an op would be caught by `satisfies`, and the count is here so a
      * deletion is loud too.
      *
-     * **IT WENT 9 -> 10 ON 2026-07-31, FOR A7's `insight`**, and the compile-time guard
-     * is what forced this edit rather than a reviewer noticing: `Exclude<LLMOp,
-     * OP_ORDER[number]>` stopped being `never` the moment the union grew. The argument
-     * for spending a value is in `@/lib/llm/types` — the dashboard's own cost table has
-     * to be able to say what the insight button costs.
+     * **IT WENT 9 -> 10 -> 11 ON 2026-07-31**, twice in one day: A7's `insight` and then
+     * the markdown editor's `blog_format`. The compile-time guard is what forced each edit
+     * rather than a reviewer noticing: `Exclude<LLMOp, OP_ORDER[number]>` stops being
+     * `never` the moment the union grows. The argument for spending each value is in
+     * `@/lib/llm/types` — `/admin/tokens`' own cost table has to be able to say what the
+     * insight button and the Auto Format button each cost.
+     *
+     * **TWO VALUES IN ONE DAY IS THE THING TO BE SUSPICIOUS OF**, so the count is spelled
+     * out here rather than derived: the rule was never that ten is a magic number, it is
+     * that a new value is a question for Miftah. Both were put and both were granted.
      */
-    expect(OP_ORDER).toHaveLength(10);
-    expect(new Set(OP_ORDER).size).toBe(10);
+    expect(OP_ORDER).toHaveLength(11);
+    expect(new Set(OP_ORDER).size).toBe(11);
     expect([...OP_ORDER].sort()).toEqual(
       [
+        'blog_format',
         'day_summary',
         'frequency',
         'gist',
@@ -136,8 +142,16 @@ describe('foldOps', () => {
 
     const all = foldOps(OP_ORDER.map((op, i) => row(op, i + 1)));
     expect(all).toHaveLength(4);
-    // 1..10 sums to 55; the top three are 10, 9 and 8.
-    expect(all.at(-1)).toEqual({ op: OTHER, value: 55 - 27 });
+    /*
+     * Derived from `OP_ORDER.length` rather than transcribed, because this arithmetic was
+     * rewritten twice on 2026-07-31 as the union grew — and a hardcoded sum that has to be
+     * recomputed by hand on every widening is the `bodyHash` shape of bookkeeping. The
+     * top three are the last three values, since `row(op, i + 1)` is ascending.
+     */
+    const n = OP_ORDER.length;
+    const total = (n * (n + 1)) / 2;
+    const topThree = n + (n - 1) + (n - 2);
+    expect(all.at(-1)).toEqual({ op: OTHER, value: total - topThree });
   });
 
   it('returns the kept ops in OP_ORDER, never in rank order', () => {

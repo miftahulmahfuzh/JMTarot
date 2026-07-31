@@ -40,7 +40,7 @@ describe('the fences are not vacuous', () => {
     expect(QUERIES.length).toBeGreaterThanOrEqual(7);
   });
 
-  it('names every route under /api/admin, and A6 added two, A7 a seventh', () => {
+  it('names every route under /api/admin, and A6 added two, A7 a seventh, the markdown editor an eighth', () => {
     /*
      * **THIS WAS `expect(ROUTES.length).toBe(4)` AND A6 MADE IT SIX.** Every
      * assertion below iterates `ROUTES`, and the glob is the whole `/api/admin/**`
@@ -61,8 +61,14 @@ describe('the fences are not vacuous', () => {
      * `insight/shared.ts` like the other two trees. That is this list working as
      * designed, and it is why the glob stays the whole surface rather than A5's own
      * files.
+     *
+     * **THE MARKDOWN EDITOR ADDED `blog/[slug]/format/route.ts` ON 2026-07-31.** It reuses
+     * `blog/shared.ts` rather than growing a fourth copy, which is the outcome A7's entry
+     * above was written to produce — and it is the second route on this surface that waits
+     * on a model, so it carries the same literal `maxDuration = 60` as its neighbour.
      */
     expect(ROUTES.map((f) => f.replaceAll('\\', '/')).sort()).toEqual([
+      'src/app/api/admin/blog/[slug]/format/route.ts',
       'src/app/api/admin/blog/[slug]/status/route.ts',
       'src/app/api/admin/blog/[slug]/translate/route.ts',
       'src/app/api/admin/blog/route.ts',

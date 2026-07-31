@@ -35,11 +35,15 @@ import type { LLMOp } from '@/lib/llm/types';
  * The order is the request's own shape: what a reading costs, in the order a reading
  * incurs it, then the two background generators, then the two translation passes.
  *
- * **`insight` IS LAST BECAUSE IT IS THE ONLY OP WITH NO QUERENT BEHIND IT** (A7,
- * 2026-07-31). Every other value is incurred by somebody taking a reading, directly or
- * in its wake; this one is incurred by the operator reading the dashboard. Putting it
- * at the end keeps the nine querent-side rows in the shape they have always had, so a
- * table that grew a row does not also look reordered.
+ * **THE LAST TWO HAVE NO QUERENT BEHIND THEM, AND THAT IS WHY THEY ARE LAST.**
+ * `insight` arrived with A7 on 2026-07-31 and `blog_format` the same day with the markdown
+ * editor. Every value above them is incurred by somebody taking a reading, directly or in
+ * its wake; these two are incurred by the operator — one reading the dashboard, one
+ * pressing Auto Format. Keeping them at the end leaves the nine querent-side rows in the
+ * shape they have always had, so a table that grew a row does not also look reordered.
+ *
+ * **A COST-PER-READING DENOMINATOR MUST EXCLUDE BOTH**, which is the reason the boundary
+ * is visible in the order rather than only in a comment.
  */
 export const OP_ORDER = [
   'moderation',
@@ -52,6 +56,7 @@ export const OP_ORDER = [
   'translation',
   'translation_repair',
   'insight',
+  'blog_format',
 ] as const satisfies readonly LLMOp[];
 
 /**

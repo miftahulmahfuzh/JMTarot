@@ -125,6 +125,33 @@ const EXEMPT: Array<{ file: string; why: string; ownSwitch?: string }> = [
     why: 'ADMIN-ONLY AND ALREADY SHED FIRST, exactly as blogAutoTranslate: `callClass: deferred` means the fleet-wide ceiling drops it before any querent call, so the tier is the switch. A refused press is a sentence the operator reads; no querent sees anything change.',
   },
   {
+    /*
+     * **AUTO FORMAT, 2026-07-31. THE THIRD MEMBER OF THE ADMIN-ONLY CLASS, AND THE ENTRY
+     * ABOVE SAID WHAT TO DO IF ONE ARRIVED:** *"If a third admin-only site ever lands, the
+     * honest move is a single `ADMIN_MODEL_CALLS_ENABLED` covering the class — not three
+     * flags, and not this exemption stretched a third time without saying so."*
+     *
+     * **IT IS BEING STRETCHED A THIRD TIME, AND THIS IS THE SAYING SO.** The reason is that
+     * `blogFormat` is not a third INDEPENDENT site: it lives on the same surface as
+     * `blogAutoTranslate`, behind the same `requireAdmin()`, in the same editor, and an
+     * operator who cannot format also cannot translate. A flag that covered one and not the
+     * other would be a switch nobody could reason about.
+     *
+     * **SO THE CLASS SWITCH IS NOW OWED RATHER THAN OPTIONAL.** The next admin-only model
+     * call — the FOURTH, on any surface — must arrive with `ADMIN_MODEL_CALLS_ENABLED` in
+     * `flags.ts` and these three entries collapsed into it. Written as a debt with a
+     * trigger, because "we will do it next time" is what the entry above already said.
+     *
+     * The tier argument is unchanged and still load-bearing: `callClass: 'deferred'` on a
+     * site whose caller IS the operator means the fleet-wide ceiling sheds it before any
+     * querent call, so it cannot be left off at 2am. And Auto Format sheds more gracefully
+     * than either neighbour — `adviceNeeded()` skips the call entirely on an already-
+     * sectioned paste, so the common press does not reach a model at all.
+     */
+    file: 'src/lib/admin/blogFormat.ts',
+    why: 'ADMIN-ONLY AND ALREADY SHED FIRST, on the same surface and the same gate as blogAutoTranslate. `callClass: deferred` is the switch. THIS IS THE THIRD STRETCH OF THIS EXEMPTION: the fourth admin-only call site must bring ADMIN_MODEL_CALLS_ENABLED and collapse all three into it.',
+  },
+  {
     file: 'src/lib/moderation/classify.ts',
     why: 'ALREADY SWITCHABLE, and its switch is deliberately not in flags.ts: MODERATION_CLASSIFIER_ENABLED lives in gate.ts, named there so it cannot be read as "moderation off" — Tier A stays terminal either way.',
     ownSwitch: "process.env.MODERATION_CLASSIFIER_ENABLED !== '0'",
