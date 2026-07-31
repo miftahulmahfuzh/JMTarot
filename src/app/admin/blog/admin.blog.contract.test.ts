@@ -321,19 +321,21 @@ describe('the locale tabs remount the editor', () => {
 });
 
 describe('§4.2 -- the client bound that makes `maxDuration` mean something', () => {
-  it('bounds all THREE fetches from the client, each below its own route ceiling', () => {
+  it('bounds all FOUR fetches from the client, each below its own route ceiling', () => {
     /*
      * *"A bigger `maxDuration` is not a latency regression, but it must be paired with a
      * bound on the client, or you have only made the hang longer."*
      *
      *   save      route 30s, client 25s
+     *   status    route 30s, client 25s   <- `Simpan & terbitkan`'s second request
      *   translate route 60s, client 55s
-     *   format    route 60s, client 45s   <- smaller: three fields of metadata, not sixty
+     *   format    route 60s, client 45s   <- smaller: four fields of metadata, not sixty
      *                                        translated segments, so 45s means stuck
      *
      * The SERVER must lose the race last, so what the operator gets is the sentence that
-     * says what happened rather than a platform 504 with no diagnosis. **A third fetch with
-     * no bound is the way this rule decays**, so the count is asserted too.
+     * says what happened rather than a platform 504 with no diagnosis. **A new fetch with no
+     * bound is the way this rule decays** — it went from three to four when `Simpan &
+     * terbitkan` landed, and the count is asserted so the next one cannot arrive silently.
      */
     const editor = code('src/app/admin/blog/MarkdownEditor.tsx');
     expect(editor).toMatch(/SAVE_ABORT_MS = 25_000/);
@@ -342,7 +344,7 @@ describe('§4.2 -- the client bound that makes `maxDuration` mean something', ()
     const fetches = editor.match(/await fetch\(/g) ?? [];
     const signals = editor.match(/signal: AbortSignal\.timeout\(/g) ?? [];
     expect(signals).toHaveLength(fetches.length);
-    expect(fetches.length).toBe(3);
+    expect(fetches.length).toBe(4);
   });
 
   it('treats a timeout as UNKNOWN rather than as a failure, and Auto Format says so hardest', () => {
@@ -361,16 +363,22 @@ describe('§4.2 -- the client bound that makes `maxDuration` mean something', ()
     expect(copy).toMatch(/formatTimedOut:[\s\S]{0,200}muat ulang/);
   });
 
-  it('says on screen that Auto Format STORES and auto-translate does not', () => {
+  it('says on screen that BOTH model buttons store, and where', () => {
     /*
-     * **TWO ADJACENT BUTTONS WITH OPPOSITE STORAGE BEHAVIOUR, AND THE COPY IS THE ONLY
-     * THING THAT TELLS THEM APART.** `Format otomatis` writes the draft row (design R5);
-     * `Terjemahkan otomatis` deliberately stores nothing. Getting that pair wrong loses an
-     * operator's work or surprises them with a publish-shaped side effect.
+     * **THEY USED TO HAVE OPPOSITE STORAGE BEHAVIOUR AND NOW THEY BOTH WRITE**, which is a
+     * smaller trap than the one before it but a trap all the same: `Format otomatis` stores
+     * THIS locale and `Terjemahkan otomatis` stores the OTHER one, and an operator who thinks
+     * translate filled a form will not go and look at what it published into.
+     *
+     * The direction flip is why. Pulling into the tab you stand on could leave the result
+     * unsaved because you were there to press Simpan; pushing cannot.
      */
     const copy = readFileSync('src/app/admin/blog/copy.ts', 'utf8');
-    expect(copy).toMatch(/formatHint:[\s\S]{0,400}MENYIMPAN/);
-    expect(copy).toMatch(/translateHint:[\s\S]{0,400}BELUM tersimpan/);
+    expect(copy).toMatch(/formatHint:[\s\S]{0,500}MENYIMPAN/);
+    expect(copy).toMatch(/translateHint:[\s\S]{0,500}MENYIMPANNYA sebagai draf di sana/);
+    // And the label names the DESTINATION, not the source.
+    expect(copy).toContain('translateTo:');
+    expect(copy).not.toContain('translateFrom:');
   });
 });
 
@@ -401,15 +409,22 @@ describe('every failure says WHICH failure it is (2026-07-31)', () => {
     expect(editor).toContain('BLOG.editor.formatFailed');
   });
 
-  it('distinguishes "no JSON" from "JSON with nothing in it"', () => {
+  it('distinguishes "no JSON" from "JSON with nothing in it", in ONE place', () => {
     /*
      * `.catch(() => ({}))` collapsed those two, and they need different sentences: an empty
      * object means the route answered and had nothing to add, while a parse failure means it
      * crashed before answering or something is between the browser and it.
+     *
+     * **ONE HELPER RATHER THAN FOUR COPIES, BECAUSE THE FOURTH COPY USED THE SHORTCUT.**
+     * `savePublish` was written with `.catch(() => ({}))` and this assertion caught it — which
+     * is the fence doing exactly what it was added for a few hours earlier.
      */
     const editor = code('src/app/admin/blog/MarkdownEditor.tsx');
-    expect(editor).toContain('let unreadable = false');
-    expect(editor).not.toContain('res.json().catch(() => ({}))');
+    expect(editor).toContain('async function readReply');
+    expect(editor).not.toContain('res.json().catch(');
+    // Every fetch goes through it, so no path can regress to the shortcut.
+    const fetches = (editor.match(/await fetch\(/g) ?? []).length;
+    expect((editor.match(/await readReply\(res\)/g) ?? []).length).toBe(fetches);
   });
 
   it('carries a stage and an error class on every 503 in the tree, and never a message', () => {
@@ -451,6 +466,142 @@ describe('every failure says WHICH failure it is (2026-07-31)', () => {
      */
     const route = code('src/app/api/admin/blog/[slug]/format/route.ts');
     expect(route).toMatch(/const finalTitle = title\.trim\(\) !== '' \? title : \(advice\?\.title \?\? ''\)/);
+  });
+});
+
+describe('the translation PUSHES to the other locale (2026-07-31)', () => {
+  /*
+   * Miftah: *"i think you got the translation workflow upside down … from nothing, i click a
+   * translation TO the other language, but you make it so that we translate this FROM another
+   * language, but usually the starting point is that this article does not exist yet."*
+   *
+   * He was right. The button was mounted on the TARGET tab, so using it meant navigating to an
+   * empty English tab to create the English article. Nobody does that.
+   */
+  it('sends the OTHER locale as `to`, so `from` derives to the tab you are on', () => {
+    // The route always derived `from` as "the locale that is not `to`", so the flip is one
+    // expression at the call site -- and that expression is the whole direction.
+    const editor = code('src/app/admin/blog/MarkdownEditor.tsx');
+    expect(editor).toMatch(/to: locale === 'id' \? 'en' : 'id'/);
+    expect(editor).not.toMatch(/JSON\.stringify\(\{ to: locale \}\)/);
+  });
+
+  it('offers the button on the presence of THIS locale’s body, not the other’s', () => {
+    /*
+     * The predicate flipped with the direction. Getting this wrong is the shape of bug that
+     * looks like a working feature: the button would be enabled exactly when there is nothing
+     * to send and disabled exactly when there is.
+     */
+    const page = code('src/app/admin/blog/[slug]/page.tsx');
+    expect(page).toMatch(/canTranslate = \(article\?\.locales \?\? \[\]\)\.some\(\s*\(l\) => l\.locale === locale && l\.body\.length > 0,/);
+    expect(page).toMatch(/targetHasBody = \(article\?\.locales \?\? \[\]\)\.some\(\s*\(l\) => l\.locale !== locale && l\.body\.length > 0,/);
+  });
+
+  it('guards the overwrite on the stored TARGET row, not on the form', () => {
+    /*
+     * What is at risk moved with the direction: a stored article in a tab the operator is not
+     * looking at. That is the only thing on this surface that can be destroyed without the
+     * operator seeing it happen, so the confirmation is strictly more earned than before.
+     */
+    const editor = code('src/app/admin/blog/MarkdownEditor.tsx');
+    expect(editor).toMatch(/targetHasBody \? setTr\('confirm'\) : translate\(\)/);
+    expect(editor).not.toMatch(/formHasContent \? setTr\('confirm'\)/);
+  });
+
+  it('does not touch the form it is standing on', () => {
+    /*
+     * **THE ONE ASSERTION THAT WOULD CATCH THE FLIP BEING HALF-DONE.** A push that still
+     * assigned the response into `setTitle`/`setMarkdown` would overwrite the article the
+     * operator is working on with a translation of itself.
+     */
+    const editor = code('src/app/admin/blog/MarkdownEditor.tsx');
+    const translateFn = editor.slice(editor.indexOf('async function translate('), editor.indexOf('async function save('));
+    for (const setter of ['setTitle(', 'setMarkdown(', 'setHeroCard(', 'setDescription(']) {
+      expect(translateFn, setter).not.toContain(setter);
+    }
+  });
+
+  it('writes through `saveDocument`, so machine output gets no shortcut past the gates', () => {
+    const route = code('src/app/api/admin/blog/[slug]/translate/route.ts');
+    expect(route).toContain('saveDocument(');
+    // The derived hero alt: the translated doc's own `alt` must not be forwarded (§7).
+    expect(route).toMatch(/hero: result\.doc\.hero \? \{ cardUrlSlug: result\.doc\.hero\.cardUrlSlug \} : null/);
+    // And it fires the save event, or every translated row is missing from the metric.
+    expect(route).toContain("via: 'auto_translate'");
+  });
+});
+
+describe('Simpan & terbitkan, and the link that follows it', () => {
+  it('chains the two existing endpoints rather than adding a combined route', () => {
+    /*
+     * A combined route would need its own gate, event and refusal set, duplicating
+     * `changeStatus` -- which owns rules the editor must not restate: no path back to draft
+     * (A6-21), `id` before `en`, and a publish refused for ANY violation including warnings.
+     */
+    const editor = code('src/app/admin/blog/MarkdownEditor.tsx');
+    expect(editor).toMatch(/\/api\/admin\/blog\/\$\{slug\}\/status/);
+    expect(editor).toMatch(/to: 'published'/);
+    // The publish runs only after the save reports success.
+    expect(editor).toMatch(/if \(!\(await save\(\)\)\) return;/);
+  });
+
+  it('renders a state refusal as a sentence from `BLOG.refusal`', () => {
+    /*
+     * `id-not-published` is the one an operator will actually hit -- the English cannot go out
+     * before the Indonesian -- and A6-7's rule is that a silent no-op is how somebody ends up
+     * editing a row by hand in `db:studio`.
+     */
+    const editor = code('src/app/admin/blog/MarkdownEditor.tsx');
+    expect(editor).toContain('BLOG.refusal[');
+    expect(readFileSync('src/app/admin/blog/copy.ts', 'utf8')).toContain('publishRefused');
+  });
+
+  it('builds the public href on the SERVER and gates the link on the status', () => {
+    /*
+     * `StatusControl`'s rule: a client component must not know the locale prefix maths, and
+     * `adminCopy.test.ts` keeps `@/lib/i18n/prefix` out of this subtree. `blogPostPath` is the
+     * sanctioned builder and the page is what calls it.
+     */
+    const page = code('src/app/admin/blog/[slug]/page.tsx');
+    expect(importsOf(page)).toContain('@/lib/seo/blog');
+    expect(page).toMatch(/publicPath=\{blogPostPath\(slug, locale\)\}/);
+    const editor = code('src/app/admin/blog/MarkdownEditor.tsx');
+    expect(editor).not.toContain('blogPostPath');
+    // Rendered only when the row is live, and in a new tab so the editor stays open.
+    expect(editor).toMatch(/\{live \? \(/);
+    expect(editor).toContain('target="_blank"');
+    expect(editor).toContain('rel="noreferrer"');
+  });
+
+  it('keeps `live` independent of the save state', () => {
+    /*
+     * A link gated on `state === 'published'` would vanish the next time the operator pressed
+     * Simpan, because the article stays published while the state returns to `saved`.
+     */
+    const editor = code('src/app/admin/blog/MarkdownEditor.tsx');
+    expect(editor).toMatch(/useState\(status === 'published'\)/);
+  });
+});
+
+describe('the lint panel arrives rather than standing there', () => {
+  it('renders nothing when there is nothing to say', () => {
+    /*
+     * Miftah asked whether this section is still used. **It is** -- the lint still refuses
+     * saves and publishes and is the only place its words appear; a live check on a real paste
+     * produced `malay / tempoh` and `bare-path / /history`, both error class, both storing
+     * nothing. What did not survive is the PERMANENT EMPTY panel: beside a form with dozens of
+     * fields a standing "Tidak ada masalah" was reassurance, beside three fields it is
+     * furniture that teaches an operator to stop reading that part of the screen.
+     */
+    const editor = code('src/app/admin/blog/MarkdownEditor.tsx');
+    expect(editor).toMatch(/if \(violations\.length === 0\) return null;/);
+    expect(editor).not.toContain('BLOG.editor.lintClean');
+  });
+
+  it('still renders both classes when there is', () => {
+    const editor = code('src/app/admin/blog/MarkdownEditor.tsx');
+    expect(editor).toContain('BLOG.editor.lintErrors');
+    expect(editor).toContain('BLOG.editor.lintWarnings');
   });
 });
 

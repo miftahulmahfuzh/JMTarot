@@ -45,6 +45,7 @@ import { ArticleToc } from '@/components/ArticleToc';
 import { Prose } from '@/components/Prose';
 import { CARD_URL_SLUGS } from '@/data/deck';
 import { requireAdminPage } from '@/lib/admin/identity';
+import { blogPostPath } from '@/lib/seo/blog';
 import { db } from '@/lib/db/client';
 import { getForEdit } from '@/lib/db/queries/admin/blog';
 import { isLocale, DEFAULT_LOCALE } from '@/lib/i18n/locale';
@@ -91,14 +92,26 @@ export default async function AdminBlogEditorPage({
   const slugFrozen = (article?.locales ?? []).some((l) => l.status !== 'draft');
 
   /*
-   * Is there a document in the OTHER locale to seed this one from? Resolved here because
-   * the editor only ever holds one locale's row, and a button that offers to translate
-   * from nothing is a button that answers with an error.
+   * **THE TRANSLATION DIRECTION FLIPPED ON 2026-07-31 AND THIS PREDICATE FLIPPED WITH IT.**
+   * It used to ask *"is there a document in the OTHER locale to seed this one from"*, because
+   * the button pulled into the tab you were standing on. It pushes now, so what matters is
+   * whether THIS locale has something to send.
    *
-   * **A BODY, NOT MERELY A ROW.** A row with an empty body would spend a model call to
-   * produce an empty document.
+   * **A BODY, NOT MERELY A ROW**, and it must be the STORED body rather than the form: the
+   * route reads the row, so offering the button on an unsaved draft would spend a model call
+   * on whatever was last saved and silently ignore what is on screen. `translateNoSource` says
+   * to save first.
    */
   const canTranslate = (article?.locales ?? []).some(
+    (l) => l.locale === locale && l.body.length > 0,
+  );
+
+  /*
+   * Would translating overwrite something? The confirmation is about the TARGET row now — a
+   * stored article in a tab the operator is not looking at, which is the only thing on this
+   * surface that can be destroyed without the operator seeing it happen.
+   */
+  const targetHasBody = (article?.locales ?? []).some(
     (l) => l.locale !== locale && l.body.length > 0,
   );
 
@@ -165,6 +178,16 @@ export default async function AdminBlogEditorPage({
           locale={locale}
           slugFrozen={slugFrozen}
           canTranslate={canTranslate}
+          targetHasBody={targetHasBody}
+          status={row?.status ?? 'draft'}
+          /*
+           * **BUILT HERE, BY `blogPostPath`, BECAUSE A CLIENT COMPONENT MUST NOT KNOW THE
+           * PREFIX MATHS** — `StatusControl`'s rule, and `adminCopy.test.ts` keeps
+           * `@/lib/i18n/prefix` out of this whole subtree. The editor renders it only when the
+           * row is published; passing it unconditionally is one string and keeps the decision
+           * about WHETHER there is a public address with the render that knows the row.
+           */
+          publicPath={blogPostPath(slug, locale)}
           initial={
             row
               ? {

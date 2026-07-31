@@ -230,27 +230,42 @@ export const BLOG = {
     // ── auto-translate ────────────────────────────────────────────────────
     translate: 'Terjemahkan otomatis',
     /**
-     * **THE ARGUMENT IS THE TAB YOU ARE ON, AND THE ANSWER NAMES THE OTHER ONE.** The
-     * first draft returned the tab's own language, so the English tab offered
-     * *"terjemahkan otomatis dari bahasa Inggris"* — translate English from English.
-     * Caught by reading the heading in a screenshot, which is the only place a label
-     * that is wrong-but-plausible ever shows up.
+     * **IT NAMES THE DESTINATION, BECAUSE THE BUTTON PUSHES RATHER THAN PULLS
+     * (2026-07-31).** The first version was mounted on the target tab and said *"dari
+     * Bahasa Indonesia"*, which meant the workflow was: finish the Indonesian, navigate to
+     * an empty English tab, press a button, press Simpan. **The starting point is that the
+     * other article does not exist yet, and nobody navigates to a blank tab to create one.**
+     *
+     * The older note below it is kept because the trap it records is still live: the first
+     * draft of the label returned the tab's OWN language, so the English tab offered
+     * *"terjemahkan otomatis dari bahasa Inggris"*. A label that is wrong-but-plausible only
+     * shows up when somebody reads it, so the direction is spelled from `currentTab` once.
      */
-    translateFrom: (currentTab: string) =>
-      currentTab === 'id' ? 'dari bahasa Inggris' : 'dari Bahasa Indonesia',
+    translateTo: (currentTab: string) =>
+      currentTab === 'id' ? 'ke bahasa Inggris' : 'ke Bahasa Indonesia',
     translateHint:
-      'Mengisi formulir ini dari versi bahasa lain memakai model. Hasilnya BELUM tersimpan — baca, perbaiki, lalu Simpan. Tulisan bahasa Inggris seharusnya ditulis ulang, bukan diterjemahkan, jadi anggap ini titik awal dan bukan hasil akhir.',
-    translateNoSource: 'Belum ada versi bahasa lain untuk diterjemahkan.',
+      'Menerjemahkan artikel ini ke bahasa yang satu lagi memakai model, lalu MENYIMPANNYA sebagai draf di sana. Tab yang kamu buka sekarang tidak berubah. Tulisan bahasa Inggris seharusnya ditulis ulang dan bukan diterjemahkan, jadi anggap hasilnya titik awal — buka tabnya dan perbaiki sebelum diterbitkan.',
+    translateNoSource:
+      'Simpan dulu artikel ini (Format otomatis atau Simpan), baru bisa diterjemahkan.',
     translating: 'Menerjemahkan…',
-    translateDone: (n: number) => `Selesai: ${n} potongan teks terisi. Belum tersimpan.`,
+    translateDone: (n: number) => `Selesai: ${n} potongan teks diterjemahkan dan disimpan sebagai draf.`,
     translateFailed: 'Terjemahan gagal.',
     translateTimedOut:
       'Permintaan melewati batas waktu. Tidak ada yang berubah — artikel panjang bisa makan waktu, coba lagi.',
+    /** What the target tab is called, for the note that says where the draft landed. */
+    translateOtherTab: (currentTab: string) => (currentTab === 'id' ? 'English' : 'Bahasa Indonesia'),
     /** The overwrite guard Miftah asked for. Two taps, and the second one names the cost. */
-    translateConfirmTitle: 'Formulir ini sudah ada isinya.',
+    /*
+     * **THE GUARD MOVED FROM THE FORM TO THE TARGET ROW (2026-07-31).** It used to warn that
+     * *"this form already has content"*, because the button filled the form you were looking
+     * at. Now it writes the OTHER locale, so what is at risk is a stored article in a tab the
+     * operator is not looking at — which is strictly more worth confirming, and it is the only
+     * thing on this surface that can destroy work without showing it happening.
+     */
+    translateConfirmTitle: 'Versi bahasa lain sudah ada isinya.',
     translateConfirmBody:
-      'Terjemahan otomatis akan MENIMPA seluruh isi formulir bahasa ini — judul, deskripsi, dan semua blok. Yang sudah tersimpan di basis data tidak ikut berubah sampai kamu menekan Simpan.',
-    translateConfirmYes: 'Ya, timpa formulirnya',
+      'Menerjemahkan sekarang akan MENIMPA artikel yang sudah tersimpan di tab bahasa satunya, termasuk suntingan yang sudah kamu buat di sana. Yang sudah terbit tetap terbit, tapi teksnya berubah.',
+    translateConfirmYes: 'Ya, timpa versi bahasa lain',
     translateConfirmNo: 'Batal',
     /** Reported, never blocking — see `verifyBlogTranslation`. */
     translateUntranslated: (n: number) =>
@@ -267,11 +282,40 @@ export const BLOG = {
      */
     saveFailed: 'Gagal menyimpan, tanpa keterangan dari server. Lihat log dev server.',
     saveExists: 'Sudah ada dokumen untuk bahasa ini (HTTP 409). Muat ulang halaman lalu edit yang ada.',
+
+    /*
+     * ── SIMPAN & TERBITKAN, AND THE LINK THAT FOLLOWS IT (2026-07-31) ────────
+     *
+     * The workflow Miftah described ends with *"Check the new published article on a new
+     * tab"*, and until now that meant: save, go back to the list, find the row, press the
+     * Publik chip. Two of those four steps are navigation.
+     *
+     * **IT IS A SECOND BUTTON RATHER THAN A CHANGE TO `Simpan`.** Publishing is a state
+     * change with its own event, its own refusals and no way back to draft (A6-21), so a
+     * single button that sometimes published would be the one control on this surface whose
+     * effect the operator could not predict from its label.
+     */
+    savePublish: 'Simpan & terbitkan',
+    savePublishing: 'Menerbitkan…',
+    savePublished: 'Terbit.',
+    /** After a publish, and whenever the row is already published. */
+    viewArticle: 'Lihat artikel',
+    viewArticleTitle: 'Buka halaman publiknya di tab baru',
+    /**
+     * A publish refusal that is NOT about the prose. `RULE_LINE` covers the lint; these are
+     * the state-machine ones, and `id-not-published` is the one an operator will actually
+     * hit — the English cannot go out before the Indonesian.
+     */
+    publishRefused: (reason: string) => `Belum bisa diterbitkan: ${reason}`,
     saveTimedOut:
       'Permintaan melewati batas waktu. Tidak ada yang tersimpan — coba lagi; basis data mungkin sedang bangun dari tidur.',
 
+    /*
+     * **`lintClean` IS DELETED WITH THE STANDING PANEL (2026-07-31).** The panel renders only
+     * when there is something to say, so there is no state in which "Bersih." appears — and a
+     * copy key with no call site is a key somebody re-adds a render for.
+     */
     lintTitle: 'Lint',
-    lintClean: 'Bersih.',
     lintErrors: (n: number) => `${n} kesalahan — menolak simpan`,
     lintWarnings: (n: number) => `${n} peringatan — menolak terbit, bukan simpan`,
     field: {

@@ -840,8 +840,10 @@ export type EventMap = {
   /*
    * **`via` AND `model_called` ARE THE MARKDOWN EDITOR'S WIDENING, 2026-07-31**, and the
    * header above records what was folded to avoid a new name. Both are closed sets: `via`
-   * is `'form' | 'auto_format'`, spelled as a union here because this file has no imports
-   * and needs none for two literals.
+   * is `'form' | 'auto_format' | 'auto_translate'`, spelled as a union here because this file
+   * has no imports and needs none for three literals. **`auto_translate` joined on 2026-07-31**
+   * when the translate route started WRITING the target locale rather than filling a form —
+   * a third value on a prop, never a third event name, which is this file's own rule.
    *
    * **`model_called` IS THE ONE THAT DECIDES WHETHER THE ELEVENTH `op` WAS WORTH IT.** It
    * is always `false` for `via: 'form'`, which is truthful rather than padding -- a
@@ -854,7 +856,8 @@ export type EventMap = {
    */
   'admin.blog_saved':          { slug: string; locale: string; action: 'create' | 'update';
                                  blocks: number; lint_violations: number;
-                                 via: 'form' | 'auto_format'; model_called: boolean };
+                                 via: 'form' | 'auto_format' | 'auto_translate';
+                                 model_called: boolean };
   'admin.blog_status_changed': { slug: string; locale: string; from: string; to: string };
 
   'analytics.local_date_fallback': { reason: 'absent' | 'malformed' | 'out_of_range'; received: string | null; surface: string };
