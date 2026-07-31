@@ -5,9 +5,9 @@ All notable changes to JMTarot are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [v0.5.1] - 2026-07-31
+## [v0.6.0] - 2026-07-31
 
-**v0.5.0 built the surface the operator can see. v0.5.1 is what happened when the
+**v0.5.0 built the surface the operator can see. v0.6.0 is what happened when the
 operator used it.** No roadmap, no reconciliation, no workstream numbers: seven reports
 from Miftah driving `/admin` and `/admin/blog` by hand, two designs written in response
 (`docs/plans/2026-07-31-admin-panel-insights-design.md` and
@@ -1939,7 +1939,7 @@ app as it now stands. The iOS tree is preserved on `feat/ios` and
 - Two superseded design exports; the Clickable export is the single visual
   reference. Both remain in history at `d7fdd89`.
 
-[v0.5.1]: https://github.com/miftahulmahfuzh/JMTarot/releases/tag/v0.5.1
+[v0.6.0]: https://github.com/miftahulmahfuzh/JMTarot/releases/tag/v0.6.0
 [v0.5.0]: https://github.com/miftahulmahfuzh/JMTarot/releases/tag/v0.5.0
 [v0.4.0]: https://github.com/miftahulmahfuzh/JMTarot/releases/tag/v0.4.0
 [v0.3.0]: https://github.com/miftahulmahfuzh/JMTarot/releases/tag/v0.3.0
