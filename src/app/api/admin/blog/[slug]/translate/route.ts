@@ -2,15 +2,29 @@
  * `POST /api/admin/blog/[slug]/translate` — seed one locale from another with a model.
  * **v0.5.0 / A6, added 2026-07-30 on Miftah's request.**
  *
- * ── IT STORES NOTHING, AND THAT IS THE DESIGN RATHER THAN A LIMITATION ─────
+ * ── IT PUSHES, IT DOES NOT PULL, AND THAT IS A CORRECTION (2026-07-31) ──────
  *
- * It reads the SOURCE row, calls the model, and returns a document as JSON. The editor
- * puts it in the form; **`POST /api/admin/blog` is still the only thing that writes**, so
- * machine output goes through the same zod parse, the same lint and the same resolution
- * as a hand-typed save. Nothing reaches `blog_post_locales` that the editor would refuse.
+ * **THE FIRST VERSION HAD THE WORKFLOW UPSIDE DOWN.** It was mounted on the TARGET tab and
+ * pulled from the other locale, so using it meant: finish the Indonesian, navigate to an
+ * empty English tab, press a button that fills the form, press Simpan. Miftah's actual
+ * workflow is *"from nothing, i click a translation TO the other language"* — **the starting
+ * point is that the other article does not exist yet**, and nobody navigates to a blank tab
+ * to create it.
  *
- * The overwrite confirmation lives in the editor for the same reason: what is at risk is
- * unsaved FORM state, which the server has never seen.
+ * So the button now lives on the SOURCE tab and names the destination. The route needed no
+ * new parameter for that: `to` was always the parameter and `from` was always derived as the
+ * locale that is not `to`, so the caller simply passes the OTHER locale.
+ *
+ * ── IT WRITES NOW, BECAUSE NOBODY IS STANDING ON THE TARGET TAB ─────────────
+ *
+ * Returning a document for a form to hold only worked while the operator was ON that form.
+ * Pushing means the target row has to be stored here or the translation is lost the moment
+ * the response lands. **It writes through `saveDocument` like everything else** — the same
+ * zod parse, the same lint, the same resolution, the same derived `hero_alt` — so machine
+ * output still gets no shortcut past the gates, and a refusal writes nothing.
+ *
+ * It is stored as a **draft**. `changeStatus` is a separate decision and `id`-before-`en`
+ * still binds, so a translated article is never published as a side effect of translating.
  *
  * ── §8.2 SURVIVES BECAUSE THE OUTPUT IS A DRAFT ────────────────────────────
  *
@@ -32,6 +46,8 @@
  * longer.
  */
 import { autoTranslateDocument } from '@/lib/admin/blogAutoTranslate';
+import { saveDocument } from '@/lib/admin/blogSave';
+import { track, withAnalytics } from '@/lib/analytics/track';
 import type { LintDoc } from '@/lib/content/lint';
 import { db } from '@/lib/db/client';
 import { getForEdit } from '@/lib/db/queries/admin/blog';
@@ -119,23 +135,71 @@ export async function POST(request: Request, ctx: { params: Promise<{ slug: stri
   if (!result.ok) return ok({ ok: false, reason: result.reason, detail: result.detail });
 
   /*
-   * **NO EVENT.** `admin.blog_saved` fires when something is stored, and nothing is.
-   * A-D18's register went 66 -> 67 by FOLDING rather than adding, and a name for
-   * "an admin pressed a button and may discard the result" answers no question anybody
-   * has — the ledger row in `llm_calls` is the record that a model call happened, which
-   * is the only fact here worth keeping.
+   * **THE TRANSLATION GOES THROUGH `saveDocument`, NOT INTO THE RESPONSE.** See the header:
+   * the operator is on the SOURCE tab and will not be standing on the target form to press
+   * Simpan. `hero.alt` is dropped rather than forwarded — the schema is `.strict()` and the
+   * save path derives it from the card's lore document in the TARGET locale (§7), which is
+   * the whole reason it left the segment walk.
    */
+  const targetExists = (article?.locales ?? []).some((l) => l.locale === to);
+  let saved: Awaited<ReturnType<typeof saveDocument>>;
+  try {
+    saved = await saveDocument(db, targetExists ? 'update' : 'create', {
+      slug,
+      locale: to,
+      title: result.doc.title,
+      description: result.doc.description,
+      hero: result.doc.hero ? { cardUrlSlug: result.doc.hero.cardUrlSlug } : null,
+      body: result.doc.body,
+    });
+  } catch (err) {
+    logBlogFailure('translate save', err, { slug, to });
+    return unavailable('save', errorClass(err));
+  }
+
+  /*
+   * **A LINT REFUSAL ON A TRANSLATION IS A 200 WITH `ok: false`, NOT A 422.** The operator did
+   * not type this text and cannot fix it in the field they are looking at — they are on the
+   * SOURCE tab. So it reads as *"the translation was refused, here is why"* with the
+   * violations attached, rather than as a validation error against the form on screen.
+   */
+  if (saved.kind === 'invalid') {
+    return ok({ ok: false, reason: 'invalid', detail: '', violations: saved.violations });
+  }
+  if (saved.kind === 'exists' || saved.kind === 'not-found') return adminNotFound();
+
+  /*
+   * **`via: 'auto_translate'` — A THIRD VALUE ON A PROP, NOT A THIRD EVENT NAME.** This route
+   * now stores a row, so it has to fire the save event or the metric undercounts; and
+   * `events.ts`'s rule is to fold rather than add. `model_called` is always true here.
+   */
+  await withAnalytics(
+    {
+      userId: gate.user.id,
+      sessionId: null,
+      locale: to,
+      // The admin has no `local_date`; UTC is the honest answer for a call with no querent.
+      localDate: new Date().toISOString().slice(0, 10),
+    },
+    async () => {
+      track('admin.blog_saved', {
+        slug,
+        locale: to,
+        action: saved.kind === 'ok' ? saved.action : 'update',
+        blocks: result.doc.body.length,
+        lint_violations: saved.kind === 'ok' ? saved.violations.length : 0,
+        via: 'auto_translate',
+        model_called: true,
+      });
+    },
+  );
+
   return ok({
     ok: true,
     from,
     to,
     segments: result.segments,
-    violations: result.violations,
-    doc: {
-      title: result.doc.title,
-      description: result.doc.description,
-      hero: result.doc.hero,
-      body: result.doc.body,
-    },
+    violations: [...result.violations, ...(saved.kind === 'ok' ? saved.violations : [])],
+    action: saved.kind === 'ok' ? saved.action : 'update',
   });
 }

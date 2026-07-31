@@ -1403,11 +1403,40 @@ the live verification, and the evidence is in `docs/workstream-notes.md`.
 - **`heroAlt.ts` CARRIES NO `server-only` AND IS ONE HOP FROM 44 LORE DOCUMENTS.**
   `clientBoundary.test.ts` checks DIRECT imports only, so `heroAlt.test.ts` asserts no client
   component reaches it. That assertion is the whole protection.
-- **AUTO FORMAT WRITES AND `Terjemahkan Otomatis` DOES NOT.** Two adjacent buttons, opposite
-  storage behaviour, and **the copy is the only thing that tells them apart** — a test greps
-  both hints. Auto Format's timeout copy says the draft MAY be stored and to reload, because a
-  timeout on a write path means UNKNOWN. Three fetches, three client bounds (25s/55s/45s), and
-  the COUNT is asserted so a fourth unbounded one is red.
+- **THE TRANSLATION PUSHES AND BOTH MODEL BUTTONS WRITE (2026-07-31).** `Terjemahkan otomatis`
+  lives on the SOURCE tab, names the DESTINATION, and stores the target locale as a **draft**
+  through `saveDocument`. The pull direction was upside down: it meant navigating to an empty
+  English tab to create the English article, and **the starting point is that the article does
+  not exist yet.** The route needed no new parameter — `from` was always derived as the locale
+  that is not `to`, so the caller passes the OTHER locale. `canTranslate` now asks whether THIS
+  locale has a stored body; `targetHasBody` drives the overwrite guard, which protects a stored
+  article in a tab the operator cannot see. **`translate()` must touch no form state** — a push
+  that still called `setTitle`/`setMarkdown` would overwrite the article being edited with a
+  translation of itself, and a contract test greps the function for those setters.
+- **`via` HAS THREE VALUES AND STILL NO SECOND EVENT NAME:** `form | auto_format |
+  auto_translate`. Every route that stores fires `admin.blog_saved`, or the save metric
+  undercounts.
+- **`Simpan & terbitkan` CHAINS TWO EXISTING ENDPOINTS AND IS NOT A MODE ON `Simpan`.** A
+  combined route would restate `changeStatus`'s rules — no path back to draft, `id` before `en`,
+  and a publish refused for ANY violation including warnings, which is the one place an operator
+  meets a violation that let them save seconds earlier. The publish is SKIPPED after a create,
+  because that save navigates. `Lihat artikel` is gated on a `live` state seeded from the row and
+  **not on `state`**, which returns to `saved` while the article stays published; `publicPath`
+  comes from `blogPostPath` on the SERVER (`StatusControl`'s rule, and `adminCopy.test.ts` keeps
+  `@/lib/i18n/prefix` out of this subtree).
+- **THE LINT PANEL RENDERS ONLY WHEN IT HAS SOMETHING TO SAY, AND THE LINT ITSELF IS UNCHANGED.**
+  It still refuses saves and publishes and is the only place its words appear — measured live on
+  a real paste: `malay / tempoh` and `bare-path / /history`, both error class, both storing
+  nothing. What went is the permanent empty panel: beside three fields a standing *"Bersih."* is
+  furniture that teaches an operator to stop reading that part of the screen. `lintClean` is
+  deleted so nothing re-adds a render for it.
+- **BOTH MODEL BUTTONS WRITE, TO DIFFERENT LOCALES, AND THE COPY IS THE ONLY THING THAT SAYS
+  SO** — a test greps both hints. Auto Format's timeout copy says the draft MAY be stored and to
+  reload, because a timeout on a write path means UNKNOWN; translate's says the same about the
+  other tab. **FOUR fetches, four client bounds (25s save / 25s status / 55s translate / 45s
+  format), and the COUNT is asserted** so a fifth unbounded one is red. All four read their body
+  through one `readReply` helper — `savePublish` was written with `.catch(() => ({}))` and the
+  fence added hours earlier caught it.
 - **THE TABLE OF CONTENTS WAS ALWAYS AUTOMATIC — THE PREVIEW WAS WHAT DID NOT SHOW IT.**
   `ArticleToc` is one component with two mounts and its label is a PROP, because
   `adminCopy.test.ts` forbids `t()` across the admin tree. `previewStale` is DELETED, not

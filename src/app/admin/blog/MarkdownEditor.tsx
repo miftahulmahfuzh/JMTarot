@@ -68,12 +68,78 @@ const FORMAT_ABORT_MS = 45_000;
 
 type Violation = { rule: string; cls: string; field: string; detail: string; excerpt: string };
 
+/** What any of the four routes on this surface can put in a body. */
+type Reply = {
+  ok?: boolean;
+  reason?: string;
+  detail?: string;
+  markdown?: string;
+  description?: string;
+  title?: string;
+  titleGenerated?: boolean;
+  headingsAdded?: number;
+  rejected?: string[];
+  segments?: number;
+  violations?: ({ kind?: string } & Partial<Violation>)[];
+  error?: string;
+  stage?: string;
+  errorClass?: string;
+  errorCode?: string;
+};
+
+/**
+ * Read a JSON body, distinguishing **"no JSON"** from **"JSON saying nothing"**.
+ *
+ * `await res.json().catch(() => ({}))` collapses those two, and they need different sentences:
+ * an empty object means the route answered and had nothing to add, while a parse failure means
+ * it crashed before answering or something is between the browser and it. One helper rather
+ * than four copies, because the fourth copy is the one that would use the shortcut.
+ */
+async function readReply(res: Response): Promise<{ payload: Reply; unreadable: boolean }> {
+  try {
+    return { payload: (await res.json()) as Reply, unreadable: false };
+  } catch {
+    return { payload: {}, unreadable: true };
+  }
+}
+
+/** The violations from a reply, dropping the translate route's `{ kind }` entries. */
+const lintOf = (payload: Reply): Violation[] =>
+  (payload.violations ?? []).filter((v): v is Violation => v.cls !== undefined);
+
+/** `judul, isi` — the distinct field names in a refusal, for the note above the panel. */
+const fieldsOf = (violations: readonly Violation[]): string =>
+  [
+    ...new Set(
+      violations.map(
+        (x) => BLOG.editor.field[x.field as keyof typeof BLOG.editor.field] ?? x.field,
+      ),
+    ),
+  ].join(', ');
+
 export type EditorProps = {
   slug: string;
   locale: string;
   slugFrozen: boolean;
-  /** Is there a document in the OTHER locale to translate from? Resolved on the server. */
+  /**
+   * Is there a stored document in THIS locale to translate FROM? **The direction flipped on
+   * 2026-07-31** — see `translate()`. Resolved on the server, because the editor only ever
+   * holds one locale's row and cannot see whether it has been saved.
+   */
   canTranslate: boolean;
+  /** Does the OTHER locale already have a body the translation would overwrite? */
+  targetHasBody: boolean;
+  /** This row's status, so the editor knows whether there is an article to link to. */
+  status: 'draft' | 'published' | 'unpublished';
+  /**
+   * This locale's public path, BUILT ON THE SERVER by `blogPostPath`.
+   *
+   * `StatusControl`'s rule: *"a client component would have to know the locale prefix maths,
+   * and `@/lib/i18n/prefix` is what A-D12's grep keeps out of this subtree."* It arrives
+   * unconditionally — it is one string — and **whether to render a link to it is gated on the
+   * status**, which is the fact that decides whether the address resolves.
+   */
+  publicPath: string;
   initial: {
     title: string;
     description: string;
@@ -89,6 +155,9 @@ export function MarkdownEditor({
   locale,
   slugFrozen,
   canTranslate,
+  targetHasBody,
+  status,
+  publicPath,
   initial,
   cardSlugs,
 }: EditorProps) {
@@ -106,9 +175,19 @@ export function MarkdownEditor({
   );
   const [seoOpen, setSeoOpen] = useState(false);
 
-  const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'failed' | 'timeout'>('idle');
+  const [state, setState] = useState<
+    'idle' | 'saving' | 'saved' | 'publishing' | 'published' | 'failed' | 'timeout'
+  >('idle');
   /** Why the save failed, when `state` alone cannot say. See `save()`. */
   const [saveNote, setSaveNote] = useState('');
+  /**
+   * Is the article published RIGHT NOW? Seeded from the server and moved by a publish.
+   *
+   * **IT IS NOT DERIVED FROM `state`**, because `state` returns to `saved` on the next save and
+   * the article stays published — so a link gated on `state` would disappear from under an
+   * operator who pressed Simpan once more.
+   */
+  const [live, setLive] = useState(status === 'published');
   const [fmt, setFmt] = useState<'idle' | 'running' | 'done' | 'failed' | 'timeout'>('idle');
   const [fmtNote, setFmtNote] = useState('');
   const [tr, setTr] = useState<'idle' | 'confirm' | 'running' | 'done' | 'failed' | 'timeout'>(
@@ -139,6 +218,9 @@ export function MarkdownEditor({
   /** The current parse, for the block count in the Auto Format note. Pure and cheap. */
   const blockCount = markdown.trim() === '' ? 0 : parseMarkdown(markdown).length;
 
+  /** Any in-flight write. One flag, so two buttons cannot both be pressed into one row. */
+  const busy = state === 'saving' || state === 'publishing';
+
   async function autoFormat() {
     setFmt('running');
     setFmtNote('');
@@ -162,33 +244,7 @@ export function MarkdownEditor({
         }),
       });
 
-      /*
-       * **`unreadable` DISTINGUISHES "NO JSON" FROM "JSON SAYING NOTHING".** `.catch(() => ({}))`
-       * collapsed those two, and they need different sentences: an empty object means the route
-       * answered and had nothing to add, while a parse failure means it crashed before it
-       * answered or something is between us and it.
-       */
-      let payload: {
-        ok?: boolean;
-        reason?: string;
-        detail?: string;
-        markdown?: string;
-        description?: string;
-        title?: string;
-        titleGenerated?: boolean;
-        headingsAdded?: number;
-        rejected?: string[];
-        violations?: Violation[];
-        stage?: string;
-        errorClass?: string;
-        errorCode?: string;
-      } = {};
-      let unreadable = false;
-      try {
-        payload = await res.json();
-      } catch {
-        unreadable = true;
-      }
+      const { payload, unreadable } = await readReply(res);
 
       if (unreadable) {
         setFmt('failed');
@@ -203,16 +259,11 @@ export function MarkdownEditor({
        * the fold is a panel nobody scrolls to unless something points at it.
        */
       if (res.status === 422) {
-        const v = payload.violations ?? [];
+        const v = lintOf(payload);
         setViolations(v);
         setFmt('failed');
         setFmtNote(
-          v.length > 0
-            ? BLOG.editor.formatInvalid(
-                v.length,
-                [...new Set(v.map((x) => BLOG.editor.field[x.field as keyof typeof BLOG.editor.field] ?? x.field))].join(', '),
-              )
-            : BLOG.editor.formatFailed,
+          v.length > 0 ? BLOG.editor.formatInvalid(v.length, fieldsOf(v)) : BLOG.editor.formatFailed,
         );
         return;
       }
@@ -262,7 +313,7 @@ export function MarkdownEditor({
        * unconditionally cannot overwrite something the operator typed.
        */
       if (typeof payload.title === 'string' && payload.title !== '') setTitle(payload.title);
-      setViolations(payload.violations ?? []);
+      setViolations(lintOf(payload));
 
       const added = payload.headingsAdded ?? 0;
       const rejected = payload.rejected ?? [];
@@ -315,41 +366,49 @@ export function MarkdownEditor({
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         signal: AbortSignal.timeout(TRANSLATE_ABORT_MS),
-        body: JSON.stringify({ to: locale }),
+        /*
+         * **`to` IS THE OTHER LOCALE, WHICH IS THE WHOLE DIRECTION FLIP.** The route derives
+         * `from` as the locale that is not `to`, so pushing needed no new parameter — only
+         * the caller naming the destination instead of itself. The old spelling was
+         * `{ to: locale }`, which pulled INTO the tab you were standing on and required you
+         * to be standing on an empty one.
+         */
+        body: JSON.stringify({ to: locale === 'id' ? 'en' : 'id' }),
       });
       if (!res.ok) {
         setTr('failed');
         setTrNote(BLOG.editor.translateFailed);
         return;
       }
-      const payload = (await res.json()) as {
-        ok: boolean;
-        detail?: string;
-        segments?: number;
-        violations?: { kind: string }[];
-        doc?: {
-          title: string;
-          description: string;
-          hero: { cardUrlSlug: string } | null;
-          body: Block[];
-        };
-      };
-      if (!payload.ok || !payload.doc) {
+      const { payload, unreadable } = await readReply(res);
+      if (unreadable) {
         setTr('failed');
-        setTrNote(payload.detail ?? BLOG.editor.translateFailed);
+        setTrNote(BLOG.editor.formatUnreadable(res.status));
         return;
       }
-      setTitle(payload.doc.title);
-      setDescription(payload.doc.description);
-      setHeroCard(payload.doc.hero?.cardUrlSlug ?? '');
+      if (!payload.ok) {
+        setTr('failed');
+        /*
+         * A lint refusal on a translation arrives as `ok: false` with the violations, because
+         * the operator did not type this text and cannot fix it in the form on screen — they
+         * are on the SOURCE tab. So it lands in the panel AND gets a sentence.
+         */
+        const lint = lintOf(payload);
+        setViolations(lint);
+        setTrNote(
+          payload.detail ||
+            (lint.length > 0
+              ? BLOG.editor.formatInvalid(lint.length, fieldsOf(lint))
+              : BLOG.editor.translateFailed),
+        );
+        return;
+      }
       /*
-       * **THE TRANSLATED DOCUMENT IS PROJECTED INTO THE TEXTAREA.** It arrives as a
-       * `Block[]` because `applySegments` works on the document shape — the model never
-       * sees the structure, which is `blogSegments.ts`'s load-bearing decision — so this is
-       * where the two representations meet.
+       * **NOTHING ON THIS FORM CHANGES.** The translation was stored in the OTHER locale, so
+       * touching `title`/`markdown` here would overwrite the article the operator is working
+       * on with a translation of itself — which is what the pull-direction version did on
+       * purpose and what makes the push version safe to press by reflex.
        */
-      setMarkdown(serializeMarkdown(payload.doc.body));
-      // Nothing is stored yet, and the note says so rather than implying a save.
       const untranslated = (payload.violations ?? []).filter((v) => v.kind === 'untranslated').length;
       setTr('done');
       setTrNote(
@@ -357,14 +416,28 @@ export function MarkdownEditor({
           (untranslated > 0 ? ` ${BLOG.editor.translateUntranslated(untranslated)}` : ''),
       );
     } catch (err) {
-      /* Nothing was written either way, so a timeout here is safe to retry. */
+      /*
+       * **A TIMEOUT HERE MEANS UNKNOWN NOW, WHERE IT ONCE MEANT NOTHING HAPPENED.** The route
+       * writes the target locale, so a truncated request may have committed it — the copy says
+       * to open the other tab and look rather than claiming nothing changed.
+       */
       const timedOut = err instanceof Error && err.name === 'TimeoutError';
       setTr(timedOut ? 'timeout' : 'failed');
-      setTrNote(timedOut ? BLOG.editor.translateTimedOut : BLOG.editor.translateFailed);
+      setTrNote(
+        timedOut
+          ? BLOG.editor.translateTimedOut
+          : BLOG.editor.formatNetwork(err instanceof Error ? err.name : typeof err),
+      );
     }
   }
 
-  async function save() {
+  /**
+   * Store the form. **Returns whether it committed**, so `savePublish` can chain on it.
+   *
+   * A boolean rather than a thrown error: every failure arm already sets the state and the
+   * note, and a caller that has to catch would duplicate that.
+   */
+  async function save(): Promise<boolean> {
     setState('saving');
     setSaveNote('');
     setViolations([]);
@@ -388,41 +461,28 @@ export function MarkdownEditor({
        * than growing a second spelling of *"HTTP 503"*. `saveNote` carries it, because
        * `state` alone cannot say which of five outcomes happened.
        */
-      let payload: {
-        violations?: Violation[];
-        error?: string;
-        stage?: string;
-        errorClass?: string;
-        errorCode?: string;
-      } = {};
-      let unreadable = false;
-      try {
-        payload = await res.json();
-      } catch {
-        unreadable = true;
-      }
-
-      setViolations(payload.violations ?? []);
+      const { payload, unreadable } = await readReply(res);
+      setViolations(lintOf(payload));
 
       if (res.ok) {
         setState('saved');
         setSaveNote('');
+        /*
+         * **A CREATE STILL NAVIGATES, SO IT CANNOT BE CHAINED INTO A PUBLISH.** The page has to
+         * re-read for the editor to stop being "new", and `savePublish` handles that by
+         * publishing only when there is already a row. See its guard.
+         */
         if (isNew) window.location.href = `/admin/blog/${slug}?locale=${locale}`;
-        return;
+        return true;
       }
 
       setState('failed');
       if (unreadable) {
         setSaveNote(BLOG.editor.formatUnreadable(res.status));
       } else if (res.status === 422) {
-        const v = payload.violations ?? [];
+        const v = lintOf(payload);
         setSaveNote(
-          v.length > 0
-            ? BLOG.editor.formatInvalid(
-                v.length,
-                [...new Set(v.map((x) => BLOG.editor.field[x.field as keyof typeof BLOG.editor.field] ?? x.field))].join(', '),
-              )
-            : BLOG.editor.saveFailed,
+          v.length > 0 ? BLOG.editor.formatInvalid(v.length, fieldsOf(v)) : BLOG.editor.saveFailed,
         );
       } else if (res.status === 409) {
         setSaveNote(BLOG.editor.saveExists);
@@ -438,8 +498,88 @@ export function MarkdownEditor({
             .join(' '),
         );
       }
+      return false;
     } catch (err) {
       /* A timeout is the one outcome that means UNKNOWN: the request may have committed. */
+      const timedOut = err instanceof Error && err.name === 'TimeoutError';
+      setState(timedOut ? 'timeout' : 'failed');
+      setSaveNote(
+        timedOut ? '' : BLOG.editor.formatNetwork(err instanceof Error ? err.name : typeof err),
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Save, then publish. **Two requests against two existing endpoints, deliberately.**
+   *
+   * A single combined route would need its own gate, its own event and its own refusal set,
+   * duplicating `changeStatus` — which owns rules this editor must not restate: no path back to
+   * draft (A6-21), `id` before `en`, and a publish refused for ANY violation including
+   * warnings. Chaining means those answers arrive from the one place that decides them.
+   *
+   * **THE PUBLISH IS SKIPPED WHEN THE SAVE NAVIGATED.** A create redirects so the page can
+   * re-read, and firing a publish into a page that is unloading is a request whose answer
+   * nobody sees. The operator presses it again on the reloaded page, where it is an update.
+   */
+  async function savePublish() {
+    if (!(await save())) return;
+    if (isNew) return;
+
+    setState('publishing');
+    try {
+      const res = await fetch(`/api/admin/blog/${slug}/status`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        signal: AbortSignal.timeout(SAVE_ABORT_MS),
+        body: JSON.stringify({ locale, to: 'published' }),
+      });
+      const { payload, unreadable } = await readReply(res);
+      if (unreadable) {
+        setState('failed');
+        setSaveNote(BLOG.editor.formatUnreadable(res.status));
+        return;
+      }
+
+      if (res.ok) {
+        setState('published');
+        setLive(true);
+        setViolations(lintOf(payload));
+        return;
+      }
+
+      setState('failed');
+      setViolations(lintOf(payload));
+      if (res.status === 422) {
+        /*
+         * **THE PUBLISH GATE REFUSES ON WARNINGS TOO**, which the save does not — so this is
+         * the one place an operator meets a violation that let them save five seconds ago.
+         * Naming the fields is what makes that comprehensible rather than surprising.
+         */
+        const v = lintOf(payload);
+        setSaveNote(
+          v.length > 0 ? BLOG.editor.formatInvalid(v.length, fieldsOf(v)) : BLOG.editor.saveFailed,
+        );
+      } else if (payload.reason) {
+        // A state refusal, not a content one: `id-not-published` is the one that fires.
+        setSaveNote(
+          BLOG.editor.publishRefused(
+            BLOG.refusal[payload.reason as keyof typeof BLOG.refusal] ?? payload.reason,
+          ),
+        );
+      } else {
+        setSaveNote(
+          [
+            BLOG.editor.formatHttp(res.status),
+            payload.stage && payload.errorClass
+              ? BLOG.editor.formatStage(payload.stage, payload.errorClass, payload.errorCode)
+              : '',
+          ]
+            .filter(Boolean)
+            .join(' '),
+        );
+      }
+    } catch (err) {
       const timedOut = err instanceof Error && err.name === 'TimeoutError';
       setState(timedOut ? 'timeout' : 'failed');
       setSaveNote(
@@ -575,10 +715,10 @@ export function MarkdownEditor({
           </div>
         </section>
 
-        {/* ── Auto translate. IT FILLS THE FORM AND STORES NOTHING ───────── */}
+        {/* ── Auto translate. IT PUSHES TO THE OTHER LOCALE AND STORES IT ── */}
         <section className={styles.translateBox}>
           <h2 className={styles.h2}>
-            {BLOG.editor.translate} {BLOG.editor.translateFrom(locale)}
+            {BLOG.editor.translate} {BLOG.editor.translateTo(locale)}
           </h2>
           <p className={styles.hint}>{BLOG.editor.translateHint}</p>
 
@@ -589,6 +729,10 @@ export function MarkdownEditor({
              * **THE OVERWRITE GUARD, INLINE RATHER THAN `window.confirm`.** A native
              * confirm blocks the thread, cannot be styled to say what is at stake, and on
              * Safari drops focus in the way `AccountMenu` records.
+             *
+             * What it guards changed with the direction: the risk is now a STORED article in
+             * the tab the operator is not looking at, which is worth confirming more than a
+             * form they can see was.
              */
             <div
               className={styles.confirm}
@@ -612,7 +756,7 @@ export function MarkdownEditor({
                 type="button"
                 className={styles.primary}
                 disabled={tr === 'running'}
-                onClick={() => (formHasContent ? setTr('confirm') : translate())}
+                onClick={() => (targetHasBody ? setTr('confirm') : translate())}
               >
                 {tr === 'running' ? BLOG.editor.translating : BLOG.editor.translate}
               </button>
@@ -630,11 +774,48 @@ export function MarkdownEditor({
             className={styles.primary}
             type="button"
             onClick={save}
-            disabled={state === 'saving'}
+            disabled={busy}
           >
             {state === 'saving' ? BLOG.editor.saving : BLOG.editor.save}
           </button>
+          {/*
+            **`Simpan & terbitkan` IS A SECOND BUTTON, NOT A MODE ON THE FIRST.** Publishing is
+            a state change with its own event and NO WAY BACK to draft (A6-21), so a single
+            control that sometimes published would be the one thing here whose effect an
+            operator could not predict from its label.
+
+            It is hidden once the row is live: `changeStatus` treats `published -> published`
+            as a no-op that writes nothing, so the button would be a control that correctly
+            does nothing — and A6-7's rule is that *"the toggle did nothing"* is the state in
+            which somebody opens `db:studio` and edits a row by hand.
+          */}
+          {!live ? (
+            <button type="button" onClick={savePublish} disabled={busy}>
+              {state === 'publishing' ? BLOG.editor.savePublishing : BLOG.editor.savePublish}
+            </button>
+          ) : null}
+          {/*
+            **THE LINK IS GATED ON `live`, AND `publicPath` WAS BUILT ON THE SERVER.**
+            `StatusControl`'s rule — a client component must not know the locale prefix maths,
+            and `adminCopy.test.ts` keeps `@/lib/i18n/prefix` out of this whole subtree.
+          */}
+          {live ? (
+            <a
+              className={styles.link}
+              href={publicPath}
+              target="_blank"
+              rel="noreferrer"
+              title={BLOG.editor.viewArticleTitle}
+            >
+              {BLOG.editor.viewArticle}
+            </a>
+          ) : null}
           {state === 'saved' ? <span className={styles.ok}>{BLOG.editor.saved}</span> : null}
+          {state === 'published' ? (
+            <span className={styles.ok} role="status">
+              {BLOG.editor.savePublished}
+            </span>
+          ) : null}
           {state === 'failed' ? (
             <span className={styles.bad} role="status">
               {saveNote || BLOG.editor.saveFailed}
@@ -690,35 +871,45 @@ function Meter({ n, min, max }: { n: number; min?: number; max?: number }) {
  * `lintDocument` returns what it returns. A boolean cannot tell an author which word.
  */
 function LintPanel({ violations }: { violations: Violation[] }) {
+  /*
+   * **IT RENDERS NOTHING WHEN THERE IS NOTHING, AND THAT IS A CHANGE (2026-07-31).**
+   *
+   * Miftah asked whether this section is still used. It is — the lint still refuses saves and
+   * still refuses publishes, and it is the only place its words appear: a live check on the
+   * real paste produced `malay / tempoh` and `bare-path / /history`, both error class, both
+   * stored nothing. **What did not survive is the permanent empty panel.** It existed beside a
+   * form with dozens of fields, where a standing "Tidak ada masalah" was reassurance; beside
+   * three fields it is a heading and a green line that never change, which is furniture that
+   * teaches an operator to stop reading this part of the screen.
+   *
+   * The save row already says `Tersimpan.`, and a publish refused for a warning says which
+   * field — so silence here is now the successful state and the panel is a thing that ARRIVES.
+   */
+  if (violations.length === 0) return null;
+
   const errors = violations.filter((v) => v.cls === 'error');
   const warnings = violations.filter((v) => v.cls === 'warning');
 
   return (
     <section className={styles.lint}>
       <h2 className={styles.h2}>{BLOG.editor.lintTitle}</h2>
-      {violations.length === 0 ? (
-        <p className={styles.ok}>{BLOG.editor.lintClean}</p>
-      ) : (
-        <>
-          {errors.length > 0 ? (
-            <p className={styles.bad}>{BLOG.editor.lintErrors(errors.length)}</p>
-          ) : null}
-          {warnings.length > 0 ? (
-            <p className={styles.warn}>{BLOG.editor.lintWarnings(warnings.length)}</p>
-          ) : null}
-          <ul className={styles.lintList}>
-            {violations.map((v, i) => (
-              <li key={i} data-cls={v.cls}>
-                <strong>
-                  {BLOG.editor.field[v.field as keyof typeof BLOG.editor.field] ?? v.field}
-                </strong>{' '}
-                <code>{v.rule}</code> — <em>{v.detail}</em>
-                {v.excerpt ? <span className={styles.excerpt}> {v.excerpt}</span> : null}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+      {errors.length > 0 ? (
+        <p className={styles.bad}>{BLOG.editor.lintErrors(errors.length)}</p>
+      ) : null}
+      {warnings.length > 0 ? (
+        <p className={styles.warn}>{BLOG.editor.lintWarnings(warnings.length)}</p>
+      ) : null}
+      <ul className={styles.lintList}>
+        {violations.map((v, i) => (
+          <li key={i} data-cls={v.cls}>
+            <strong>
+              {BLOG.editor.field[v.field as keyof typeof BLOG.editor.field] ?? v.field}
+            </strong>{' '}
+            <code>{v.rule}</code> — <em>{v.detail}</em>
+            {v.excerpt ? <span className={styles.excerpt}> {v.excerpt}</span> : null}
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
