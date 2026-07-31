@@ -52,9 +52,36 @@ export function refused(violations: readonly LintViolation[], status = 422): Nex
   return NextResponse.json({ error: 'invalid', violations }, { status, headers: NO_STORE });
 }
 
-/** A read or a write failed. **Never a 500 with a body, and never the driver's words.** */
-export function unavailable(): NextResponse {
-  return NextResponse.json({ error: 'unavailable' }, { status: 503, headers: NO_STORE });
+/**
+ * A read or a write failed. **Never a 500 with a body, and never the driver's words.**
+ *
+ * ── `stage` AND `errorClass` ARE OURS TO GIVE AND THE DRIVER'S WORDS ARE NOT ─
+ *
+ * Added 2026-07-31, because `{ error: 'unavailable' }` with nothing else made every failure
+ * on this surface render the same generic sentence and told the operator nothing about which
+ * half broke. **That is not a privacy win, it is an absent diagnostic**: the rule this file
+ * already states is *never the driver's words*, because a postgres error quotes the failing
+ * statement AND its bound parameters — and on this path those are a whole article body.
+ *
+ * `stage` is a literal we wrote (`'read'`, `'save'`). `errorClass` is `err.name` and
+ * `errorCode` is the driver's `code` — **neither can carry a bound parameter**, and they are
+ * exactly what CLAUDE.md already permits to be recorded: production logs *"ids, attempt,
+ * SQLSTATE and the error's class"*. So the facts a person needs to start looking are safe, and
+ * the message body still never appears.
+ *
+ * **`errorCode` IS THE ONE THAT ACTUALLY TELLS YOU ANYTHING**, and it was added after
+ * measuring: with the database unreachable, postgres.js throws a plain `Error`, so
+ * `errorClass` reads `"Error"` and says nothing. `code` reads `ECONNREFUSED`, which answers
+ * the question in one word. `flush.ts`'s own `DRIVER_TRANSIENT` set is the precedent — those
+ * connection-level codes are not SQLSTATEs and are the useful half here.
+ *
+ * Admin-only either way: `requireAdmin()` is in front of every caller.
+ */
+export function unavailable(stage?: string, facts?: ErrorFacts): NextResponse {
+  return NextResponse.json(
+    { error: 'unavailable', stage, ...facts },
+    { status: 503, headers: NO_STORE },
+  );
 }
 
 /**
@@ -67,10 +94,61 @@ export function unavailable(): NextResponse {
  * about one. `err.name` tells a timeout from a type bug and cannot carry a parameter.
  */
 export function logBlogFailure(what: string, err: unknown, ids: Record<string, string>): void {
-  console.error(`admin blog ${what} failed`, {
-    ...ids,
-    name: err instanceof Error ? err.name : typeof err,
-  });
+  console.error(`admin blog ${what} failed`, { ...ids, ...errorClass(err) });
+}
+
+/** What may be told to an operator about a failure: a class and a code, never a message. */
+export type ErrorFacts = { errorClass: string; errorCode?: string };
+
+/**
+ * The error's CLASS and CODE, never its message. **The two diagnostics that cannot leak a
+ * bound parameter.**
+ *
+ * Exported so `unavailable()`'s callers pass the same thing they log, rather than one of them
+ * inventing a second spelling of "what went wrong". The `code` extraction is `flush.ts`'s
+ * `sqlstate()` in one line — not imported, because that module is `@/lib/analytics` and this
+ * one must not acquire an analytics import for three lines (`auth.ts`'s precedent, which
+ * duplicates `sqlstate` for exactly this reason).
+ */
+export function errorClass(err: unknown): ErrorFacts {
+  return {
+    /*
+     * **`DrizzleQueryError` REPORTS `name: 'Error'`**, so the class alone is worthless on this
+     * path. Its constructor name is the useful string, and it is read defensively because a
+     * non-Error can reach here.
+     */
+    errorClass:
+      (err as { constructor?: { name?: string } } | null)?.constructor?.name ??
+      (err instanceof Error ? err.name : typeof err),
+    errorCode: driverCode(err),
+  };
+}
+
+/**
+ * The driver's short code — `ECONNREFUSED`, `ETIMEDOUT`, a SQLSTATE like `23505`.
+ *
+ * **IT LOOKS AT `cause` AS WELL AS AT THE ERROR, AND THAT WAS MEASURED RATHER THAN ASSUMED.**
+ * The first version read `err.code` only and returned `undefined` for every real failure,
+ * because **drizzle wraps the driver error in a `DrizzleQueryError` and the `code` is on
+ * `.cause`.** Probed against a closed port:
+ *
+ *     name: 'Error'   constructor: 'DrizzleQueryError'   code: undefined
+ *     own keys: query, params, cause
+ *     cause.code: 'ECONNREFUSED'
+ *
+ * **THOSE `own keys` ARE ALSO THE REASON THIS FUNCTION PICKS FIELDS INSTEAD OF PASSING THE
+ * ERROR ON.** `DrizzleQueryError` carries `query` AND `params` — the bound values — so
+ * returning or logging the object itself is exactly the leak *"never log a driver error"*
+ * exists to prevent, and drizzle makes it easier to do by accident than the raw driver did.
+ *
+ * One level of `cause` only. A deeper chain is a shape nobody has seen here, and walking an
+ * arbitrary chain is how a logger acquires a cycle.
+ */
+function driverCode(err: unknown): string | undefined {
+  const own = (err as { code?: unknown } | null)?.code;
+  if (typeof own === 'string') return own;
+  const cause = (err as { cause?: { code?: unknown } } | null)?.cause?.code;
+  return typeof cause === 'string' ? cause : undefined;
 }
 
 /**

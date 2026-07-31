@@ -86,6 +86,8 @@ export const BLOG = {
     slugHint: 'Huruf kecil dan tanda hubung. Sama di kedua bahasa, dan dalam bahasa Inggris.',
     localeTab: (l: string) => (l === 'id' ? 'Bahasa Indonesia' : 'English'),
     articleTitle: 'Judul',
+    /** Says the field may be left empty, because that is now a supported path rather than a 422. */
+    titleAutoHint: 'Boleh dibiarkan kosong — Format otomatis akan menuliskannya dalam bahasa artikel ini.',
     titleHint:
       'Judul artikel. Ini yang muncul sebagai baris pertama di hasil pencarian Google, jadi tulis kalimatnya untuk orang yang belum tahu apa-apa soal isinya.',
     /** The heading BLOCK's own text. Not the document's title — see `BlockFields`. */
@@ -167,17 +169,63 @@ export const BLOG = {
      * with opposite storage behaviour and no way to tell.
      */
     formatHint:
-      'Membaca Konten, merapikan strukturnya, membuat daftar isi dari judul-judul bagian, lalu MENYIMPAN sebagai draf. Kalau tulisannya belum punya judul bagian atau deskripsinya masih kosong, satu panggilan model dipakai untuk itu.',
-    formatDone: (blocks: number, headings: number) =>
-      headings > 0
-        ? `Tersimpan: ${blocks} blok, ${headings} judul bagian ditambahkan.`
-        : `Tersimpan: ${blocks} blok. Strukturnya sudah rapi, model tidak dipakai.`,
-    formatFailed: 'Format otomatis gagal.',
+      'Membaca Konten, merapikan strukturnya, membuat daftar isi dari judul-judul bagian, lalu MENYIMPAN sebagai draf. Kalau Judul masih kosong, atau tulisannya belum punya judul bagian, atau deskripsinya belum ada — satu panggilan model dipakai untuk mengisi itu. Judul yang sudah kamu tulis tidak akan diubah.',
+    formatDone: (blocks: number, headings: number, titleWritten: boolean) => {
+      const parts = [`${blocks} blok`];
+      if (headings > 0) parts.push(`${headings} judul bagian ditambahkan`);
+      if (titleWritten) parts.push('judul artikel ditulis otomatis');
+      return headings > 0 || titleWritten
+        ? `Tersimpan: ${parts.join(', ')}.`
+        : `Tersimpan: ${blocks} blok. Strukturnya sudah rapi, model tidak dipakai.`;
+    },
+
+    /*
+     * ── EVERY FAILURE SAYS WHICH FAILURE IT IS (2026-07-31, Miftah's report) ──
+     *
+     * **`formatFailed` WAS THE ONLY THING FOUR DIFFERENT OUTCOMES PRINTED**, and *"Format
+     * otomatis gagal."* on its own tells an operator nothing they can act on and tells a
+     * future session nothing it can debug. It is kept as the last-resort arm and every
+     * distinguishable case now has its own sentence with the one fact that narrows it: an HTTP
+     * status, the stage the server reached, the error's class, or the count of lint violations
+     * and the fields they are on.
+     *
+     * The rule this does NOT break: the server still never returns the driver's words. A
+     * postgres error quotes its bound parameters, and on this path those are a whole article.
+     * `stage` is a literal we wrote and `errorClass` is `err.name`, which cannot carry one —
+     * the same two things CLAUDE.md already permits to be logged.
+     */
+    formatFailed: 'Format otomatis gagal, tanpa keterangan dari server. Lihat log dev server.',
+    /** A 422: the lint or zod refused. The panel below has the words; this says where to look. */
+    formatInvalid: (n: number, fields: string) =>
+      `Ditolak sebelum disimpan: ${n} masalah pada ${fields}. Rinciannya ada di daftar di bawah — tidak ada yang tersimpan.`,
+    /** Any other non-2xx. The status code is the single most useful thing here. */
+    formatHttp: (status: number) =>
+      status === 503
+        ? `Database tidak bisa dihubungi (HTTP 503).`
+        : status === 404
+          ? `Server menolak permintaan ini (HTTP 404) — slug atau bahasanya tidak dikenali.`
+          : `Server menjawab HTTP ${status}.`,
+    /**
+     * Appended to the 503 line. `stage`, `errorClass` and `errorCode` come from the route and
+     * never from the driver's message — see `shared.ts`'s `unavailable()`.
+     *
+     * **`errorCode` IS THE USEFUL ONE AND IT IS PRINTED FIRST.** With the database unreachable
+     * postgres.js throws a plain `Error`, so the class reads `Error` and says nothing while the
+     * code reads `ECONNREFUSED` and answers the question outright.
+     */
+    formatStage: (stage: string, errorClass: string, errorCode?: string) =>
+      `Tahap: ${stage}. ${errorCode ? `Kode: ${errorCode}. ` : ''}Jenis: ${errorClass}. Kalau kodenya ECONNREFUSED, jalankan \`npm run db:up\`.`,
+    /** The response was not JSON at all — usually a crash page or a proxy in the way. */
+    formatUnreadable: (status: number) =>
+      `Jawaban server (HTTP ${status}) bukan JSON. Kemungkinan route-nya error sebelum menjawab — lihat log dev server.`,
+    /** The fetch never completed: offline, DNS, connection refused. */
+    formatNetwork: (name: string) =>
+      `Permintaan tidak sampai ke server (${name}). Cek apakah dev server masih jalan.`,
     formatTimedOut:
-      'Permintaan melewati batas waktu. Draf MUNGKIN sudah tersimpan — muat ulang halaman ini dan lihat.',
-    /** What `validateAdvice` threw away. A count in the event, the sentences here. */
-    formatRejected: (n: number) =>
-      `${n} saran dari model dibuang karena bentuknya tidak sah. Isi tulisannya tidak berubah.`,
+      'Permintaan melewati batas waktu 45 detik. Draf MUNGKIN sudah tersimpan — muat ulang halaman ini dan lihat.',
+    /** What `validateAdvice` threw away, listed rather than counted. */
+    formatRejected: (n: number, first: string) =>
+      `${n} saran dari model dibuang karena bentuknya tidak sah (${first}). Isi tulisannya tidak berubah.`,
 
     // ── auto-translate ────────────────────────────────────────────────────
     translate: 'Terjemahkan otomatis',
@@ -211,7 +259,14 @@ export const BLOG = {
     save: 'Simpan',
     saving: 'Menyimpan…',
     saved: 'Tersimpan.',
-    saveFailed: 'Gagal menyimpan.',
+    /*
+     * **THE SAME COMPLAINT APPLIES HERE AND IS FIXED THE SAME WAY.** *"Gagal menyimpan."* was
+     * one sentence for a 422, a 409, a 404, a 503 and a dead network. `saveFailed` stays as the
+     * last-resort arm; the reusable `format*` builders above are shared rather than duplicated,
+     * because two spellings of *"HTTP 503"* on one screen is how they drift.
+     */
+    saveFailed: 'Gagal menyimpan, tanpa keterangan dari server. Lihat log dev server.',
+    saveExists: 'Sudah ada dokumen untuk bahasa ini (HTTP 409). Muat ulang halaman lalu edit yang ada.',
     saveTimedOut:
       'Permintaan melewati batas waktu. Tidak ada yang tersimpan — coba lagi; basis data mungkin sedang bangun dari tidur.',
 

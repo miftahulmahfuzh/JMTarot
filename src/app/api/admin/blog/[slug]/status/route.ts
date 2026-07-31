@@ -37,10 +37,11 @@ import { track, withAnalytics } from '@/lib/analytics/track';
 import { db } from '@/lib/db/client';
 import {
   adminNotFound,
+  errorClass,
   logBlogFailure,
   ok,
-  refused,
   refuseMethod,
+  refused,
   requireAdmin,
   unavailable,
 } from '../../shared';
@@ -74,7 +75,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ slug: stri
     result = await changeStatus(db, slug, input.locale, input.to);
   } catch (err) {
     logBlogFailure('status', err, { slug });
-    return unavailable();
+    return unavailable('status', errorClass(err));
   }
 
   if (result.kind === 'not-found') return adminNotFound();

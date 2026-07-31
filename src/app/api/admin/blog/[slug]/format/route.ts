@@ -47,12 +47,14 @@ import { getForEdit } from '@/lib/db/queries/admin/blog';
 import { isLocale, type Locale } from '@/lib/i18n/locale';
 import {
   adminNotFound,
+  errorClass,
   logBlogFailure,
   ok,
   refused,
   refuseMethod,
   requireAdmin,
   unavailable,
+  type ErrorFacts,
 } from '../../shared';
 
 export const runtime = 'nodejs';
@@ -122,7 +124,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ slug: stri
   );
 
   /* ── 2. JUDGE, only if there is something to ask ───────────────────────── */
-  const reasons = adviceNeeded(parsed, description, derivedAnchorAt);
+  const reasons = adviceNeeded({ body: parsed, title, description, derivedAnchorAt });
   const advised = await adviseFormat(parsed, locale, reasons);
 
   if (advised.kind === 'failed') {
@@ -149,16 +151,44 @@ export async function POST(request: Request, ctx: { params: Promise<{ slug: stri
   const finalDescription =
     advice && advice.description !== '' ? advice.description : description;
 
+  /*
+   * **THE MODEL'S TITLE IS USED ONLY WHEN THE FIELD IS EMPTY, AND THE CHECK IS HERE AS WELL
+   * AS IN `adviceNeeded`.** The predicate decides whether to ASK; this decides whether to
+   * USE, and they are different questions — an advice object could arrive carrying a title
+   * nobody asked for, from a model that ignored *"kembalikan title sebagai string kosong"*.
+   *
+   * A typed title is an editorial decision. Overwriting it is V8's `user-edit` failure: the
+   * mechanism that regenerates something a person just changed by hand.
+   */
+  const finalTitle = title.trim() !== '' ? title : (advice?.title ?? '');
+
+  /*
+   * **AN EMPTY TITLE IS ITS OWN SENTENCE RATHER THAN A ZOD 422.** `documentSchema` requires
+   * `title.min(1)`, so before this branch existed pressing Auto Format on a pasted body with
+   * no title produced `markup / title / Too small: expected string to have >=1 characters` in
+   * the lint panel — technically accurate and useless to the person reading it.
+   */
+  if (finalTitle.trim() === '') {
+    return ok({
+      ok: false,
+      reason: 'no-title',
+      detail:
+        advised.kind === 'advised'
+          ? 'Model tidak mengembalikan judul yang bisa dipakai. Tulis Judul sendiri, lalu tekan Format otomatis lagi.'
+          : 'Kolom Judul masih kosong dan model tidak dipanggil. Tulis Judul dulu.',
+    });
+  }
+
   /* ── 3 + 4. GATE AND WRITE, through the one door ───────────────────────── */
   const existing = await readExisting(slug, locale);
-  if (existing === 'unavailable') return unavailable();
+  if (typeof existing === 'object') return unavailable('read', existing);
 
   let result: Awaited<ReturnType<typeof saveDocument>>;
   try {
     result = await saveDocument(db, existing ? 'update' : 'create', {
       slug,
       locale,
-      title,
+      title: finalTitle,
       description: finalDescription,
       // `alt` is derived inside `saveDocument` from the card's lore document (§7).
       hero: heroCardSlug !== null ? { cardUrlSlug: heroCardSlug } : null,
@@ -166,7 +196,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ slug: stri
     });
   } catch (err) {
     logBlogFailure('format save', err, { slug, locale });
-    return unavailable();
+    return unavailable('save', errorClass(err));
   }
 
   if (result.kind === 'invalid') {
@@ -225,6 +255,9 @@ export async function POST(request: Request, ctx: { params: Promise<{ slug: stri
     action: result.action,
     markdown: serializeMarkdown(body),
     description: finalDescription,
+    // Echoed so the editor can fill the field it left empty. See `finalTitle`.
+    title: finalTitle,
+    titleGenerated: title.trim() === '' && finalTitle !== '',
     modelCalled: advised.kind === 'advised',
     headingsAdded: advice?.headings.length ?? 0,
     rejected,
@@ -232,13 +265,19 @@ export async function POST(request: Request, ctx: { params: Promise<{ slug: stri
   });
 }
 
-/** Is there already a row for this `(slug, locale)`? `'unavailable'` on a driver error. */
-async function readExisting(slug: string, locale: Locale): Promise<boolean | 'unavailable'> {
+/**
+ * Is there already a row for this `(slug, locale)`?
+ *
+ * **AN OBJECT IS THE FAILURE ARM**, so a caller cannot confuse it with `false`. It carries the
+ * error's CLASS and never its message — see `unavailable()`'s header for why that distinction
+ * is the whole rule.
+ */
+async function readExisting(slug: string, locale: Locale): Promise<boolean | ErrorFacts> {
   try {
     const article = await getForEdit(db, slug);
     return (article?.locales ?? []).some((l) => l.locale === locale);
   } catch (err) {
     logBlogFailure('format read', err, { slug, locale });
-    return 'unavailable';
+    return errorClass(err);
   }
 }

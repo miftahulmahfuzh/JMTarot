@@ -139,8 +139,21 @@ export function sanitizeProps(raw: unknown): Record<string, EventPropValue> {
 // ---------------------------------------------------------------------------
 
 function sqlstate(err: unknown): string | undefined {
-  const code = (err as { code?: unknown } | null)?.code;
-  return typeof code === 'string' ? code : undefined;
+  const own = (err as { code?: unknown } | null)?.code;
+  if (typeof own === 'string') return own;
+  /*
+   * **`cause` ADDED 2026-07-31, AND WITHOUT IT THIS RETURNED `undefined` FOR EVERY REAL
+   * FAILURE.** Measured against a closed port: drizzle wraps the driver error in a
+   * `DrizzleQueryError` whose `name` is `'Error'` and whose own keys are `query, params,
+   * cause` — the `code` is one level down. So every `[analytics] … failed` line has been
+   * logging a blank SQLSTATE, and `DRIVER_TRANSIENT` below could never match either, which
+   * means the transient/permanent split was decided on a value that was always absent.
+   *
+   * One level only: a deeper chain is a shape nobody has seen here, and walking an arbitrary
+   * chain is how a logger acquires a cycle.
+   */
+  const cause = (err as { cause?: { code?: unknown } } | null)?.cause?.code;
+  return typeof cause === 'string' ? cause : undefined;
 }
 
 /** postgres.js' own connection-level codes, which are not SQLSTATEs. */

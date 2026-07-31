@@ -10,7 +10,8 @@
  *
  * §5.3: content pasted out of Gemini or ChatGPT is already `##`-sectioned, so
  * `adviceNeeded()` returns `[]` and **no model call is made at all.** The steady state for
- * a well-formed paste is one call per article, ever — the one that writes the description.
+ * a well-formed paste is one call per article, ever — the one that writes the title and the
+ * description, because an operator who pastes an article body has copied neither.
  * `admin.blog_formatted.model_called` is what measures whether that holds.
  *
  * ── `op: 'blog_format'` IS THE ELEVENTH, AND IT WAS ASKED FOR ───────────────
@@ -40,6 +41,7 @@ import { plainText } from '@/lib/content/doc';
 import {
   DESCRIPTION_MAX,
   DESCRIPTION_MIN,
+  TITLE_MAX,
   validateAdvice,
   type AdviceReason,
   type FormatAdvice,
@@ -57,7 +59,7 @@ import {
 const OPEN = '<artikel>';
 const CLOSE = '</artikel>';
 
-/** One JSON object of metadata. Small on purpose — it is three fields, not a document. */
+/** One JSON object of metadata. Small on purpose — it is four fields, not a document. */
 const FORMAT_MAX_TOKENS = 900;
 
 /**
@@ -87,7 +89,7 @@ const LANGUAGE: Record<Locale, string> = {
 };
 
 /**
- * The system prompt. **IT ASKS FOR THREE FIELDS AND FORBIDS A FOURTH.**
+ * The system prompt. **IT ASKS FOR FOUR FIELDS AND NO FIFTH.**
  *
  * Written in Indonesian because the operator is, and because every other prompt in this
  * repo that speaks to the admin surface is (`insightPrompt`). The article itself may be in
@@ -97,6 +99,7 @@ function systemPrompt(locale: Locale, reasons: readonly AdviceReason[]): string 
   const wantSections = reasons.includes('no-sections');
   const wantDescription = reasons.includes('no-description');
   const wantAnchors = reasons.includes('derived-anchors');
+  const wantTitle = reasons.includes('no-title');
 
   return [
     'Kamu membantu satu operator menyiapkan artikel untuk situs tarot JMTarot.',
@@ -106,7 +109,8 @@ function systemPrompt(locale: Locale, reasons: readonly AdviceReason[]): string 
     'Kamu hanya mengembalikan METADATA. Prosa penulisnya tetap apa adanya.',
     '',
     'Jawab HANYA dengan satu objek JSON, tanpa penjelasan dan tanpa blok kode:',
-    '{"headings":[{"at":<angka>,"text":"<judul bagian>","id":"<anchor>"}],',
+    '{"title":"<judul artikel>",',
+    ' "headings":[{"at":<angka>,"text":"<judul bagian>","id":"<anchor>"}],',
     ' "anchors":[{"at":<angka>,"id":"<anchor>"}],',
     ' "description":"<deskripsi meta>"}',
     '',
@@ -118,9 +122,25 @@ function systemPrompt(locale: Locale, reasons: readonly AdviceReason[]): string 
     '   dan bukan potongan dari paragrafnya. Tanpa markdown, tanpa tanda bintang, tanpa #.',
     `4. "description" adalah dua baris yang dicetak Google di bawah judul: ${DESCRIPTION_MIN}–${DESCRIPTION_MAX}`,
     '   karakter, satu baris, kalimat yang membuat orang mengeklik. Bukan ringkasan isi.',
-    '5. Nama kartu tetap bahasa Inggris: The Moon, The Fool, Death. Jangan diterjemahkan.',
-    '6. Jangan menyarankan judul untuk blok yang sudah punya judul di atasnya.',
+    /*
+     * **THE LANGUAGE RULE IS STATED TWICE ON PURPOSE, AND THE SECOND TIME IS THE ONE THAT
+     * MATTERS.** This whole prompt is Indonesian because the operator is, so a model reading
+     * it has every reason to answer in Indonesian — which is exactly wrong for an English
+     * article. The instruction at the top names the article's language; this one names the
+     * consequence for the field a reader actually sees.
+     */
+    `5. "title" adalah judul artikelnya: satu kalimat pendek, di bawah 70 karakter dan`,
+    `   tidak boleh lebih dari ${TITLE_MAX}. **Tulis dalam bahasa ${LANGUAGE[locale]}, yaitu bahasa`,
+    '   artikelnya — BUKAN bahasa instruksi ini.** Bukan judul bagian pertama, melainkan',
+    '   judul untuk keseluruhan tulisan. Tanpa markdown dan tanpa tanda kutip.',
+    '6. Nama kartu tetap bahasa Inggris: The Moon, The Fool, Death. Jangan diterjemahkan.',
+    '   Istilah "Major Arcana" dan "Minor Arcana" juga tetap dalam urutan Inggris itu —',
+    '   jangan ditulis "Arcana Major".',
+    '7. Jangan menyarankan judul bagian untuk blok yang sudah punya judul di atasnya.',
     '',
+    wantTitle
+      ? 'Kolom judul artikel masih kosong. Tulis "title".'
+      : 'Judul artikelnya sudah ada. Kembalikan "title" sebagai string kosong.',
     wantSections
       ? 'Artikel ini belum punya bagian. Tentukan di mana bagian-bagiannya mulai dan beri judul.'
       : 'Artikel ini sudah punya bagian. Kembalikan "headings" sebagai daftar kosong.',
