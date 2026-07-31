@@ -116,43 +116,68 @@ export const BLOG = {
     chars: (n: number) => `${n} karakter`,
     heroCard: 'Gambar utama',
     heroNone: '(tanpa gambar)',
-    heroAlt: 'Teks alternatif gambar',
-    heroAltHint:
-      'Gambarkan lukisannya untuk orang yang tidak bisa melihatnya, jangan ulangi nama kartunya — namanya sudah ada di judul dan di teks. Minimal 60 karakter.',
+    /*
+     * `heroAlt` and `heroAltHint` are DELETED, not emptied. The field asked an admin to
+     * write a string that already exists in the card's own lore document, and all four
+     * committed articles answered it with the card's name -- the one thing
+     * `LoreDoc.imageAlt` forbids. `@/lib/content/heroAlt` derives it now.
+     */
+    heroDerived: 'Teks alternatifnya diambil dari halaman kartu ini, jadi tidak perlu ditulis.',
 
-    blocks: 'Blok',
-    addBelow: 'Tambah blok di bawah',
-    moveUp: '↑',
-    moveDown: '↓',
-    remove: '⨯',
-    kind: {
-      heading: 'Judul bagian',
-      paragraph: 'Paragraf',
-      list: 'Daftar',
-      quote: 'Kutipan',
-      cardRef: 'Kartu',
-    } satisfies Record<string, string>,
-    level: 'Tingkat',
-    anchorId: 'id (anchor)',
-    ordered: 'Bernomor (<ol>)',
-    orderedHint: 'Semantik, bukan gaya. Lima langkah berurutan yang dirender sebagai bulan adalah prosedur yang berbohong.',
-    quoteSource: 'Sumber',
-    listItem: 'Butir',
-    addItem: 'Tambah butir',
-    cardSlug: 'Kartu',
-    spanKind: { text: 'teks', em: 'miring', strong: 'tebal', link: 'tautan' } satisfies Record<
-      string,
-      string
-    >,
-    addSpan: 'Tambah span',
-    spanPath: 'path',
-    plainToggle: 'teks biasa',
-    plainHint: 'Simpan sebagai satu string, tanpa penekanan dan tanpa tautan.',
-    /** A6-31. The strip is the diff. */
-    joined: 'Hasil gabungan',
-    joinedHint:
-      'Titik tengah menandai spasi di batas antar-span. Spasi itu tidak ditambahkan oleh apa pun — kalau hilang, dua kata menempel jadi satu.',
-    glued: 'Dua span menempel jadi satu kata di sini.',
+    /*
+     * ── THE BLOCK EDITOR'S COPY IS DELETED ──────────────────────────────────
+     *
+     * `blocks`, `addBelow`, `moveUp`, `moveDown`, `remove`, `kind`, `level`, `anchorId`,
+     * `ordered`, `orderedHint`, `quoteSource`, `listItem`, `addItem`, `cardSlug`,
+     * `spanKind`, `addSpan`, `spanPath`, `plainToggle`, `plainHint`, `joined`,
+     * `joinedHint` and `glued` all went with `BlockEditor.tsx`.
+     *
+     * **A6-31's `joined`/`joinedHint`/`glued` ARE THE ONES WORTH NAMING.** The middle-dot
+     * strip existed because an HTML form field shows a trailing space no more than it
+     * trims one, so `para(s('Lihat '), link('/gallery', 'galeri'))` rendered `Lihatgaleri`
+     * with nothing on screen saying so. **In markdown the space is IN the text**, in the
+     * position a diff would show it — `Lihat [galeri](/gallery)` — and `parseMarkdown`
+     * cannot produce a glued pair from it at all. The rule did not go: `spansSeparate` and
+     * the save-time refusal are untouched, and `markdown.test.ts` asserts the parse never
+     * emits an adjacent pair the lint would object to, over the four real documents.
+     */
+
+    // ── the markdown editor ────────────────────────────────────────────────
+    content: 'Konten',
+    contentHint:
+      'Tempelkan tulisannya di sini, markdown atau teks biasa. "## " di depan judul bagian, "- " untuk daftar, "**tebal**", "[teks](/path)" untuk tautan. Kalau belum ada judul bagian, tekan Format otomatis dan biarkan model yang menandainya.',
+    /**
+     * **THE SUFFIX HAS TO BE EXPLAINED SOMEWHERE OR IT READS AS A TYPO**, and it appears in
+     * the textarea on every existing article: the four committed ones are English ids on
+     * Indonesian headings, which `slugify` cannot derive. An anchor is a permanent address.
+     */
+    anchorSyntaxHint:
+      '"## Judul {#anchor-id}" mengunci anchor-nya. Tanpa itu, anchor diambil dari judulnya sendiri. Anchor adalah alamat permanen di URL — jangan diubah setelah artikelnya terbit.',
+    seoSection: 'SEO',
+    seoSummary: (n: number) =>
+      n === 0 ? 'deskripsi belum ada' : `deskripsi terisi · ${n} karakter`,
+
+    // ── auto-format ────────────────────────────────────────────────────────
+    format: 'Format otomatis',
+    formatting: 'Memformat…',
+    /**
+     * **IT SAYS "DAN MENYIMPAN", BECAUSE IT DOES.** This is the one admin button that
+     * writes as a side effect of a model call, and `Terjemahkan otomatis` right beside it
+     * does the opposite — so a label that did not say so would leave two adjacent buttons
+     * with opposite storage behaviour and no way to tell.
+     */
+    formatHint:
+      'Membaca Konten, merapikan strukturnya, membuat daftar isi dari judul-judul bagian, lalu MENYIMPAN sebagai draf. Kalau tulisannya belum punya judul bagian atau deskripsinya masih kosong, satu panggilan model dipakai untuk itu.',
+    formatDone: (blocks: number, headings: number) =>
+      headings > 0
+        ? `Tersimpan: ${blocks} blok, ${headings} judul bagian ditambahkan.`
+        : `Tersimpan: ${blocks} blok. Strukturnya sudah rapi, model tidak dipakai.`,
+    formatFailed: 'Format otomatis gagal.',
+    formatTimedOut:
+      'Permintaan melewati batas waktu. Draf MUNGKIN sudah tersimpan — muat ulang halaman ini dan lihat.',
+    /** What `validateAdvice` threw away. A count in the event, the sentences here. */
+    formatRejected: (n: number) =>
+      `${n} saran dari model dibuang karena bentuknya tidak sah. Isi tulisannya tidak berubah.`,
 
     // ── auto-translate ────────────────────────────────────────────────────
     translate: 'Terjemahkan otomatis',
@@ -203,9 +228,24 @@ export const BLOG = {
     } satisfies Record<string, string>,
 
     previewTitle: 'Pratinjau',
-    /** A6-32, amended. See the page's header: `Prose` is a SERVER component. */
-    previewStale:
-      'Pratinjau menampilkan versi yang TERSIMPAN, bukan yang sedang kamu ketik. Simpan untuk memperbaruinya.',
+    /*
+     * **`previewStale` IS DELETED, NOT REWORDED.** It said *"satu simpan di belakang"* and
+     * that stopped being true when `Format otomatis` began writing the draft row and
+     * navigating (design R5). A hint that describes a staleness the pane no longer has
+     * teaches an operator to distrust what they are looking at, which is worse than no hint.
+     *
+     * `Simpan` also navigates on a create, and on an update the pane re-renders from the
+     * server on the next load — so the only way to see stale prose here is to type without
+     * pressing either button, which is the state the two buttons exist to leave.
+     */
+    /** The label above the previewed outline. A PROP to `ArticleToc`, so it needs no `t()`. */
+    previewToc: 'Di dalam tulisan ini',
+    /**
+     * **THIS ONE STAYS.** `Prose` resolves the locale itself, so an `en` document previewed
+     * by an Indonesian admin shows `/arcana/the-moon` where the live page shows
+     * `/en/arcana/the-moon`. A6 accepted that and put the sentence on screen; the markdown
+     * editor changes nothing about it.
+     */
     previewHref:
       'Tautan di pratinjau memakai bahasa admin, bukan bahasa dokumen. Bentuk path-nya tetap diperiksa oleh lint.',
     previewEmpty: 'Belum ada yang tersimpan untuk bahasa ini.',

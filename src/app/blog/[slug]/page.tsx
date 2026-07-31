@@ -2,12 +2,13 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
 import { JsonLd } from '@/components/JsonLd';
+import { ArticleToc } from '@/components/ArticleToc';
 import { Prose } from '@/components/Prose';
 import { PublicPageViewed } from '@/components/PublicPageViewed';
 import { PublicShare } from '@/components/PublicShare';
 import { PublicShell } from '@/components/PublicShell';
 import { cardByUrlSlug, cardImage } from '@/data/deck';
-import { headingIds, readingMinutes, wordCount } from '@/lib/content/doc';
+import { readingMinutes, wordCount } from '@/lib/content/doc';
 import { formatLocalDate } from '@/lib/i18n/format';
 import { localePath } from '@/lib/i18n/prefix';
 import { getLocale, getT } from '@/lib/i18n/t';
@@ -198,8 +199,7 @@ export default async function BlogArticlePage({ params }: Params) {
     locales: facts.locales,
   }).canonical;
 
-  const sections = doc.body.filter((b) => b.kind === 'heading' && b.level === 2);
-  const anchors = headingIds(doc.body, 2);
+  // `sections` and `anchors` moved into `ArticleToc` with the markup.
   const minutes = readingMinutes(wordCount(doc.body));
   const card = doc.hero ? cardByUrlSlug(doc.hero.cardUrlSlug) : undefined;
 
@@ -252,29 +252,16 @@ export default async function BlogArticlePage({ params }: Params) {
           {` · ${t.plural('blog.readingTime', minutes)}`}
         </p>
 
-        {anchors.length > 2 ? (
-          <nav className={styles.toc} aria-labelledby="toc-title">
-            <p className={styles.tocTitle} id="toc-title">
-              {t('blog.inThisArticle')}
-            </p>
-            {/*
-              A real list of real anchors. It works with JavaScript off, a crawler reads it
-              as the document's outline, and the three orientation sections a reader who
-              arrived knowing nothing needs are its first three rows.
-
-              `<ol>`, because an article's sections are in an order the author chose.
-            */}
-            <ol className={styles.tocList}>
-              {sections.map((block) =>
-                block.kind === 'heading' && block.id ? (
-                  <li key={block.id}>
-                    <a href={`#${block.id}`}>{block.text}</a>
-                  </li>
-                ) : null,
-              )}
-            </ol>
-          </nav>
-        ) : null}
+        {/*
+          **ONE DEFINITION OF THE OUTLINE, TWO MOUNTS** (2026-07-31, §9). The markup moved to
+          `ArticleToc` so the admin preview shows the same box this page does — it had
+          existed since S6 and no operator had ever seen it, because the preview mounted
+          `Prose` alone without the page chrome. The `> 2` threshold and every CSS
+          declaration went with it unchanged, because this box renders on four published
+          pages. The label is a PROP so the component needs no `t()`, which is what lets the
+          admin tree mount it without breaking `adminCopy.test.ts`.
+        */}
+        <ArticleToc blocks={doc.body} label={t('blog.inThisArticle')} />
 
         {/* `data-article-body` is loop 4's hook — `public/cards/_blogfit.html` measures
             the rendered character count and `scrollWidth > clientWidth` inside it. It is

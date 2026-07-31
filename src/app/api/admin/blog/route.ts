@@ -137,6 +137,16 @@ async function save(request: Request, intent: 'create' | 'update') {
         action: result.action,
         blocks,
         lint_violations: result.violations.length,
+        /*
+         * **`via` AND `model_called`, ADDED 2026-07-31 WITH THE MARKDOWN EDITOR.** Auto
+         * Format writes through `saveDocument` on its own route, so without these two the
+         * save metric would either undercount every automated save or blend two very
+         * different actions into one number. `model_called` is always `false` here: a
+         * hand-typed save reaches no provider, and saying so is what makes the `true`
+         * rows on the other path mean something.
+         */
+        via: 'form',
+        model_called: false,
       });
     },
   );

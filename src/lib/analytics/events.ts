@@ -172,6 +172,21 @@ export const EVENT_NAMES = [
    * A1 owns this file for v0.5.0 (S-D13's rule). A6 declares the two `blog` names;
    * folding a declaration in means TRANSCRIBING it, not narrowing it, so their prop
    * shapes below are A6's words.
+   *
+   * **THE MARKDOWN EDITOR (2026-07-31) CONTRIBUTES ZERO NAMES AND WIDENED ONE PROP SHAPE
+   * INSTEAD, WHICH IS V3's PRECEDENT AND THIS FILE'S OWN RULE.** *Expect to FOLD rather
+   * than add, and write down what you folded* -- so here is what was folded.
+   *
+   * `admin.blog_formatted` was drafted, with `blocks`, `model_called`, `headings_added`,
+   * `advice_rejected` and a four-value `outcome`. It did not land, and trying to justify it
+   * surfaced a defect in the route instead: **Auto Format WRITES a row, so a separate name
+   * would have meant a save that fired no `admin.blog_saved` and an undercounted save
+   * metric.** The press is a save; what makes it interesting is HOW it happened.
+   *
+   * So `admin.blog_saved` gained `via` and `model_called`, and the other three drafted
+   * props were dropped rather than carried: `headings_added` and `advice_rejected` are
+   * diagnostics the operator already reads in the response, and `outcome` duplicates the
+   * fact that a refused save fires no event at all.
    */
   'admin.page_viewed',
   'admin.blog_saved',
@@ -822,8 +837,24 @@ export type EventMap = {
    * `admin.blog_status_changed` is A6's `'draft' | 'published' | 'unpublished'` for
    * both `from` and `to`.
    */
+  /*
+   * **`via` AND `model_called` ARE THE MARKDOWN EDITOR'S WIDENING, 2026-07-31**, and the
+   * header above records what was folded to avoid a new name. Both are closed sets: `via`
+   * is `'form' | 'auto_format'`, spelled as a union here because this file has no imports
+   * and needs none for two literals.
+   *
+   * **`model_called` IS THE ONE THAT DECIDES WHETHER THE ELEVENTH `op` WAS WORTH IT.** It
+   * is always `false` for `via: 'form'`, which is truthful rather than padding -- a
+   * hand-typed save calls no model. For `auto_format` it answers the only question the
+   * feature has: a paste out of Gemini or ChatGPT is already `##`-sectioned, so
+   * `adviceNeeded()` should have nothing to ask and the press should reach no provider.
+   * **False on nearly every press confirms the design; true on nearly every press means
+   * the markdown parser is missing something, and THAT is the fix rather than a bigger
+   * prompt.**
+   */
   'admin.blog_saved':          { slug: string; locale: string; action: 'create' | 'update';
-                                 blocks: number; lint_violations: number };
+                                 blocks: number; lint_violations: number;
+                                 via: 'form' | 'auto_format'; model_called: boolean };
   'admin.blog_status_changed': { slug: string; locale: string; from: string; to: string };
 
   'analytics.local_date_fallback': { reason: 'absent' | 'malformed' | 'out_of_range'; received: string | null; surface: string };

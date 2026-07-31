@@ -26,6 +26,7 @@
 import type { Locale } from '@/data/types';
 import { documentSchema } from '@/lib/content/blockSchema';
 import { resolveViolations } from '@/lib/content/blogResolve';
+import { heroAltFor } from '@/lib/content/heroAlt';
 import { canTransition, isBlogStatus, type BlogStatus, type TransitionRefusal } from '@/lib/content/blogStatus';
 import { hasErrors, lintDocument, rulesFor, type LintDoc, type LintViolation } from '@/lib/content/lint';
 import { getForEdit, idStatusOf, setStatus, upsertDocument } from '@/lib/db/queries/admin/blog';
@@ -95,7 +96,48 @@ export async function saveDocument(
       ),
     };
   }
-  const doc: LintDoc = parsed.data;
+  /*
+   * **THE `alt` IS DERIVED HERE, BEFORE THE LINT, AND THE ORDER IS THE POINT.**
+   *
+   * `heroAltFor()` reads the card's own lore document — see that module's header for the
+   * four indexed pages that shipped `alt: 'The World'`, and for why `hero-pair` could
+   * not catch it. Deriving before `lintDocument` means the lint inspects the string that
+   * will actually be stored and rendered, so `hero-pair` becomes a check on the LORE
+   * documents rather than on an admin's typing, and it can no longer fire for anything
+   * saved through this path.
+   *
+   * **A CARD WITH NO LORE DOCUMENT IS AN ERROR-CLASS REFUSAL, NOT AN EMPTY `alt`.** All
+   * twenty-two have one today, so this cannot fire — and identical-today is exactly when
+   * somebody simplifies one of two lists (R2's argument). The alternative degradations
+   * are both worse than a refusal: `''` lies to a screen reader on a
+   * perfectly-normal-looking page (A6-11), and the card name is the defect being fixed.
+   */
+  const heroAlt =
+    parsed.data.hero !== null ? heroAltFor(parsed.data.hero.cardUrlSlug, parsed.data.locale) : null;
+
+  if (parsed.data.hero !== null && heroAlt === null) {
+    return {
+      kind: 'invalid',
+      violations: [
+        {
+          rule: 'hero-pair',
+          cls: 'error',
+          locale: parsed.data.locale,
+          field: 'hero',
+          detail: 'that card has no lore document, so there is no alt text to derive',
+          excerpt: parsed.data.hero.cardUrlSlug,
+        },
+      ],
+    };
+  }
+
+  const doc: LintDoc = {
+    ...parsed.data,
+    hero:
+      parsed.data.hero !== null && heroAlt !== null
+        ? { cardUrlSlug: parsed.data.hero.cardUrlSlug, alt: heroAlt }
+        : null,
+  };
 
   /*
    * **`rulesFor(slug)`, NOT `ARTICLE_RULES`** (R44). The two launch slugs keep the
@@ -182,14 +224,33 @@ export async function changeStatus(
   const row = article?.locales.find((l) => l.locale === locale);
   if (!row) return { kind: 'not-found' };
 
+  /*
+   * **THE PUBLISH GATE LINTS THE DERIVED `alt`, NOT THE STORED ONE**, for the same
+   * reason `saveDocument` does: the derivation is what a save writes, so linting the
+   * stored string would judge this transition against a value the next save replaces.
+   *
+   * It also means a row written BEFORE the derivation landed can still be published. The
+   * four launch rows are exactly that case — `scripts/blog-import.ts` wrote them with the
+   * card name as `alt` and set `status: 'published'` directly, bypassing this gate — and
+   * refusing to publish an article because of a defect this change already fixed on the
+   * write path would be the gate punishing somebody for the old bug.
+   *
+   * **THE RESIDUAL IS NAMED RATHER THAN HIDDEN:** such a row renders its STORED `alt`
+   * until something saves it. Re-running the import script, or one press of Simpan,
+   * fixes it. Deriving on READ instead would fix it everywhere at once and would cost
+   * `blogRow.ts` its purity — it would have to import all forty-four lore documents —
+   * and that module is A6-35's byte-identity oracle.
+   */
+  const derivedAlt = row.heroCardSlug !== null ? heroAltFor(row.heroCardSlug, locale) : null;
+
   const doc: LintDoc = {
     locale,
     slug,
     title: row.title,
     description: row.description,
     hero:
-      row.heroCardSlug !== null && row.heroAlt !== null
-        ? { cardUrlSlug: row.heroCardSlug, alt: row.heroAlt }
+      row.heroCardSlug !== null && derivedAlt !== null
+        ? { cardUrlSlug: row.heroCardSlug, alt: derivedAlt }
         : null,
     body: row.body,
   };

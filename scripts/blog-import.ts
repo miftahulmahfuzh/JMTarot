@@ -55,10 +55,16 @@
  * introduce prose the API would have refused** — which would leave the database in a
  * state the editor cannot save back.
  *
- * It gates on the ERROR class only. The four documents carry **eight warnings between
- * them**, all one finding: every hero `alt` is the bare card name. That is a real
- * defect in v0.4.0's prose rather than a mis-calibrated lint, it does not block the
- * import, and it is printed so nobody has to discover it later.
+ * It gates on the ERROR class only. The four documents used to carry **eight warnings
+ * between them**, all one finding: every hero `alt` is the bare card name.
+ *
+ * **THAT DEFECT IS NOW FIXED RATHER THAN PRINTED, AND THE PARAGRAPH ABOVE IS KEPT
+ * BECAUSE IT WAS RIGHT ABOUT WHOSE FAULT IT WAS.** It was *"a real defect in v0.4.0's
+ * prose rather than a mis-calibrated lint"*, and it was knowingly imported. `alt` is no
+ * longer read from the committed document at all: `heroAltForDoc` derives it from the
+ * card's own `LoreDoc.imageAlt`, which is the string `lore.test.ts` already holds to >=60
+ * characters and to not opening with the card name. **So re-running this script is the
+ * repair for the four live rows**, and the eight warnings are gone at the source.
  */
 import { config } from 'dotenv';
 import { and, eq } from 'drizzle-orm';
@@ -66,12 +72,40 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { BLOG_ARTICLES } from '@/content/blog';
 import { resolveViolations } from '@/lib/content/blogResolve';
+import { heroAltFor } from '@/lib/content/heroAlt';
 import { formatViolation, hasErrors, lintDocument, rulesFor, type LintDoc } from '@/lib/content/lint';
 import * as schema from '@/lib/db/schema';
 import { blogPostLocales, blogPosts } from '@/lib/db/schema';
 import { wordCount } from '@/lib/content/doc';
 
 config({ path: '.env.local', quiet: true });
+
+/**
+ * The hero pair for one committed document, with `alt` DERIVED.
+ *
+ * **THROWS RATHER THAN WRITING A HALF-SET PAIR.** The CHECK constraint
+ * `blog_post_locales_hero_pair_ck` asserts `hero_card_slug IS NULL = hero_alt IS NULL`, so
+ * a `null` from `heroAltFor` beside a non-null slug is a constraint violation mid-
+ * transaction with a driver error naming a column. A script may throw; it has an operator
+ * reading its output, which is the whole difference between here and the request path.
+ */
+function heroLinted(doc: LintDoc): LintDoc {
+  const alt = heroAltForDoc(doc);
+  return doc.hero !== null && alt !== null
+    ? { ...doc, hero: { cardUrlSlug: doc.hero.cardUrlSlug, alt } }
+    : doc;
+}
+
+function heroAltForDoc(doc: LintDoc): string | null {
+  if (doc.hero === null) return null;
+  const alt = heroAltFor(doc.hero.cardUrlSlug, doc.locale);
+  if (alt === null) {
+    throw new Error(
+      `${doc.slug}.${doc.locale}: hero card '${doc.hero.cardUrlSlug}' has no lore document, so there is no alt to derive`,
+    );
+  }
+  return alt;
+}
 
 const FORCE = process.argv.includes('--force');
 const DRY = process.argv.includes('--dry');
@@ -96,7 +130,12 @@ async function main(): Promise<void> {
       entry,
       locale,
       doc: entry.docs[locale]!,
-      lint: { ...entry.docs[locale]!, slug: entry.slug } as LintDoc,
+      /*
+       * **THE LINT SEES THE DERIVED `alt`, NOT THE COMMITTED ONE**, so what it reports is
+       * what the row will hold. Linting the committed string would print the eight
+       * warnings this change exists to remove and would be judging prose nobody stores.
+       */
+      lint: heroLinted({ ...entry.docs[locale]!, slug: entry.slug } as LintDoc),
     })),
   );
 
@@ -182,7 +221,19 @@ async function main(): Promise<void> {
             title: doc.title,
             description: doc.description,
             heroCardSlug: doc.hero?.cardUrlSlug ?? null,
-            heroAlt: doc.hero?.alt ?? null,
+            /*
+             * **DERIVED, NOT TRANSCRIBED, AND THAT IS A CORRECTION TO WHAT THESE FOUR
+             * ROWS ALREADY HOLD.** All four committed documents spell `alt` as the card's
+             * own name -- `'The World'`, `'The High Priestess'`, `'The Hermit'` -- which is
+             * the one thing `LoreDoc.imageAlt` forbids and `lore.test.ts` refuses on the
+             * forty-four lore pages. `hero-pair` is warning-class and this script writes
+             * `status: 'published'` directly rather than through `changeStatus`, so the
+             * gate that would have caught it was never on the path that made the rows.
+             *
+             * Re-running this script is therefore the repair for the four live rows. See
+             * `@/lib/content/heroAlt`.
+             */
+            heroAlt: heroAltForDoc(doc),
             body: doc.body,
             createdAt: modified,
             updatedAt: modified,
@@ -194,7 +245,7 @@ async function main(): Promise<void> {
               title: doc.title,
               description: doc.description,
               heroCardSlug: doc.hero?.cardUrlSlug ?? null,
-              heroAlt: doc.hero?.alt ?? null,
+              heroAlt: heroAltForDoc(doc),
               body: doc.body,
               // A6-33 again: the COMMITTED date, never `now()`.
               updatedAt: modified,

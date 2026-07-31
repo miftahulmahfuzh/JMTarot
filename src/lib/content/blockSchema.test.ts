@@ -23,7 +23,13 @@ describe('the four committed bodies parse, so the refusals below are not vacuous
           locale,
           title: doc.title,
           description: doc.description,
-          hero: doc.hero,
+          /*
+           * **THE SUBMITTED SHAPE IS THE SLUG ALONE.** `alt` is derived on the save path
+           * from the card's own `LoreDoc.imageAlt`, so the committed documents' own `alt`
+           * -- which is the bare card name on all four, the defect §7 exists to fix -- is
+           * not what a client sends and not what gets stored.
+           */
+          hero: doc.hero ? { cardUrlSlug: doc.hero.cardUrlSlug } : null,
           body: doc.body,
         });
         if (!r.success) failures.push(`${entry.slug}.${locale}: ${r.error.issues[0]?.message}`);
@@ -132,24 +138,39 @@ describe('the five kinds, each accepted in its real authored form', () => {
   });
 });
 
-describe('the hero is both fields or null, never half-set (A6-11)', () => {
-  it('accepts null and both fields', () => {
+describe('A6-11 -- the hero pair is satisfied by CONSTRUCTION now, not by validation', () => {
+  /*
+   * **THE RULE IS INTACT AND ITS ENFORCEMENT POINT MOVED**, which is the same shape as
+   * A13's throttle moving to `personaStaleness`. *Both fields or null, never a half-set
+   * object* used to be a zod refusal; it is now impossible to express, because the
+   * submitted shape carries no `alt` at all and `heroAltFor()` supplies it.
+   *
+   * An empty `alt` on a hero image is still an accessibility failure that renders as a
+   * perfectly normal-looking page -- that argument has not weakened. What changed is that
+   * an admin can no longer type one, and `blogSave` refuses error-class rather than
+   * writing `''` when a card has no lore document.
+   */
+  it('accepts null and a bare slug', () => {
     expect(heroSchema.safeParse(null).success).toBe(true);
-    expect(heroSchema.safeParse({ cardUrlSlug: 'the-moon', alt: 'A described painting.' }).success).toBe(
-      true,
-    );
+    expect(heroSchema.safeParse({ cardUrlSlug: 'the-moon' }).success).toBe(true);
   });
 
-  it('refuses a card with no alt, and an alt with no card', () => {
+  it('refuses an `alt` outright rather than stripping it', () => {
     /*
-     * An empty `alt` on a hero image is an accessibility failure that renders as a
-     * perfectly normal-looking page. The CHECK constraint is one half and this is the
-     * other; the transform is the third, and it must never construct
-     * `{ cardUrlSlug: row.heroCardSlug!, alt: row.heroAlt ?? '' }`.
+     * **`.strict()` IS WHAT MAKES THE DELETION REAL.** zod's default strips an unknown key
+     * silently, so an old editor build or a script written against the old shape would
+     * appear to work while its `alt` was discarded and replaced. A `422` says what
+     * happened.
      */
-    expect(heroSchema.safeParse({ cardUrlSlug: 'the-moon' }).success).toBe(false);
+    expect(heroSchema.safeParse({ cardUrlSlug: 'the-moon', alt: 'A described painting.' }).success).toBe(
+      false,
+    );
     expect(heroSchema.safeParse({ cardUrlSlug: 'the-moon', alt: '' }).success).toBe(false);
-    expect(heroSchema.safeParse({ alt: 'x' }).success).toBe(false);
+  });
+
+  it('still refuses a hero with no card', () => {
+    expect(heroSchema.safeParse({}).success).toBe(false);
+    expect(heroSchema.safeParse({ cardUrlSlug: '' }).success).toBe(false);
   });
 });
 

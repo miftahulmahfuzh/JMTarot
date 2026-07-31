@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { cardRef, h2, link, para, s } from '@/content/blocks';
 import type { Block } from '@/content/types';
+import { heroAltFor } from '@/lib/content/heroAlt';
 import { listAllArticles, setStatus, upsertDocument } from '@/lib/db/queries/admin/blog';
 import { loadArticle } from '@/lib/db/queries/blog';
 import { closeTestDb, withRollback } from '@/lib/db/testing/harness';
@@ -301,3 +302,133 @@ describe('changeStatus — the state machine, over real rows', () => {
     });
   });
 });
+
+
+/**
+ * §7. **THE HERO `alt` IS DERIVED, AND EVERY CASE ABOVE THIS POINT USES `hero: null`** —
+ * which is why nothing caught the four launch articles shipping the bare card name.
+ *
+ * The claim that needs a database is the one about the column: `hero_pair_ck` asserts
+ * `hero_card_slug IS NULL = hero_alt IS NULL`, and *"deriving on write keeps the column
+ * populated with no migration"* is a statement about a constraint, not about a function.
+ */
+describe('§7 — the hero alt is derived on write, and the CHECK constraint holds', () => {
+  it('stores the card’s own `LoreDoc.imageAlt` for the document’s locale', async () => {
+    await withRollback(async (tx) => {
+      const r = await saveDocument(asDb(tx), 'create', doc({ hero: { cardUrlSlug: 'the-moon' } }));
+      expect(r.kind).toBe('ok');
+
+      const loaded = await loadArticleRow(tx);
+      expect(loaded.heroCardSlug).toBe('the-moon');
+      // Not a transcription of the expected words: the SAME read the app makes.
+      expect(loaded.heroAlt).toBe(heroAltFor('the-moon', 'id'));
+      expect((loaded.heroAlt ?? '').length).toBeGreaterThanOrEqual(60);
+    });
+  });
+
+  it('follows the LOCALE, so `en` gets the English painting description', async () => {
+    /*
+     * The English lore documents are REWRITTEN rather than translated (§8.2), so these are
+     * two different sentences about one painting and the row must hold the right one. This
+     * is also why `hero.alt` left the translation segment walk: translating the Indonesian
+     * one would mint a third.
+     */
+    await withRollback(async (tx) => {
+      await saveDocument(asDb(tx), 'create', doc({ hero: { cardUrlSlug: 'the-moon' } }));
+      const r = await saveDocument(
+        asDb(tx),
+        'create',
+        doc({ locale: 'en', title: 'What tarot is', description:
+          'A short guide for anyone holding a deck for the first time and wondering where on earth to begin with it.',
+          hero: { cardUrlSlug: 'the-moon' } }),
+      );
+      expect(r.kind).toBe('ok');
+
+      const rows = await listAllArticles(tx);
+      const byLocale = new Map(
+        (rows.find((a) => a.slug === 'apa-itu-tarot')?.locales ?? []).map((l) => [l.locale, l]),
+      );
+      expect(byLocale.get('id')!.heroAlt).toBe(heroAltFor('the-moon', 'id'));
+      expect(byLocale.get('en')!.heroAlt).toBe(heroAltFor('the-moon', 'en'));
+      expect(byLocale.get('id')!.heroAlt).not.toBe(byLocale.get('en')!.heroAlt);
+    });
+  });
+
+  it('leaves BOTH columns null when there is no hero, satisfying `hero_pair_ck`', async () => {
+    await withRollback(async (tx) => {
+      expect((await saveDocument(asDb(tx), 'create', doc({ hero: null }))).kind).toBe('ok');
+      const loaded = await loadArticleRow(tx);
+      expect([loaded.heroCardSlug, loaded.heroAlt]).toEqual([null, null]);
+    });
+  });
+
+  it('refuses a submitted `alt` outright rather than storing it', async () => {
+    /*
+     * `.strict()` on `heroSchema`. zod's default would STRIP the key silently and the
+     * derivation would then overwrite it — so an old editor build would appear to work.
+     * **A 422 is what says the field is gone.** And *stores nothing* is the half only a
+     * database can check.
+     */
+    await withRollback(async (tx) => {
+      const r = await saveDocument(
+        asDb(tx),
+        'create',
+        doc({ hero: { cardUrlSlug: 'the-moon', alt: 'Sesuatu yang ditulis tangan.' } }),
+      );
+      expect(r.kind).toBe('invalid');
+      expect(await listAllArticles(tx)).toEqual([]);
+    });
+  });
+
+  it('refuses error-class when the card has no lore document, and writes nothing', async () => {
+    /*
+     * Unreachable today — all 22 cards have one — and the branch exists because
+     * identical-today is when somebody simplifies one of two lists (R2). The alternative
+     * degradations are both worse: `''` lies to a screen reader on a normal-looking page,
+     * and the card name is the defect being fixed.
+     *
+     * `the-mooon` is refused by `resolveViolations` first, which is the belt to this brace;
+     * what this asserts is that the outcome is a refusal with NOTHING stored either way.
+     */
+    await withRollback(async (tx) => {
+      const r = await saveDocument(asDb(tx), 'create', doc({ hero: { cardUrlSlug: 'the-mooon' } }));
+      expect(r.kind).toBe('invalid');
+      expect(await listAllArticles(tx)).toEqual([]);
+    });
+  });
+
+  it('lets a legacy row with a bad stored alt still be published', async () => {
+    /*
+     * The four launch rows are exactly this case: `scripts/blog-import.ts` wrote the card
+     * name as `alt` and set `status: 'published'` directly, bypassing the gate. `hero-pair`
+     * is what would refuse them now, so `changeStatus` lints the DERIVED value — refusing
+     * to publish because of a defect this change already fixed on the write path would be
+     * the gate punishing somebody for the old bug.
+     */
+    await withRollback(async (tx) => {
+      await upsertDocument(tx, {
+        slug: 'apa-itu-tarot',
+        locale: 'id',
+        title: 'Apa itu tarot',
+        description:
+          'Panduan singkat untuk siapa pun yang baru memegang setumpuk kartu dan ingin tahu harus mulai dari mana.',
+        // The v0.4.0 shape: the bare card name, nine characters, opening with the name.
+        hero: { cardUrlSlug: 'the-moon', alt: 'The Moon' },
+        body,
+      });
+      const r = await changeStatus(asDb(tx), 'apa-itu-tarot', 'id', 'published');
+      expect(r).toMatchObject({ kind: 'ok', to: 'published' });
+      expect(r.kind === 'ok' && r.violations).toEqual([]);
+    });
+  });
+});
+
+/** The one `(slug, locale)` row these cases write, read back off the database. */
+async function loadArticleRow(tx: Tx) {
+  const all = await listAllArticles(tx);
+  const article = all.find((a) => a.slug === 'apa-itu-tarot');
+  expect(article, 'the row this case just wrote').toBeDefined();
+  const row = article!.locales.find((l) => l.locale === 'id');
+  expect(row, 'the id locale row').toBeDefined();
+  return row!;
+}

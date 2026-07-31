@@ -76,17 +76,23 @@ describe('the round trip is the identity', () => {
   it('collects every human-readable string and NOTHING else', () => {
     const d = doc({ body: EVERY_SHAPE, hero: { cardUrlSlug: 'the-moon', alt: 'Sebuah lukisan.' } });
     const segs = extractSegments(d);
-    // Titles, description, hero alt, headings, spans, quote text + source, cardRef text.
+    // Titles, description, headings, spans, quote text + source, cardRef text.
     expect(segs).toContain('Mulai dari sini');
     expect(segs).toContain('Seseorang');
-    expect(segs).toContain('Sebuah lukisan.');
     expect(segs).toContain('Paragraf sebagai satu string.');
     /*
-     * **AND NOT ONE ADDRESS OR ANCHOR.** These are the four things a translated document
-     * must carry through byte-identical: an anchor is an interface, and a path or a slug
-     * is an address. A model that never sees them cannot change them.
+     * **AND NOT ONE ADDRESS, ANCHOR OR DERIVED STRING.** These are the things a translated
+     * document must carry through byte-identical: an anchor is an interface, a path or a
+     * slug is an address, and `hero.alt` is derived. A model that never sees them cannot
+     * change them.
+     *
+     * **`hero.alt` LEFT THE LIST ON 2026-07-31 AND THIS ASSERTION IS THE RECORD OF IT.**
+     * It is now the target card's own `LoreDoc.imageAlt`, written by somebody looking at
+     * the painting and already held to >=60 characters by `lore.test.ts` -- so translating
+     * it would mint a THIRD description of one image, differing from both lore documents.
+     * That is the shared-`@id` failure S3 and S4 each paid for, through a new door.
      */
-    for (const structural of ['mulai', 'lanjut', '/gallery', 'the-moon']) {
+    for (const structural of ['mulai', 'lanjut', '/gallery', 'the-moon', 'Sebuah lukisan.']) {
       expect(segs, structural).not.toContain(structural);
     }
   });

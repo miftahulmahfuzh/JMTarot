@@ -89,6 +89,31 @@ const COMPLETE_CALLS: Array<{
     why: 'an ADMIN convenience on a fleet-wide ceiling; the tier is also its kill switch, which is why flagCoverage.test.ts exempts it',
   },
   {
+    /*
+     * **AUTO FORMAT, 2026-07-31, AND IT SPENT THE ELEVENTH `op`.** The row above spent the
+     * tenth and the row above THAT reused `translation` and recorded the cost of doing so
+     * — three admin-only sites, three different answers to the same question, and the
+     * spread is the evidence that each was decided rather than defaulted.
+     *
+     * This one earns a value on `insight`'s argument: a recurring call with no querent
+     * behind it whose price `/admin/tokens` has to be able to state. Reusing `translation`
+     * would have put a third unrelated feature behind one cost row, which is the failure
+     * `blogAutoTranslate`'s header names as its own known caveat.
+     *
+     * `deferred` for the same reason as the other two: the operator is waiting, and must
+     * still be shed before a querent's reading is.
+     *
+     * **THIS IS THE SECOND `flagCoverage` EXEMPTION IN THE ADMIN-ONLY CLASS AND THE LAST
+     * FREE ONE.** A third gets a single `ADMIN_MODEL_CALLS_ENABLED` covering the class.
+     */
+    file: 'src/lib/admin/blogFormat.ts',
+    op: ['blog_format'],
+    opMarker: "{ op: 'blog_format', callClass: 'deferred' }",
+    expect: 'deferred',
+    marker: "callClass: 'deferred'",
+    why: 'an ADMIN convenience on a fleet-wide ceiling, and skipped entirely on an already-sectioned paste; the tier is its kill switch',
+  },
+  {
     file: 'src/lib/moderation/classify.ts',
     op: ['moderation'],
     opMarker: "op: 'moderation'",
@@ -310,7 +335,7 @@ describe('every streamReading() call site reserves for itself', () => {
  */
 describe('the op set is exactly LLMOp, in both directions', () => {
   /** Kept as a literal, NOT derived from the tables -- a set derived from the thing it
-   *  checks cannot disagree with it. This is the tenth value's only home. */
+   *  checks cannot disagree with it. This is the eleventh value's only home. */
   const LLM_OPS: LLMOp[] = [
     'reading',
     'moderation',
@@ -322,9 +347,10 @@ describe('the op set is exactly LLMOp, in both directions', () => {
     'translation',
     'translation_repair',
     'insight',
+    'blog_format',
   ];
 
-  it('the union in types.ts is exactly these ten', () => {
+  it('the union in types.ts is exactly these eleven', () => {
     // Parsed off the source, so widening `LLMOp` without touching this list is red.
     const src = read('src/lib/llm/types.ts');
     const block = src.slice(src.indexOf('export type LLMOp'));

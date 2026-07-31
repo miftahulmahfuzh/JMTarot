@@ -121,10 +121,22 @@ const blockSchema = z.discriminatedUnion('kind', [
  */
 export const bodySchema = z.array(blockSchema).min(1);
 
-/** The hero, or nothing. **BOTH FIELDS OR NULL, NEVER A HALF-SET OBJECT** (A6-11). */
-export const heroSchema = z
-  .strictObject({ cardUrlSlug: z.string().min(1), alt: z.string().min(1) })
-  .nullable();
+/**
+ * The hero, or nothing. **THE SUBMITTED SHAPE CARRIES A SLUG AND NO `alt`.**
+ *
+ * A6-11 said *both fields or null, never a half-set object*, and that rule is intact —
+ * it is now satisfied by CONSTRUCTION rather than by validation. `alt` is derived from
+ * the card's lore document by `heroAltFor()` on the save path, so the submitted document
+ * cannot carry a half-set pair and cannot carry a wrong one either. See
+ * `@/lib/content/heroAlt` for why the field was deleted: four indexed pages shipped
+ * `alt: 'The World'`, which is the one thing `LoreDoc.imageAlt` forbids in its own words.
+ *
+ * **`.strict()` IS WHAT MAKES THE DELETION REAL.** A client still sending `alt` gets a
+ * `422` rather than having it silently stripped and then silently overwritten — so an
+ * old editor build, or a script written against the old shape, fails loudly instead of
+ * appearing to work.
+ */
+export const heroSchema = z.strictObject({ cardUrlSlug: z.string().min(1) }).nullable();
 
 /** One `(slug, locale)` document, as the save endpoint receives it. */
 export const documentSchema = z.strictObject({
