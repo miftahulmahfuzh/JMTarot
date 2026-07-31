@@ -69,6 +69,32 @@ function shift(day: string, byDays: number): string {
   return new Date(t + byDays * 86_400_000).toISOString().slice(0, 10);
 }
 
+/**
+ * The range as a query string, for a LINK that must land on the window the operator is
+ * already looking at.
+ *
+ * ── IT EMITS `from`/`to` AND NEVER `d`, AND THAT IS THE WHOLE POINT ──────────
+ *
+ * `d=30` is RELATIVE to the receiving page's own `todayUtc()`, so a drill-down carrying it
+ * would resolve against a *different* today whenever the two renders straddle UTC midnight --
+ * and the destination would show a window one day off the one the link was clicked from, with
+ * both pages looking perfectly healthy. An explicit pair is absolute, and `parseRange` gives it
+ * precedence, so the two pages cannot disagree about what they are counting.
+ *
+ * It also does not lose a CUSTOM range: `preset` is `null` for anything not exactly 7/14/30/90,
+ * and `d` cannot express those at all. **The destination's pressed state still lights up**,
+ * because `presetFor(dayCount(from, to))` recovers the preset from the pair.
+ *
+ * No leading `?`: the caller owns the separator, because it may already be appending to a path
+ * that carries a cursor.
+ */
+export function rangeQuery(range: AdminRange): string {
+  return new URLSearchParams({
+    [RANGE_PARAM.from]: range.from,
+    [RANGE_PARAM.to]: range.to,
+  }).toString();
+}
+
 /** A window of `days` ending on `today`, inclusive -- so `days: 7` is seven columns and
  *  not eight. Off-by-one here would put an eighth bar on every "7 days" chart. */
 export function windowEndingOn(today: string, days: number): AdminRange {
