@@ -104,6 +104,27 @@ const EXEMPT: Array<{ file: string; why: string; ownSwitch?: string }> = [
     why: 'ADMIN-ONLY AND ALREADY SHED FIRST. `callClass: deferred` on the one site whose caller is the operator means the ceiling sheds it before any querent call; a manual flag would duplicate that and could be left off.',
   },
   {
+    /*
+     * **A7's DASHBOARD INSIGHT, 2026-07-31. THE SECOND MEMBER OF THE ADMIN-ONLY CLASS**,
+     * and the row above it is the precedent rather than a coincidence: there are now two
+     * `deferred` sites whose caller IS the operator, and the argument generalises exactly.
+     *
+     * The ceiling sheds `deferred` before `interactive`, fleet-wide, so an insight is
+     * already shed before any querent's reading — **the tier IS the switch**, and unlike
+     * an env var it cannot be left off in a dashboard at 2am. With it shed the button
+     * reports a stated failure and the operator reads the chart themselves, which is what
+     * they were doing the day before this shipped. **There is no degraded querent
+     * experience for a flag to protect**, which is the property every entry in the FLAGGED
+     * table above has and this one does not.
+     *
+     * If a third admin-only site ever lands, the honest move is a single
+     * `ADMIN_MODEL_CALLS_ENABLED` covering the class — not three flags, and not this
+     * exemption stretched a third time without saying so.
+     */
+    file: 'src/lib/admin/insight.ts',
+    why: 'ADMIN-ONLY AND ALREADY SHED FIRST, exactly as blogAutoTranslate: `callClass: deferred` means the fleet-wide ceiling drops it before any querent call, so the tier is the switch. A refused press is a sentence the operator reads; no querent sees anything change.',
+  },
+  {
     file: 'src/lib/moderation/classify.ts',
     why: 'ALREADY SWITCHABLE, and its switch is deliberately not in flags.ts: MODERATION_CLASSIFIER_ENABLED lives in gate.ts, named there so it cannot be read as "moderation off" — Tier A stays terminal either way.',
     ownSwitch: "process.env.MODERATION_CLASSIFIER_ENABLED !== '0'",

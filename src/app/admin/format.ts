@@ -130,6 +130,42 @@ export function dayWithYear(iso: string, empty = '—'): string {
 }
 
 /**
+ * An INSTANT as `31 Jul 2026, 14.22`, pinned to Jakarta. **A7, for the insight box.**
+ *
+ * ── EVERY OTHER FORMATTER HERE IS UTC AND THIS ONE IS NOT, DELIBERATELY ─────
+ *
+ * `day` and `dayWithYear` render `local_date`, a querent's calendar day stored as a
+ * string, and UTC is what keeps the label the same day the column holds. This renders a
+ * `timestamptz` — a real instant — answering *"when did I last press this button?"*,
+ * which is a wall-clock question asked by one person who is in Jakarta. Rendering it in
+ * UTC would put a timestamp seven hours in the past under a button they pressed a minute
+ * ago, which reads as the button not having worked.
+ *
+ * **THE ZONE IS EXPLICIT, WHICH IS ALSO WHAT MAKES IT HYDRATION-SAFE.** `InsightBox` is a
+ * client component and the page server-renders its first frame; an `Intl` format with a
+ * pinned `timeZone` produces the same string in both places, where the default zone would
+ * be the lambda's UTC on the server and the operator's on the client — a mismatch React
+ * cannot patch, on a string that looks plausible either way.
+ *
+ * `Asia/Jakarta` is hardcoded rather than read from the viewer, because `WIB` is printed
+ * beside it by the only caller and a label that says WIB must not render another zone.
+ */
+const STAMP = new Intl.DateTimeFormat('id-ID', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  timeZone: 'Asia/Jakarta',
+});
+
+export function stamp(iso: string, empty = '—'): string {
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return empty;
+  return STAMP.format(t);
+}
+
+/**
  * A duration in ms as `1,2 s` or `840 ms`.
  *
  * The threshold is 1000ms and the unit changes with it, because `1240 ms` and `1,2 s` are the

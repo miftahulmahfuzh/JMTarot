@@ -1,0 +1,154 @@
+/*
+ * The insight row and its box. v0.5.0 / A7, 2026-07-31.
+ *
+ * ── NO NEW VALUES ─────────────────────────────────────────────────────────
+ *
+ * Every colour, radius and font below is an existing custom property, `## Styling`'s
+ * rule. Two numbers are not tokens: `44px`, the iOS minimum target, spelled the same way
+ * in `blog.module.css` for the same reason; and `28em`, the prose measure, which is
+ * MEASURED rather than chosen — see `.body`.
+ *
+ * ── NO TRANSLUCENCY, AND `ChartFrame.module.css` IS WHY ───────────────────
+ *
+ * This sits INSIDE `.figure`, which is opaque on purpose: `Backdrop`'s radial runs
+ * `#221a3a` at the top of the viewport and the whole chart palette was validated
+ * against `#130f22`. An `rgba` or an `opacity` here would let that gradient back
+ * through under a paragraph — which is only a contrast problem for MARKS, so nothing
+ * on this element would look wrong while the chart above it stopped holding. **The
+ * safe rule is that nothing in this subtree is translucent**, rather than a
+ * case-by-case judgement about which children carry marks.
+ */
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* A hairline rather than a card: this is a row of the chart card, not a second card
+     inside it. The table view below uses the same separator. */
+  border-top: 1px solid var(--card-edge);
+  padding-top: 10px;
+}
+
+/*
+ * The button and the timestamp on one line, wrapping rather than shrinking.
+ *
+ * `align-items: center` and NOT `baseline`: the button is 44px tall and the stamp is
+ * 12px text, so a baseline alignment pushes the text to the bottom of the row where it
+ * reads as a caption of nothing. Measured at 380px, the narrowest a chart card gets.
+ */
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+/*
+ * **44px MINIMUM.** `PublicShare`'s 36px control is a known defect on 23 public pages
+ * and is explicitly not a precedent to copy; `blogfit.sh`'s `smallTargets` still
+ * reports it. This dashboard is desktop-first, which makes the rule easier to keep
+ * rather than optional.
+ */
+.button {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--gold-hairline);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--gold-text);
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 12px;
+  letter-spacing: var(--ls-section-label);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.button:disabled {
+  cursor: progress;
+  color: var(--label);
+}
+
+/* The timestamp. `--label` rather than `--muted`: it qualifies the button beside it and
+   must not compete with the prose below. */
+.stamp {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 12px;
+  color: var(--label);
+}
+
+/*
+ * The live region is ALWAYS rendered and ALWAYS displayed, even when empty.
+ *
+ * **`display: none` AND `display: contents` ARE BOTH WRONG HERE, FOR DIFFERENT
+ * REASONS.** A region that is `display: none` until it has content is a region
+ * announced INTO EXISTENCE, which is the one case screen readers do not announce —
+ * they watch a node that was already in the accessibility tree. `display: contents`
+ * removes the element's box and its treatment in the accessibility tree is
+ * inconsistent across engines, which is exactly the kind of thing CLAUDE.md says is
+ * measured here and never recalled.
+ *
+ * So it stays a plain flex column. Empty, it is 0px tall — and `.wrap`'s `gap` still
+ * puts 8px of nothing under the button on a panel with no insight. **That is the cost,
+ * paid deliberately**: eight pixels against an announcement that either happens or does
+ * not.
+ */
+.live {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/*
+ * The prose.
+ *
+ * ── `ch` LIES FOR THIS FACE BY 20%, AND THE 1440 SHOT IS WHAT CAUGHT IT ─────
+ *
+ * The first version said `45ch`, which reads as "45 characters" and is not: `ch` is the
+ * advance of the DIGIT ZERO, and Cormorant Garamond's zero is 6.2px at 13px while its
+ * average advance over Indonesian prose is **5.19px** (measured in the running page,
+ * 2026-07-31). So it resolved to 279px — 54 characters — and rendered as a narrow ragged
+ * column under a 1126px chart, which reads as a broken element rather than as a tight
+ * measure. **Nothing but a screenshot could have said so**; every number involved was
+ * correct.
+ *
+ * **28em IS 364px HERE, WHICH IS ~70 CHARACTERS**, the middle of the comfortable band.
+ * `em` rather than `ch` because it tracks the font SIZE, which is the thing that would
+ * actually change, and rather than `px` because it then needs no second edit when it
+ * does. The chart above is as wide as the card and a line of prose that wide is the one
+ * thing on this page nobody would read; `ChartFrame`'s subtitle runs full width because
+ * it is one line of caveat, not a paragraph.
+ *
+ * It does not centre — a left-aligned block under a left-aligned title is what the eye
+ * already expects.
+ */
+.body {
+  margin: 0;
+  max-width: 28em;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+/* The numbers moved. NOT `--danger`: nothing is wrong, the prose is simply older than
+   the chart, and a red line would send an operator looking for a fault. Same measure as
+   `.body`, so the two paragraphs share a right edge. */
+.stale {
+  margin: 0;
+  max-width: 28em;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* A failure IS a failure, so this one is `--danger` — the register `blog.module.css`
+   uses for a refused save. */
+.error {
+  margin: 0;
+  max-width: 28em;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--danger);
+}

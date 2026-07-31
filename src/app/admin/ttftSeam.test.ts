@@ -131,6 +131,14 @@ describe('the call sites cannot re-merge the seam', () => {
   it('mounts the TTFT card on the overview', () => {
     // A card nobody renders is the failure mode of a refused ask granted quietly in reverse:
     // the folds, the copy and the query all exist and the operator sees none of it.
-    expect(code(PAGE)).toMatch(/<TtftCard rollup=\{rollup\} \/>/);
+    /*
+     * **MATCHED ON THE TAG AND ITS `rollup` PROP, NOT ON THE WHOLE ELEMENT.** The first
+     * version pinned `<TtftCard rollup={rollup} />` character for character and went red
+     * when A7 added an `insight` prop to all six panels — a true statement about a
+     * cosmetic change, which is how an assertion gets loosened in a hurry to something
+     * that no longer binds. What this test is FOR is that the card is mounted at all, so
+     * it asserts exactly that and nothing about the rest of the props.
+     */
+    expect(code(PAGE)).toMatch(/<TtftCard\s+rollup=\{rollup\}/);
   });
 });

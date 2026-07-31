@@ -42,6 +42,18 @@ export type ChartFrameProps = {
   footnote?: string;
   /** Which swatch shape the legend uses; it must MIRROR the mark. */
   legendMark?: 'rect' | 'line';
+  /**
+   * A7's `InsightBox`, or nothing. **A SLOT, NOT A PANEL ID** — this file must not learn
+   * that insights exist beyond "something may render between the footnote and the
+   * table", because the moment it takes an id it needs the registry, the copy and a
+   * fetch, and I-16's *"hardcodes no user-visible string"* stops being true of the one
+   * primitive every chart goes through.
+   *
+   * Optional, and that is the difference from `table`: a chart cannot be constructed
+   * without its accessible relief (I-13), and it can perfectly well be constructed
+   * without a button.
+   */
+  insight?: ReactNode;
   children: ReactNode;
 };
 
@@ -52,6 +64,7 @@ export function ChartFrame({
   table,
   footnote,
   legendMark = 'rect',
+  insight,
   children,
 }: ChartFrameProps) {
   return (
@@ -67,6 +80,12 @@ export function ChartFrame({
       {series.length >= 2 ? <Legend series={series} mark={legendMark} /> : null}
 
       {footnote ? <p className={styles.footnote}>{footnote}</p> : null}
+
+      {/* BELOW the footnote and ABOVE the table, deliberately: the footnote qualifies
+          the chart and belongs to it, and the table is the chart restated. An insight
+          is a third thing said about both, so it sits between them rather than after a
+          closed `<details>` nobody scrolls past. */}
+      {insight}
 
       <TableView {...table} />
     </figure>

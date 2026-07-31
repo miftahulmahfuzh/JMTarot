@@ -27,7 +27,7 @@ import type { LLMOp } from './types';
  * tenth and no alias). So this file asserts three things the type system does not:
  *
  *   1. every call site's `op` marker is present in its own source;
- *   2. the `op` values used anywhere under `src/**` are exactly `LLMOp`'s nine;
+ *   2. the `op` values used anywhere under `src/**` are exactly `LLMOp`'s ten;
  *   3. a value in `LLMOp` with NO call site is a failure too -- a dead `op` reads as a
  *      cost category that exists and is permanently empty, which is worse than absent.
  *
@@ -67,6 +67,26 @@ const COMPLETE_CALLS: Array<{
     expect: 'deferred',
     marker: "callClass: 'deferred'",
     why: 'an ADMIN convenience, and the ceiling is fleet-wide -- an operator seeding an English draft must be shed before a querent waiting on a reading is, so `interactive` would be exactly backwards',
+  },
+  {
+    /*
+     * **A7's DASHBOARD INSIGHT, ADDED 2026-07-31, AND IT SPENT THE TENTH `op`.** The
+     * row above it reused `translation` rather than proposing one and recorded the cost
+     * of doing so; this one did the opposite and the argument is in `@/lib/llm/types`:
+     * the insight button is a new RECURRING call with no querent behind it, and
+     * `/admin/tokens`' own *Biaya per keperluan* table is the surface that has to be
+     * able to say what it costs. Folding it in would make the dashboard hide the price
+     * of its own newest feature.
+     *
+     * `deferred` for `blogAutoTranslate`'s reason verbatim — the operator is waiting,
+     * and must still be shed before a querent's reading is.
+     */
+    file: 'src/lib/admin/insight.ts',
+    op: ['insight'],
+    opMarker: "op: 'insight'",
+    expect: 'deferred',
+    marker: "callClass: 'deferred'",
+    why: 'an ADMIN convenience on a fleet-wide ceiling; the tier is also its kill switch, which is why flagCoverage.test.ts exempts it',
   },
   {
     file: 'src/lib/moderation/classify.ts',
@@ -280,13 +300,17 @@ describe('every streamReading() call site reserves for itself', () => {
  * THE `op` SET IS CLOSED, IN BOTH DIRECTIONS.
  *
  * A3 groups its entire cost breakdown by `llm_calls.op` and roadmap seam 3 says: nine
- * values, closed, no tenth and no alias. The compiler enforces that for a `CompleteOpts`
+ * values, closed, no tenth and no alias. **A7 asked for the tenth and Miftah granted it
+ * on 2026-07-31** — through the process the seam demands rather than around it; the
+ * argument is in `@/lib/llm/types` and in
+ * `docs/plans/2026-07-31-admin-panel-insights-design.md` §3. The set is CLOSED AT TEN and
+ * the next one is the same question again. The compiler enforces that for a `CompleteOpts`
  * literal; it enforces nothing about a `recordCall` at a streaming site, and nothing at
  * all about a value that exists in the union with no producer.
  */
 describe('the op set is exactly LLMOp, in both directions', () => {
   /** Kept as a literal, NOT derived from the tables -- a set derived from the thing it
-   *  checks cannot disagree with it. This is the ninth value's only home. */
+   *  checks cannot disagree with it. This is the tenth value's only home. */
   const LLM_OPS: LLMOp[] = [
     'reading',
     'moderation',
@@ -297,9 +321,10 @@ describe('the op set is exactly LLMOp, in both directions', () => {
     'persona',
     'translation',
     'translation_repair',
+    'insight',
   ];
 
-  it('the union in types.ts is exactly these nine', () => {
+  it('the union in types.ts is exactly these ten', () => {
     // Parsed off the source, so widening `LLMOp` without touching this list is red.
     const src = read('src/lib/llm/types.ts');
     const block = src.slice(src.indexOf('export type LLMOp'));
@@ -323,7 +348,7 @@ describe('the op set is exactly LLMOp, in both directions', () => {
     expect([...declared].sort()).toEqual([...LLM_OPS].sort());
   });
 
-  it('no op string appears at ANY ledger-writing site that is not one of the nine', () => {
+  it('no op string appears at ANY ledger-writing site that is not one of the ten', () => {
     /*
      * The grep half, and the one that catches a tenth value invented at a NEW site --
      * including one added by A3 or A5, who read this column and do not own it. The two
@@ -342,7 +367,7 @@ describe('the op set is exactly LLMOp, in both directions', () => {
     )
       .split('\n')
       .filter(Boolean)
-      // Not the declaration, and not this file's own list of the nine.
+      // Not the declaration, and not this file's own list of the ten.
       .filter((f) => f !== 'src/lib/llm/types.ts' && !f.includes('.test.'));
 
     expect(files.length).toBeGreaterThan(5);
@@ -352,7 +377,7 @@ describe('the op set is exactly LLMOp, in both directions', () => {
       for (const m of read(f).matchAll(/\bop: '([a-z_]+)'/g)) used.add(m[1]);
     }
 
-    // Every value written at a site that can reach the ledger must be one of the nine.
+    // Every value written at a site that can reach the ledger must be one of the ten.
     // The reverse direction is the test above; this one is about strangers.
     expect([...used].filter((v) => !LLM_OPS.includes(v as LLMOp)).sort()).toEqual([]);
     // And the scan must have found real values, or it is vacuous.

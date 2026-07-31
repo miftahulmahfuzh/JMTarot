@@ -1470,6 +1470,97 @@ export const blogPostLocales = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// admin_insights -- A7, 2026-07-31
+// ---------------------------------------------------------------------------
+
+/**
+ * One model-written reading of one dashboard panel, over one range.
+ *
+ * `docs/plans/2026-07-31-admin-panel-insights-design.md` §4. The `Insight` button on
+ * each subpanel of `/admin` and `/admin/tokens` writes exactly one row here, and the
+ * page reads them back in its own `withAdminRead` so **R21 survives: every number on
+ * those pages is still queried server-side and there is still no fetch for one.**
+ *
+ * ── NO `user_id`, AND THAT IS NOT AN OMISSION ───────────────────────────────
+ *
+ * An insight is about the FLEET, not about who pressed the button, and there is one
+ * operator. A `user_id` here would be an identifier in a table that account erasure
+ * has no reason to reach, which is the shape `events` had to justify at length. There
+ * is nothing to justify if the column is absent.
+ *
+ * The same argument covers the prose: it cannot contain querent text, because the
+ * facts block it is generated from has none. The closest thing any panel carries is
+ * the league table's eight-character `user_id` prefixes -- already what that panel
+ * renders on screen, already A5's `§1.11` ruling, and `llm_calls.user_id` is
+ * `on delete set null` so a prefix that outlives its user names nobody.
+ *
+ * ── THE KEY IS (panel, range), AND `input_hash` IS A SEPARATE QUESTION ──────
+ *
+ * Changing the RANGE gives a different key and therefore no row, which renders the
+ * empty state -- correct, because prose about seven days is not prose about thirty.
+ * What the hash catches is the *same* range whose numbers have since moved, which is
+ * every range ending today. Without it the box would keep asserting yesterday's
+ * reading of a chart that has changed, under a timestamp that makes it look current.
+ * **The stale case still RENDERS the prose** and adds a line saying so: hiding it
+ * would be a kill switch blanking a screen, which this project rules against
+ * everywhere else it comes up.
+ */
+export const adminInsights = pgTable(
+  'admin_insights',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /**
+     * `'overview.calls'`, `'tokens.trajectory'` -- a key from A7's panel registry.
+     *
+     * **Bare `text`, per this file's rule.** `PanelId` is owned by
+     * `src/app/admin/insight/panels.ts`, which reaches `copy.ts` and the admin query
+     * modules; narrowing it here would make schema.ts depend on a module that
+     * depends on schema.ts. Same shape as `events.name` and `llm_calls.op`.
+     *
+     * A row whose panel no longer exists is harmless: nothing selects it, and the
+     * registry test fails first anyway.
+     */
+    panelId: text('panel_id').notNull(),
+    /** The range the insight describes. **`date`, string mode** -- `dateCol`'s rule. */
+    rangeFrom: dateCol('range_from').notNull(),
+    rangeTo: dateCol('range_to').notNull(),
+    /** The prose. 2-4 sentences, Indonesian, no markdown -- `validateInsight` is what
+     *  keeps that true, and an output that fails it is never stored. */
+    body: text('body').notNull(),
+    /**
+     * A hash over the exact facts block the model was given. **This is the whole of
+     * the staleness mechanism** -- see the header. Never compared across panels.
+     */
+    inputHash: text('input_hash').notNull(),
+    /** The RESOLVED model string, `llm_calls.model`'s rule: pricing and provenance
+     *  are keyed on what actually ran, never on the env var that chose it. */
+    model: text('model').notNull(),
+    createdAt: tsCol('created_at').notNull().defaultNow(),
+    /**
+     * **WHAT THE BUTTON'S TIMESTAMP RENDERS.** `queries/admin/insights.ts` sets it by
+     * hand inside `onConflictDoUpdate`, and that line is load-bearing in the way
+     * `translations.updated_at` is: it is the only thing on screen claiming when this
+     * prose was written, so it must not be able to freeze at the first insert. See
+     * `blog_post_locales.updated_at` for why the by-hand rule is kept even though the
+     * pinned drizzle happens to emit the column anyway.
+     */
+    updatedAt: tsCol('updated_at')
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    /**
+     * ONE INSIGHT PER PANEL PER RANGE, so pressing the button again ROTATES rather
+     * than accumulating. **All three columns are `not null`, so this needs no
+     * `nulls not distinct`** -- V7's `share_links` trap does not reach here, and the
+     * clause is omitted deliberately rather than forgotten.
+     */
+    unique('admin_insights_panel_range_uq').on(t.panelId, t.rangeFrom, t.rangeTo),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Row types
 //
 // `X` is what a select returns; `NewX` is what an insert accepts (columns with
@@ -1516,3 +1607,5 @@ export type NewBlogPost = typeof blogPosts.$inferInsert;
 /** `BlogPostLocale`, singular, though the table is plural: one row is one document. */
 export type BlogPostLocale = typeof blogPostLocales.$inferSelect;
 export type NewBlogPostLocale = typeof blogPostLocales.$inferInsert;
+export type AdminInsight = typeof adminInsights.$inferSelect;
+export type NewAdminInsight = typeof adminInsights.$inferInsert;

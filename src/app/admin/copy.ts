@@ -61,6 +61,72 @@ export const COMMON = {
 } as const;
 
 /**
+ * The insight box, on all thirteen subpanels of both pages. **A7, 2026-07-31.**
+ *
+ * ── ONE COPY BLOCK FOR THIRTEEN PANELS, AND THAT IS THE DESIGN ─────────────
+ *
+ * Nothing here names a panel. `InsightBox` takes the panel id as a prop and the id
+ * never reaches the screen -- what the operator reads is this vocabulary, identically,
+ * everywhere. Thirteen per-panel button labels would be thirteen strings to keep in
+ * step for a control that does the same thing in every one of them.
+ *
+ * ── THE BUTTON CHANGES ITS WORD ONCE THERE IS AN INSIGHT ───────────────────
+ *
+ * `generate` -> `regenerate`. Pressing it the second time SPENDS A MODEL CALL on numbers
+ * that may not have moved, so the label has to say that it is a fresh reading rather
+ * than a reveal. The stale line is the other half: it is what tells the operator the
+ * press is worth making.
+ *
+ * ── EVERY FAILURE IS A SENTENCE, AND THE SET IS CLOSED ─────────────────────
+ *
+ * `StatusControl`'s rule, for its reason: *"the toggle did nothing"* is the state in
+ * which somebody starts editing rows by hand. `ceiling` is the one that is not a
+ * failure at all -- the fleet-wide limiter shedding an operator convenience before a
+ * querent's reading, exactly as designed -- so it says so rather than apologising.
+ */
+export const INSIGHT = {
+  /** The `<h3>` over the box. Also the accessible label the button is described by. */
+  heading: 'Insight',
+  generate: 'Insight',
+  regenerate: 'Perbarui insight',
+  pending: 'Menyusun…',
+  /** `stamp()` supplies the datetime; the zone is in the label because the formatter
+   *  is pinned to Jakarta and a time with no zone invites the wrong arithmetic. */
+  updatedAt: (when: string) => `Terakhir diperbarui ${when} WIB`,
+  /**
+   * The stale line. **The prose stays on screen underneath it** -- hiding it would be a
+   * kill switch blanking a screen, which this project rules against everywhere else.
+   *
+   * **IT ONLY EVER APPEARS ON A CLOSED RANGE**, and `insight/panels.ts` carries the
+   * measurement that made that rule: an insight is itself a model call dated today, so
+   * on a range ending today the button invalidates its own hash within the second, and
+   * this sentence would render under prose four seconds old. On a live range the
+   * timestamp is what tells the operator how old the reading is.
+   */
+  stale: 'Angka di panel ini sudah berubah sejak insight ini dibuat.',
+  /** Screen-reader only: the box fills in after a press, and a live region is what
+   *  announces it without moving focus off the button. */
+  liveLabel: 'Hasil insight',
+  error: {
+    failed: 'Model tidak menjawab. Coba lagi.',
+    ceiling:
+      'Kuota panggilan model sedang hampir habis, jadi permintaan ini dilewati lebih dulu ' +
+      'supaya bacaan penanya tidak ikut kena. Coba lagi nanti.',
+    empty: 'Model mengembalikan jawaban kosong. Coba lagi.',
+    'too-long': 'Jawaban model terlalu panjang untuk kotak ini, jadi tidak disimpan.',
+    format:
+      'Model menjawab dengan format daftar atau markdown, bukan paragraf, jadi tidak disimpan.',
+    unavailable: 'Angkanya tidak bisa dibaca sekarang. Muat ulang halaman.',
+    /** The client's own bound fired (§4.2's pairing) or the browser is offline. **A
+     *  TIMEOUT IS THE ONE OUTCOME THAT MEANS UNKNOWN**, so the copy says the request may
+     *  have completed rather than telling the operator it failed. */
+    timeout:
+      'Permintaan melewati batas waktu. Mungkin sudah jadi di server — muat ulang halaman ' +
+      'sebelum mencoba lagi.',
+  },
+} as const;
+
+/**
  * `/admin` -- "is anything wrong right now".
  *
  * The hero is CALLS-IN-WINDOW over 280 and not notional spend (R14). Its label says
@@ -248,8 +314,16 @@ export const TOKENS = {
   trajectoryBeyond: (days: number) => `Batas tidak tersentuh dalam ${days} hari ke depan.`,
 
   opTitle: 'Biaya per keperluan',
-  /** §1.5 / R11: nine `op` values is nine, and >7 meaningful classes is a table. */
-  opSubtitle: 'Sembilan op adalah tabel, bukan grafik — lebih dari tujuh kelas tidak punya warna.',
+  /**
+   * §1.5 / R11: >7 meaningful classes is a table.
+   *
+   * **THE WORD WENT `Sembilan` -> `Sepuluh` ON 2026-07-31**, when A7 spent the tenth
+   * `op` on `insight`. Counted in words rather than interpolated from `OP_ORDER.length`
+   * on purpose: the sentence is an argument about why this card is a table, not a
+   * readout, and a number that moved itself would stop anybody noticing that the
+   * argument had been re-made.
+   */
+  opSubtitle: 'Sepuluh op adalah tabel, bukan grafik — lebih dari tujuh kelas tidak punya warna.',
   opColumns: {
     op: 'Op',
     calls: 'Panggilan',

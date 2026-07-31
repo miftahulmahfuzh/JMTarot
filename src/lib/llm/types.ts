@@ -110,13 +110,13 @@ export type ReadingUsage = {
 };
 
 /**
- * WHICH CALL THIS IS. Nine values for nine call sites, and the set is CLOSED.
+ * WHICH CALL THIS IS. Ten values for ten call sites, and the set is CLOSED.
  *
  * `llm_calls.op` (A2, v0.5.0) is what makes "what does a user cost" answerable by
  * purpose rather than in aggregate, and A3 groups by it. **A tenth value is a
  * reconciliation question, not an authoring convenience** -- the roadmap's seam 3:
  * A3 must not invent one and must not alias one, and `callClass.test.ts` asserts
- * that the values used across `src/**` are exactly these nine.
+ * that the values used across `src/**` are exactly these ten.
  *
  * DEFINED HERE, in the file with no imports, for the same reason `CallClass` is:
  * `queries/admin/calls.ts` names it and may not acquire `server-only` even
@@ -127,6 +127,25 @@ export type ReadingUsage = {
  * is a second call the querent never waited for, and folding the two hides the cost
  * of V2's repair architecture -- which is the one thing V2's own header asks to be
  * able to measure.
+ *
+ * ── `insight` IS THE TENTH, ADDED 2026-07-31 / A7, AND IT WAS ASKED FOR ──────
+ *
+ * The rule above says a tenth is a reconciliation question rather than an authoring
+ * convenience, so it was put as a question and Miftah answered it:
+ * `docs/plans/2026-07-31-admin-panel-insights-design.md` §3. The reason it earns a
+ * value rather than reusing one:
+ *
+ * **The insight button is a new RECURRING model call with no querent behind it, and
+ * `/admin/tokens`' own *Biaya per keperluan* table is the surface that has to be able
+ * to say what it costs.** Folding it into an existing op would make the dashboard
+ * hide the price of its own newest feature — which is the failure `blogAutoTranslate`
+ * accepted knowingly when it reused `translation`, and recorded as a caveat in its
+ * own header rather than as a precedent to copy.
+ *
+ * Adding a value here is deliberately not free: `OP_ORDER` in
+ * `@/lib/analytics/rollup` carries a type-level `AssertNever` over `Exclude`, so a
+ * value with no place in the render order is a COMPILE error, and
+ * `callClass.test.ts` fails until the new call site declares its tier.
  */
 export type LLMOp =
   | 'reading'
@@ -137,7 +156,8 @@ export type LLMOp =
   | 'lotus'
   | 'persona'
   | 'translation'
-  | 'translation_repair';
+  | 'translation_repair'
+  | 'insight';
 
 export type LLMCallOpts = {
   signal?: AbortSignal;

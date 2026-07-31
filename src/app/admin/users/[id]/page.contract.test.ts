@@ -40,7 +40,7 @@ describe('the fences are not vacuous', () => {
     expect(QUERIES.length).toBeGreaterThanOrEqual(7);
   });
 
-  it('names every route under /api/admin, and A6 added two (roadmap §4.1)', () => {
+  it('names every route under /api/admin, and A6 added two, A7 a seventh', () => {
     /*
      * **THIS WAS `expect(ROUTES.length).toBe(4)` AND A6 MADE IT SIX.** Every
      * assertion below iterates `ROUTES`, and the glob is the whole `/api/admin/**`
@@ -54,11 +54,19 @@ describe('the fences are not vacuous', () => {
      * seventh fails loudly — R21's lesson, where `/api/admin/metrics/[metric]` was
      * assigned to "A3/A4", listed as a seam by nobody, and was the cheapest defect in
      * the release to fix and the likeliest to have been built twice.
+     *
+     * **A7 ADDED `insight/route.ts` ON 2026-07-31, AND THE FENCE DID ITS JOB TWICE
+     * BEFORE THAT ROUTE PASSED**: its first draft imported `next/server` and built its
+     * own `NextResponse.json`, which the two assertions below caught — so it grew an
+     * `insight/shared.ts` like the other two trees. That is this list working as
+     * designed, and it is why the glob stays the whole surface rather than A5's own
+     * files.
      */
     expect(ROUTES.map((f) => f.replaceAll('\\', '/')).sort()).toEqual([
       'src/app/api/admin/blog/[slug]/status/route.ts',
       'src/app/api/admin/blog/[slug]/translate/route.ts',
       'src/app/api/admin/blog/route.ts',
+      'src/app/api/admin/insight/route.ts',
       'src/app/api/admin/users/[id]/answer/[key]/route.ts',
       'src/app/api/admin/users/[id]/moderation/[flagId]/route.ts',
       'src/app/api/admin/users/[id]/reading/[readingId]/route.ts',
