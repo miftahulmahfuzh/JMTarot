@@ -109,6 +109,23 @@
   border: 1px solid var(--card-edge);
   border-radius: var(--radius-card);
   background: var(--chart-surface);
+  /*
+   * ── THIS LINE IS WHY A DRILL-DOWN LANDS ON THE HEADING AND NOT UNDER THE BAR ─
+   *
+   * `.toc` above is `position: sticky; top: 0`, so scrolling a panel's top edge to y=0 parks its
+   * own `<h2>` behind it -- fourteen wrapping links, measured at 191px at 390px wide.
+   *
+   * **AND IT IS WHAT MAKES THE `#token` DRILL-DOWN DETERMINISTIC AT ALL.** Chrome's native
+   * fragment scroll fires only *sometimes* on this page (the body streams inside a `<div hidden>`
+   * and is revealed by script), and when it fires it lands somewhere different from
+   * `AdminScrollToHash`'s own scroll. Both honour `scroll-margin-top`, so with this line the two
+   * outcomes are identical and the race stops mattering. Measured 2026-07-31 -- see that file.
+   *
+   * The value is published from JS because the bar's height is a function of viewport width and
+   * of how many sections there are; the `0px` fallback is what a build with the component removed
+   * would get, which is the old behaviour rather than a broken one.
+   */
+  scroll-margin-top: var(--admin-anchor-offset, 0px);
 }
 
 .note {

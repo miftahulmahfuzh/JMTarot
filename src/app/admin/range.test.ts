@@ -11,6 +11,7 @@ import {
   RANGE_PRESETS,
   parseRange,
   previousPeriod,
+  rangeQuery,
   windowEndingOn,
 } from './range';
 
@@ -125,5 +126,57 @@ describe('previousPeriod -- equal length, immediately before', () => {
   it('returns the input unchanged for a range with no days, rather than throwing', () => {
     const bad = { from: 'x', to: 'y' };
     expect(previousPeriod(bad)).toEqual(bad);
+  });
+});
+
+/**
+ * The drill-down's query string. **These four assertions are the whole "the two pages agree"
+ * claim**, and the round trip is the one that matters: a link built here must parse back to the
+ * range it was built from.
+ */
+describe('rangeQuery -- what a drill-down link carries', () => {
+  it('emits `from`/`to` and NEVER `d`', () => {
+    // `d=30` is relative to the RECEIVING page's own today, so a link carrying it resolves
+    // against a different window whenever the two renders straddle UTC midnight -- and both
+    // pages look perfectly healthy while showing different numbers.
+    const q = rangeQuery({ from: '2026-07-24', to: '2026-07-30' });
+    expect(q).toBe('from=2026-07-24&to=2026-07-30');
+    expect(q).not.toContain('d=');
+  });
+
+  it('round-trips through parseRange, so the destination shows the same window', () => {
+    const range = { from: '2026-07-24', to: '2026-07-30' };
+    const back = parseRange(Object.fromEntries(new URLSearchParams(rangeQuery(range))), TODAY);
+    expect(back.range).toEqual(range);
+    expect(back.fellBack).toBe(false);
+  });
+
+  it('round-trips against a DIFFERENT today, which is the point of not sending `d`', () => {
+    // The receiving page computes its own `todayUtc()`. An absolute pair must be immune to it.
+    const range = { from: '2026-07-24', to: '2026-07-30' };
+    const back = parseRange(
+      Object.fromEntries(new URLSearchParams(rangeQuery(range))),
+      '2026-08-14',
+    );
+    expect(back.range).toEqual(range);
+  });
+
+  it('keeps the destination`s pressed state for a preset-shaped window, and drops it otherwise', () => {
+    // `presetFor(dayCount(from, to))` recovers the preset from the pair, so sending dates
+    // rather than `d` costs the filter nothing -- and a custom range, which `d` cannot express
+    // at all, correctly lights nothing.
+    const preset = parseRange(
+      Object.fromEntries(new URLSearchParams(rangeQuery(windowEndingOn(TODAY, 7)))),
+      TODAY,
+    );
+    expect(preset.preset).toBe(7);
+    expect(RANGE_PRESETS).toContain(preset.preset);
+
+    const custom = parseRange(
+      Object.fromEntries(new URLSearchParams(rangeQuery({ from: '2026-07-01', to: '2026-07-19' }))),
+      TODAY,
+    );
+    expect(custom.preset).toBeNull();
+    expect(custom.days).toBe(19);
   });
 });

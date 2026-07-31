@@ -53,7 +53,7 @@ import { RangeFilter } from '../RangeFilter';
 import { COMMON, TOKENS } from '../copy';
 import { compact, day, dayWithYear, int, ms, oneDp, pct, shortId } from '../format';
 import { assertDense, callSeries, league, opRows, tokenSeries, weekdayHeat } from '../metrics';
-import { parseRange, type ParsedRange } from '../range';
+import { parseRange, rangeQuery, type ParsedRange } from '../range';
 import styles from '../page.module.css';
 
 export const runtime = 'nodejs';
@@ -149,7 +149,7 @@ async function Body({ parsed }: { parsed: ParsedRange }) {
         <TrajectoryCard utc={utc} peakCalls={peak?.calls ?? null} days={parsed.days} />
       </div>
       <OpTable ops={ops} />
-      <LeagueTable rows={leagueRows} />
+      <LeagueTable rows={leagueRows} range={parsed.range} />
       <ModelTable models={models} rangeEnd={parsed.range.to} />
       <div className={styles.wide}>
         <WhenBusy utc={utc} />
@@ -447,10 +447,32 @@ function OpTable({ ops }: { ops: Awaited<ReturnType<typeof callsByOp>> }) {
  * hard-deleted user's tokens survive with the attribution gone, and they were still spent. A3
  * adds the consequence this page must state, and the footnote states it: cost-per-user
  * denominators shift over time.
+ *
+ * ── THE DRILL-DOWN CARRIES THE RANGE AND LANDS ON `#token` (2026-07-31) ──────
+ *
+ * **The range travels, because a drill-down that resets it is a drill-down to a different
+ * number.** An operator reading this table over 7 days and clicking a row wants that person's
+ * 7 days -- landing on `/admin/users/<id>`'s default 30 shows a token total that does not match
+ * the row just clicked, and nothing on either screen says why. `rangeQuery` emits `from`/`to`
+ * rather than `d` for the reason its own header gives.
+ *
+ * **And the fragment is `#token`, because the question this row asks is about tokens.** The
+ * destination is fourteen panels deep and `#token` is the sixth; without it the operator lands
+ * on `Identitas` and scrolls -- the same complaint that moved `Bacaan` to the bottom and made
+ * `#bacaan` load-bearing on that page's own paging link. `AdminScrollToHash` on the destination
+ * is what makes it work through `<Suspense>`; see that file.
  */
-function LeagueTable({ rows }: { rows: Awaited<ReturnType<typeof userCostLeague>> }) {
+function LeagueTable({
+  rows,
+  range,
+}: {
+  rows: Awaited<ReturnType<typeof userCostLeague>>;
+  /** The window on screen, forwarded into every row's href. See the header. */
+  range: ParsedRange['range'];
+}) {
   const top = league(rows, 10);
   const max = top.reduce((a, r) => Math.max(a, r.tokens), 0);
+  const query = rangeQuery(range);
 
   const table: TableSpec = {
     caption: TOKENS.leagueTitle,
@@ -484,7 +506,10 @@ function LeagueTable({ rows }: { rows: Awaited<ReturnType<typeof userCostLeague>
         rows={top.map((r) => ({
           key: `${r.userId ?? 'null'}-${r.model}`,
           label: shortId(r.userId, COMMON.unattributed),
-          href: r.userId ? `/admin/users/${r.userId}` : undefined,
+          href: r.userId ? `/admin/users/${r.userId}?${query}#token` : undefined,
+          linkLabel: r.userId
+            ? TOKENS.leagueRowLink(shortId(r.userId, COMMON.unattributed), r.model)
+            : undefined,
           value: r.tokens,
           valueLabel: compact(r.tokens),
           share: max > 0 ? r.tokens / max : 0,
@@ -605,41 +630,72 @@ function WhenBusy({ utc }: { utc: Awaited<ReturnType<typeof callsByUtcDay>> }) {
  * Local to this page rather than a chart primitive, because it is table furniture: it takes
  * pre-formatted strings and a share, has no axis, no domain and no legend, and a primitive
  * would invite somebody to use it as a bar chart.
+ *
+ * ── A LINKED ROW IS AN ANCHOR, NOT A `<div>` CONTAINING ONE (2026-07-31) ─────
+ *
+ * The operator's report was that the league's rows *look* clickable and only the eight hex
+ * characters are. The bar and the token count are the two things an operator is actually
+ * pointing at when they decide to drill in, and both were dead. So the anchor **is** the grid
+ * row when `href` is set, and the label/bar/value are its children.
+ *
+ * That also settles the tap target for good rather than by agreement: `page.module.css`'s note
+ * records that `.inlineRow`'s 44px did NOT make the old inline anchor 44px -- measured at 16 --
+ * and the fix was `display: flex; min-height: 44px` on the anchor. **Now the anchor and the row
+ * are the same box**, so there is no second element whose height could drift from the row's.
  */
 function InlineBars({
   rows,
 }: {
-  rows: { key: string; label: string; href?: string; value: number; valueLabel: string; share: number }[];
+  rows: {
+    key: string;
+    label: string;
+    href?: string;
+    /** The link's accessible name. Required WITH `href`: the visible label is an id prefix and
+     *  a number, which tells a screen-reader operator nothing about where the row goes. */
+    linkLabel?: string;
+    value: number;
+    valueLabel: string;
+    share: number;
+  }[];
 }) {
   return (
     <div className={styles.inlineRows}>
-      {rows.map((r) => (
-        <div key={r.key} className={styles.inlineRow}>
-          <span className={styles.inlineLabel}>
-            {r.href ? (
-              // `prefetch={false}` is not available on a plain anchor and is not needed: this
-              // is a link an operator clicks, not one on a hot path. A5 owns the target.
-              <a className={styles.inlineLink} href={r.href}>
-                {r.label}
-              </a>
-            ) : (
-              r.label
-            )}
-          </span>
-          <span className={styles.inlineTrack}>
-            <span
-              className={styles.inlineFill}
-              style={{
-                width: `${Math.max(0, Math.min(1, r.share)) * 100}%`,
-                // The middle step of the sequential ramp: dark enough to read as a mark at
-                // 4.02:1's neighbour, light enough not to compete with the numbers beside it.
-                background: SEQUENTIAL[2],
-              }}
-            />
-          </span>
-          <span className={styles.inlineValue}>{r.valueLabel}</span>
-        </div>
-      ))}
+      {rows.map((r) => {
+        const cells = (
+          <>
+            <span className={styles.inlineLabel}>{r.label}</span>
+            <span className={styles.inlineTrack}>
+              <span
+                className={styles.inlineFill}
+                style={{
+                  width: `${Math.max(0, Math.min(1, r.share)) * 100}%`,
+                  // The middle step of the sequential ramp: dark enough to read as a mark at
+                  // 4.02:1's neighbour, light enough not to compete with the numbers beside it.
+                  background: SEQUENTIAL[2],
+                }}
+              />
+            </span>
+            <span className={styles.inlineValue}>{r.valueLabel}</span>
+          </>
+        );
+
+        // `prefetch={false}` is not available on a plain anchor and is not needed: this is a
+        // link an operator clicks, not one on a hot path. A5 owns the target.
+        return r.href ? (
+          <a
+            key={r.key}
+            className={`${styles.inlineRow} ${styles.inlineRowLink}`}
+            href={r.href}
+            aria-label={r.linkLabel}
+          >
+            {cells}
+          </a>
+        ) : (
+          <div key={r.key} className={styles.inlineRow}>
+            {cells}
+          </div>
+        );
+      })}
     </div>
   );
 }

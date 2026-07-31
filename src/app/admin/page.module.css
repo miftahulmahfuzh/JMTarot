@@ -157,25 +157,47 @@
 /*
  * ── THE ROW BEING 44px DOES NOT MAKE THE LINK 44px, AND LOOP 4 SAID SO ───────
  *
- * `.inlineRow` carries `min-height: 44px`, and the first version left the anchor as inline
- * text: measured **16px tall**. **The tap target is the ANCHOR, not the row that contains
- * it** -- a thumb aimed at the middle of a 44px row lands on padding and nothing happens,
- * which is the same class of defect as `PublicShare`'s known 36px button, on a surface whose
- * operator may well be on a phone finding out why something broke.
+ * The note this replaces is KEPT rather than deleted, because it is still the reason the rule
+ * below is written the way it is. It read: `.inlineRow` carries `min-height: 44px`, and the
+ * first version left the anchor as inline text -- measured **16px tall**. **The tap target is
+ * the ANCHOR, not the row that contains it** -- a thumb aimed at the middle of a 44px row lands
+ * on padding and nothing happens, which is the same class of defect as `PublicShare`'s known
+ * 36px button, on a surface whose operator may well be on a phone finding out why something
+ * broke.
  *
- * `display: flex; align-items: center; min-height: 44px` makes the anchor fill its grid cell,
- * so the row's height and the target's height are the same number by construction.
+ * **SINCE 2026-07-31 THE ANCHOR *IS* THE ROW** (`InlineBars` renders `<a class="inlineRow
+ * inlineRowLink">`), so it inherits the 44px and the grid directly and the two heights are the
+ * same number by construction rather than by two rules agreeing. That is what closes the trap
+ * above for good: there is no longer a second box whose height could drift.
+ *
+ * So this class adds only what an anchor needs on top of a row: it must not paint the whole row
+ * gold, so `color` is scoped to the LABEL -- the id prefix is the affordance, the way it was
+ * when only the label was a link -- and the row-wide feedback is a wash rather than an
+ * underline, because underlining a grid row underlines the bar track too.
  */
-.inlineLink {
-  display: flex;
-  align-items: center;
-  min-height: 44px;
-  color: var(--gold-text);
+.inlineRowLink {
+  color: inherit;
   text-decoration: none;
+  border-radius: var(--radius-chip);
+  /* The wash bleeds past the row's own edges so it reads as one target rather than three
+     cells; the negative margin keeps the grid columns aligned with the unlinked rows above. */
+  padding-inline: 6px;
+  margin-inline: -6px;
 }
 
-.inlineLink:hover,
-.inlineLink:focus-visible {
+.inlineRowLink .inlineLabel {
+  color: var(--gold-text);
+}
+
+/* `--gold-wash`, the token the range filter's pressed preset already wears -- no new hex, and
+   the same "this one" vocabulary the operator has learned one control higher up the page. */
+.inlineRowLink:hover,
+.inlineRowLink:focus-visible {
+  background: var(--gold-wash);
+}
+
+.inlineRowLink:hover .inlineLabel,
+.inlineRowLink:focus-visible .inlineLabel {
   text-decoration: underline;
 }
 
