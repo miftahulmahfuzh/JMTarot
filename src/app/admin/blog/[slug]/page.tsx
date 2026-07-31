@@ -137,7 +137,30 @@ export default async function AdminBlogEditorPage({
       </header>
 
       <div className={styles.twoPane}>
+        {/*
+          **`key={locale}` IS THE DIFFERENCE BETWEEN THE LOCALE TABS WORKING AND THE
+          LOCALE TABS DESTROYING A PUBLISHED ARTICLE, AND IT WAS MISSING.**
+
+          The tabs above are `<Link>`s, so pressing one is a SOFT navigation within this
+          same route segment. The server re-renders and the preview pane below updates —
+          which is exactly how the defect was reported, *"clicking one of these only
+          changes Pratinjau konten"* — but React reconciles the editor as the same
+          element, and every field inside it is `useState(initial?.… ?? '')`. **An
+          initialiser runs on mount and never again**, so the form keeps the document of
+          the locale you just navigated AWAY from.
+
+          Then `save()` posts `{ slug, locale }` with the NEW locale. Open `?locale=id`,
+          press `English`, press `Simpan`, and the Indonesian body is written into the
+          `en` row — silent content loss behind a screen where nothing looks wrong.
+
+          This is the class of bug CLAUDE.md already records twice under different
+          names: `shuffleDeck()` in a `useState` initialiser, and `todayKey()` during
+          render. **State seeded from a prop that later changes.** The key makes the
+          remount the navigation already implies, and it survives the markdown editor —
+          a `<textarea>` seeded from a prop has the identical defect.
+        */}
         <BlockEditor
+          key={locale}
           slug={slug}
           locale={locale}
           slugFrozen={slugFrozen}

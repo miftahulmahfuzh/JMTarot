@@ -248,6 +248,43 @@ describe('A6-30 -- the slug is frozen once any locale is published', () => {
   });
 });
 
+describe('the locale tabs remount the editor', () => {
+  it('keys the editor on `locale`', () => {
+    /*
+     * **THE ONE-LINE FIX FOR A BUG THAT WROTE ONE LOCALE'S BODY INTO THE OTHER'S ROW.**
+     *
+     * The tabs are `<Link>`s, so pressing one is a SOFT navigation within the same route
+     * segment: the server re-renders and the preview updates, but React reconciles the
+     * editor as the same element and every field in it is a `useState` initialiser, which
+     * runs on mount and never again. `save()` then posts the NEW locale — so `id` ->
+     * `English` -> `Simpan` stored the Indonesian document as the English one, with
+     * nothing on screen looking wrong.
+     *
+     * **A SOURCE ASSERTION BECAUSE THE BEHAVIOUR NEEDS A SOFT NAVIGATION**, which is loop
+     * 5 and not Vitest. What this can check is the mechanism, and the mechanism is one
+     * character long and therefore exactly the kind of thing a later refactor drops: the
+     * key carries no visible behaviour on first paint, so nothing about the page looks
+     * different the moment it is removed.
+     *
+     * It must be `locale` and not the index or the slug. The slug does not change across
+     * a tab press, which is the whole navigation this guards.
+     */
+    const page = code('src/app/admin/blog/[slug]/page.tsx');
+    expect(page).toMatch(/<BlockEditor\s+key=\{locale\}/);
+  });
+
+  it('seeds every editor field from a prop, which is WHY the key is needed', () => {
+    /*
+     * Not vacuous, and it is the other half of the argument: if the editor ever stopped
+     * holding its own copy of the row, the key would become dead weight and somebody
+     * would delete it — correctly. This asserts the precondition still holds, so the two
+     * facts fail together rather than the guard rotting alone.
+     */
+    const editor = code('src/app/admin/blog/BlockEditor.tsx');
+    expect(editor).toMatch(/useState\(initial\?\./);
+  });
+});
+
 describe('§4.2 -- the client bound that makes `maxDuration` mean something', () => {
   it('aborts the save from the client, below the route’s ceiling', () => {
     /*
