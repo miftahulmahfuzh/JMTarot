@@ -34,7 +34,7 @@ describe('the fences are not vacuous', () => {
     // A glob that matches nothing is a test that always passes.
     expect(FILES.length).toBeGreaterThanOrEqual(7);
     expect(FILES.map((f) => f.replaceAll('\\', '/')).sort()).toEqual([
-      'src/app/admin/blog/BlockEditor.tsx',
+      'src/app/admin/blog/MarkdownEditor.tsx',
       'src/app/admin/blog/StatusControl.tsx',
       'src/app/admin/blog/[slug]/page.tsx',
       'src/app/admin/blog/actions.ts',
@@ -189,44 +189,77 @@ describe('the `Publik` chip links to the article, and only that chip does', () =
   });
 });
 
-describe('A6-16 / A6-31 -- the span predicate has ONE definition', () => {
-  it('imports `spansSeparate` rather than reimplementing it', () => {
-    /*
-     * The inline warning in the editor and the `422` on save have to agree, or the author
-     * fixes something the server does not object to (or worse, the reverse). A second copy
-     * of the boundary character sets is precisely the drift `blocks.ts`'s trap describes:
-     * `para(s('Lihat'), link('/gallery', 'galeri'))` renders `Lihatgaleri`, and **a form
-     * field shows a trailing space no more than it trims one.**
-     */
-    const editor = code('src/app/admin/blog/BlockEditor.tsx');
-    expect(importsOf(editor)).toContain('@/lib/content/lint');
-    expect(editor).toContain('spansSeparate(');
-    // And no local re-derivation of the character sets.
+describe('A6-31 IS RETIRED, AND THE RULE IT PROTECTED IS NOT', () => {
+  /*
+   * **THE SPAN STRIP AND THE GLUED-PAIR OUTLINE ARE GONE WITH `BlockEditor.tsx`**, and this
+   * block is what stops that reading as the rule being dropped.
+   *
+   * A6-31 existed because an HTML form field shows a trailing space no more than it trims
+   * one, so `para(s('Lihat '), link('/gallery', 'galeri'))` rendered `Lihatgaleri` with
+   * nothing on screen saying so — the block union's form of the JSX-whitespace bug that
+   * shipped three times in one afternoon as `www.jmtarot.siteand add to your phone`.
+   *
+   * **IN MARKDOWN THE SPACE IS IN THE TEXT**, in the position a diff would show it:
+   * `Lihat [galeri](/gallery)`. So the compensation is not needed, and it is not needed for
+   * a reason rather than by assumption — `markdown.test.ts` asserts over the four REAL
+   * documents that a parse never emits an adjacent pair `spansSeparate` would object to.
+   */
+  it('no longer reimplements the strip, because there is nothing to compensate for', () => {
+    const editor = code('src/app/admin/blog/MarkdownEditor.tsx');
+    expect(editor).not.toContain('visibleBoundaries');
+    expect(editor).not.toContain('spansSeparate');
+    // And no local re-derivation of the boundary character sets, which is the drift the
+    // original rule was really about.
     expect(editor).not.toMatch(/const (OPENING|CLOSING)\s*=/);
   });
 
-  it('renders the joined string with boundary whitespace made visible', () => {
-    const editor = code('src/app/admin/blog/BlockEditor.tsx');
-    expect(editor).toContain('visibleBoundaries');
-    expect(editor).toContain('·');
+  it('keeps the predicate and the save-time refusal alive elsewhere', () => {
+    // Not vacuous: if `spansSeparate` were deleted too, the assertions above would pass
+    // while the lint rule they stand in for had quietly gone.
+    expect(readFileSync('src/lib/content/lint.ts', 'utf8')).toContain('export function spansSeparate');
+    expect(readFileSync('src/lib/content/markdown.test.ts', 'utf8')).toContain('spansSeparate');
   });
 });
 
-describe('A-D14 -- five kinds, and the editor cannot author a sixth', () => {
-  it('names exactly the five block kinds and the four span kinds', () => {
-    const editor = code('src/app/admin/blog/BlockEditor.tsx');
-    expect(editor).toMatch(
-      /const KINDS = \['heading', 'paragraph', 'list', 'quote', 'cardRef'\] as const;/,
-    );
-    expect(editor).toMatch(/const SPAN_KINDS = \['text', 'em', 'strong', 'link'\] as const;/);
-    for (const refused of ['callout', 'html', 'raw', 'markdown']) {
-      expect(editor, refused).not.toContain(`'${refused}'`);
+describe('A-D14 -- five kinds, and nothing on this surface can author a sixth', () => {
+  it('leaves the block vocabulary to the parser, and names no refused kind', () => {
+    /*
+     * **THE EDITOR USED TO CARRY `KINDS` AND `SPAN_KINDS` AS LITERALS AND NO LONGER DOES**,
+     * because it has no per-kind controls: `parseMarkdown` is the only thing that decides
+     * what a block is, and `blockSchema.ts` still refuses a sixth on save. So the assertion
+     * moves rather than disappearing — a literal list in a client component that no longer
+     * builds blocks would be a list nobody maintains.
+     */
+    const parser = code('src/lib/content/markdown.ts');
+    for (const kind of ['heading', 'paragraph', 'list', 'quote', 'cardRef']) {
+      expect(parser, kind).toContain(`'${kind}'`);
     }
+    for (const refused of ['callout', 'html', 'raw']) {
+      expect(parser, refused).not.toContain(`kind: '${refused}'`);
+    }
+    for (const f of FILES) {
+      for (const kind of ['callout', 'html', 'raw']) {
+        expect(code(f), `${f}:${kind}`).not.toContain(`kind: '${kind}'`);
+      }
+    }
+  });
+
+  it('stores no markdown, which is what keeps A-D10 intact', () => {
+    /*
+     * **THERE IS NO `markdown` BLOCK KIND AND THE COLUMN IS STILL `Block[]`.** The word
+     * appears all over this surface now, so the fence has to be about the SHAPE rather than
+     * about the string: markdown is a projection built by `serializeMarkdown` on every page
+     * load, never a stored representation.
+     */
+    expect(code('src/lib/content/blockSchema.ts')).not.toContain("literal('markdown')");
+    expect(code('src/lib/content/markdown.ts')).not.toContain("kind: 'markdown'");
+    expect(code('src/app/admin/blog/MarkdownEditor.tsx')).toContain('serializeMarkdown(');
   });
 
   it('has no contenteditable, no rich text and no innerHTML', () => {
     // A-D10's CSP argument: a markup-carrying path is *"a permanent new reason the policy
-    // can never be enforced"*, and an admin page is not an exception to it.
+    // can never be enforced"*, and an admin page is not an exception to it. A `<textarea>`
+    // is the opposite of a rich-text field — it carries a string and renders nothing.
     for (const f of FILES) {
       expect(code(f), f).not.toMatch(/contentEditable|dangerouslySetInnerHTML|innerHTML/);
     }
@@ -244,7 +277,7 @@ describe('A6-30 -- the slug is frozen once any locale is published', () => {
     expect(page).toContain("l.status !== 'draft'");
     expect(page).toContain('slugFrozen');
     // The field is never editable in the editor -- it is rendered `readOnly`.
-    expect(code('src/app/admin/blog/BlockEditor.tsx')).toMatch(/value=\{slug\}\s+readOnly/);
+    expect(code('src/app/admin/blog/MarkdownEditor.tsx')).toMatch(/value=\{slug\}\s+readOnly/);
   });
 });
 
@@ -270,7 +303,7 @@ describe('the locale tabs remount the editor', () => {
      * a tab press, which is the whole navigation this guards.
      */
     const page = code('src/app/admin/blog/[slug]/page.tsx');
-    expect(page).toMatch(/<BlockEditor\s+key=\{locale\}/);
+    expect(page).toMatch(/<MarkdownEditor\s+key=\{locale\}/);
   });
 
   it('seeds every editor field from a prop, which is WHY the key is needed', () => {
@@ -280,30 +313,126 @@ describe('the locale tabs remount the editor', () => {
      * would delete it — correctly. This asserts the precondition still holds, so the two
      * facts fail together rather than the guard rotting alone.
      */
-    const editor = code('src/app/admin/blog/BlockEditor.tsx');
+    const editor = code('src/app/admin/blog/MarkdownEditor.tsx');
     expect(editor).toMatch(/useState\(initial\?\./);
+    // And the textarea is seeded the same way, through the lazy initialiser form.
+    expect(editor).toMatch(/useState\(\(\) =>\s*\n?\s*initial \? serializeMarkdown/);
   });
 });
 
 describe('§4.2 -- the client bound that makes `maxDuration` mean something', () => {
-  it('aborts the save from the client, below the route’s ceiling', () => {
+  it('bounds all THREE fetches from the client, each below its own route ceiling', () => {
     /*
      * *"A bigger `maxDuration` is not a latency regression, but it must be paired with a
-     * bound on the client, or you have only made the hang longer."* The route is 30s and
-     * the client gives up at 25, so the SERVER's answer wins the race and the operator
-     * gets a stated failure rather than a platform 504 with no diagnosis.
+     * bound on the client, or you have only made the hang longer."*
+     *
+     *   save      route 30s, client 25s
+     *   translate route 60s, client 55s
+     *   format    route 60s, client 45s   <- smaller: three fields of metadata, not sixty
+     *                                        translated segments, so 45s means stuck
+     *
+     * The SERVER must lose the race last, so what the operator gets is the sentence that
+     * says what happened rather than a platform 504 with no diagnosis. **A third fetch with
+     * no bound is the way this rule decays**, so the count is asserted too.
      */
-    const editor = code('src/app/admin/blog/BlockEditor.tsx');
-    expect(editor).toContain('AbortSignal.timeout(SAVE_ABORT_MS)');
+    const editor = code('src/app/admin/blog/MarkdownEditor.tsx');
     expect(editor).toMatch(/SAVE_ABORT_MS = 25_000/);
+    expect(editor).toMatch(/TRANSLATE_ABORT_MS = 55_000/);
+    expect(editor).toMatch(/FORMAT_ABORT_MS = 45_000/);
+    const fetches = editor.match(/await fetch\(/g) ?? [];
+    const signals = editor.match(/signal: AbortSignal\.timeout\(/g) ?? [];
+    expect(signals).toHaveLength(fetches.length);
+    expect(fetches.length).toBe(3);
   });
 
-  it('treats a timeout as UNKNOWN rather than as a failure', () => {
-    // `POST /api/locale`'s third rule: a timeout is the one outcome that means unknown,
-    // and on a write path the request may still have committed.
-    const editor = code('src/app/admin/blog/BlockEditor.tsx');
+  it('treats a timeout as UNKNOWN rather than as a failure, and Auto Format says so hardest', () => {
+    /*
+     * `POST /api/locale`'s third rule: a timeout is the one outcome that means unknown, and
+     * on a write path the request may still have committed.
+     *
+     * **AUTO FORMAT IS THE ONE WHERE THAT BITES.** Unlike translate it WRITES, so its copy
+     * must not claim the format failed — it says the draft may be stored and to reload.
+     */
+    const editor = code('src/app/admin/blog/MarkdownEditor.tsx');
     expect(editor).toContain("'TimeoutError'");
-    expect(readFileSync('src/app/admin/blog/copy.ts', 'utf8')).toContain('saveTimedOut');
+    const copy = readFileSync('src/app/admin/blog/copy.ts', 'utf8');
+    expect(copy).toContain('saveTimedOut');
+    expect(copy).toContain('formatTimedOut');
+    expect(copy).toMatch(/formatTimedOut:[\s\S]{0,200}muat ulang/);
+  });
+
+  it('says on screen that Auto Format STORES and auto-translate does not', () => {
+    /*
+     * **TWO ADJACENT BUTTONS WITH OPPOSITE STORAGE BEHAVIOUR, AND THE COPY IS THE ONLY
+     * THING THAT TELLS THEM APART.** `Format otomatis` writes the draft row (design R5);
+     * `Terjemahkan otomatis` deliberately stores nothing. Getting that pair wrong loses an
+     * operator's work or surprises them with a publish-shaped side effect.
+     */
+    const copy = readFileSync('src/app/admin/blog/copy.ts', 'utf8');
+    expect(copy).toMatch(/formatHint:[\s\S]{0,400}MENYIMPAN/);
+    expect(copy).toMatch(/translateHint:[\s\S]{0,400}BELUM tersimpan/);
+  });
+});
+
+describe('§9 -- the table of contents has ONE definition, and both surfaces mount it', () => {
+  /*
+   * **IT WAS AUTOMATIC SINCE S6 AND NO OPERATOR HAD EVER SEEN IT.** The feature request was
+   * *"the LLM automatically generates a clickable Table of Contents"*, and the public page
+   * had been building one from every level-2 heading with an id since it shipped. What was
+   * missing was the PREVIEW: this pane mounted `Prose` alone, without the page chrome, so
+   * the one surface somebody looks at while writing was the one that did not show it.
+   *
+   * A6-32's argument for not reimplementing `Prose` binds here identically — two
+   * definitions of the outline would agree right up until they did not, and the divergence
+   * would show on a public page rather than in the preview.
+   */
+  it('is mounted from `@/components/ArticleToc` on both surfaces', () => {
+    const admin = code('src/app/admin/blog/[slug]/page.tsx');
+    const publicPage = code('src/app/blog/[slug]/page.tsx');
+    expect(importsOf(admin)).toContain('@/components/ArticleToc');
+    expect(importsOf(publicPage)).toContain('@/components/ArticleToc');
+    expect(admin).toContain('<ArticleToc');
+    expect(publicPage).toContain('<ArticleToc');
+  });
+
+  it('leaves no second copy of the markup on either page', () => {
+    // The failure mode is somebody copying the `<nav>` back rather than importing it, which
+    // works and passes every other test in this file.
+    for (const f of ['src/app/admin/blog/[slug]/page.tsx', 'src/app/blog/[slug]/page.tsx']) {
+      expect(code(f), f).not.toContain('aria-labelledby="toc-title"');
+      expect(code(f), f).not.toContain('tocList');
+    }
+  });
+
+  it('takes its label as a PROP, so the admin tree can mount it', () => {
+    /*
+     * **`adminCopy.test.ts` FORBIDS `getT` AND `useT` ACROSS THE ADMIN TREE**, because the
+     * admin surface is deliberately Indonesian-only: an operator's chrome following the
+     * viewer's locale is a translation nobody asked for on a page nobody but Miftah sees.
+     * A component calling `t()` could not be mounted here at all — so it takes the string,
+     * and neither fence bends.
+     */
+    const toc = code('src/components/ArticleToc.tsx');
+    expect(toc).not.toMatch(/\bgetT\(|\buseT\(/);
+    expect(toc).toContain('label: string');
+    expect(code('src/app/admin/blog/[slug]/page.tsx')).toContain('BLOG.editor.previewToc');
+    expect(code('src/app/blog/[slug]/page.tsx')).toContain("t('blog.inThisArticle')");
+  });
+
+  it('deletes `previewStale` rather than rewording it', () => {
+    /*
+     * It said *"satu simpan di belakang"*, and that stopped being true when `Format
+     * otomatis` began writing the draft row and navigating (design R5). **A hint describing
+     * a staleness the pane no longer has teaches an operator to distrust what they are
+     * looking at**, which is worse than no hint. `previewHref` is the one that stays: `Prose`
+     * resolves the locale itself, so preview links lack the `/en/` prefix for an `en`
+     * document.
+     */
+    const copy = readFileSync('src/app/admin/blog/copy.ts', 'utf8');
+    expect(code('src/app/admin/blog/copy.ts')).not.toContain('previewStale:');
+    expect(code('src/app/admin/blog/[slug]/page.tsx')).not.toContain('previewStale');
+    expect(copy).toContain('previewHref:');
+    expect(code('src/app/admin/blog/[slug]/page.tsx')).toContain('BLOG.editor.previewHref');
   });
 });
 

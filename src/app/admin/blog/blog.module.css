@@ -320,82 +320,42 @@
   min-width: 100px;
 }
 
-.textarea,
-.spanText {
+.textarea {
   line-height: 1.6;
   resize: vertical;
 }
 
 /*
- * The span's own text field. **A TEXTAREA BECAUSE A 1440px SCREENSHOT SHOWED A
- * THREE-HUNDRED-CHARACTER SPAN IN A SIXTY-CHARACTER SLOT** — the strip below it was
- * rendering the whole string the entire time, which is why nothing looked wrong.
- * `flex: 1` so it takes the row's spare width beside the kind picker and the remove
- * button.
+ * ── THE BLOCK EDITOR'S RULES ARE DELETED ────────────────────────────────────
+ *
+ * `.spanText`, `.blockList`, `.block`, `.blockHead`, `.kindBadge`, `.blockControls`,
+ * `.addRow`, `.item`, `.spanRow`, `.spanRow[data-glued]` and `.strip` went with
+ * `BlockEditor.tsx` on 2026-07-31.
+ *
+ * **`.strip` AND `.spanRow[data-glued]` ARE THE TWO WORTH A LINE.** They were A6-31 in
+ * CSS: the middle-dot diff and the red outline on a pair of spans that would render as one
+ * word. Neither is reachable from a markdown textarea, where the space is IN the text in
+ * the position a diff would show it — but `spansSeparate` and the save-time refusal are
+ * untouched, and `markdown.test.ts` asserts the parse cannot emit a glued pair at all.
+ *
+ * `.fields > button` survives inside `.saveRow`'s rule below; the four buttons that used
+ * the deleted selectors are gone with them.
  */
-.spanText {
-  flex: 1 1 auto;
-  min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--gold-hairline);
-  border-radius: 8px;
-  background: var(--bg-panel, transparent);
-  color: var(--text);
-  font: inherit;
-  font-size: 14px;
-}
 
-.blockList {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.block {
-  border: 1px solid var(--gold-hairline);
-  border-radius: 10px;
-  padding: 12px 14px;
-  min-width: 0;
-}
-
-.blockHead {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
-}
-
-.kindBadge {
-  font-family: var(--font-display);
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--gold-dim);
-}
-
-.blockControls,
-.addRow,
 .saveRow,
-.item {
+.fields {
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
 }
 
-.item {
-  align-items: flex-start;
+.fields {
+  align-items: stretch;
   flex-direction: column;
-  margin-bottom: 10px;
 }
 
-.blockControls button,
-.addRow button,
-.spanRow button,
+.saveRow button,
 .fields > button {
   min-height: 44px;
   min-width: 44px;
@@ -406,45 +366,6 @@
   color: var(--muted);
   font-size: 12px;
   cursor: pointer;
-}
-
-.addRow {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--gold-hairline);
-}
-
-.spanRow {
-  display: flex;
-  gap: 6px;
-  align-items: flex-start;
-  margin-bottom: 6px;
-  min-width: 0;
-}
-
-/* A pair that would render as one word. Marked where it happens, not only in the strip. */
-.spanRow[data-glued='true'] {
-  outline: 1px solid var(--danger);
-  outline-offset: 2px;
-  border-radius: 8px;
-}
-
-/*
- * A6-31. **THE STRIP IS THE DIFF.** Monospace so `·` lines up with the character it
- * describes, and it wraps rather than scrolling: a boundary space at the end of a long
- * paragraph is exactly the one nobody would scroll to find.
- */
-.strip {
-  margin: 0;
-  padding: 10px 12px;
-  border: 1px dashed var(--gold-hairline);
-  border-radius: 8px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  line-height: 1.7;
-  color: var(--text);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
 }
 
 .saveRow {
@@ -580,4 +501,65 @@
   font-size: 13px;
   color: var(--label);
   overflow-wrap: anywhere;
+}
+
+/*
+ * ── THE MARKDOWN EDITOR (2026-07-31) ────────────────────────────────────────
+ *
+ * `.content` is the one field that matters now: a whole article in a monospace box.
+ *
+ * **MONOSPACE IS NOT DECORATION HERE.** The textarea holds markdown, and two of its
+ * constructs are invisible in a proportional face at 14px: the difference between `##`
+ * and `###`, and a `{#anchor-id}` suffix at the end of a heading line. A fixed advance
+ * also makes a stray leading space before `- ` visible, which is the difference between
+ * a list and a paragraph after a round trip.
+ *
+ * **`white-space: pre` AND `overflow-x: auto`, NEVER `pre-wrap`.** A hard-wrapped
+ * paragraph is joined into one block by the parser, and soft-wrapping it in the editor
+ * would show the operator line breaks the document does not have — so a long paragraph
+ * scrolls horizontally and what is on screen is what is stored. The vertical resize is
+ * kept because 28 rows is a guess about one article, not about every article.
+ */
+.content {
+  width: 100%;
+  min-height: 480px;
+  padding: 12px 14px;
+  border: 1px solid var(--gold-hairline);
+  border-radius: 8px;
+  background: var(--bg-panel, transparent);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  tab-size: 2;
+  white-space: pre;
+  overflow-x: auto;
+  resize: vertical;
+}
+
+/*
+ * The collapsed SEO row (design R2). Three fields is the promise; the description is the
+ * fourth, filled in FOR the operator and opened only when they disagree with it.
+ *
+ * `<details>` rather than a state toggle, so it works with JavaScript off — which no other
+ * control in this editor does. The 44px `min-height` on the summary is the one number iOS
+ * enforces for a target, and `PublicShare`'s 36px button is the recorded counter-example.
+ */
+.seo {
+  margin: 0 0 14px;
+  border: 1px solid var(--gold-hairline);
+  border-radius: 8px;
+  padding: 0 12px;
+}
+
+.seo > summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.seo[open] > summary {
+  border-bottom: 1px solid var(--gold-hairline);
+  margin-bottom: 12px;
 }

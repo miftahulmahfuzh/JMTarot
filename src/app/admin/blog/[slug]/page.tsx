@@ -1,50 +1,47 @@
 /**
- * `/admin/blog/[slug]` — the per-locale document editor. **v0.5.0 / A6, tasks 20–22.**
+ * `/admin/blog/[slug]` — the per-locale document editor. **v0.5.0 / A6, tasks 20–22,
+ * rewritten 2026-07-31 by the markdown editor.**
  *
- * Two panes on a desktop width, stacked below it. Left: the field editor, the block
- * list, the span rows and the lint panel. Right: the real `Prose` renderer.
+ * Two panes on a desktop width, stacked below it. Left: three fields, two model buttons and
+ * the lint panel. Right: the real `Prose` renderer, plus the table of contents the public
+ * page builds.
  *
- * ── A6-32 IS AMENDED, AND THE AMENDMENT IS BIGGER THAN THE ONE IT PLANNED ──
+ * ── A6-32 SURVIVES, AND ITS COST IS NOW PAID DIFFERENTLY ───────────────────
  *
- * The plan says *"the right pane mounts `Prose` with the parsed blocks"* and then
- * reasons only about hrefs: `Prose` calls `getLocale()` itself, so an `en` document
- * previewed by an Indonesian admin shows `/arcana/the-moon` where the live page shows
- * `/en/arcana/the-moon`. That is accepted, unchanged, and the line of admin copy saying
- * so is on screen.
+ * A6's plan said *"the right pane mounts `Prose` with the parsed blocks"* and then noticed
+ * a problem it had not planned for: **`Prose` is a SERVER component and the editor is a
+ * client one.** It imports `@/lib/i18n/t`, and `clientBoundary.test.ts` fences
+ * `src/content/**` from client components *"because `Prose` is a SERVER component and
+ * importing `@/lib/i18n/t` is what makes that permanent"*. So a client editor cannot hand
+ * it live state, and there is no live preview to have.
  *
- * **WHAT THE PLAN DID NOT NOTICE IS THAT `Prose` IS A SERVER COMPONENT AND THE BLOCK
- * EDITOR IS A CLIENT ONE.** `Prose` imports `@/lib/i18n/t`, and `clientBoundary.test.ts`
- * fences `src/content/**` from client components *"because `Prose` is a SERVER component
- * and importing `@/lib/i18n/t` is what makes that permanent"*. So a client editor
- * **cannot** hand it live state, and there is no live preview to have.
+ * The three ways out were: render the SAVED row server-side and be one save behind
+ * (chosen); reimplement the renderer in a client component, which is a second definition of
+ * the thing A6-35's byte-identity argument rests on being single; or a preview endpoint
+ * returning HTML, which is `dangerouslySetInnerHTML` on an admin page and A-D10 refuses it.
  *
- * The three ways out, and why this one:
+ * **THE CHOICE IS UNCHANGED AND THE STALENESS IS GONE** (design R5). `Format otomatis`
+ * WRITES the draft row and then navigates, so the pane below always shows what is stored.
+ * `BLOG.editor.previewStale` is deleted rather than kept, because a hint that says *"satu
+ * simpan di belakang"* when it no longer is teaches somebody to distrust the preview.
  *
- *   1. **Render the SAVED row through the real `Prose`, server-side.** The preview is one
- *      save behind while typing. **Chosen.**
- *   2. Reimplement the renderer in a client component. That is a second definition of
- *      the thing A6-35's whole byte-identity argument rests on being single —
- *      *"deep-equality of `body` is byte-identity of the rendered prose, and this is
- *      checkable precisely because `Prose.tsx` is unchanged"*. A preview rendered by a
- *      different component would agree with the page right up until it did not.
- *   3. A preview endpoint returning server-rendered HTML. That is `dangerouslySetInnerHTML`
- *      on an admin page, which A-D10's CSP argument refuses on prose we wrote.
- *
- * **What the preview is FOR survives option 1 intact**: it is the real renderer, so the
- * structure, the emphasis, the list semantics and the span joining are exactly what will
- * ship. What it costs is immediacy, and the span strip (A6-31) covers the one thing that
- * needs to be immediate — a boundary space is invisible in a form field and visible in
- * the strip as you type.
+ * **`previewHref` STAYS.** `Prose` resolves the locale itself, so an `en` document previewed
+ * by an Indonesian admin shows `/arcana/the-moon` where the live page shows
+ * `/en/arcana/the-moon`. Accepted, unchanged, still on screen.
  *
  * ── THE 22 SLUGS ARE RESOLVED HERE, ON THE SERVER ─────────────────────────
  *
  * `cardByUrlSlug` lives in `@/data/deck`, and the editor gets a plain `string[]` rather
  * than the deck. A `<select>` means a free-text slug is not reachable through the UI
- * (A6-20); `resolveViolations` on the save path is what covers everything that is not
- * the UI, which is every other caller this route will ever have.
- */
-import { notFound } from 'next/navigation';
+ * (A6-20); `resolveViolations` on the save path covers every other caller.
+ *
+ * **THE HERO `alt` IS NOT PASSED AND THERE IS NO FIELD FOR IT** (design §7). It is derived
+ * from the card's own `LoreDoc.imageAlt` inside `saveDocument`, because all four committed
+ * articles answered that field with the bare card name — the one thing `LoreDoc.imageAlt`
+ * forbids in its own words.
+ */import { notFound } from 'next/navigation';
 import Link from 'next/link';
+import { ArticleToc } from '@/components/ArticleToc';
 import { Prose } from '@/components/Prose';
 import { CARD_URL_SLUGS } from '@/data/deck';
 import { requireAdminPage } from '@/lib/admin/identity';
@@ -54,7 +51,7 @@ import { isLocale, DEFAULT_LOCALE } from '@/lib/i18n/locale';
 import { SLUG_RE } from '@/lib/content/lint';
 import { AdminPageViewed } from '../../AdminPageViewed';
 import { AdminTabs } from '../../AdminTabs';
-import { BlockEditor } from '../BlockEditor';
+import { MarkdownEditor } from '../MarkdownEditor';
 import { BLOG } from '../copy';
 import styles from '../blog.module.css';
 
@@ -141,6 +138,9 @@ export default async function AdminBlogEditorPage({
           **`key={locale}` IS THE DIFFERENCE BETWEEN THE LOCALE TABS WORKING AND THE
           LOCALE TABS DESTROYING A PUBLISHED ARTICLE, AND IT WAS MISSING.**
 
+          It survived the block editor's deletion because the defect is not the block
+          editor's: a `<textarea>` seeded from a prop has it identically.
+
           The tabs above are `<Link>`s, so pressing one is a SOFT navigation within this
           same route segment. The server re-renders and the preview pane below updates —
           which is exactly how the defect was reported, *"clicking one of these only
@@ -159,7 +159,7 @@ export default async function AdminBlogEditorPage({
           remount the navigation already implies, and it survives the markdown editor —
           a `<textarea>` seeded from a prop has the identical defect.
         */}
-        <BlockEditor
+        <MarkdownEditor
           key={locale}
           slug={slug}
           locale={locale}
@@ -186,14 +186,23 @@ export default async function AdminBlogEditorPage({
             **THE REAL RENDERER, ON THE SAVED ROW.** See the header: `Prose` is a server
             component and the editor is a client one, so there is no live preview to
             have — and a second renderer would be a second definition of the thing
-            A6-35's byte-identity argument rests on being single.
+            A6-35's byte-identity argument rests on being single. What changed on
+            2026-07-31 is that both buttons now navigate, so the row on screen is the row
+            in the database and `previewStale` is deleted rather than reworded.
           */}
-          <p className={styles.hint}>{BLOG.editor.previewStale}</p>
           <p className={styles.hint}>{BLOG.editor.previewHref}</p>
           {row ? (
             <article className={styles.preview}>
               <h3 className={styles.previewTitle}>{row.title}</h3>
               <p className={styles.previewDesc}>{row.description}</p>
+              {/*
+                **THE OUTLINE THE PUBLIC PAGE BUILDS, IN THE PANE THE OPERATOR WATCHES.**
+                It has existed since S6 and no operator had ever seen it, because this pane
+                mounted `Prose` alone. One component, two mounts (§9) — the label is a prop
+                so nothing here reaches for `t()`, which `adminCopy.test.ts` forbids across
+                this whole tree.
+              */}
+              <ArticleToc blocks={row.body} label={BLOG.editor.previewToc} />
               <Prose blocks={row.body} />
             </article>
           ) : (
