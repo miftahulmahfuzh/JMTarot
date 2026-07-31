@@ -5,6 +5,394 @@ All notable changes to JMTarot are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.5.1] - 2026-07-31
+
+**v0.5.0 built the surface the operator can see. v0.5.1 is what happened when the
+operator used it.** No roadmap, no reconciliation, no workstream numbers: seven reports
+from Miftah driving `/admin` and `/admin/blog` by hand, two designs written in response
+(`docs/plans/2026-07-31-admin-panel-insights-design.md` and
+`2026-07-31-blog-markdown-editor-design.md`), and **four defects that a plan could not
+have found because each one needed somebody to press the thing.**
+
+**The report that sets the tone is one sentence long: *"i clicked 14 hari but the date
+range didn't do shit."*** The presets and the two date inputs shared one
+`<form method="get">`, and a submit sends every field in its form — so pressing *14 hari*
+sent `d=14` together with the `from`/`to` pair already on screen, and `parseRange` gives
+an explicit pair precedence over `d`. **Every preset navigated to a URL that re-selected
+the range it was already showing**, and the highlight and the date values were faithful
+renderings of a range the button had failed to change. The grep-shaped fences over
+`src/app/admin/**` cannot see that class of bug: they read source text, and this is a
+property of the rendered form tree.
+
+**The worst of the four is silent content loss behind a screen where nothing looks
+wrong.** The locale tabs on `/admin/blog/[slug]` are `<Link>`s, so pressing one is a soft
+navigation within the same route segment — the server re-renders and the preview updates,
+which is exactly how it was reported — but React reconciled `BlockEditor` as the same
+element and every field inside it was a `useState` initialiser. Open `?locale=id`, press
+**English**, press **Simpan**, and **the Indonesian body was stored as the English one.**
+Same class as the two initialiser traps this repo already records.
+
+**The second thesis: nobody composes an article in a block editor.** One arrives already
+written, from Gemini or ChatGPT, in markdown, on the clipboard. `BlockEditor.tsx` — 880
+lines of form controls over the `Block[]` union — is **deleted**, replaced by Judul,
+Gambar Utama, Konten and two buttons. **Markdown is a projection of the document, never
+the record of it:** `body` stays `Block[]`, `Prose` stays the one renderer, there is no
+markdown block kind and no `dangerouslySetInnerHTML`, and **no migration and no column.**
+`parseMarkdown ∘ serializeMarkdown` is identity over the four committed articles, and
+that property is what licensed the deletion.
+
+**And the lesson that generalises past this release: when a model produces something
+useless, measure the input before blaming the model.** Miftah pasted three paragraphs of
+Gemini-written Indonesian, pressed *Format otomatis*, got one enormous paragraph with a
+heading repeated after it, and concluded glm-4.6 was not capable enough. It was not the
+model. Measured on the real bytes: **3 lines, 0 blank lines.** A chat UI separates
+paragraphs with one newline and markdown says a single newline *continues* a paragraph, so
+the parser produced a single 2,292-character block — and **a heading can only go BETWEEN
+blocks, so a one-block document offered exactly one legal position.** The model was asked
+to find the sections of a document with no internal boundaries and did the only thing
+available.
+
+**Two new `LLMOp` values in one day, 9 → 11**, and the rule was never that ten is a magic
+number — it is that a new value is a question for Miftah, asked and granted twice. **Two
+of the eleven now measure the dashboard and the CMS rather than the app**, so a
+cost-per-reading denominator must exclude both.
+
+3016 unit tests across 162 files; 503 integration across 37. **One migration** (`0013`),
+taking the schema from seventeen tables to **eighteen**. **Zero new event names** — one
+prop shape widened instead, which is this register's own rule. **No new dependency**: the
+markdown parser is hand-rolled, deliberately.
+
+### Added
+
+- **An `Insight` button on all thirteen subpanels of `/admin` and `/admin/tokens` (A7)**,
+  with the model's reading of that panel in a box under it and the time it was written
+  beside the button. `src/app/admin/insight/panels.ts` is the registry — six overview
+  panels, seven token panels, `PANEL_IDS` in render order — with `InsightBox.tsx`,
+  `src/lib/admin/{insightPrompt,insight}.ts`, `queries/admin/insights.ts` and
+  `POST /api/admin/insight`. **The page imports the id list rather than spelling its own
+  strings**, so the registry and `panels.test.ts`'s grep can drift in membership but not
+  in spelling.
+- **`admin_insights` (migration `0013`)** — cached per `(panel_id, range_from, range_to)`,
+  so a reload serves the prose without reaching a model. **R21 survives**: the cached row
+  is read in each page's own `withAdminRead`, so the box's first frame is server-rendered
+  and the only fetch is the press.
+- **`insight` is the tenth `LLMOp` and `blog_format` the eleventh.** Roadmap seam 3's
+  *nine, closed, no tenth and no alias* was put as a question and granted, twice: each is a
+  recurring model call with no querent behind it, and `/admin/tokens`' own cost-by-purpose
+  table has to be able to state its price. **Folding either into an existing op would make
+  the dashboard hide the cost of its own newest feature.** `OP_ORDER`'s `AssertNever` makes
+  a twelfth a compile error.
+- **`stamp()` in `src/app/admin/format.ts` — the one formatter in that file pinned to
+  Jakarta rather than UTC.** `day` and `dayWithYear` render `local_date`, a string, and UTC
+  is what keeps the label the same day the column holds; this renders a real instant
+  answering *"when did I last press this button?"*. **The explicit zone is also what makes
+  it hydration-safe** in a client component whose first frame is server-rendered.
+- **`ChartFrame` takes an `insight` slot — a `ReactNode`, never a panel id.** It renders
+  below the footnote and above the table, and it is **optional**, which is the difference
+  from `table`: a chart cannot be constructed without its accessible relief (I-13) and can
+  perfectly well be constructed without a button. The moment that file takes an id it needs
+  the registry, the copy and a fetch, and I-16's *hardcodes no user-visible string* stops
+  being true of the one primitive every chart goes through.
+- **`src/lib/content/markdown.ts` — `parseMarkdown` and `serializeMarkdown`, five block
+  kinds, hand-rolled.** No markdown library: a general parser produces tables, images, HTML
+  blocks and footnotes this union would have to drop **silently**, where a parser that knows
+  five kinds refuses nothing silently — anything it cannot classify is a paragraph, which is
+  visible in the preview. `{#anchor-id}` is parsed and emitted, because the four articles
+  carry English ids on Indonesian headings that `slugify` cannot derive and **an anchor is a
+  permanent address**.
+- **`Format otomatis`** — `src/lib/content/formatAdvice.ts`, `src/lib/admin/blogFormat.ts`
+  and `POST /api/admin/blog/[slug]/format`. Four phases behind one button: parse to
+  `Block[]` (pure, no model, no network); consult a model **only when `adviceNeeded()` has
+  something to ask**; validate; write the draft through `saveDocument`, so machine output
+  gets no shortcut past zod, the lint, the resolution or the derived hero alt.
+- **The model returns metadata and never the author's words** — headings, anchor ids, a
+  description, a title — and code splices them. That is `effectiveYesNo()`'s and
+  `validateChoice`'s instinct in a new direction of travel. `parseMarkdown`'s output is
+  already a valid document, so **rejecting all the advice is a correct outcome**, and the
+  property is asserted directly: every block that came out of the parser is still in the
+  result, byte-identical and in order.
+- **`'no-title'` is a fourth `AdviceReason`.** An operator asks Gemini for an article and
+  pastes the body; the title is a separate question nobody thought to copy, and an empty
+  Judul used to be a dead end — `documentSchema` requires `title.min(1)`, so the press
+  produced *"markup / title / Too small"* in the lint panel. Accurate and useless. It is
+  asked for **only when the field is empty and used only when the field is empty**, checked
+  in the route as well as in `adviceNeeded`, because whether to ASK and whether to USE are
+  different questions and a model can ignore *"return an empty string"*.
+- **`src/lib/content/heroAlt.ts` — the hero `alt` is derived from `LoreDoc.imageAlt` and
+  there is no field for it.** One description per card per locale, already asserted ≥60
+  characters, already asserted not to open with the card name, written by somebody looking
+  at **our** painting. `heroAltFor()` returns `null` as a **refusal**, never `''`.
+- **`ArticleToc.tsx` — one component, two mounts, its label a prop.** The table of contents
+  was **always automatic** since S6; what was missing was the preview, which mounted `Prose`
+  alone without the page chrome — so the one surface somebody looks at while writing was the
+  one that did not show it. The label is a prop because `adminCopy.test.ts` forbids `t()`
+  across the admin tree.
+- **`Simpan & terbitkan`, which chains two existing endpoints and is not a mode on
+  `Simpan`.** A combined route would restate `changeStatus`'s rules — no path back to draft,
+  `id` before `en`, and a publish refused for **any** violation including warnings, which is
+  the one place an operator meets a violation that let them save seconds earlier. The publish
+  is skipped after a create, because that save navigates.
+- **The `Publik` chip is a link to the article it says is public**, in a new tab, 44px.
+  `blogPostPath` is new in `src/lib/seo/blog.ts` and `blogPostingUrl` delegates to it: **the
+  href is relative and built on the server** — relative because `blogPostingUrl`'s absolute
+  form would send a preview's operator to whatever `NEXT_PUBLIC_SITE_ORIGIN` names, which
+  reads as a failed publish; on the server because `StatusControl` is a client component and
+  `adminCopy.test.ts`'s A-D12 grep forbids that subtree from importing `@/lib/i18n/prefix` at
+  all. `draft` and `unpublished` keep the plain 20px chip, because a link to a 404 offered
+  **as** the status says the opposite of what the chip says.
+- **The `/admin/tokens` league row is a drill-down across its whole width**, landing on
+  `/admin/users/<id>#token` with the range carried over, so the total on the destination is
+  the total on the row clicked. **The anchor IS the grid row** rather than a link around
+  eight hex characters, which retires `page.module.css`'s recorded *"the row being 44px does
+  not make the link 44px"* trap by construction.
+- **`rangeQuery()` emits `from`/`to` and never `d`.** `d=30` resolves against the
+  **receiving** page's own `todayUtc()`, so a drill-down carrying it would land on a
+  different window whenever the two renders straddle UTC midnight, with both pages looking
+  perfectly healthy. It also carries a custom range, which `d` cannot express, and the
+  destination's pressed state still lights up because `presetFor(dayCount(from, to))`
+  recovers it.
+- **`ScrollToHash` and `--admin-anchor-offset`.** `#token` did not work, and not simply
+  because of `<Suspense>`: the body streams inside `<div hidden>` and is revealed by script,
+  so the parser meets the id with no scroll box — **but Chrome still wins that race about
+  half the time**, and when it does it ignores the sticky table of contents. Two loads of one
+  URL gave `y=0` and `y=2699`. Scrolling alone lost to Chrome's late scroll; publishing the
+  measured sticky height and letting `scroll-margin-top` govern **both** paths makes the race
+  harmless. Fixes `#bacaan` in passing and stops the fourteen TOC links landing behind the
+  bar.
+- **`splitRun`, and the discriminator is not a guess:** within a run of consecutive non-blank
+  lines, **if every line ends a sentence then each line is its own paragraph, otherwise the
+  run is joined.** Hard-wrapped prose breaks mid-sentence so it cannot satisfy that, and the
+  hard-wrapped shape is pinned by a test **from the other side**, so the fix cannot regress
+  into splitting text it should join.
+- **`src/lib/content/fixtures/pastedArticle.ts` keeps the real paste verbatim**, along with
+  the bad reply the model returned, and `blogFormat.integration.test.ts` runs the route's real
+  order — parse, `adviceNeeded`, `validateAdvice`, `applyAdvice`, `saveDocument` — over it.
+  Removing `splitRun` turns 7 of 11 red; removing the duplicate-id refusal turns 2 red.
+- **`RangeFilter.test.ts`, which did not exist**, asserting that **no form holds both a preset
+  and a date input** — so merging them back is red. Plus `ScrollToHash.test.ts`,
+  `range.test.ts` for `rangeQuery`, `insights.integration.test.ts`,
+  `blogSave.integration.test.ts`, `markdown.test.ts`, `formatAdvice.test.ts`,
+  `heroAlt.test.ts` and `insightPrompt.test.ts`.
+
+### Changed
+
+- **The translation pushes to the other language rather than pulling from it, and that was a
+  design error rather than a defect.** `Terjemahkan otomatis` was mounted on the **target**
+  tab, so using it meant: finish the Indonesian, navigate to an **empty** English tab, press a
+  button that fills the form, press Simpan. **The starting point is that the other article does
+  not exist yet**, and nobody navigates to a blank tab to create one. It now lives on the
+  source tab and names the destination. **The route needed no new parameter** — `from` was
+  always derived as the locale that is not `to`, so the caller passes the OTHER locale.
+- **It writes now, through `saveDocument`, and lands as a draft** because `id`-before-`en`
+  still binds. `canTranslate` asks whether **this** locale has a stored body, and
+  `targetHasBody` drives the overwrite guard — which now protects a stored article in a tab
+  the operator **cannot see**, strictly more worth confirming than a form they can.
+  **`translate()` must touch no form state**: a push that still called `setTitle`/`setMarkdown`
+  would overwrite the article being edited with a translation of itself, and a contract test
+  greps the function for those setters.
+- **The lint panel renders only when it has something to say, and the lint itself is
+  unchanged.** It still refuses saves and publishes and is still the only place its words
+  appear — measured live as `malay / tempoh` and `bare-path / /history`, both error class, both
+  storing nothing. What went is the permanent empty panel: beside a form with dozens of fields
+  a standing *"Bersih."* was reassurance, and beside three fields it is furniture that teaches
+  an operator to stop reading that part of the screen. **Silence is now the successful state.**
+- **`admin.blog_saved` gained `via` and `model_called`; the taxonomy stays at 70 names.**
+  `via` is `'form' | 'auto_format' | 'auto_translate'` — a third value on a prop, never a
+  third event name. **`model_called` is the one that decides whether the eleventh `op` was
+  worth it:** an already-`##`-sectioned paste should reach no provider, so **false on nearly
+  every press confirms the design and true on nearly every press means the parser is missing
+  something** — and that is the fix rather than a bigger prompt.
+- **Five distinguishable failures now read as five different sentences.** *"Format otomatis
+  gagal."* covered all of them: a 422 now names the count and the fields and points at the
+  panel, a non-2xx names the status, a 503 adds the stage and the driver code, a non-JSON body
+  says the route probably crashed before answering, and a throw that is not a timeout says the
+  request never arrived. **`Simpan` got the same treatment** rather than being left generic.
+- **`heroSchema` carries a slug and no `alt`, and `.strict()` is what makes the deletion
+  real.** A6-11's *both fields or null* is intact and now satisfied by **construction** rather
+  than by validation; a client still sending `alt` gets a **422** rather than having it
+  silently stripped and then silently overwritten. **`hero.alt` left the translation segment
+  walk** and joined `heading.id` as structure — it is the target locale's lore description, so
+  translating it would mint a third description of one painting.
+- **`changeStatus` lints the DERIVED alt**, so the four legacy rows can still be published:
+  refusing them for a defect already fixed on the write path would be the gate punishing
+  somebody for the old bug.
+- **The stale flag on an insight fires only on a CLOSED range.** Pressing the button **changes
+  the panel it describes** — the insight's own `llm_calls` row is dated today, so the total went
+  53 → 54 four seconds apart and the box flagged itself stale under prose it had just written.
+  On a live range the timestamp does the work. Excluding `op: 'insight'` from the metric queries
+  would fix it and would undo the whole reason the tenth op was spent.
+- **The insight prose column is `28em`, measured — `45ch` is not 45 characters.** Cormorant
+  Garamond's zero is 6.2px at 13px against a 5.19px average advance, so the column rendered at
+  279px under a 1126px chart.
+- **`RangeFilter` is two forms, and nothing else moved.** A preset now sends `d` alone and the
+  next render puts the window it chose into Dari and Sampai. `.filter` became a `div` carrying
+  the gap its children used to get from the form; wrapped height is identical at 320/360/390
+  with no overflow. `parseRange`'s precedence is deliberately **not** flipped: making a preset
+  win was the other candidate fix, and it leaves `?d=14&from=…&to=…` in the address bar with
+  `from`/`to` naming a range nobody is looking at.
+- **`adviceNeeded` takes an object.** Four positional arguments of which two are adjacent
+  strings — title and description — is the swap bug waiting to happen, and TypeScript cannot
+  see it.
+- **The format prompt's index rule needs a worked example, not a definition.** *"disisipkan
+  SEBELUM blok itu"* was accurate and read backwards; it now shows `[0] → at:0` explicitly and
+  forbids repeats and trailing headings in words. Three live runs after the change:
+  `heading,paragraph` × 3 every time, zero rejections, prose byte-identical.
+- **The prompt's language rule is stated twice on purpose.** The whole prompt is Indonesian
+  because the operator is, so a model reading it has every reason to answer in Indonesian —
+  exactly wrong for an English article. Measured both ways: the `id` article got *"Asal Usul
+  Major Arcana dan Cara Kerja Tarot"*, the `en` article got *"Understanding the True Nature of
+  Tarot Cards"*.
+- **`docs/analytics-queries.md` opens with three things to have in mind, not two**, and the
+  seeded-run paragraph above it is left exactly as it was — it describes what was true that day.
+
+### Fixed
+
+- **The range presets sent the dates they were meant to replace.** One `<form method="get">`
+  carrying `["d","d","d","d","from","to"]`; after, two forms, and a tap on *14 hari* lands on
+  `/admin?d=14` with *14 hari* pressed and 17–30 Jul in the inputs. Measured in a real browser
+  by stashing the fix against the running dev server.
+- **The locale tabs wrote one locale's body into the other's row.** `key={locale}` makes the
+  remount the soft navigation already implies. **The assertion is source-level** because the
+  behaviour needs a soft navigation, which is loop 5 and not Vitest — and the mechanism is one
+  character that carries no visible behaviour on first paint, so nothing looks different the
+  moment a refactor drops it. A second case asserts the editor still seeds from a prop, so the
+  guard and its precondition fail together rather than the guard rotting alone.
+- **`sqlstate()` has been logging a blank SQLSTATE for every analytics failure since it was
+  written, and `DRIVER_TRANSIENT` could never match.** Measured against a closed port: drizzle
+  wraps the driver error in a `DrizzleQueryError` whose own keys are `query`, `params` and
+  `cause` — **the code is one level down.** So the transient/permanent split was being decided
+  on a value that was always absent. One level only: walking an arbitrary chain is how a logger
+  acquires a cycle.
+- **`errorClass` read `err.name` and got `'Error'`.** The useful string is the constructor
+  name. Both of those were measured, not recalled.
+- **A chat-UI paste made one 2,292-character paragraph, and the model was blamed for it.**
+  `splitRun` is the fix; three live runs after it gave three accurate sections, English anchor
+  ids, descriptions 104–121 characters all in band, card names preserved, and **the author's
+  paragraphs byte-identical in all three.**
+- **`at === body.length` is refused: a heading titles what FOLLOWS it.** The first version
+  allowed it in as many words — *"a heading appended after the last block is legitimate"* — and
+  a live call returned `at: 1,2,3` on a three-block body, **storing a trailing heading whose
+  entire section was the page disclaimer.** The legal range is `[0, body.length - 1]`.
+- **A repeated heading `id` or `text` is refused, and seeded from the body rather than only
+  from the reply.** glm-4.6 returned `## Three Septenaries` three times with one id: a duplicate
+  DOM id, which is invalid HTML, and **a table of contents whose three rows all jump to the
+  first section.** The old validator accepted it because it only refused a repeated `at`, and
+  that reply used three different indices.
+- **Four indexed pages shipped a broken hero `alt`.** `what-tarot-is.id` carried
+  `alt: 'The World'` and the other three carried their own card's name — nine to eighteen
+  characters against a 60-character floor, opening with the card name: **both halves of
+  `hero-pair`.** The generalisation is not about alt text: `hero-pair` is **warning class** and
+  `blog-import.ts` sets `status: 'published'` directly rather than through `changeStatus`, **so
+  the gate that would have caught it was never on the path that made the rows.** A
+  warning-class rule plus a write path that bypasses the gate is a rule that does not exist.
+- **`#token` and `#bacaan` landed at `y=0` about half the time**, and behind the sticky bar the
+  rest. Five loads then landed identically.
+- **The preview never showed the table of contents, and no operator had ever seen it.** A
+  preview that renders **less** than the page is a feature report waiting to be filed.
+- **Two round-trip holes the property found by being written down.** A regex read `2 * 3 * 4`
+  as an em span, and a paragraph beginning *"- lima kesalahan"* came back as a list — the block
+  changes kind and the only witness is a preview nobody is looking at, because this fires when
+  somebody opens a stored article to fix a typo. Fixed with a hand-rolled scanner over
+  `ESCAPABLE` rather than placeholder substitution, which is a second escaping scheme to keep
+  correct.
+- **`cardRef` is recognised exactly, not heuristically** — a paragraph whose **entire** content
+  is an `/arcana/<slug>` link. The tempting version, *"contains such a link"*, would swallow the
+  six mid-sentence `/arcana/` links in the launch articles and tear those sentences in half.
+  Removing the exactness turns 7 tests red including the four-article round trip.
+- **The heading-cap test passed for the wrong reason.** 20 headings over a 3-block body collide
+  on index, so the one-per-position rule fired and the cap never ran. Fixed with a 24-block body.
+
+### Removed
+
+- **`src/app/admin/blog/BlockEditor.tsx`, 880 lines.** A6's own header recorded the evidence
+  without drawing the conclusion: the span control was a `<textarea>` because *"the launch
+  articles are mostly ONE span per paragraph, three hundred characters long"*, and `plainToggle`
+  existed because a paragraph with no emphasis in `Inline[]` form is *"ceremony around one text
+  node"*. **Both are the union leaking through a form.**
+- **The `Teks Alternatif Gambar` field.** It asked an admin to write a string that already
+  exists 44 times, and **a second set of 44 strings would be a second description of one image
+  with only the first one linted** — the shared-`@id` failure S3 and S4 each paid for.
+- **`lintClean`, deleted so nothing re-adds a render for the empty panel.**
+- **`previewStale`, deleted rather than reworded.** It said *"satu simpan di belakang"* and both
+  buttons now navigate, so a hint describing a staleness the pane no longer has would teach an
+  operator to distrust what they are looking at. **`previewHref` stays.**
+- **A6-31's middle-dot strip and glued-pair outline, with the fence rewritten rather than
+  removed** so that does not read as the rule being dropped. The strip existed because a form
+  field shows a trailing space no more than it trims one; **in markdown the space is IN the
+  text, in the position a diff would show it**, and `markdown.test.ts` asserts over the four real
+  documents that a parse cannot emit an adjacent pair `spansSeparate` would object to. The
+  predicate and the save-time refusal are untouched, and a case asserts they still exist so the
+  absence assertions cannot pass vacuously.
+- **`admin.blog_formatted`, drafted with five props and never added.** Trying to justify it
+  surfaced a defect in the route instead: **Auto Format WRITES, so a separate name meant a save
+  that fired no `admin.blog_saved` and an undercounted save metric.** `headings_added` and
+  `advice_rejected` are diagnostics the operator already reads in the response, and `outcome`
+  duplicates the fact that a refused save fires no event at all.
+- **No markdown column, no sixth block kind, no `raw`, no `dangerouslySetInnerHTML`** — and no
+  markdown dependency.
+
+### Security
+
+- **The *never the driver's words* rule held, and measuring made it sharper.** A
+  `DrizzleQueryError`'s own keys are `query`, `params` **and** `cause` — **it carries the bound
+  values, so returning or logging the object is easier to do by accident than with the raw
+  driver.** What crosses the wire is a stage literal we wrote, the constructor name, and the
+  short code.
+- **Machine output gets no shortcut past the gate.** Both model buttons write through
+  `saveDocument`, so zod's `.strict()`, the copy lint, the locale resolution and the derived
+  `hero_alt` all run on a translation and on a format exactly as they run on a hand-typed save.
+- **`heroAlt.ts` carries no `server-only` marker and is one hop from 44 lore documents.**
+  `@/content/arcana` statically imports all 44, and `clientBoundary.test.ts` checks **direct**
+  imports only — so `heroAlt.test.ts` asserts no client component reaches it, and **that
+  assertion is the whole protection for that hop.**
+- **`insight` and `blog_format` get no entry in `flags.ts`**, joining `blogAutoTranslate` in
+  `flagCoverage.test.ts`'s `EXEMPT` table. **`callClass: 'deferred'` on a site whose caller IS
+  the operator means the fleet-wide ceiling sheds the press before any querent call, so the tier
+  is the switch** and it cannot be left off at 2am.
+- **`validateInsight` and `validateAdvice` refuse shape, not truth, and say so.** Empty,
+  over-long, answered in markdown, a repeated heading, a trailing heading, an out-of-range index
+  — none of that is stored. **There is no cheap test for *"this sentence about a trend is
+  true"***, and the honest instruments are the timestamp, the stale line, and the table view
+  directly underneath.
+- **The insight route re-derives the numbers and never trusts the posted body**, which carries
+  `{ panel, from, to, force }` and no figures. W3's completion-route rule, applied to a prompt.
+- **`POST /api/admin/blog/[slug]/translate` writing the target locale did not widen the
+  surface**: it is the same session, the same `requireAdmin`, the same `saveDocument`, and the
+  target lands as a **draft** because `id`-before-`en` still binds.
+
+### Known gaps at this tag
+
+- **Nothing here has been deployed.** Migration `0013` is committed and unapplied in production,
+  which is the exact shape of the worst outage this project has had — `npm run build` runs the
+  deploy migration first and fails rather than skipping, so the rail is there. **Everything
+  v0.5.0 listed as undeployed is still undeployed**, including `ADMIN_EMAILS`,
+  `LLM_CALLS_RETENTION_DAYS` and the five kill switches.
+- **The four launch rows keep their old hero `alt` until `blog-import.ts` is re-run.** Deriving
+  on **write** keeps the column populated and needed no migration; a row written before this and
+  never re-saved renders its stored alt. Deriving on **read** would fix it everywhere and would
+  cost `blogRow.ts` its purity, and that module is A6-35's byte-identity oracle.
+- **`validateAdvice` refuses shape, not truth, and one live run proves what that costs.** The
+  model wrote *"Kartu Arcana Major"*, reversing *Major Arcana* — card **names** are protected by
+  a prompt rule and by the `card-names` lint, and Major Arcana is a **term** neither covered. It
+  is now forbidden by name in the prompt, and **the honest instrument is still somebody reading
+  the preview.**
+- **The `.content` textarea is unmeasured on a phone**, and so is `/account`'s answer sheet. A
+  `textarea` with the keyboard up is geometry WSL cannot answer.
+- **`flagCoverage.test.ts`'s admin-only exemption now has three members and is owed a class
+  switch.** The debt has a trigger: **the fourth admin-only call site must bring one
+  `ADMIN_MODEL_CALLS_ENABLED` and collapse all three entries into it.**
+- **`src/content/blog/**` is still committed and is still no longer the source.** The deletion
+  is gated on the import having run in production; until then two representations of four
+  articles exist, and the rows are the one that renders.
+- **Nobody has read the whole dashboard on a screen**, and the insight boxes were checked at
+  1440px only. Loop 6 has still not run on anything: the iOS standalone Google sign-in remains
+  the largest unverified risk in the project, no public content route is cached in production so
+  all eight `next.config.ts` content entries remain inert, and the Google consent screen is
+  still in **Testing** mode.
+- **`npm run test:all` still fails ~12–22 of V9's limiter tests** — the harness race on the one
+  shared `serverless-redis-http`, not a regression. `npm test` passes **3016** and
+  `npm run test:integration` passes **503**; run the two projects separately for a true answer.
+
 ## [v0.5.0] - 2026-07-30
 
 Six workstreams (A1–A6) planned in `PUBLIC_RELEASE_ROADMAP_v0.5.0.md`, reconciled in
@@ -1551,6 +1939,7 @@ app as it now stands. The iOS tree is preserved on `feat/ios` and
 - Two superseded design exports; the Clickable export is the single visual
   reference. Both remain in history at `d7fdd89`.
 
+[v0.5.1]: https://github.com/miftahulmahfuzh/JMTarot/releases/tag/v0.5.1
 [v0.5.0]: https://github.com/miftahulmahfuzh/JMTarot/releases/tag/v0.5.0
 [v0.4.0]: https://github.com/miftahulmahfuzh/JMTarot/releases/tag/v0.4.0
 [v0.3.0]: https://github.com/miftahulmahfuzh/JMTarot/releases/tag/v0.3.0
