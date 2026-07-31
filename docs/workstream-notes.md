@@ -5373,6 +5373,96 @@ other's params. Dropping `offset` on a range change is right; dropping the searc
 different file (`AdminUserTable.tsx`, A5) and a different decision — hidden inputs in both forms —
 and it was not part of the report.
 
+### The league row is a drill-down now, and Chrome's fragment scroll turned out to be a RACE (2026-07-31)
+
+Reported as *"di /admin/tokens subpanel Pengguna dengan token terbanyak harusnya bisa diklik. admin klik
+row akan redirect to /admin/users/&lt;hash&gt; plus auto scroll ke subpanel konsumsi token"*, with the
+condition that **the date filter must persist so the numbers are consistent.**
+
+Three separate things, and only the first was the shape of the report.
+
+**1. The row, not the label.** `InlineBars` wrapped the eight hex characters in an `<a>` inside a
+`<div class="inlineRow">`; the bar and the token count — the two things an operator is actually pointing
+at — were dead. The anchor now **is** the grid row (`<a class="inlineRow inlineRowLink">`), which also
+retires the trap `page.module.css` recorded: *"the row being 44px does not make the link 44px"*, measured
+at 16px once. With one box there is no second height to drift. Hit-tested at five points across the
+438×44 row — label, bar centre, value, top edge, bottom edge — all `elementFromPoint` to the same link.
+The `.inlineLink` rule is deleted and `ScrollToHash.test.ts` asserts its absence, because a dead rule in
+a stylesheet is how the old shape comes back.
+
+**2. The range travels as `from`/`to`, never as `d`.** `rangeQuery()` in `range.ts`. A drill-down
+carrying `d=7` would resolve against the *receiving* page's own `todayUtc()`, so a click either side of
+UTC midnight lands on a different window than the row clicked — with both pages looking healthy. An
+explicit pair is absolute, `parseRange` gives it precedence, and `presetFor(dayCount(from, to))` recovers
+the pressed state, so sending dates costs the destination's filter nothing. It also carries a **custom**
+range, which `d` cannot express at all.
+
+The control that makes this more than a tidy-up, measured with 40 calls inside a 7-day window and 10 more
+20 days back:
+
+```
+league row (7 days)                    99,4 rb
+-> /admin/users/<id>?from=…&to=…#token  40 calls   78,3 rb in   21 rb out   filter 25 Jul – 31 Jul
+-> /admin/users/<id>#token              50 calls  168,3 rb in   71 rb out   filter 02 Jul – 31 Jul
+```
+
+**3. `#token` did not work, and the reason is worse than "Suspense".** This page streams its whole body
+inside `<div hidden id="S:0">` and reveals it with an inline script ~70KB later, so when the parser meets
+`id="token"` the element has no scroll box, and the reveal is a mutation rather than a parse. The first
+measurement said exactly that — `{ hash: '#token', scrollY: 0, tokenTop: 2699 }`. **But two consecutive
+loads of the same URL disagreed:**
+
+```
+run 1 -> { y: 0,    tokenAbs: 2699 }     // never scrolled
+run 2 -> { y: 2699, tokenAbs: 2699 }     // scrolled, and ignored the sticky bar
+```
+
+So Chrome sometimes wins the race and sometimes does not. **The first version of `AdminScrollToHash`
+only scrolled, and lost:** it landed on 2508 (its own sticky-bar arithmetic) and Chrome's late scroll
+then moved the page to 2699, parking the panel heading back under the 191px table of contents. The
+instrumented mount recorded the collision in one line — `off=191 top=191 y=2508` — an effect firing at a
+scroll position it had itself already set.
+
+**The fix is not to win that race but to make both outcomes identical:** `scroll-margin-top` is honoured
+by Chrome's native fragment scroll *and* by `scrollIntoView`, so the component publishes the measured
+sticky height as `--admin-anchor-offset` and `.panel` consumes it. **The variable is the load-bearing
+half; deleting it and keeping the scroll reinstates the bug intermittently**, which is the worst way to
+have it. Five consecutive loads then landed on `y=2508`, `tokenTop === stickyH`, every time.
+
+The offset is measured rather than written down because `.toc` is fourteen wrapping links — **191px at
+390px wide** against a single row on a desktop — so there is no one number, and a fifteenth section
+would stale any literal.
+
+Three things not to undo:
+
+1. **It is mounted inside `Body`, not beside `<Suspense>` in the shell.** An effect fires after commit,
+   so a mount in the shell runs against the fallback, finds nothing, and returns silently — a failure
+   indistinguishable from the bug. `ScrollToHash.test.ts` asserts the mount appears after `Body`'s
+   declaration.
+2. **It reads `matchMedia` directly rather than calling `usePrefersReducedMotion`**, which starts `false`
+   and corrects in an effect — right for a component that keeps rendering, wrong for one that acts once
+   at mount, where the glide would ship to an operator who asked for less motion. `data-still` is read
+   for the reason `SwipeDeck` predicted by name: **a JS scroll's `behavior` overrides CSS
+   `scroll-behavior` rather than defaulting from it.**
+3. **The empty dependency list is the feature.** A re-run yanks an operator who has scrolled elsewhere
+   back to the anchor.
+
+**`#bacaan` on this page's own paging link had never worked either** — its comment calls it load-bearing
+— and it is fixed in passing, because it is the same mechanism and not a second one. The fourteen table
+of contents links stop landing behind the sticky bar for the same reason.
+
+Two generalisations:
+
+1. **"The browser does not do X" is a claim that needs more than one run when the timing is asynchronous.**
+   One measurement said Chrome never scrolls; the truth was that it scrolls about half the time, which is
+   the version that produces an intermittent bug report months later.
+2. **When you cannot beat a platform behaviour, look for the input both you and it read.** The arithmetic
+   version and the CSS version look equally correct in review; only one of them makes the race harmless.
+
+**Still open:** nothing here has been seen on a phone (loop 4 measures width, not whether a 191px table
+of contents above a panel is a reasonable thing to land on at 390px), and `stickyOffsetIn` counts a
+`fixed` bar it has never met — there is none in the admin tree today.
+
 ## The per-user everything page (A5), v0.5.0
 
 **`/admin/users`, `/admin/users/[id]`, four audited API routes, and the ordering that makes a

@@ -343,6 +343,13 @@ export const TOKENS = {
     'Per (pengguna, model), karena harga dihitung per model. Tanpa email dan tanpa nama — ' +
     'identitas ada di halaman pengguna, yang mencatat setiap pembukaan.',
   leagueColumns: { user: 'Pengguna', model: 'Model', calls: 'Panggilan', tokens: 'Token' },
+  /**
+   * A linked row's accessible name. **The visible row is an id prefix, a bar and a number**, so
+   * a screen reader announcing it as a link reads out eight hex characters and a figure -- true,
+   * and useless as a destination. This says where the row goes and that the window follows.
+   */
+  leagueRowLink: (user: string, model: string) =>
+    `Buka halaman pengguna ${user} (${model}) di bagian konsumsi token, rentang tanggal yang sama`,
   /** A consequence A3 requires the page to state: a hard delete moves history from an
    *  attributed row to an unattributed one, so cost-per-user denominators shift over time. */
   leagueCaveat:

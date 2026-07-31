@@ -77,6 +77,7 @@ import { ChartSkeleton } from '@/components/chart/ChartError';
 import { AdminPageViewed } from '../../AdminPageViewed';
 import { AdminTabs } from '../../AdminTabs';
 import { RangeFilter } from '../../RangeFilter';
+import { AdminScrollToHash } from '../../ScrollToHash';
 import { parseRange, type ParsedRange } from '../../range';
 import { DETAIL, U } from '../copy';
 import { callsByOpForUser, userTokenSeries } from '../series';
@@ -275,6 +276,17 @@ async function Body({
 
   return (
     <>
+      {/*
+        * **INSIDE THE SUSPENDED SUBTREE, AND THAT IS THE WHOLE REQUIREMENT** -- read its header.
+        * A `#token` or `#bacaan` navigation cannot be honoured by the browser here, because
+        * React streams this subtree inside a `<div hidden>` and reveals it with a script; the
+        * fragment is parsed while the element has no scroll box. Mounted beside `<Suspense>` in
+        * the shell it would run against the fallback and find nothing.
+        *
+        * It is what makes `/admin/tokens`'s league rows land on the token panel, and it repairs
+        * `#bacaan` on this page's own paging link, which had never worked.
+        */}
+      <AdminScrollToHash />
       {/*
         * **THE HEADING IS HIDDEN AND THE SUBJECT IS NAMED IN A LINE INSTEAD** (2026-07-30).
         * The four nav pages' `<h1>`s were verbatim copies of their own tab and are now
