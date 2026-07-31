@@ -1412,10 +1412,29 @@ the live verification, and the evidence is in `docs/workstream-notes.md`.
   `ArticleToc` is one component with two mounts and its label is a PROP, because
   `adminCopy.test.ts` forbids `t()` across the admin tree. `previewStale` is DELETED, not
   reworded; `previewHref` stays.
-- **Still open:** the model wrote *"Kartu Arcana Major"*, reversing *Major Arcana* — a TERM
-  that neither the prompt rule nor the `card-names` lint covers, and **`validateAdvice`
-  refuses shape, not truth.** The `.content` textarea is unmeasured on a phone. The four launch
-  rows keep their old `alt` until `blog-import.ts` is re-run.
+- **A PASTE FROM A CHAT UI HAS NO BLANK LINES, AND MARKDOWN'S OWN RULE MADE THAT ONE
+  PARAGRAPH.** Measured on real Gemini output: 3 lines, 0 blank lines, joined into a single
+  2,292-character block. **A heading can only go BETWEEN blocks, so one block offered ONE legal
+  position and sectioning was impossible** — the model was blamed and was not at fault.
+  `splitRun` fixes it: within a run of non-blank lines, if EVERY line ends a sentence each line
+  is its own paragraph, otherwise the run is joined. A hard-wrapped paragraph breaks
+  mid-sentence, so it cannot satisfy that. `pastedArticle.ts` keeps the real paste as a fixture
+  and `blogFormat.integration.test.ts` pins all three newline shapes.
+- **`at === body.length` IS REFUSED: A HEADING TITLES WHAT FOLLOWS IT.** The first version
+  allowed it in as many words — *"a heading appended after the last block is legitimate"* — and
+  a live call returned `at: 1,2,3` on a three-block body, storing a trailing heading whose
+  section contained the page disclaimer. Legal range is `[0, body.length - 1]`.
+- **A REPEATED HEADING `id` OR `text` IS REFUSED, AND SEEDED FROM THE BODY, NOT JUST THE
+  REPLY.** glm-4.6 returned `## Three Septenaries` three times with one id; the first validator
+  accepted all three because it only refused a repeated `at`. Duplicate ids are invalid HTML and
+  give a TOC whose rows all jump to the first section.
+- **THE INDEX RULE NEEDS A WORKED EXAMPLE, NOT A DEFINITION.** *"disisipkan SEBELUM blok itu"*
+  was accurate and read backwards; the prompt now shows `[0] → at:0`. Three live runs after the
+  change: `heading,paragraph` × 3 every time, zero rejections, prose byte-identical.
+- **Still open:** the model once wrote *"Kartu Arcana Major"*, reversing *Major Arcana* — a TERM
+  neither the `card-names` lint nor the old prompt covered, now forbidden by name in the prompt,
+  and **`validateAdvice` refuses shape, not truth.** The `.content` textarea is unmeasured on a
+  phone. The four launch rows keep their old `alt` until `blog-import.ts` is re-run.
 
 ## Trust, safety and secrets (W7)
 

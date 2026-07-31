@@ -165,6 +165,25 @@ export function validateAdvice(raw: unknown, body: readonly Block[]): AdviceVali
 
   /* ── headings ──────────────────────────────────────────────────────────── */
   const seenAt = new Set<number>();
+  /*
+   * **AN ANCHOR ID MUST BE UNIQUE IN THE DOCUMENT, AND A REAL MODEL BROKE THIS.** Handed a
+   * document it could not section, glm-4.6 returned the SAME heading three times — `##
+   * Three Septenaries` with one id — and the first version of this function accepted all
+   * three because it only refused a repeated `at`.
+   *
+   * Two things go wrong and both are silent. `id` becomes a duplicate DOM id, which is
+   * invalid HTML; and `blog/[slug]/page.tsx` builds its table of contents from
+   * `headingIds`, so the reader gets three identical rows that all jump to the first one.
+   *
+   * The existing ids are seeded from the body, not just from this reply: a model adding a
+   * section that collides with a heading the author already wrote is the same defect.
+   */
+  const seenIds = new Set(
+    body.flatMap((b) => (b.kind === 'heading' && b.id !== undefined ? [b.id] : [])),
+  );
+  const seenText = new Set(
+    body.flatMap((b) => (b.kind === 'heading' ? [b.text.trim().toLowerCase()] : [])),
+  );
   for (const entry of Array.isArray(r.headings) ? r.headings : []) {
     if (advice.headings.length >= MAX_HEADINGS_ADDED) {
       rejected.push(`more than ${MAX_HEADINGS_ADDED} headings`);
@@ -180,10 +199,18 @@ export function validateAdvice(raw: unknown, body: readonly Block[]): AdviceVali
     const id = typeof e.id === 'string' ? e.id.trim() : '';
 
     /*
-     * `body.length` IS A VALID INSERTION POINT and `body.length + 1` is not — a heading
-     * appended after the last block is legitimate, one past that names nothing.
+     * **`body.length` IS REFUSED, AND THE FIRST VERSION OF THIS COMMENT ARGUED THE
+     * OPPOSITE.** It said *"a heading appended after the last block is legitimate"*. It is
+     * not: a heading is the title of the content that FOLLOWS it, so one at the very end
+     * introduces nothing and renders as an empty section.
+     *
+     * **Measured on a live call.** Given the real three-paragraph paste, glm-4.6 returned
+     * `at: 1, 2, 3` — and `3` is `body.length`, so the stored document ended
+     * `…paragraph, heading` with a section that had no body. A reader sees a heading and then
+     * the disclaimer. The valid range is therefore `[0, body.length - 1]`: every heading has
+     * at least one block under it.
      */
-    if (typeof at !== 'number' || !Number.isInteger(at) || at < 0 || at > body.length) {
+    if (typeof at !== 'number' || !Number.isInteger(at) || at < 0 || at >= body.length) {
       rejected.push(`heading at an out-of-range index (${JSON.stringify(at)})`);
       continue;
     }
@@ -208,7 +235,23 @@ export function validateAdvice(raw: unknown, body: readonly Block[]): AdviceVali
       rejected.push(`a second heading at index ${at}`);
       continue;
     }
+    /*
+     * **THE DUPLICATE CHECK IS ON BOTH THE ID AND THE TEXT.** The id is the mechanical
+     * failure — an anchor and a DOM id — and the text is the readable one: two sections
+     * named the same thing is a document nobody would publish, and refusing it here is
+     * cheaper than an operator noticing it in the preview and having to fix it by hand.
+     */
+    if (seenIds.has(id)) {
+      rejected.push(`heading at ${at} repeats the anchor id "${id}"`);
+      continue;
+    }
+    if (seenText.has(text.toLowerCase())) {
+      rejected.push(`heading at ${at} repeats the title "${text}"`);
+      continue;
+    }
     seenAt.add(at);
+    seenIds.add(id);
+    seenText.add(text.toLowerCase());
     advice.headings.push({ at, text, id });
   }
 

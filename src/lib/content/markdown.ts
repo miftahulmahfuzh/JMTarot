@@ -258,16 +258,15 @@ export function parseMarkdown(src: string): Block[] {
     }
 
     /*
-     * A PARAGRAPH IS A RUN OF LINES UP TO A BLANK ONE OR THE NEXT BLOCK OPENER, joined
-     * with a single space. Markdown's own rule, and it is what makes a hard-wrapped
-     * paste from a text editor arrive as one paragraph rather than as eight.
+     * A PARAGRAPH IS A RUN OF LINES UP TO A BLANK ONE OR THE NEXT BLOCK OPENER.
+     * `splitRun` decides whether that run is ONE paragraph or several — see its header.
      */
     const run: string[] = [];
     while (i < lines.length && lines[i].trim() !== '' && !opensABlock(lines[i])) {
       run.push(lines[i].trim());
       i++;
     }
-    out.push(paragraphFrom(run.join(' ')));
+    for (const para of splitRun(run)) out.push(paragraphFrom(para));
   }
 
   return out;
@@ -275,6 +274,49 @@ export function parseMarkdown(src: string): Block[] {
 
 const opensABlock = (line: string): boolean =>
   HEADING_RE.test(line) || BQ_RE.test(line) || UL_RE.test(line) || OL_RE.test(line);
+
+/**
+ * A line that ends where a sentence ends. `.`, `!`, `?`, `…`, optionally closed by a quote
+ * or a bracket — `… diri sendiri.`, `… (RWS).`, `… "Rider-Waite".`
+ */
+const SENTENCE_END = /[.!?…]["'”’)\]]*$/;
+
+/**
+ * One run of consecutive non-blank lines → one paragraph, or several.
+ *
+ * ── THE BUG THIS EXISTS TO FIX, AND IT WAS FOUND ON REAL PASTED CONTENT ─────
+ *
+ * **A PASTE OUT OF GEMINI OR CHATGPT SEPARATES PARAGRAPHS WITH ONE NEWLINE, NOT A BLANK
+ * ONE.** Markdown says a single newline CONTINUES a paragraph, so the first version of this
+ * parser joined the whole article into one block: measured on a real three-paragraph paste,
+ * **3 lines and 0 blank lines became ONE paragraph of 2,292 characters.**
+ *
+ * That is not a cosmetic defect, it is what made Auto Format useless on the exact input it
+ * exists for. `applyAdvice` can only insert a heading BETWEEN blocks, so a document with one
+ * block has exactly two legal positions — **the model was being asked to find the sections of
+ * a document that had no internal boundaries**, and what came back was repeated headings
+ * around one blob. The model was not the problem; it was handed an impossible task.
+ *
+ * ── THE DISCRIMINATOR, AND WHY IT IS NOT A GUESS ────────────────────────────
+ *
+ * Both shapes are common and they are distinguishable:
+ *
+ *   HARD-WRAPPED prose (a text editor at 80 columns) breaks mid-sentence, so its interior
+ *   lines do NOT end with sentence punctuation. Only the last one does.
+ *
+ *   PARAGRAPHS-PER-LINE (a chat UI, a CMS textarea) end every line with a full stop, because
+ *   each line is a complete paragraph.
+ *
+ * So: **if EVERY line in the run ends a sentence, each line is its own paragraph; otherwise
+ * the run is joined.** A hard-wrapped paragraph cannot satisfy that unless every one of its
+ * wrapped lines happens to break exactly on a full stop, which does not happen in prose.
+ *
+ * A one-line run is returned unchanged either way, so the common case is untouched.
+ */
+function splitRun(run: readonly string[]): string[] {
+  if (run.length < 2) return [run.join(' ')];
+  return run.every((line) => SENTENCE_END.test(line)) ? [...run] : [run.join(' ')];
+}
 
 /**
  * A `>` run becomes a `quote`. **The em-dash last line is the attribution.**
