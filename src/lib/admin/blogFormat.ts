@@ -115,7 +115,25 @@ function systemPrompt(locale: Locale, reasons: readonly AdviceReason[]): string 
     ' "description":"<deskripsi meta>"}',
     '',
     'ATURAN:',
-    `1. "at" adalah nomor blok yang ada di blok data, dan judul disisipkan SEBELUM blok itu.`,
+    /*
+     * **THE INDEX RULE IS RESTATED AS "WHICH BLOCK DOES THIS HEADING INTRODUCE", WITH A
+     * WORKED EXAMPLE, BECAUSE THE ABSTRACT VERSION WAS READ BACKWARDS.** Measured: on a real
+     * three-paragraph paste the model returned `at: 1, 2, 3` when `0, 1, 2` was meant — every
+     * heading landed BELOW the paragraph it named, and the last one had no content at all.
+     *
+     * The prompt said *"disisipkan SEBELUM blok itu"*, which is accurate and evidently not
+     * enough. An example with the numbers in it is the cheap fix, and `validateAdvice` now
+     * refuses `at === body.length` so the trailing empty section cannot ship either way.
+     */
+    `1. "at" adalah nomor blok yang judulnya kamu tulis — judul itu diletakkan TEPAT DI ATAS`,
+    '   blok tersebut. Jadi kalau isi blok [0] membahas Three Septenaries, judul untuk bagian',
+    '   itu adalah {"at":0,...}, BUKAN {"at":1,...}. Contoh untuk artikel 3 blok:',
+    '     [0] PARAGRAPH: soal Three Septenaries   -> {"at":0,"text":"Tiga Kelompok Tujuh Kartu",…}',
+    '     [1] PARAGRAPH: soal Pamela Colman Smith -> {"at":1,"text":"Siapa Pelukisnya",…}',
+    '     [2] PARAGRAPH: soal The Lovers          -> {"at":2,"text":"Kartu yang Disalahpahami",…}',
+    '   Nomor blok terakhir TIDAK BOLEH dipakai sebagai "at" untuk judul yang tidak punya isi',
+    '   di bawahnya — setiap judul harus punya minimal satu blok sesudahnya.',
+    '   Judul tidak boleh diulang: setiap "text" dan setiap "id" harus berbeda.',
     '2. "id" selalu bahasa Inggris, huruf kecil, dipisah tanda hubung. Itu alamat',
     '   permanen di URL, jadi pakai kata Inggris meski judulnya berbahasa Indonesia.',
     `3. "text" adalah judul bagian: satu frasa pendek, maksimal 90 karakter, bukan kalimat`,

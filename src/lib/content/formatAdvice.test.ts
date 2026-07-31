@@ -229,15 +229,34 @@ describe('validateAdvice — it refuses shape, and never throws', () => {
     }
   });
 
-  it('refuses an out-of-range heading index, and `body.length` is IN range', () => {
-    // A heading appended after the last block is legitimate; one past that names nothing.
+  it('refuses `body.length`, because a heading with nothing under it is an empty section', () => {
+    /*
+     * **THIS CASE ASSERTED THE OPPOSITE UNTIL A LIVE CALL PROVED IT WRONG.** It read
+     * *"`body.length` is IN range — a heading appended after the last block is legitimate"*.
+     * Given the real paste, glm-4.6 returned `at: 1, 2, 3` on a three-block body, and `3`
+     * produced a stored document ending `…paragraph, heading`: a section whose entire content
+     * is the page disclaimer underneath it.
+     *
+     * A heading titles what FOLLOWS it, so the last legal index is `body.length - 1`.
+     */
     const at = (n: number) =>
       validateAdvice({ headings: [{ at: n, text: 'Judul', id: 'judul-x' }] }, BODY).advice.headings
         .length;
     expect(at(0)).toBe(1);
-    expect(at(BODY.length)).toBe(1);
+    expect(at(BODY.length - 1)).toBe(1);
+    expect(at(BODY.length)).toBe(0);
     expect(at(BODY.length + 1)).toBe(0);
     expect(at(-1)).toBe(0);
+  });
+
+  it('so every accepted heading has at least one block under it', () => {
+    // The property the index bound exists for, stated over the OUTPUT rather than the input.
+    const { advice } = validateAdvice(
+      { headings: Array.from({ length: 6 }, (_, i) => ({ at: i, text: `J${i}`, id: `j-${i}` })) },
+      BODY,
+    );
+    const out = applyAdvice(BODY, advice);
+    expect(out.at(-1)!.kind).not.toBe('heading');
   });
 
   it('refuses a heading that is a sentence, empty, or markdown', () => {
@@ -417,14 +436,15 @@ describe('applyAdvice — code owns every word of prose', () => {
     ]);
   });
 
-  it('appends at `body.length`', () => {
+  it('places a heading at the last legal index directly above the final block', () => {
     const out = applyAdvice(BODY, {
-      headings: [{ at: BODY.length, text: 'Akhir', id: 'akhir' }],
+      headings: [{ at: BODY.length - 1, text: 'Akhir', id: 'akhir' }],
       anchors: [],
       description: '',
       title: '',
     });
-    expect(out.at(-1)).toEqual({ kind: 'heading', level: 2, id: 'akhir', text: 'Akhir' });
+    expect(out.at(-2)).toEqual({ kind: 'heading', level: 2, id: 'akhir', text: 'Akhir' });
+    expect(out.at(-1)).toEqual(BODY.at(-1));
   });
 
   it('rewrites a heading’s id and nothing else about it', () => {
