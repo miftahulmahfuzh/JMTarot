@@ -9654,3 +9654,98 @@ every month that came before it.
 precisely the shape of the 2026-07-28 migration outage and of the `input_tokens` rot: **the
 app looks healthy while a stated fact underneath it is false.** The instrument here is a human
 opening <https://z.ai/manage-apikey/billing> and reading the invoice.
+
+### CORRECTION to the section above: the zeros are right, and here is the account (2026-08-01)
+
+**The section immediately above reached the wrong conclusion and is left standing rather than
+edited, because the way it went wrong is the thing a future session will repeat.** It read
+z.ai's current docs, found that `glm-4.6` is not on the supported-model list, and concluded
+that `prices.ts`'s zeros were probably understating a real bill. **They are not.** What was
+missing was not on any page z.ai serves: it was the account's own history.
+
+#### What actually settles it
+
+**The plan is an annual Pro Coding Plan, bought February 2026 for US$180** — 50% off, which
+z.ai was running at the time. A fixed fee for a year. **There is no wallet, no top-up and no
+pay-as-you-go balance on this account.** Miftah paid once.
+
+That fact is the whole argument, and it works by *modus tollens* rather than by looking
+anything up:
+
+1. `devpack/faq` says a call that fails the plan's conditions has **account balance deducted**,
+   or errors **`1113 Insufficient Balance`**.
+2. There is no funded balance.
+3. Therefore an out-of-plan `glm-4.6` call would fail with `1113`.
+4. Production readings work.
+5. **Therefore the calls are plan-served, no dollar is charged per token, and zero is true.**
+
+`devpack/transition` supplies the mechanism: legacy plans *"without weekly usage limits"* had
+auto-renew cancelled on **30 April 2026**. A Pro annual bought in February 2026 is one of them,
+and it **predates GLM-5.2 entirely — GLM-4.6 was the coding model when this plan was sold.**
+The three-model rule and the credit formula are terms of the CURRENT plan and were evidently
+not applied retroactively to a paid annual term.
+
+#### The verbatim FAQ, because the summary of it is what misled
+
+> **Q：Why does it still report error "1113 Insufficient Balance" after purchasing the coding
+> package? Why is the account balance still deducted after purchasing the coding package?**
+>
+> **A：** The situation of reporting insufficient balance or deducting account balance may be
+> due to not meeting the usage conditions of the GLM Coding Plan coding package:
+> 1. The GLM Coding Plan is strictly limited to use within officially supported tools and
+>    products.
+> 2. A specific baseurl address must be configured to use it:
+>    * API endpoint for Claude Code and Goose is：`https://api.z.ai/api/anthropic`
+>    * API endpoint for other tools is: `https://api.z.ai/api/coding/paas/v4`
+> 3. Only the following three models can be called: GLM-5.2, GLM-5-Turbo and GLM-4.7.
+
+JMTarot fails 1 (it is not a supported tool) and 3 (`glm-4.6`), and passes 2 — `LLM_BASE_URL`
+really is `https://api.z.ai/api/anthropic`. **On paper it should be drawing balance. It is not,
+because there is no balance to draw and the calls succeed anyway.**
+
+#### What would falsify it, stated so it can be checked rather than argued
+
+- **A non-zero account balance quietly draining** — a trial credit, say. Then the calls were
+  never plan-served, the drawdown has a start date, and the zeros are wrong from that date.
+- **Readings beginning to fail with `1113`.** Same conclusion, arriving loudly.
+
+Either repair is **NEW ROWS** at pay-as-you-go — `glm-4.6` US$0.60 / 0.11 / 2.20,
+`glm-4.5-flash` free — dated from when the drawdown began. Never an edit; editing re-prices
+every month that came before it.
+
+#### The cliff is dated, which is the useful part
+
+Auto-renew is already cancelled, so continuing past the annual term (**~February 2027**) means
+re-subscribing onto the current plan. Three things bite in the same instant:
+
+1. **`LLM_MODEL=glm-4.6` stops being callable** and every reading errors `1113`.
+2. **`MODERATION_MODEL=glm-4.5-flash` likewise.** Free pay-as-you-go, so it is the cheap half —
+   but a gate that 1113s is a gate that is down, and W7's blocklist-only fallback is not what
+   happens here: the call errors rather than degrading.
+3. **`LLM_WINDOW_CALL_CEILING=280` loses its denominator.** It is *the Pro tier's ~400 prompts
+   per 5 hours × 70%*; the current plan meters credits, `(input×in_mult + cached×cached_mult +
+   output×out_mult) / 10,000`, Pro at 12,000 per 5h and 60,000 weekly, with per-model
+   multipliers (GLM-5.2 `6.9/1.7/24`, GLM-5-Turbo `5.7/1.5/21`, GLM-4.7 `4.6/1.2/16`). **A
+   four-paragraph `spread3` and a one-line classifier reply stop being one unit**, and at a 24×
+   output multiplier they are very far apart. Re-derive against credits — raising the number
+   would treat a units error as a capacity problem.
+
+**`ADMIN_MODEL=glm-5.2`, shipped hours earlier for unrelated reasons, is by accident the only
+model setting already on the right side of that line.** The migration is `LLM_MODEL=glm-4.7`
+(same pay-as-you-go rate as 4.6, inside the supported three) plus a moderation model from that
+set, and per `## Providers` a model change needs `npm run probe:usage` and
+`npm run smoke -- --all` with the blind read as the gate, because it changes the readers' voices.
+
+#### The generalisation, which is the reason this is written down at all
+
+**CLAUDE.md's standing trap is *a provider fact this repo asserts in prose and cannot re-run
+will rot*. This is the mirror image of it: a provider fact the repo CAN re-run, re-run
+correctly, and still get wrong — because the page describes the product being sold today and
+the account is on something older.** The `input_tokens` rot was fixed by going and looking. This
+one was *caused* by going and looking, and could only be fixed by asking the person who owns the
+account.
+
+**So the rule for the next session is: before concluding that a z.ai doc contradicts this repo,
+check which plan this account is on and when it was bought.** Both facts are in
+`## The z.ai plan` in CLAUDE.md and in `prices.ts`'s header, and neither is discoverable from
+z.ai's documentation.

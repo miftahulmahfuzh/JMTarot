@@ -83,35 +83,72 @@ export type ModelPrice = {
  * and not a cost -- which is why reconciliation R14 made the dashboard's headline figure
  * a call count.
  *
- * ── AND THE SENTENCE THAT USED TO FOLLOW HAS ROTTED. READ THIS BEFORE ───────
- * ── QUOTING THIS FILE ON WHAT THE PLAN COSTS (2026-08-01) ──────────────────
+ * ── THE PLAN IS A LEGACY ONE AND `docs.z.ai` DESCRIBES A DIFFERENT ONE. ────
+ * ── READ THIS WHOLE BLOCK BEFORE "CORRECTING" ANY ZERO BELOW (2026-08-01) ──
  *
- * It said *"a fixed annual subscription with no per-token charge"* and *"which is why
- * `LLM_WINDOW_CALL_CEILING` is measured in calls"*. **`docs.z.ai/devpack/overview` no
- * longer describes a flat prompt quota.** Read on 2026-08-01 while adding `glm-5.2`, it
- * describes a **CREDIT** system: `credits = (input x in_mult + cached x cached_mult +
- * output x out_mult) / 10,000`, with a 5-hour rolling allowance and a weekly one (Pro:
- * 12,000 and 60,000), and per-model multipliers -- GLM-5.2 at 6.9 / 1.7 / 24, GLM-5-Turbo
- * at 5.7 / 1.5 / 21, GLM-4.7 at 4.6 / 1.2 / 16.
+ * **A session that reads z.ai's current docs and stops there will conclude these zeros are
+ * wrong. They are not. This block exists because that inference was drawn once already, in
+ * this file, and it took Miftah's account history to undo.**
  *
- * **The zero is untouched by that** -- `costUsd` measures dollars and a subscriber is
- * billed none per token. **Two other things are NOT untouched, and neither is this file's
- * to fix:**
+ * THE PLAN: **an annual Pro Coding Plan, bought February 2026 for US$180** (50% off, which
+ * z.ai was running then). A fixed fee for a year. **There is no wallet, no top-up and no
+ * pay-as-you-go balance on this account** -- Miftah paid once and has not funded a balance
+ * since.
  *
- * 1. **`LLM_WINDOW_CALL_CEILING=280` is derived from *"the Pro tier's ~400 prompts per 5
- *    hours x 70%"*, and that denominator no longer exists.** A credit is token-weighted,
- *    so a long `spread3` and a one-line classifier call are no longer the same unit --
- *    and on a 24x output multiplier they are very far apart. A call count is now a proxy
- *    rather than the quota, and it is a worse proxy the more the fleet's mix shifts
- *    toward long output. **Re-derive it against credits; do not just raise the number.**
- * 2. **That page's supported-model list is *"GLM-5.2, GLM-5-Turbo and GLM-4.7"* -- it
- *    names NEITHER `glm-4.6` NOR `glm-4.5-flash`**, which are this app's live `LLM_MODEL`
- *    and `MODERATION_MODEL`. Their rows below are LEFT ALONE deliberately: whether the
- *    plan dropped them, still serves them for existing keys, or has quietly moved them to
- *    pay-as-you-go is a question for the account, not an inference to encode here. **If it
- *    is the third, those two zeros are understating a real bill** -- z.ai's pay-as-you-go
- *    page lists glm-4.6 at US$0.60 / 0.11 / 2.20 and glm-4.5-flash as free. Answer it on
- *    the billing page, then add rows; a price change is a NEW ROW, never an edit.
+ * WHAT THE CURRENT DOCS SAY, which is NOT what this account is on:
+ *
+ * - `docs.z.ai/devpack/overview` describes a **CREDIT** system --
+ *   `(input x in_mult + cached x cached_mult + output x out_mult) / 10,000`, Pro at 12,000
+ *   per rolling 5h and 60,000 weekly, multipliers GLM-5.2 `6.9/1.7/24`, GLM-5-Turbo
+ *   `5.7/1.5/21`, GLM-4.7 `4.6/1.2/16`.
+ * - `docs.z.ai/devpack/faq` lists three conditions for a call to draw on the plan rather
+ *   than on account balance, and **this app fails two of them**: it is not an *"officially
+ *   supported tool"*, and `LLM_MODEL=glm-4.6` is not one of *"GLM-5.2, GLM-5-Turbo and
+ *   GLM-4.7"*. (It passes the third: the base URL really is `api.z.ai/api/anthropic`.)
+ * - The documented consequence of failing them is *"account balance deducted"* or
+ *   **error `1113 Insufficient Balance`**.
+ *
+ * ── WHY THE ZEROS ARE STILL RIGHT, AND THIS IS THE ARGUMENT TO RE-RUN ──────
+ *
+ * **THE ABSENCE OF A WALLET IS THE EVIDENCE.** If `glm-4.6` calls were being routed to
+ * account balance, they would fail with `1113` against a balance that was never funded.
+ * They do not fail; production readings work. **So the calls are being served by the plan,
+ * no dollar is charged per token, and zero is the true figure.**
+ *
+ * `docs.z.ai/devpack/transition` is the reason: legacy plans *"without weekly usage
+ * limits"* had auto-renew cancelled on **30 April 2026**. A Pro annual bought in February
+ * 2026 is one of those, and it predates GLM-5.2 entirely -- **GLM-4.6 was the coding model
+ * when this plan was sold.** The three-model rule and the credit formula are terms of the
+ * CURRENT plan, and they do not appear to have been applied retroactively to a paid annual
+ * term.
+ *
+ * **WHAT WOULD FALSIFY THIS:** a non-zero account balance quietly draining (a trial credit,
+ * say), or readings starting to fail with `1113`. Either one means the calls were never
+ * plan-served, and the repair is NEW ROWS at z.ai's pay-as-you-go rates -- `glm-4.6` at
+ * US$0.60 / 0.11 / 2.20, `glm-4.5-flash` free -- dated from when the drawdown began. **Never
+ * an edit to the rows below; editing re-prices every month that came before it.**
+ *
+ * ── THE CLIFF IS DATED, AND IT IS THE REASON THIS BLOCK IS LONG ────────────
+ *
+ * The risk is not live, it is **scheduled**. Auto-renew is already cancelled, so continuing
+ * past the annual term (~February 2027) means re-subscribing onto the CURRENT plan, and
+ * three things bite in the same instant:
+ *
+ * 1. `LLM_MODEL=glm-4.6` stops being callable -- every reading fails with `1113`.
+ * 2. `MODERATION_MODEL=glm-4.5-flash` likewise. (It is free pay-as-you-go, so it is the
+ *    cheap half of the problem -- but a gate that 1113s is still a gate that is down.)
+ * 3. Metering becomes credit-based, so **`LLM_WINDOW_CALL_CEILING=280` loses its
+ *    denominator.** It is derived as *"the Pro tier's ~400 prompts per 5 hours x 70%"*; a
+ *    credit is token-weighted, so a four-paragraph `spread3` and a one-line classifier reply
+ *    stop being one unit, and at a 24x output multiplier they are very far apart.
+ *    **Re-derive against credits -- raising the number would treat a units error as a
+ *    capacity problem.**
+ *
+ * `ADMIN_MODEL=glm-5.2` is, by accident, the only model setting already on the right side of
+ * that line. The migration is `LLM_MODEL=glm-4.7` (same pay-as-you-go rate as 4.6, and inside
+ * the three) plus a moderation model from the supported set -- and per `## Providers`, a model
+ * change means `npm run probe:usage` and `npm run smoke -- --all` with the blind read as the
+ * gate, because it changes the readers' voices.
  *
  * **THE FALLBACK PROVIDER'S ROWS ARE DELIBERATELY ABSENT.** See `NOTIONAL_MODEL`.
  */
@@ -148,12 +185,13 @@ export const PRICES: readonly ModelPrice[] = [
     /*
      * **`ADMIN_MODEL`'s model, added 2026-08-01 with the pricing page open.**
      *
-     * ZERO FOR THE OTHER TWO ROWS' REASON, WHICH STILL HOLDS -- but read the header
-     * above before believing the version of it written there. `docs.z.ai/devpack/overview`
-     * no longer describes a flat prompt quota: the Coding Plan is now CREDIT-based, and
-     * a credit is token-weighted per model. **`costUsd` measures DOLLARS, and a plan
-     * subscriber is charged no dollar per token, so zero is still the true figure.** What
-     * changed is the shape of the quota, not the bill.
+     * ZERO FOR THE OTHER TWO ROWS' REASON: the header's *"legacy annual Pro plan, no
+     * wallet, calls are plan-served"* argument covers this model too, and `costUsd`
+     * measures DOLLARS. **Read that block before changing this** -- it is the one that
+     * explains why z.ai's current docs make these zeros look wrong when they are not.
+     *
+     * This is also the ONLY model setting in the app that is already inside the current
+     * plan's supported three, so it is the one that survives the renewal cliff untouched.
      *
      * `effectiveFrom` IS TODAY AND NOT `2026-01-01` like its neighbours. Those two were
      * backdated to cover history that already existed; nothing in `llm_calls` names this
@@ -170,13 +208,14 @@ export const PRICES: readonly ModelPrice[] = [
     source: 'https://docs.z.ai/devpack/overview',
     note:
       'The whole admin surface (ADMIN_MODEL): the Insight button, Auto Format and the ' +
-      'blog auto-translate. ZERO for the same reason as glm-4.6 -- the Coding Plan bills ' +
-      'no dollar per token -- but the plan is CREDIT-based now rather than a flat prompt ' +
-      'quota, and this model is the most expensive of the three in credits: multipliers ' +
-      '6.9 input / 1.7 cached / 24 output, against GLM-4.7 at 4.6 / 1.2 / 16. Read as a ' +
-      'counterfactual, z.ai pay-as-you-go for this model is US$1.40 input, US$0.26 cached ' +
-      'and US$4.40 output per 1M tokens -- NOT entered as the rate, because that is not ' +
-      'what this key is billed and costUsd() must never quote a bill nobody receives.',
+      'blog auto-translate. ZERO for the same reason as glm-4.6 -- a legacy annual Pro ' +
+      'plan bills no dollar per token; see this array\'s header, which is where the whole ' +
+      'argument lives. Read as a counterfactual, z.ai pay-as-you-go for this model is ' +
+      'US$1.40 input, US$0.26 cached and US$4.40 output per 1M tokens -- NOT entered as ' +
+      'the rate, because that is not what this key is billed and costUsd() must never ' +
+      'quote a bill nobody receives. Under the CURRENT plan it is also the priciest of ' +
+      'the supported three in credits (6.9 / 1.7 / 24 against GLM-4.7 at 4.6 / 1.2 / 16), ' +
+      'which matters only after the renewal cliff the header dates.',
   },
 ];
 

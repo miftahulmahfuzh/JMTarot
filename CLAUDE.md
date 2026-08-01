@@ -152,18 +152,8 @@ through a deployment from scratch. Only the rules that bite are repeated here:
   whole argument — the sin1→Tokyo half has expired. Measure before moving it.)
 - **`LLM_WINDOW_CALL_CEILING=280` is MODEL CALLS per ROLLING 5 HOURS**, not readings and
   not per day, and **it replaced the spend cap.** `RATELIMIT_GLOBAL_HOURLY=1200` is
-  fleet-wide, where v0.2.0's 400 meant 400 per instance. **ITS DENOMINATOR NO LONGER EXISTS
-  (2026-08-01).** 280 was derived as *the Pro tier's ~400 prompts per 5 hours × 70%*, and
-  `docs.z.ai/devpack/overview` now describes **CREDITS**, not prompts: `(input×in_mult +
-  cached×cached_mult + output×out_mult) / 10,000`, Pro at 12,000 per 5 hours and 60,000 per
-  week, multipliers per model (GLM-5.2 `6.9/1.7/24`, GLM-5-Turbo `5.7/1.5/21`, GLM-4.7
-  `4.6/1.2/16`). **A long `spread3` and a one-line classifier call are no longer one unit**,
-  so a call count is now a proxy and a worse one the more output the fleet writes.
-  **Re-derive against credits; do not just raise the number.** The same page's supported list
-  is GLM-5.2 / GLM-5-Turbo / GLM-4.7 and names **neither `glm-4.6` nor `glm-4.5-flash`** —
-  this app's live `LLM_MODEL` and `MODERATION_MODEL`. Unresolved, and it is a billing-page
-  question rather than an inference: if the plan moved them to pay-as-you-go, `prices.ts`'s
-  two zeros understate a real bill (glm-4.6 lists at US$0.60/0.11/2.20). See that file's header.
+  fleet-wide, where v0.2.0's 400 meant 400 per instance. **Its denominator is a LEGACY plan's
+  and expires with it — see `## The z.ai plan` below before re-deriving it.**
 - **`PERSONA_MIN_AGE_SECONDS=3600` IS A GUESS**, checked on the READ path only and never
   guarding a user-caused regeneration — see V8.
 - **`NEXT_PUBLIC_SITE_ORIGIN` is the only `NEXT_PUBLIC_` variable this project declares**
@@ -647,6 +637,52 @@ all.** Three numbers elsewhere in this file are z.ai facts rather than general o
 re-deriving on a provider change: `MODERATION_TIMEOUT_MS` (its classifier p95),
 `LLM_WINDOW_CALL_CEILING` (a 5-hour prompt quota OpenAI does not have), and DEPLOY-VERCEL
 §2b's claim that no spend cap is possible (**an OpenAI project takes a hard budget cap**).
+
+## The z.ai plan (READ BEFORE "CORRECTING" ANY COST OR CEILING)
+
+**A session that reads z.ai's current docs and stops there will conclude this repo's prices
+and its call ceiling are wrong. They are not. That inference has already been drawn once, on
+2026-08-01, and it took Miftah's account history to undo — hence this section.**
+
+**The plan is an annual Pro Coding Plan bought February 2026 for US$180** (50% off, which
+z.ai was running then). **A fixed fee for a year. There is NO wallet, no top-up and no
+pay-as-you-go balance on this account.**
+
+**z.ai's live docs describe a DIFFERENT, NEWER PLAN.** `devpack/overview` describes credits —
+`(input×in_mult + cached×cached_mult + output×out_mult) / 10,000`, Pro at 12,000 per rolling
+5h and 60,000 weekly, multipliers GLM-5.2 `6.9/1.7/24`, GLM-5-Turbo `5.7/1.5/21`, GLM-4.7
+`4.6/1.2/16`. `devpack/faq` names three conditions for a call to draw on the plan instead of
+account balance, and **this app fails two**: it is not an *"officially supported tool"*, and
+`LLM_MODEL=glm-4.6` is not one of *"GLM-5.2, GLM-5-Turbo and GLM-4.7"* (the base URL passes).
+The documented consequence is *"account balance deducted"* or **error `1113 Insufficient
+Balance`**.
+
+- **THE ABSENCE OF A WALLET IS WHY THE ZEROS IN `prices.ts` ARE STILL CORRECT, and this is
+  the argument to re-run rather than a conclusion to trust.** Out-of-plan calls would fail
+  with `1113` against a balance that was never funded. They do not fail — production readings
+  work — so the calls are plan-served and no dollar is charged per token.
+  `devpack/transition` is the mechanism: legacy plans *"without weekly usage limits"* had
+  auto-renew cancelled **30 April 2026**, and a Pro annual from February 2026 is one of them.
+  It predates GLM-5.2 entirely — **GLM-4.6 was the coding model when this plan was sold.**
+- **WHAT WOULD FALSIFY IT:** a non-zero balance quietly draining (a trial credit), or readings
+  starting to 1113. Then the calls were never plan-served and the repair is **NEW ROWS** at
+  pay-as-you-go — `glm-4.6` US$0.60/0.11/2.20, `glm-4.5-flash` free — dated from the drawdown.
+  **Never an edit; editing re-prices history.**
+- **THE RISK IS SCHEDULED, NOT LIVE.** Auto-renew is already cancelled, so continuing past the
+  annual term (**~February 2027**) means re-subscribing onto the current plan, and three
+  things bite at once: `LLM_MODEL=glm-4.6` stops being callable and every reading 1113s;
+  `MODERATION_MODEL=glm-4.5-flash` likewise (free either way, but a gate that 1113s is a gate
+  that is down); and metering becomes credit-based, so **`LLM_WINDOW_CALL_CEILING=280` loses
+  its denominator** — it is *~400 prompts per 5 hours × 70%*, and a credit is token-weighted,
+  so a four-paragraph `spread3` and a one-line classifier reply stop being one unit.
+  **Re-derive against credits; raising the number treats a units error as a capacity problem.**
+- **`ADMIN_MODEL=glm-5.2` is, by accident, the only model setting already on the right side of
+  that line.** The migration is `LLM_MODEL=glm-4.7` (same pay-as-you-go rate as 4.6, inside the
+  supported three) plus a moderation model from that set — and per `## Providers` a model change
+  needs `npm run probe:usage` and `npm run smoke -- --all` with the blind read as the gate.
+
+`src/lib/llm/prices.ts`'s header carries the same account at length. The full evidence chain,
+including the verbatim FAQ text, is in `docs/workstream-notes.md`.
 
 ## The prompt
 
@@ -1548,11 +1584,17 @@ and every pattern has a near-miss test written first.
 
 **THERE IS NO HARD SPEND CAP AT Z.AI AND THERE WAS NEVER GOING TO BE** — `LLM_API_KEY` is a fixed
 annual subscription sold for coding, not a wallet, so V9 replaced the idea with a fleet-wide limiter,
-`LLM_WINDOW_CALL_CEILING` and query 9. **The risk is now quota exhaustion, a denial of service against
-the querent with no billing alert attached. And the comedown is worse than the cap was:** the same FAQ
-says the Coding Plan is *"strictly limited to use within officially supported tools and products"*, and
-JMTarot is not one — the consequence of enforcement is **key revocation, which takes the whole app down
-at once.** `src/lib/llm/openai.ts` is the answer and is built, tested and measured; it is NOT switched
+`LLM_WINDOW_CALL_CEILING` and query 9. **The risk is quota exhaustion, a denial of service against the
+querent with no billing alert attached.** The FAQ says the Coding Plan is *"strictly limited to use
+within officially supported tools and products"*, and JMTarot is not one.
+
+**THIS PARAGRAPH USED TO NAME THE WRONG ENFORCEMENT MODE, and the correction is worth more than the
+prediction was** (2026-08-01). It said the consequence would be *"key revocation, which takes the whole
+app down at once"*. `devpack/faq` documents something softer and far likelier: a call that fails the
+plan's conditions has *"account balance deducted"*, or errors **`1113 Insufficient Balance`** when there
+is no balance. **Same outcome — the app is down — but a different trigger, a different signal and a
+different fix**, and it is dated rather than arbitrary. `## The z.ai plan` is the whole account; do not
+re-derive the ceiling or "fix" a price without reading it. `src/lib/llm/openai.ts` is the answer and is built, tested and measured; it is NOT switched
 on, because reader overlap on `spread3` goes 0.050 → ~0.086.
 
 ## Translation (V2)
