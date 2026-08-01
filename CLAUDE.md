@@ -646,7 +646,8 @@ and its call ceiling are wrong. They are not. That inference has already been dr
 
 **The plan is an annual Pro Coding Plan bought February 2026 for US$180** (50% off, which
 z.ai was running then). **A fixed fee for a year. There is NO wallet, no top-up and no
-pay-as-you-go balance on this account.**
+pay-as-you-go balance on this account — the balance was read off
+`z.ai/manage-apikey/billing` on 2026-08-01 and it is ZERO.**
 
 **z.ai's live docs describe a DIFFERENT, NEWER PLAN.** `devpack/overview` describes credits —
 `(input×in_mult + cached×cached_mult + output×out_mult) / 10,000`, Pro at 12,000 per rolling
@@ -664,10 +665,15 @@ Balance`**.
   `devpack/transition` is the mechanism: legacy plans *"without weekly usage limits"* had
   auto-renew cancelled **30 April 2026**, and a Pro annual from February 2026 is one of them.
   It predates GLM-5.2 entirely — **GLM-4.6 was the coding model when this plan was sold.**
-- **WHAT WOULD FALSIFY IT:** a non-zero balance quietly draining (a trial credit), or readings
-  starting to 1113. Then the calls were never plan-served and the repair is **NEW ROWS** at
-  pay-as-you-go — `glm-4.6` US$0.60/0.11/2.20, `glm-4.5-flash` free — dated from the drawdown.
-  **Never an edit; editing re-prices history.**
+- **THE BALANCE WAS CHECKED AND IS ZERO (2026-08-01), so this is a measurement, not an
+  inference, and the question does not need re-opening.** A draining trial credit was the one
+  open falsifier and it is closed. **The only remaining one is readings beginning to `1113`** —
+  then the calls stopped being plan-served on that date and the repair is **NEW ROWS** at
+  pay-as-you-go (`glm-4.6` US$0.60/0.11/2.20, `glm-4.5-flash` free), dated from then. **Never
+  an edit; editing re-prices history.**
+- **A ZERO BALANCE ALSO MEANS NO SOFT LANDING.** With US$20 sitting there the cliff below would
+  be a silent drawdown and days of warning; with zero it is an instant outage on the first
+  call. **The same fact that proves the zeros correct is what removes the grace period.**
 - **THE RISK IS SCHEDULED, NOT LIVE.** Auto-renew is already cancelled, so continuing past the
   annual term (**~February 2027**) means re-subscribing onto the current plan, and three
   things bite at once: `LLM_MODEL=glm-4.6` stops being callable and every reading 1113s;

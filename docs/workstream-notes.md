@@ -9749,3 +9749,27 @@ account.
 check which plan this account is on and when it was bought.** Both facts are in
 `## The z.ai plan` in CLAUDE.md and in `prices.ts`'s header, and neither is discoverable from
 z.ai's documentation.
+
+#### The balance was checked, and it is zero (2026-08-01)
+
+Miftah opened `z.ai/manage-apikey/billing`. **Balance: zero.**
+
+That closes the one open falsifier. The argument above ran on *"there is no funded balance, so
+an out-of-plan call would 1113, so the calls must be plan-served"* — which was sound but rested
+on the absence of something nobody had looked at. A trial credit quietly draining would have
+broken it. There is none. **Zero balance, calls succeeding: this is now a measurement, and the
+question does not need re-opening.** The only remaining falsifier is readings beginning to fail
+with `1113`, which is loud and dated by definition.
+
+**And the zero has a second consequence that runs the other way.** With, say, US$20 sitting in
+the account, the day the plan stopped covering `glm-4.6` would present as a silent drawdown —
+unpleasant, but with days of warning and a bill to notice. With zero it is an **instant outage
+on the first call**, with `1113` as the only signal. So the renewal cliff has no grace period,
+and **the same fact that proves the zeros correct is what removes the buffer.**
+
+Worth stating plainly because the two read as opposites and are not: *a zero balance is good
+news about the accounting and bad news about the failure mode.* Anyone tempted to "fix" the
+cliff by parking US$20 in the account should know that this would (a) buy a warning period and
+(b) immediately invalidate the argument that keeps `prices.ts`'s zeros honest — at which point
+the pay-as-you-go rows become the truthful ones. **Do not do it without changing `prices.ts` in
+the same commit.**

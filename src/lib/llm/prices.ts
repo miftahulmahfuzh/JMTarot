@@ -122,11 +122,22 @@ export type ModelPrice = {
  * CURRENT plan, and they do not appear to have been applied retroactively to a paid annual
  * term.
  *
- * **WHAT WOULD FALSIFY THIS:** a non-zero account balance quietly draining (a trial credit,
- * say), or readings starting to fail with `1113`. Either one means the calls were never
- * plan-served, and the repair is NEW ROWS at z.ai's pay-as-you-go rates -- `glm-4.6` at
- * US$0.60 / 0.11 / 2.20, `glm-4.5-flash` free -- dated from when the drawdown began. **Never
- * an edit to the rows below; editing re-prices every month that came before it.**
+ * **AND THE BALANCE WAS CHECKED: IT IS ZERO.** Miftah opened
+ * `z.ai/manage-apikey/billing` on 2026-08-01 and confirmed it. That was the one open
+ * falsifier -- a trial credit quietly draining would have meant the calls were never
+ * plan-served -- and it is now closed. **Zero balance, calls succeeding: the argument above
+ * is a measurement rather than an inference, and this question does not need re-opening.**
+ *
+ * **THE ONLY REMAINING FALSIFIER IS READINGS BEGINNING TO FAIL WITH `1113`.** If that ever
+ * happens the calls stopped being plan-served on that date, and the repair is NEW ROWS at
+ * z.ai's pay-as-you-go rates -- `glm-4.6` at US$0.60 / 0.11 / 2.20, `glm-4.5-flash` free --
+ * dated from then. **Never an edit to the rows below; editing re-prices every month that
+ * came before it.**
+ *
+ * **A ZERO BALANCE ALSO MEANS THERE IS NO SOFT LANDING.** With, say, US$20 sitting there,
+ * the day the plan stopped covering `glm-4.6` would be a silent drawdown and days of
+ * warning. With zero it is an instant outage on the first call. The cliff below has no
+ * grace period, and that is a consequence of the same fact that proves the zeros correct.
  *
  * ── THE CLIFF IS DATED, AND IT IS THE REASON THIS BLOCK IS LONG ────────────
  *
