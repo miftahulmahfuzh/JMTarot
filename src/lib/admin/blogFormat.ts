@@ -35,6 +35,7 @@
 import 'server-only';
 
 import { getProvider } from '@/lib/llm';
+import { adminModel } from './model';
 import type { Block } from '@/content/types';
 import type { Locale } from '@/lib/i18n/locale';
 import { plainText } from '@/lib/content/doc';
@@ -231,7 +232,10 @@ export async function adviseFormat(
         user: `${OPEN}\n${text}\n${CLOSE}`,
         maxTokens: FORMAT_MAX_TOKENS,
       },
-      { op: 'blog_format', callClass: 'deferred' },
+      // `ADMIN_MODEL` (`./model`) — one variable for the whole admin class, so Auto Format
+      // and the Insight button cannot end up on two different models. Kept on ONE line:
+      // `callClass.test.ts` matches this object as exact source text.
+      { op: 'blog_format', callClass: 'deferred', model: adminModel() },
     );
     raw = reply;
   } catch (err) {

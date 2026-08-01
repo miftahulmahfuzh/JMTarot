@@ -42,7 +42,10 @@ export type InsightResponse =
     }
   | {
       status: 'error';
-      reason: 'failed' | 'empty' | 'too-long' | 'format' | 'ceiling' | 'unavailable';
+      /** Every value here needs a sentence in `INSIGHT.error`, or `readResponse` narrows
+       *  it to `failed` and the box tells the operator the wrong thing. `'tally'` joined
+       *  on 2026-08-01 with the anti-recital check. */
+      reason: 'failed' | 'empty' | 'too-long' | 'format' | 'tally' | 'ceiling' | 'unavailable';
     };
 
 export function ok(body: InsightResponse, status = 200): NextResponse {

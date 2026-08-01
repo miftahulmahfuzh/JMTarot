@@ -126,6 +126,17 @@ through a deployment from scratch. Only the rules that bite are repeated here:
   gets the fallback template and nothing alerts on it.
 - **`TRANSLATION_MODEL` and `PERSONA_MODEL` default to `LLM_MODEL` and WANT the reading
   model**, not a cheap one — both produce prose a person reads, in a reader's voice.
+- **`ADMIN_MODEL` IS ONE VARIABLE FOR ALL THREE ADMIN MODEL CALLS AND POINTS THE OTHER WAY**
+  (2026-08-01, Miftah's ruling; `src/lib/admin/model.ts`, a LEAF). The Insight button, Auto
+  Format and `Terjemahkan otomatis` are the only sites whose caller is the operator, and
+  `flagCoverage.test.ts` already names them as one class — so a **fourth admin-only call site
+  takes this variable too and does not bring its own.** Nothing on that surface is in a
+  reader's voice, and it is the one place a model change cannot reach a querent. Unset falls
+  back to `LLM_MODEL`. **`adminModel()` returns `undefined` when unset and `adminModelName()`
+  restates `ledger.ts`'s `||` chain** — the two must stay identical, or a stored `insights.model`
+  and the `llm_calls` row beside it name different models. **`prices.ts` has no row for it**, so
+  `/admin/tokens` counts these calls as unpriced until a human reads a pricing page: the designed
+  empty state, not a gap.
 - **`LOCALE_SWITCHER` IS RENDERING ONLY**: whether the control renders, in three places
   (the account menu, `/login`'s footer, `ContentLocaleLink` in the public footer — not the
   reader picker), resolved as a PROP by the mounting server page, because a
@@ -1344,10 +1355,27 @@ button. `src/app/admin/insight/panels.ts` (the registry), `src/app/admin/Insight
   **only ever fires on a CLOSED range** (`range.to < today`); on a live range the timestamp
   is what says how old the prose is. Excluding `op: 'insight'` from the metric queries would
   fix it and would undo the whole reason the tenth op was spent.
+- **THE PROMPT ASKS FOR A FINDING, NOT A SUMMARY (rewritten 2026-08-01, Miftah's report).**
+  The first version asked *"apa yang dikatakan angkanya"* and got a tally back — true, and
+  worth nothing under a chart the operator had just read. It now asks for problem → one piece
+  of evidence → one concrete step, bounds a suggestion to what this dashboard can do, and
+  **names *"tidak ada masalah"* as a CORRECT answer** so the model does not invent a finding
+  to be useful. **The false-positive half is the expensive one and is enforced by a list of
+  what is NOT a problem** — aborted readings, a quiet day, a big percentage over a small base,
+  unreported tokens, anything `CATATAN DARI PANEL` already explains — plus *if you are unsure,
+  it is not*. That is W7's gate trade in a new place: an operator sent to chase a healthy panel
+  stops reading the box. **The worked example carries NO DIGITS** (it says `sekian`), because a
+  figure in the system half is a number the model can copy that rule 1 would then have to catch.
 - **`validateInsight` REFUSES SHAPE, NOT TRUTH, AND SAYS SO.** Empty, over-long, or answered
   in markdown is never stored; there is no cheap test for *"this sentence about a trend is
   true"*, and the honest instruments are the timestamp, the stale line and the table view
-  directly underneath.
+  directly underneath. **`tally` is the one stretch and it is still shape** (2026-08-01): a body
+  whose every sentence carries a digit over ≥3 sentences, or any one sentence carrying ≥5
+  numbers. Both tuned to ACCEPT — `MIN_SENTENCES_FOR_RECITAL` is 3 because *"X naik ke A. Y
+  turun ke B."* is a correct two-sentence answer, and `NUMBER`'s class holds the HYPHEN or
+  `2026-07-28` counts as three numbers and a finding that cites its date is refused. **Never
+  make it a digit RATIO and never make it judge usefulness**; loosen it first if it refuses
+  correct prose, and fix the prompt.
 - **`stamp()` IS THE ONE FORMATTER IN `format.ts` PINNED TO JAKARTA, NOT UTC** — it renders
   an instant a person asks a wall-clock question about, and the explicit zone is also what
   makes it hydration-safe in a client component.

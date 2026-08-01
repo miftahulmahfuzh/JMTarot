@@ -9451,3 +9451,136 @@ Arcana* is a TERM and neither covers it. A heading that reverses it is wrong in 
 in this repo will catch — which is `validateInsight`'s lesson arriving in a new place:
 **shape is checkable and truth is not, and the honest instrument is somebody reading the
 preview.**
+
+## `ADMIN_MODEL`, and the Insight prompt rewritten for findings (2026-08-01)
+
+Two changes, one release, both on the admin surface. CLAUDE.md's
+`### Environment variables` and `## Admin panel insights (A7)` carry the short forms.
+
+### The report
+
+Miftah, reading a live Insight box: *"make sure the LLM do not just tallying the number:
+A is 23, followed by B total of 45."* And the other half in the same breath: *"i need
+insights but we also need to avoid false positive (normal stuff being interpreted as
+problems)"* — which is the harder constraint and the one that shaped the rewrite.
+
+### It was the prompt's fault, not the model's
+
+The first `INSIGHT_SYSTEM` asked for *"apa yang dikatakan angkanya, apa yang menonjol atau
+ganjil"*. **That is an invitation to read the table out loud**, and the table was already on
+screen directly under the box — so the model was answering the question it was asked and the
+answer was worth nothing. The rewrite asks for a **finding**: is there a problem, what is the
+evidence, what is the one thing worth doing next.
+
+Four things the new prompt does that the old one did not:
+
+1. **Says the job is not to restate the numbers**, in the second paragraph, before any rule.
+2. **Gives the answer a SHAPE** — problem, one piece of evidence, one concrete step; or one
+   or two sentences saying the panel is fine. Naming both shapes is what stops "no problem"
+   reading as a failure the model should avoid.
+3. **Bounds what a suggestion may be**: check another panel, widen the range, narrow to one
+   op, wait for more data. The old rule 2 (*no advice needing data outside the block*)
+   survives verbatim inside it — it was right, it just read as "give no advice".
+4. **Lists what is NOT a problem, by name.** Aborted readings, a quiet day, a big percentage
+   over a small base, unreported tokens, anything `CATATAN DARI PANEL` already explains. Plus
+   the tie-breaker in one sentence: *if you are unsure whether something is a problem, it is
+   not.*
+
+**That last one is W7's trade in a new place.** The moderation gate's argument is that a false
+positive is an accusation delivered to somebody who did nothing wrong; here it is an operator
+sent to chase a healthy panel, who then stops reading the box at all. A missed finding costs
+one press of a button — the chart is right there. **So the bias is stated in the prompt rather
+than left to the model's temperament.**
+
+### The worked example carries no digits, and that is a rule
+
+Rule 1 says every number in the output must be findable in the block. **A figure inside a
+worked example in the SYSTEM half is a number the model can copy and rule 1 would then have to
+catch.** So the bad example reads *"op A sekian panggilan, op B sekian, op C sekian"* — enough
+to show the shape, nothing to lift. A test asserts that line has no digit in it.
+
+The rest of the prompt is deliberately NOT digit-free: rule 4's *"2 sampai 4 kalimat"* is the
+length control, and `## The prompt`'s standing rule is that a ceiling the model can count as it
+writes is the only kind that binds.
+
+### `validateInsight` grew a `tally` refusal, and the line was drawn carefully
+
+`validateInsight`'s documented contract is **shape, not truth**, and this file is where the
+argument for stretching it lives. V3's lesson cuts toward a mechanical backstop — *an
+instruction that merely forbids the tally fails under compression pressure* — but V3 could
+**delete** the counts from its prompts, and here the counts are the subject. A prompt rule
+alone was therefore the only control, which is exactly the situation V3 warns about.
+
+What was added is only the recital shape that is **structural**:
+
+- **Every sentence carries a digit, over at least three sentences.** A finding always has one
+  sentence that is not a figure: the problem, or the step. A body without one has made no claim.
+- **Any single sentence carries five or more numbers.** That is a list wearing a sentence.
+
+Both tuned toward accepting, `namesIn` and `MULTI_OPTION`'s bias. Three tuning decisions worth
+keeping:
+
+- **`MIN_SENTENCES_FOR_RECITAL` is 3, not 2.** At two, *"TTFT p95 naik ke 8.200 ms. Panggilan
+  turun 12%."* is an ordinary comparison and refusing it refuses a correct answer.
+- **`NUMBER`'s character class contains the HYPHEN.** Without it `2026-07-28` counts as three
+  numbers and `1-30 Juli` as two, so a finding that cites the day it happened plus two figures
+  reaches five and is refused. There is a test named for that case.
+- **A comma-joined recital of FOUR short items still gets through, and that is chosen.**
+  Tightening to catch it starts refusing sentences that carry a date and a comparison. The
+  prompt is the control; this is the belt.
+
+**Two things it must never become:** a per-body digit RATIO (which punishes a short correct
+answer) and a "does this sentence sound useful" check (which is truth, not shape). If the
+button starts refusing correct prose, loosen this first and fix the prompt.
+
+### `ADMIN_MODEL`: one variable for three call sites
+
+`src/lib/admin/model.ts`, a LEAF — env in, a string out, no imports, so `npm test` drives every
+branch. `insight.ts`'s header used to carry a section titled *"NO `INSIGHT_MODEL` VARIABLE"*
+which argued the case honestly and left the door open in as many words: *"A variable can be
+added the day somebody measures a reason for it."* The reason is the one that header predicted —
+**this is analysis over numbers, which is the work a cheap model does worst, and `LLM_MODEL` is
+chosen for a reader's voice rather than for reading a table.**
+
+**One variable and not three**, because `flagCoverage.test.ts` already treats `insight.ts`,
+`blogFormat.ts` and `blogAutoTranslate.ts` as one class — the only model calls whose caller is
+the operator. Three variables is three chances for one dashboard to answer in two different
+voices with nobody able to say which button was on which model. **A fourth admin-only call site
+takes this variable too and does not bring its own** — which is the same shape as the
+`ADMIN_MODEL_CALLS_ENABLED` debt that table already records, and it should collapse into that
+change when it happens.
+
+**It points the OPPOSITE way from `TRANSLATION_MODEL` and `PERSONA_MODEL`**, which exist to keep
+prose a person reads in a reader's voice. Nothing on the admin surface is in a reader's voice:
+the Insight button reads a table and Auto Format returns JSON metadata. And the admin surface is
+the **one place in this app where a model change cannot reach a querent**, so it is both the
+cheapest place to run something else and the safest place to try something new.
+
+### Two functions, and the reason the second exists
+
+`adminModel()` answers `undefined` when unset — `moderationModel()`'s shape, because
+`LLMCallOpts.model` is optional and handing an adapter the literal string `'unknown'` sends
+`model: "unknown"` to the provider. `adminModelName()` is what a **row** records
+(`insights.model`) and **restates `ledger.ts`'s `opts.model || LLM_MODEL || 'unknown'` rather
+than importing it**, because that module reaches `server-only`.
+
+**A drift between the two writes a stored row naming a different model from the `llm_calls` row
+beside it, and nothing on screen would show it.** `model.test.ts`'s last case is the agreement
+asserted as one property over four env combinations, not as three coincidences.
+
+### Two things this change does NOT do, recorded rather than fixed
+
+- **`prices.ts` has no row for `glm-5.2`**, so `/admin/tokens` counts every admin call as
+  UNPRICED. That is the designed empty state — *an unknown model is `null`, never 0* — and the
+  file's own rule is that nothing enters it until a human has read the provider's page. It costs
+  nothing today, because every z.ai row is zero on purpose. **Adding a row means opening
+  <https://docs.z.ai/devpack/overview> and confirming `glm-5.2` is on the same subscription;
+  do not copy `glm-4.6`'s zeros on the assumption that it is.**
+- **`blogAutoTranslate` still shares `op: 'translation'` with every querent translation**, and
+  now may also run on a different model — so A3's *cost per `translation`* mixes two models as
+  well as two sizes. `llm_calls.model` separates them, which is strictly more than `user_id`
+  gave before, so the caveat got easier to work around rather than worse.
+- **The new prompt has not been run against a live panel.** Every claim above is about the text
+  and the validator; whether glm-5.2 actually produces findings instead of recitals is answered
+  by pressing the button on `/admin` and reading the box, and by `admin.insight` rejections
+  showing `tally` if it does not.
