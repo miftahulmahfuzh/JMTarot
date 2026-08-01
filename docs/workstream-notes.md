@@ -9584,3 +9584,73 @@ asserted as one property over four env combinations, not as three coincidences.
   and the validator; whether glm-5.2 actually produces findings instead of recitals is answered
   by pressing the button on `/admin` and reading the box, and by `admin.insight` rejections
   showing `tally` if it does not.
+
+### The `glm-5.2` price row, and what reading the pricing page turned up (2026-08-01)
+
+Added on request, immediately after `ADMIN_MODEL` shipped. **The row itself is three lines
+and the research around it is the part worth keeping.**
+
+`prices.ts`'s own rule is that nothing enters without a human opening the provider's page,
+and that bumping `verifiedOn` without doing so *"converts a tripwire into a lie with a fresh
+date on it"*. So the page was opened. `docs.z.ai/devpack/overview` and
+`docs.z.ai/guides/overview/pricing`, both on 2026-08-01.
+
+**The row: `glm-5.2`, zero, `effectiveFrom: '2026-08-01'`.** Zero for the other two rows'
+reason — `costUsd` measures dollars and a plan subscriber is billed none per token. Dated
+today rather than backdated to `2026-01-01` like its neighbours, because those two were
+backdated to cover history that already existed and nothing in `llm_calls` names this model
+before today; an earlier date would claim a price nobody looked up.
+
+The verified pay-as-you-go figures are in the row's `note` as a **counterfactual and not as
+the rate**: US$1.40 input, US$0.26 cached, US$4.40 output per 1M tokens. Entering them as the
+rate would make `costUsd()` quote a bill nobody receives, which is the exact separation
+`notionalUsd()` exists to hold.
+
+#### Two things the page said that this repo did not
+
+**1. THE CODING PLAN IS CREDIT-BASED NOW, NOT A FLAT PROMPT QUOTA.** `prices.ts`'s header
+said *"a fixed annual subscription with no per-token charge"* and *"which is why
+`LLM_WINDOW_CALL_CEILING` is measured in calls"*. The page now describes
+`credits = (input x in_mult + cached x cached_mult + output x out_mult) / 10,000`, a 5-hour
+rolling allowance and a weekly one (Pro: 12,000 / 60,000), and per-model multipliers:
+
+```
+GLM-5.2       6.9 input   1.7 cached   24 output
+GLM-5-Turbo   5.7         1.5          21
+GLM-4.7       4.6         1.2          16
+GLM-4.6V      1.2         0.3           2.7   (Vision MCP)
+```
+
+The zero survives — dollars are still not charged per token. **`LLM_WINDOW_CALL_CEILING=280`
+does not.** Its derivation is *the Pro tier's ~400 prompts per 5 hours × 70%*, and that
+denominator is gone. Worse, the unit changed shape: a call count treats a four-paragraph
+`spread3` and a one-line classifier reply as the same thing, and at a 24× output multiplier
+they are very far apart. **The ceiling is now a proxy rather than the quota, and it degrades
+as the fleet's mix shifts toward long output.** Re-derive it against credits — raising the
+number would be treating a units error as a capacity problem.
+
+**This is CLAUDE.md's own trap arriving on schedule:** *a provider fact this repo asserts in
+prose and cannot re-run will rot.* Twelve places once said z.ai reports `input_tokens: 0`.
+This is the second instance, found the same way — by going and looking.
+
+**2. THE SUPPORTED-MODEL LIST NAMES NEITHER OF THIS APP'S PRODUCTION MODELS.** *"All plans
+support GLM-5.2, GLM-5-Turbo and GLM-4.7."* No `glm-4.6` (`LLM_MODEL`), no `glm-4.5-flash`
+(`MODERATION_MODEL`).
+
+**Left unresolved on purpose, and the two existing rows were NOT edited.** Three readings fit
+the same sentence — the plan dropped them, the plan still serves them for existing keys, or
+they have quietly moved to pay-as-you-go — and only the billing page can say which. **If it is
+the third, those two zeros are understating a real bill**: the pay-as-you-go page lists
+`glm-4.6` at US$0.60 / 0.11 / 2.20 and `glm-4.5-flash` as free, so the exposure is the reading
+model, on every reading. That is the one number in this project whose being wrong is
+expensive rather than merely untidy.
+
+The repair, when the answer is known, is a **new row** and never an edit — editing re-prices
+every month that came before it.
+
+#### What the app is doing about it today: nothing, and that is visible
+
+`glm-4.6` and `glm-4.5-flash` keep answering, so nothing is broken and nothing alerts. That is
+precisely the shape of the 2026-07-28 migration outage and of the `input_tokens` rot: **the
+app looks healthy while a stated fact underneath it is false.** The instrument here is a human
+opening <https://z.ai/manage-apikey/billing> and reading the invoice.

@@ -134,9 +134,8 @@ through a deployment from scratch. Only the rules that bite are repeated here:
   reader's voice, and it is the one place a model change cannot reach a querent. Unset falls
   back to `LLM_MODEL`. **`adminModel()` returns `undefined` when unset and `adminModelName()`
   restates `ledger.ts`'s `||` chain** — the two must stay identical, or a stored `insights.model`
-  and the `llm_calls` row beside it name different models. **`prices.ts` has no row for it**, so
-  `/admin/tokens` counts these calls as unpriced until a human reads a pricing page: the designed
-  empty state, not a gap.
+  and the `llm_calls` row beside it name different models. `prices.ts` carries a `glm-5.2` row at
+  zero, verified 2026-08-01.
 - **`LOCALE_SWITCHER` IS RENDERING ONLY**: whether the control renders, in three places
   (the account menu, `/login`'s footer, `ContentLocaleLink` in the public footer — not the
   reader picker), resolved as a PROP by the mounting server page, because a
@@ -153,7 +152,18 @@ through a deployment from scratch. Only the rules that bite are repeated here:
   whole argument — the sin1→Tokyo half has expired. Measure before moving it.)
 - **`LLM_WINDOW_CALL_CEILING=280` is MODEL CALLS per ROLLING 5 HOURS**, not readings and
   not per day, and **it replaced the spend cap.** `RATELIMIT_GLOBAL_HOURLY=1200` is
-  fleet-wide, where v0.2.0's 400 meant 400 per instance.
+  fleet-wide, where v0.2.0's 400 meant 400 per instance. **ITS DENOMINATOR NO LONGER EXISTS
+  (2026-08-01).** 280 was derived as *the Pro tier's ~400 prompts per 5 hours × 70%*, and
+  `docs.z.ai/devpack/overview` now describes **CREDITS**, not prompts: `(input×in_mult +
+  cached×cached_mult + output×out_mult) / 10,000`, Pro at 12,000 per 5 hours and 60,000 per
+  week, multipliers per model (GLM-5.2 `6.9/1.7/24`, GLM-5-Turbo `5.7/1.5/21`, GLM-4.7
+  `4.6/1.2/16`). **A long `spread3` and a one-line classifier call are no longer one unit**,
+  so a call count is now a proxy and a worse one the more output the fleet writes.
+  **Re-derive against credits; do not just raise the number.** The same page's supported list
+  is GLM-5.2 / GLM-5-Turbo / GLM-4.7 and names **neither `glm-4.6` nor `glm-4.5-flash`** —
+  this app's live `LLM_MODEL` and `MODERATION_MODEL`. Unresolved, and it is a billing-page
+  question rather than an inference: if the plan moved them to pay-as-you-go, `prices.ts`'s
+  two zeros understate a real bill (glm-4.6 lists at US$0.60/0.11/2.20). See that file's header.
 - **`PERSONA_MIN_AGE_SECONDS=3600` IS A GUESS**, checked on the READ path only and never
   guarding a user-caused regeneration — see V8.
 - **`NEXT_PUBLIC_SITE_ORIGIN` is the only `NEXT_PUBLIC_` variable this project declares**

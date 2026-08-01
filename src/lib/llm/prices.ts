@@ -77,12 +77,41 @@ export type ModelPrice = {
  * Every price this project knows. Ordered by model, then by `effectiveFrom`.
  *
  * **z.ai's ROWS ARE ZERO AND THAT IS A FACT, NOT A PLACEHOLDER.** `LLM_API_KEY` is a
- * fixed annual Coding Plan subscription, not a wallet: no per-token charge exists, so
- * the marginal cost of a token really is zero and any other number here would be
- * invented. The risk that subscription carries is **quota exhaustion and key
- * revocation**, which is a count and not a cost -- which is why
- * `LLM_WINDOW_CALL_CEILING` is measured in calls and why reconciliation R14 made the
- * dashboard's headline figure a call count.
+ * Coding Plan subscription, not a wallet: no DOLLAR is charged per token, so the marginal
+ * cost of a token really is zero and any other number here would be invented. The risk
+ * that subscription carries is **quota exhaustion and key revocation**, which is a count
+ * and not a cost -- which is why reconciliation R14 made the dashboard's headline figure
+ * a call count.
+ *
+ * ── AND THE SENTENCE THAT USED TO FOLLOW HAS ROTTED. READ THIS BEFORE ───────
+ * ── QUOTING THIS FILE ON WHAT THE PLAN COSTS (2026-08-01) ──────────────────
+ *
+ * It said *"a fixed annual subscription with no per-token charge"* and *"which is why
+ * `LLM_WINDOW_CALL_CEILING` is measured in calls"*. **`docs.z.ai/devpack/overview` no
+ * longer describes a flat prompt quota.** Read on 2026-08-01 while adding `glm-5.2`, it
+ * describes a **CREDIT** system: `credits = (input x in_mult + cached x cached_mult +
+ * output x out_mult) / 10,000`, with a 5-hour rolling allowance and a weekly one (Pro:
+ * 12,000 and 60,000), and per-model multipliers -- GLM-5.2 at 6.9 / 1.7 / 24, GLM-5-Turbo
+ * at 5.7 / 1.5 / 21, GLM-4.7 at 4.6 / 1.2 / 16.
+ *
+ * **The zero is untouched by that** -- `costUsd` measures dollars and a subscriber is
+ * billed none per token. **Two other things are NOT untouched, and neither is this file's
+ * to fix:**
+ *
+ * 1. **`LLM_WINDOW_CALL_CEILING=280` is derived from *"the Pro tier's ~400 prompts per 5
+ *    hours x 70%"*, and that denominator no longer exists.** A credit is token-weighted,
+ *    so a long `spread3` and a one-line classifier call are no longer the same unit --
+ *    and on a 24x output multiplier they are very far apart. A call count is now a proxy
+ *    rather than the quota, and it is a worse proxy the more the fleet's mix shifts
+ *    toward long output. **Re-derive it against credits; do not just raise the number.**
+ * 2. **That page's supported-model list is *"GLM-5.2, GLM-5-Turbo and GLM-4.7"* -- it
+ *    names NEITHER `glm-4.6` NOR `glm-4.5-flash`**, which are this app's live `LLM_MODEL`
+ *    and `MODERATION_MODEL`. Their rows below are LEFT ALONE deliberately: whether the
+ *    plan dropped them, still serves them for existing keys, or has quietly moved them to
+ *    pay-as-you-go is a question for the account, not an inference to encode here. **If it
+ *    is the third, those two zeros are understating a real bill** -- z.ai's pay-as-you-go
+ *    page lists glm-4.6 at US$0.60 / 0.11 / 2.20 and glm-4.5-flash as free. Answer it on
+ *    the billing page, then add rows; a price change is a NEW ROW, never an edit.
  *
  * **THE FALLBACK PROVIDER'S ROWS ARE DELIBERATELY ABSENT.** See `NOTIONAL_MODEL`.
  */
@@ -114,6 +143,40 @@ export const PRICES: readonly ModelPrice[] = [
     verifiedOn: '2026-07-30',
     source: 'https://docs.z.ai/devpack/overview',
     note: 'The moderation classifier (MODERATION_MODEL). Same subscription, same zero.',
+  },
+  {
+    /*
+     * **`ADMIN_MODEL`'s model, added 2026-08-01 with the pricing page open.**
+     *
+     * ZERO FOR THE OTHER TWO ROWS' REASON, WHICH STILL HOLDS -- but read the header
+     * above before believing the version of it written there. `docs.z.ai/devpack/overview`
+     * no longer describes a flat prompt quota: the Coding Plan is now CREDIT-based, and
+     * a credit is token-weighted per model. **`costUsd` measures DOLLARS, and a plan
+     * subscriber is charged no dollar per token, so zero is still the true figure.** What
+     * changed is the shape of the quota, not the bill.
+     *
+     * `effectiveFrom` IS TODAY AND NOT `2026-01-01` like its neighbours. Those two were
+     * backdated to cover history that already existed; nothing in `llm_calls` names this
+     * model before today, and a date earlier than the first call would be claiming
+     * knowledge of a price nobody looked up.
+     */
+    model: 'glm-5.2',
+    effectiveFrom: '2026-08-01',
+    inputPerMTok: 0,
+    outputPerMTok: 0,
+    // Explicit rather than defaulted, exactly as above.
+    cachedInputPerMTok: 0,
+    verifiedOn: '2026-08-01',
+    source: 'https://docs.z.ai/devpack/overview',
+    note:
+      'The whole admin surface (ADMIN_MODEL): the Insight button, Auto Format and the ' +
+      'blog auto-translate. ZERO for the same reason as glm-4.6 -- the Coding Plan bills ' +
+      'no dollar per token -- but the plan is CREDIT-based now rather than a flat prompt ' +
+      'quota, and this model is the most expensive of the three in credits: multipliers ' +
+      '6.9 input / 1.7 cached / 24 output, against GLM-4.7 at 4.6 / 1.2 / 16. Read as a ' +
+      'counterfactual, z.ai pay-as-you-go for this model is US$1.40 input, US$0.26 cached ' +
+      'and US$4.40 output per 1M tokens -- NOT entered as the rate, because that is not ' +
+      'what this key is billed and costUsd() must never quote a bill nobody receives.',
   },
 ];
 
