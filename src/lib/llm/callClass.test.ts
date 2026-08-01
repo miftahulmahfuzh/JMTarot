@@ -108,7 +108,9 @@ const COMPLETE_CALLS: Array<{
      */
     file: 'src/lib/admin/blogFormat.ts',
     op: ['blog_format'],
-    opMarker: "{ op: 'blog_format', callClass: 'deferred' }",
+    // `model: adminModel()` joined it on 2026-08-01 — `ADMIN_MODEL` covers all three
+    // admin-only sites, and this marker is exact source text, so it moved with the call.
+    opMarker: "{ op: 'blog_format', callClass: 'deferred', model: adminModel() }",
     expect: 'deferred',
     marker: "callClass: 'deferred'",
     why: 'an ADMIN convenience on a fleet-wide ceiling, and skipped entirely on an already-sectioned paste; the tier is its kill switch',

@@ -94,18 +94,60 @@ describe('insightInputHash', () => {
 });
 
 describe('the prompt', () => {
-  it('states all three rules', () => {
+  it('states all four rules', () => {
     /*
      * Asserted because they are the difference between an insight and a fabrication,
      * and because compression pressure is what deletes an instruction — V3's rule. This
-     * cannot check that the model OBEYS them; `validateInsight` catches rule 3's shape
-     * and nothing catches rule 1. That gap is stated in `insightPrompt.ts`'s header
-     * rather than papered over here.
+     * cannot check that the model OBEYS them; `validateInsight` catches rule 4's shape
+     * and the coarsest violation of rule 2, and nothing catches rule 1. That gap is
+     * stated in `insightPrompt.ts`'s header rather than papered over here.
      */
     expect(INSIGHT_SYSTEM).toMatch(/tidak ada di dalam blok data/);
     expect(INSIGHT_SYSTEM).toMatch(/di luar blok ini/);
     expect(INSIGHT_SYSTEM).toMatch(/2 sampai 4 kalimat/);
     expect(INSIGHT_SYSTEM).toMatch(/Tanpa markdown/);
+  });
+
+  it('asks for a finding rather than a summary, and forbids the recital', () => {
+    /*
+     * The 2026-08-01 rewrite. The first version's *"apa yang dikatakan angkanya"* got a
+     * tally back — true, and worth nothing under a chart the operator had just read. If
+     * these two go, the prompt has quietly become the one that produced the report.
+     */
+    expect(INSIGHT_SYSTEM).toMatch(/BUKAN MENYEBUT ULANG ANGKANYA/);
+    expect(INSIGHT_SYSTEM).toMatch(/sebagai BUKTI/);
+    expect(INSIGHT_SYSTEM).toMatch(/tidak pernah\s+sebagai daftar/);
+  });
+
+  it('lists what is NOT a problem and resolves doubt toward "nothing wrong"', () => {
+    /*
+     * The false-positive half, and the expensive one: an operator sent chasing a healthy
+     * panel stops trusting the box. W7's gate makes the same trade — a false positive is
+     * an accusation delivered to somebody who did nothing wrong.
+     */
+    expect(INSIGHT_SYSTEM).toMatch(/YANG BUKAN MASALAH/);
+    expect(INSIGHT_SYSTEM).toMatch(/[Dd]itinggalkan/);
+    expect(INSIGHT_SYSTEM).toMatch(/CATATAN DARI PANEL/);
+    expect(INSIGHT_SYSTEM).toMatch(/ragu sesuatu masalah atau bukan, anggap bukan/);
+    // "No problem" must read as a correct answer, or the model invents one to be useful.
+    expect(INSIGHT_SYSTEM).toMatch(/jawaban yang benar/);
+  });
+
+  it('WRITES THE RECITAL EXAMPLE WITH NO DIGITS IN IT', () => {
+    /*
+     * `summary.test.ts`'s rule, narrowed to the one line where it bites. Rule 1 says
+     * every number in the OUTPUT must be findable in the block — so a figure inside a
+     * worked example is a number the model can copy that rule 1 would then have to
+     * catch. `sekian` shows the shape and carries nothing copyable.
+     *
+     * **The rest of the prompt is NOT digit-free and must not be made so**: rule 4's
+     * *"2 sampai 4 kalimat"* is the length control, and `## The prompt` is explicit that
+     * a ceiling the model can count as it writes is the only kind that binds.
+     */
+    const example = INSIGHT_SYSTEM.split('\n').find((l) => l.includes('op A'));
+    expect(example).toBeDefined();
+    expect(example).not.toMatch(/\d/);
+    expect(example).toContain('sekian');
   });
 
   it('tells the model the block is data and not instructions', () => {
@@ -178,5 +220,61 @@ describe('validateInsight', () => {
     // V2 and the same bias — reject structure, never punctuation.
     const dashed = 'Rentang 1-30 Juli naik tipis. Tidak ada yang menonjol.';
     expect(validateInsight(dashed)).toEqual({ ok: true, body: dashed });
+  });
+
+  /*
+   * The 2026-08-01 anti-recital backstop. **The prompt is the control and these two are
+   * the belt**, so every case below is either an unambiguous recital or a correct answer
+   * that must survive — a threshold that starts refusing correct prose has to be loosened,
+   * not worked around at the call site.
+   */
+  describe('tally', () => {
+    it('refuses a body in which every sentence is only numbers', () => {
+      // The reported failure, in its own words: "A is 23, followed by B total of 45".
+      // Three sentences, a digit in all three, no claim anywhere.
+      const recital = 'Op reading 412 panggilan. Op moderation 388 panggilan. Op persona 40.';
+      expect(validateInsight(recital)).toEqual({ ok: false, reason: 'tally' });
+    });
+
+    it('refuses one sentence that is a list of five figures', () => {
+      const listed =
+        'Panggilan 412, token input 88.000, token output 41.000, bacaan 120, dan p95 8.200 ms.';
+      expect(validateInsight(listed)).toEqual({ ok: false, reason: 'tally' });
+    });
+
+    it('ACCEPTS a finding that cites its evidence', () => {
+      // The shape the prompt asks for: problem, one figure as evidence, one action. The
+      // action sentence carries no digit, which is what the recital rule keys on.
+      const good =
+        'Kegagalan hampir seluruhnya menumpuk di op persona: 12 dari 14. ' +
+        'Op lain bersih, jadi ini pola sistematis dan bukan sebaran acak. ' +
+        'Periksa panel status di rentang yang lebih panjang sebelum menyimpulkan apa pun.';
+      expect(validateInsight(good)).toEqual({ ok: true, body: good });
+    });
+
+    it('ACCEPTS two sentences that both carry a figure', () => {
+      // `MIN_SENTENCES_FOR_RECITAL` exists for this: at two, "X naik ke A, Y turun ke B"
+      // is an ordinary comparison and refusing it would be refusing a correct answer.
+      const two = 'TTFT p95 naik ke 8.200 ms. Panggilan bacaan turun 12%.';
+      expect(validateInsight(two)).toEqual({ ok: true, body: two });
+    });
+
+    it('ACCEPTS a sentence carrying a date alongside two figures', () => {
+      /*
+       * The reason `NUMBER` keeps the hyphen inside its character class. Without it
+       * `2026-07-28` counts as three numbers, this sentence reaches five, and a correct
+       * finding is refused for citing the day it happened.
+       */
+      const dated =
+        'Lonjakan itu terpusat pada 2026-07-28, ketika panggilan mencapai 412 dari rata-rata 180. ' +
+        'Tidak ada op lain yang ikut naik.';
+      expect(validateInsight(dated)).toEqual({ ok: true, body: dated });
+    });
+
+    it('ACCEPTS the honest "nothing is wrong" answer', () => {
+      // Stated as a correct outcome in the prompt, so it must be one here too.
+      const clean = 'Semua op berakhir wajar dan tidak ada yang menonjol. Tidak ada yang perlu ditindaklanjuti dari panel ini.';
+      expect(validateInsight(clean)).toEqual({ ok: true, body: clean });
+    });
   });
 });

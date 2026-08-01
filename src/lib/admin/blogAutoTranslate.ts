@@ -39,6 +39,7 @@
 import 'server-only';
 
 import { getProvider } from '@/lib/llm';
+import { adminModel } from './model';
 import type { Locale } from '@/lib/i18n/locale';
 import {
   applySegments,
@@ -99,6 +100,15 @@ export async function autoTranslateDocument(
     const { text } = await getProvider().complete(prompt, {
       op: 'translation',
       callClass: 'deferred',
+      /*
+       * **`ADMIN_MODEL`, AND IT SHARPENS THE ATTRIBUTION CAVEAT ABOVE RATHER THAN
+       * CREATING IT.** This call already shares `op: 'translation'` with every querent
+       * translation; now it may also run on a different model, so A3's *cost per
+       * `translation`* mixes two models as well as two sizes. **`llm_calls.model` is
+       * what separates them** — which is strictly more than `user_id` gave us before,
+       * so the caveat got easier to work around, not harder.
+       */
+      model: adminModel(),
     });
     raw = text;
   } catch (err) {

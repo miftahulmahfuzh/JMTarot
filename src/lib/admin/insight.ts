@@ -37,17 +37,19 @@
  * they were doing the day before this shipped. There is no degraded querent experience
  * for a flag to protect.
  *
- * ── NO `INSIGHT_MODEL` VARIABLE ────────────────────────────────────────────
+ * ── `ADMIN_MODEL`, 2026-08-01 — THIS HEADER USED TO SAY THERE WAS NO SUCH ──
+ * ── VARIABLE, AND LEFT THE DOOR OPEN FOR THE REASON THAT ARRIVED ───────────
  *
- * This is analysis over numbers, which is the work a cheap model does worst, and both
- * existing model overrides (`TRANSLATION_MODEL`, `PERSONA_MODEL`) exist to point AT the
- * reading model rather than away from it. `MODERATION_MODEL` is the counter-example and
- * it is a latency requirement, not a cost one. A variable can be added the day somebody
- * measures a reason for it.
+ * The old text: *"This is analysis over numbers, which is the work a cheap model does
+ * worst … A variable can be added the day somebody measures a reason for it."* Both
+ * halves stand. The variable is `./model`'s `ADMIN_MODEL`, and it covers the whole
+ * admin class rather than this one call site — see that file for why one variable and
+ * not three. Unset still falls back to `LLM_MODEL`, so nothing has to be set.
  */
 import 'server-only';
 
 import { getProvider } from '@/lib/llm';
+import { adminModel, adminModelName } from './model';
 import {
   buildInsightPrompt,
   insightInputHash,
@@ -67,17 +69,10 @@ export type InsightResult =
   | { kind: 'unchanged'; inputHash: string }
   | {
       kind: 'failed';
-      /** `'ceiling'` is the shed; the other three come from `validateInsight`. */
-      reason: 'failed' | 'empty' | 'too-long' | 'format' | 'ceiling';
+      /** `'ceiling'` is the shed; the other four come from `validateInsight`. */
+      reason: 'failed' | 'empty' | 'too-long' | 'format' | 'tally' | 'ceiling';
       inputHash: string;
     };
-
-/** What the ledger and the stored row record. `'unknown'` matches `personaModel()`'s
- *  shape: a row that says which model ran is worth more than a row that says nothing,
- *  and an unset `LLM_MODEL` is already a broken deployment. */
-function insightModel(): string {
-  return process.env.LLM_MODEL || 'unknown';
-}
 
 /**
  * Read one panel. **Never throws** — every failure is a named reason the box renders as
@@ -100,7 +95,9 @@ export async function generateInsight(
 ): Promise<InsightResult> {
   const serialized = serializePanelFacts(facts, range);
   const inputHash = insightInputHash(serialized);
-  const model = insightModel();
+  /* What the STORED row says. `adminModel()` below is what the provider is TOLD; the
+   * two resolve the same chain and `model.test.ts` is what keeps them from drifting. */
+  const model = adminModelName();
 
   if (!opts.force && opts.cachedHash != null && opts.cachedHash === inputHash) {
     return { kind: 'unchanged', inputHash };
@@ -111,6 +108,7 @@ export async function generateInsight(
     const { text } = await getProvider().complete(buildInsightPrompt(serialized), {
       op: 'insight',
       callClass: 'deferred',
+      model: adminModel(),
     });
     raw = text;
   } catch (err) {

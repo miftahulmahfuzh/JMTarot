@@ -23,22 +23,48 @@
  * carries those. The cost is a second spelling of each panel's labels, and
  * `panels.test.ts` is what keeps the two sets of panels from diverging in membership.
  *
- * ── THREE RULES IN THE SYSTEM HALF, EACH A FAILURE THAT WAS EASY TO IMAGINE ─
+ * ── THE PROMPT ASKS FOR A FINDING, NOT A SUMMARY (REWRITTEN 2026-08-01) ─────
  *
- * 1. **Cite no number that is not in the block.** A dashboard insight that invents a
- *    figure is worse than no insight, because the operator has no way to tell — this
- *    is the same argument V3 makes for deleting the counts from the two memory prompts
- *    rather than forbidding them, and the same one that makes `effectiveYesNo()` derive
- *    the verdict in code.
- * 2. **No recommendation that needs data outside the block.** *"Pertimbangkan menambah
- *    cache"* is not a reading of this panel.
- * 3. **2–4 sentences, prose, no markdown.** The box is one paragraph under a chart.
+ * **The first version shipped a prompt that got a tally back**, and it was the prompt's
+ * fault rather than the model's: *"apa yang dikatakan angkanya"* is an invitation to
+ * read the table out loud, and the box went under a chart the operator had already read.
+ * The report was prose of the shape *"op A sekian, lalu op B sekian, totalnya sekian"* —
+ * every word of it true, none of it worth the model call.
+ *
+ * So the ask is now a **finding**: is there a problem here, what is the evidence, what is
+ * the one thing worth doing next. Four rules carry it, and each is a failure that has
+ * either happened or was easy to imagine:
+ *
+ * 1. **Cite no number that is not in the block**, and use numbers only as EVIDENCE. A
+ *    dashboard insight that invents a figure is worse than no insight, because the
+ *    operator has no way to tell — V3's argument for deleting the counts from the two
+ *    memory prompts, and `effectiveYesNo()`'s for deriving the verdict in code. **Here
+ *    the counts cannot be deleted, because they are the subject** — which is exactly why
+ *    the second half of the rule (evidence, never a list) has to be stated and enforced.
+ * 2. **Say what to do, and only what this dashboard can do.** *"Pertimbangkan menambah
+ *    cache"* is still forbidden — it needs data outside the block. *"Lihat panel status
+ *    di rentang yang lebih panjang"* is the shape that is allowed.
+ * 3. **A FALSE POSITIVE IS THE EXPENSIVE FAILURE, so the prompt lists what is NOT a
+ *    problem** — aborted readings, weekend dips, a big percentage over a small base,
+ *    unreported tokens, anything `CATATAN DARI PANEL` already explains — and says to
+ *    resolve doubt toward "nothing wrong". **W7's gate makes the same trade in the same
+ *    words**: an accusation delivered to somebody who did nothing wrong costs more than a
+ *    miss, because an operator sent chasing a healthy panel stops trusting the box.
+ *    *"Tidak ada masalah"* is stated as a CORRECT answer, not a fallback.
+ * 4. **2–4 sentences, prose, no markdown.** The box is one paragraph under a chart.
+ *
+ * **THE WORKED EXAMPLES CARRY NO DIGITS, AND THAT IS NOT A STYLE CHOICE.** Rule 1 says
+ * every number in the output must be findable in the block; a figure in the SYSTEM half
+ * is a number the model can copy that rule 1 would then have to catch. The bad example
+ * says *"sekian"* where a tally would say a number, which is enough to show the shape.
  *
  * **`validateInsight` IS WEAKER THAN V2's CARD-NAME CHECK AND THIS FILE SAYS SO** rather
  * than implying a guarantee: there is no cheap mechanical test for *"this sentence about
- * a trend is true"*. What it can catch is shape — empty, over-long, or answered in a
- * format the box cannot render. The honest instruments for the rest are the timestamp,
- * the stale line, and the table view sitting directly underneath the box.
+ * a trend is true"*, and none at all for *"this suggestion is worth acting on"*. What it
+ * can catch is shape — empty, over-long, answered in a format the box cannot render, or
+ * the one recital shape that is structural rather than a matter of taste (`'tally'`,
+ * below). The honest instruments for the rest are the timestamp, the stale line, and the
+ * table view sitting directly underneath the box.
  */
 import { createHash } from 'node:crypto';
 
@@ -147,22 +173,49 @@ export function insightInputHash(serialized: string): string {
 
 /** The system half. Indonesian, matching every other string on this surface (A-D12). */
 export const INSIGHT_SYSTEM = [
-  'Kamu membaca satu panel dari dasbor internal JMTarot dan menjelaskannya kepada satu',
-  'operator yang sudah melihat angkanya sendiri.',
+  'Kamu membaca satu panel dari dasbor internal JMTarot untuk satu operator yang sudah',
+  'melihat angkanya sendiri — tabelnya ada di layar, tepat di bawah kotak jawabanmu.',
   '',
-  'ATURAN, ketiganya wajib:',
+  'TUGASMU BUKAN MENYEBUT ULANG ANGKANYA. Yang dicari operator: apakah ada masalah di',
+  'panel ini, apa buktinya, dan satu hal yang layak dikerjakan berikutnya. Kalau tidak',
+  'ada masalah, katakan begitu dengan singkat lalu berhenti — itu jawaban yang benar,',
+  'bukan kegagalan, dan sering kali itulah jawaban yang tepat.',
+  '',
+  'BENTUK JAWABAN',
+  '- Kalau ada masalah: sebut masalahnya, satu bukti singkat dari blok data, lalu satu',
+  '  langkah konkret.',
+  '- Kalau tidak ada: satu atau dua kalimat bahwa panelnya wajar. Jangan mengarang',
+  '  temuan, dan jangan mengarang saran supaya kelihatan berguna.',
+  '',
+  'ATURAN, keempatnya wajib:',
   '1. Jangan menyebut angka apa pun yang tidak ada di dalam blok data. Kamu boleh',
   '   menyebut arah ("naik", "datar") dan perbandingan, tapi setiap angka yang kamu',
   '   tulis harus bisa ditemukan persis di blok itu. Kalau sebuah angka tidak ada di',
   '   sana, jangan hitung sendiri dan jangan mengarang.',
-  '2. Jangan memberi saran yang butuh data di luar blok ini. Kamu tidak tahu apa pun',
-  '   soal infrastruktur, harga provider, atau kode aplikasinya.',
-  '3. Tulis 2 sampai 4 kalimat, satu paragraf, prosa biasa. Tanpa markdown, tanpa',
+  '2. Angka hanya dipakai sebagai BUKTI, paling banyak dua atau tiga, dan tidak pernah',
+  '   sebagai daftar. Kalimat seperti "op A sekian panggilan, op B sekian, op C sekian"',
+  '   dilarang: itu membacakan tabel yang sudah ada di bawahmu, bukan insight.',
+  '3. Saranmu harus bisa dikerjakan dengan dasbor ini: memeriksa panel lain, membuka',
+  '   rentang yang lebih panjang, menyempitkan ke satu op atau satu layanan, atau',
+  '   menunggu data lebih banyak. Kamu tidak tahu apa pun soal infrastruktur, harga',
+  '   provider, atau kode aplikasinya, jadi jangan menyarankan sesuatu yang butuh data',
+  '   di luar blok ini.',
+  '4. Tulis 2 sampai 4 kalimat, satu paragraf, prosa biasa. Tanpa markdown, tanpa',
   '   judul, tanpa daftar berpoin, tanpa tabel, tanpa tanda bintang.',
   '',
-  'Isi yang berguna: apa yang dikatakan angkanya, apa yang menonjol atau ganjil, dan',
-  'satu hal yang layak diperiksa berikutnya kalau memang ada. Kalau panelnya kosong',
-  'atau datar, katakan begitu dengan singkat — itu jawaban yang benar, bukan kegagalan.',
+  'YANG BUKAN MASALAH — jangan diangkat sebagai temuan:',
+  '- "Ditinggalkan" (aborted): penanya menutup halaman di tengah bacaan. Itu perilaku',
+  '  normal, bukan error.',
+  '- Naik-turun harian yang wajar, hari yang lebih sepi, atau angka yang datar.',
+  '- Selisih yang besar dalam persen di atas basis yang kecil. Kalau penyebutnya',
+  '  sedikit, perbedaannya belum berarti apa-apa.',
+  '- Angka yang tidak dilaporkan, kosong, atau belum berharga. Itu berarti providernya',
+  '  tidak memberi tahu atau harganya memang belum diisi — bukan kegagalan.',
+  '- Apa pun yang sudah dijelaskan oleh CATATAN DARI PANEL. Baca catatan itu dulu',
+  '  sebelum menyebut sesuatu ganjil.',
+  'Kalau kamu ragu sesuatu masalah atau bukan, anggap bukan. Menuduh panel yang sehat',
+  'lebih mahal daripada diam: operator akan mengejar sesuatu yang tidak ada, dan berhenti',
+  'mempercayai kotak ini.',
   '',
   'Bahasa Indonesia. Istilah teknis tetap Inggris: token, input, output, p95, cache,',
   'op, model, TTFT.',
@@ -186,7 +239,42 @@ export function buildInsightPrompt(serialized: string): {
 
 export type InsightValidation =
   | { ok: true; body: string }
-  | { ok: false; reason: 'empty' | 'too-long' | 'format' };
+  | { ok: false; reason: 'empty' | 'too-long' | 'format' | 'tally' };
+
+/**
+ * A number, as one token. **The hyphen is INSIDE the class deliberately**: without it
+ * `2026-07-01` counts as three numbers and `1-30 Juli` as two, so a sentence citing one
+ * date plus two figures would look like a list. A range written `40-52` counting as one
+ * token is the same decision and is also correct — it is one quantity.
+ */
+const NUMBER = /\d[\d.,-]*/g;
+
+/**
+ * A sentence, roughly. **The lookbehind requires WHITESPACE after the stop**, which is
+ * what keeps `1.204` and `4.5` from splitting into two sentences — the thousands
+ * separator in Indonesian is the character that ends a sentence in every language.
+ */
+function sentences(text: string): string[] {
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+/**
+ * Five numbers in ONE sentence is a list wearing a sentence, not evidence.
+ *
+ * Tuned toward accepting, like every other threshold in this project that judges model
+ * output (`namesIn`, `MULTI_OPTION`): a real finding cites one figure, or two either side
+ * of a comparison, plus at most a date. **Five is the point where no reading of the
+ * sentence is "here is my evidence" any more.** A false refusal costs the box one press;
+ * it never costs a stored row, because nothing that fails here is stored.
+ */
+const MAX_NUMBERS_PER_SENTENCE = 5;
+
+/** How many sentences a body needs before "every one of them has a digit" means anything.
+ *  At two, a legitimate *"X naik ke A. Y turun ke B."* would be refused. */
+const MIN_SENTENCES_FOR_RECITAL = 3;
 
 /**
  * The mechanical check. See the header for what it can and cannot promise.
@@ -198,6 +286,30 @@ export type InsightValidation =
  * `format` catches structure rather than taste: a fence, a heading, a bullet, a
  * numbered list, a pipe table. Each of those renders as literal punctuation in a
  * paragraph, which reads as a bug in the dashboard rather than as a model's habit.
+ *
+ * ── `tally` IS STILL SHAPE, AND THE LINE IS WORTH DRAWING CAREFULLY ─────────
+ *
+ * **The prompt is the control and this is the backstop**, in that order — the same split
+ * `## The prompt` states for every length budget in this app, and the same one V3 made
+ * when it deleted the counts rather than forbidding them. What is added here is only the
+ * recital shape that is STRUCTURAL: a body in which no sentence is about anything but
+ * numbers. That is a property of the text, not a judgement about whether the reading is
+ * any good — *"is this suggestion worth acting on"* is exactly the question this function
+ * still refuses to have an opinion about.
+ *
+ * Two independent signals, both tuned to accept:
+ *
+ * - **Every sentence carries a digit, over at least three sentences.** A finding always
+ *   has one sentence that is not a figure — the problem, or the thing to do next. A body
+ *   without one has not made a claim.
+ * - **Any one sentence carries five or more numbers.** See `MAX_NUMBERS_PER_SENTENCE`.
+ *
+ * **A comma-joined recital of four short items still gets through**, and that is chosen
+ * rather than missed: tightening to catch it starts refusing sentences that cite a date
+ * and a comparison. Two things it must not become — a per-body digit RATIO (which
+ * punishes a short correct answer) and a "does this sentence sound useful" check (which
+ * is truth, not shape). If the button starts refusing correct prose, this is the first
+ * thing to loosen and the prompt is where the fix belongs.
  */
 export function validateInsight(raw: string): InsightValidation {
   const text = raw.trim();
@@ -211,6 +323,16 @@ export function validateInsight(raw: string): InsightValidation {
     if (/^\s*(#{1,6}\s|[-*+]\s|\d+[.)]\s)/.test(line)) return { ok: false, reason: 'format' };
   }
   if (text.includes('*') || text.includes('_')) return { ok: false, reason: 'format' };
+
+  const parts = sentences(text);
+  if (parts.length >= MIN_SENTENCES_FOR_RECITAL && parts.every((s) => /\d/.test(s))) {
+    return { ok: false, reason: 'tally' };
+  }
+  for (const s of parts) {
+    if ((s.match(NUMBER) ?? []).length >= MAX_NUMBERS_PER_SENTENCE) {
+      return { ok: false, reason: 'tally' };
+    }
+  }
 
   /*
    * Newlines collapse to spaces. The prompt asks for one paragraph and this is the

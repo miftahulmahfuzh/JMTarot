@@ -116,6 +116,12 @@ export const INSIGHT = {
     'too-long': 'Jawaban model terlalu panjang untuk kotak ini, jadi tidak disimpan.',
     format:
       'Model menjawab dengan format daftar atau markdown, bukan paragraf, jadi tidak disimpan.',
+    /** The anti-recital refusal. **The copy names what the model did rather than blaming
+     *  it**, because the operator's next move is simply to press again — and if it keeps
+     *  happening the fix is `INSIGHT_SYSTEM`, which this sentence is the signal for. */
+    tally:
+      'Model hanya membacakan ulang angka di tabel, bukan menyimpulkan sesuatu, jadi tidak ' +
+      'disimpan. Coba lagi.',
     unavailable: 'Angkanya tidak bisa dibaca sekarang. Muat ulang halaman.',
     /** The client's own bound fired (§4.2's pairing) or the browser is offline. **A
      *  TIMEOUT IS THE ONE OUTCOME THAT MEANS UNKNOWN**, so the copy says the request may
