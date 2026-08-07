@@ -2059,13 +2059,19 @@ const CHAT_BREVITY_FLOOR = 6;
 /**
  * Margaret's mean sentence must be this much longer than Thessaly's.
  *
- * **MOVED FROM 1.5, AND THE MOVE IS RECORDED RATHER THAN PERFORMED SILENTLY** (§17 item
- * 5). The 1.5 was calibrated on `spread3` at a 28-word paragraph ceiling; at 22 words a
- * bubble everybody is short and the ratio compresses. Task 11 decides whether it goes
- * back — and open question 3 is that **the proxy may simply be the wrong instrument at
- * this length**, in which case the honest change is to print it and stop failing on it.
+ * **IT SHIPPED AT 1.25 AND THE FIRST THREE RUNS PUT IT BACK AT 1.5** (§17 item 5, open
+ * question 3, closed). The worry was that at a 22-word bubble everybody is short and the
+ * ratio compresses, so the reading path's 1.5 — calibrated on 28-word paragraphs — would
+ * fail on correct output. **Measured: 1.96, 2.57, 2.57, 3.06, 3.53 and 4.36 across six
+ * locale-runs**, so the compression did not happen; Margaret writes one long sentence
+ * where Thessaly writes half of one, and the shape survives the shorter ceiling intact.
+ *
+ * Back at 1.5 because the stricter number catches convergence earlier and the margin is
+ * still 0.46 below the worst observed run. The numbers are in
+ * `docs/workstream-notes.md`; if a future run fails on this, **that is data** and the
+ * honest alternative is to print it and stop failing on it.
  */
-const CHAT_SENTENCE_RATIO = 1.25;
+const CHAT_SENTENCE_RATIO = 1.5;
 
 /**
  * The scripted conversation. **EIGHT MESSAGES PER LOCALE, EACH PROBING SOMETHING THE
@@ -2273,27 +2279,64 @@ async function runChat(locales: Locale[], proactive: boolean) {
         };
 
         const delay = pace({ next: beat, previousChars: beatIndex === 0 ? null : previous.body.length });
-        const prompt = buildChatPrompt({ ctx, self: planned.reader, beat, budget, now: clock });
-
-        const started = Date.now();
-        const { text, usage } = await getProvider().complete(prompt, {
-          op: 'chat_turn',
-          callClass: 'deferred',
-          model: chatModel(),
-        });
-        const ms = Date.now() - started;
-
-        const checked = checkTurnBodies(text, {
+        const guards = {
           locale,
           reader: planned.reader,
           budget,
           addressForms: FORMS,
           rawAnswers: RAW_ANSWERS,
           conversation: messages.map((m) => m.body),
-        });
+        };
 
-        const bodies = checked.ok ? checked.bodies : [text.trim()];
-        for (const body of bodies) {
+        /*
+         * **THE RETRY IS HERE BECAUSE PRODUCTION HAS ONE** (`C-R7`, `F1-D2`): `speak()`
+         * calls the model a second time inside the same request, with the refused
+         * reason named in the prompt. A runner that made one call would report every
+         * refusal as a lost bubble and **overstate the cost of a tight ceiling** —
+         * which is exactly the number Task 11 is calibrating. It also measures the one
+         * thing no unit test can: whether the repair line actually recovers a turn.
+         */
+        let text = '';
+        let ms = 0;
+        let usage: { inputTokens: number | null; outputTokens: number | null } = {
+          inputTokens: null,
+          outputTokens: null,
+        };
+        let checked = checkTurnBodies('', guards);
+        let attempts = 0;
+        let repairReason: string | null = null;
+
+        for (const attempt of [1, 2] as const) {
+          attempts = attempt;
+          const prompt = buildChatPrompt({
+            ctx,
+            self: planned.reader,
+            beat,
+            budget,
+            now: clock,
+            repairReason: attempt === 2 ? repairReason : null,
+          });
+          const started = Date.now();
+          const reply = await getProvider().complete(prompt, {
+            op: 'chat_turn',
+            callClass: 'deferred',
+            model: chatModel(),
+          });
+          ms = Date.now() - started;
+          text = reply.text;
+          usage = reply.usage;
+          checked = checkTurnBodies(text, guards);
+          if (checked.ok) break;
+          repairReason = checked.reason;
+        }
+
+        /*
+         * **A TURN REFUSED TWICE STORES NOTHING** (`C-R7`, `[F3-13]`), so it must not
+         * enter this transcript either: in production the room simply never sees it, and
+         * counting it would put a bubble over the ceiling into the SHORTNESS distribution
+         * the ceiling is calibrated from. It is printed below instead.
+         */
+        for (const body of checked.ok ? checked.bodies : []) {
           const words = body.split(/\s+/).filter(Boolean).length;
           clock += Math.max(delay, 1000);
           messageNo += 1;
@@ -2308,12 +2351,21 @@ async function runChat(locales: Locale[], proactive: boolean) {
           spoken.push({ author: planned.reader, body, words });
           process.stdout.write(
             `    [${delay}ms] ${planned.reader} (${planned.intent}${beat.replyTo ? ` -> ${previous.author}` : ''}): ${body}\n` +
-              `        ${words}w ${body.length}c, ${ms}ms, tokens in=${usage.inputTokens ?? 'null'} out=${usage.outputTokens ?? 'null'}, ${chatPromptVersion(locale, planned.reader, budget)}\n`,
+              `        ${words}w ${body.length}c, ${ms}ms, attempt ${attempts}, tokens in=${usage.inputTokens ?? 'null'} out=${usage.outputTokens ?? 'null'}, ${chatPromptVersion(locale, planned.reader, budget)}\n`,
           );
         }
 
         if (!checked.ok) {
-          problems.push(`[${locale}] ${planned.reader} beat ${beatIndex}: validateTurn refused -- ${checked.reason}: ${JSON.stringify(text.slice(0, 120))}`);
+          /* BOTH attempts failed, which in production is `C-R7`'s skip: nothing stored,
+           * nothing shown, and the room is quieter. Printed so the run says which
+           * bubble was lost. */
+          process.stdout.write(`    [refused twice -- ${checked.reason}, nothing stored] ${text.trim().slice(0, 160)}\n`);
+          problems.push(
+            `[${locale}] ${planned.reader} beat ${beatIndex}: refused TWICE -- ${checked.reason}: ${JSON.stringify(text.slice(0, 120))}`,
+          );
+        } else if (attempts === 2) {
+          /* The repair line worked. PRINTED, not failed: this is the mechanism working. */
+          process.stdout.write(`        [repaired on attempt 2 after ${repairReason}]\n`);
         }
       }
     }

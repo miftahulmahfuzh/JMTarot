@@ -72,8 +72,8 @@ describe('the chat contracts', () => {
       }
     }
     // And Margaret's is visibly different, which is the case worth naming.
-    expect(contract('id', 'margaret')).toContain('29');
-    expect(contract('id', 'thessaly')).toContain('22');
+    expect(contract('id', 'margaret')).toContain('31');
+    expect(contract('id', 'thessaly')).toContain('24');
   });
 
   it('names the reader it is addressed to, and no other reader in that line', () => {

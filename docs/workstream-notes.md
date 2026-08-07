@@ -9985,3 +9985,169 @@ re-derivation moves both together.
   `/api/chat/read` both WRITE, and **a user action that writes is one of the few things
   likely to be the request that wakes a suspended Neon compute.** 1348ms warm from WSL told
   us nothing last time.
+
+---
+
+## F3 — the voices (v0.7.0, 2026-08-07)
+
+**What landed:** `src/lib/chat/address.ts` (PURE, a LEAF, zero imports);
+`CHAT_LENGTH_BUDGET` / `chatBudgetFor` / `CHAT_MAX_TOKENS` in `src/lib/prompt/budget.ts`;
+`<obrolan>` **and `<lampiran>`** in `sanitize.ts`'s alternation (six → eight);
+`src/lib/chat/prompt/{base,base.id,base.en,readers,readers.id,readers.en,build}.ts` with
+the canary; `src/lib/chat/validate.ts`; the real `voices/pace.ts` and `voices/prompt.ts`;
+`src/lib/chat/context.ts` — **the one decrypt**; `npm run smoke -- --chat` with the blind
+read; and `lib/chat/` in `audit-secrets.ts`'s forbidden prefixes.
+
+`docs/plans/2026-08-07-chat-voices.md` is the plan. What is here is the measurement, the
+four things the plan got wrong, and the numbers Task 11 moved.
+
+### The blind read PASSES: six of six, both locales (run 6)
+
+`id` A=margaret B=adrian C=thessaly, `en` A=adrian B=thessaly C=margaret — guessed from
+the prose before reading the key. What identified them, in case a future run stops
+working: Margaret is the only one who writes a subordinated sentence with a semicolon in
+it; Thessaly asks for a number in under eight words; Adrian is the one who says *"wkwk"*,
+*"got me there, fair enough"*, and who teases the other two by name.
+
+**Roadmap §10.2's second question — would a person send this?**
+
+- **(a) Did any reader deliver a PARAGRAPH?** No. The longest bubble in run 6 was 28 words
+  and it was one Margaret sentence.
+- **(b) Did any reader SUMMARISE the querent back at themselves?** No. The closest was
+  Thessaly's *"nggak, Mif. kami cuma baca kartu tiga hari ini, terus kamu masuk cerita
+  soal nenek"* — which is a denial rather than a paraphrase, and is a legitimate answer to
+  *"emang kalian tau apa soal gue"*.
+- **(c) Did the room ever GO QUIET?** Only where the canned sheet made it: the final `iya
+  deh` / `fair enough` gets no reply, and that reads right. **Nothing in this workstream
+  can answer whether a real director chooses silence** — `C-R6` is F2's to make reachable,
+  and the runner cans the sheets precisely so a voice failure is not confused with a
+  planning one.
+
+### The six calibration runs, and the two numbers they moved
+
+`CHAT_MODEL=glm-5.2`, `npm run smoke -- --chat`, 2026-08-07. Runs 1–3 are the plan's
+Task 11; 4–6 are after the changes below. Ten beats per locale.
+
+| | id min/mean/max words | en min/mean/max | margaret:thessaly sentence | overlap (max pair) |
+|---|---|---|---|---|
+| 1 | 4 / 13.2 / 27 | 4 / 13.9 / 31 | 3.52 / 3.33 | 0.159 / 0.059 |
+| 2 | 6 / 11.4 / 17 | 4 / 16.8 / 31 | 1.96 / 3.53 | 0.114 / 0.083 |
+| 3 | 3 / 11.2 / 18 | 4 / 14.3 / 28 | 2.57 / 4.36 | 0.100 / 0.113 |
+| 4 | 2 / 13.0 / 27 | 4 / 17.2 / 32 | 4.28 / 5.12 | 0.061 / 0.194 |
+| 5 | 4 / 12.2 / 28 | 4 / 16.8 / 32 | 4.94 / 4.70 | 0.059 / 0.152 |
+| 6 | 3 / 11.3 / 23 | 4 / 14.4 / 28 | 2.69 / 4.15 | 0.129 / 0.107 |
+
+**1. `CHAT_LENGTH_BUDGET.maxWords` 22 → 24, so Margaret resolves to 31.** At 22 her
+resolved ceiling was 29 and her English bubbles came in at 25, 28, 28, 30 and 31 —
+**`validateTurn` refused three of her six English turns**, and a refused turn is retried
+once and then silent, which is the failure `[C-N1]` cannot afford. `budget.ts`'s own record
+of `READER_MULTIPLIER` says what happens next: *a check that fails on correct behaviour is
+a check people learn to ignore.* **The base moved and the multiplier did not** (`[F3-11]`),
+and it costs the other two readers nothing measurable: across twelve locale-runs neither
+of them wrote a bubble over 20 words.
+
+**2. `CHAT_SENTENCE_RATIO` back to 1.5 from 1.25.** The plan lowered it on the reasoning
+that at a 22-word bubble everybody is short and the ratio compresses. **Measured: 1.96,
+2.57, 2.69, 3.52, 4.28, 4.94 — the compression did not happen.** Open question 3 is closed
+in the other direction: the proxy is the right instrument at this length.
+
+**Not moved:** `CHAT_BREVITY_FLOOR = 6` never fired (observed minima 2–6), and its job is
+to catch a run where nobody is ever brief. `CHAT_MAX_TOKENS = 90` is unchanged.
+
+### The reader overlap band, which is NOT `--all`'s
+
+**0.021–0.194 across six runs, and the highest pair moves.** `--all`'s reference is
+~0.086 for a reading; a chat's vocabulary is bounded by the conversation, so all three
+readers share the querent's words by construction. **These numbers are the reference now,
+and a JUMP is the signal** — a run where every pair lands over ~0.25 is three readers
+converging, and the fix is `CHAT_READER_PROMPTS_{ID,EN}`.
+
+### The four things live output found that no test would have
+
+**1. THE MODEL GUESSED THE QUERENT'S GENDER.** Run 1 (`en`): *"she doesn't need a timeline,
+Thess, she needs a yes or no."* **Nothing in the six answers, the profile or the numerology
+states a gender** — so that is a fabricated fact about a real person, in a room built to
+make the querent feel known. `lotus.ts` refuses exactly this in `summary_en` and its header
+explains why: *"getting a person's gender wrong is the kind of error the whole app's tone
+cannot absorb."*
+
+**Fixed in the PROMPT and deliberately not in the validator.** A reader talking about a
+third party — *"your mum … she"* — uses those pronouns legitimately, and a mechanical check
+over a 24-word bubble would refuse correct output, which is `[F3-12]`'s named failure. Both
+contracts now forbid guessing gender, age, job and location by name. **It is not fully
+fixed:** run 6 still produced *"she just said work's been a lot, Thess"*. Recorded as open.
+
+**2. A SOURCE-TELL LIST MATCHED INSIDE A LONGER WORD, AND REFUSED A DENIAL.** Run 3:
+Thessaly wrote *"Kita cuma baca kartunya, Mif, bukan biodatamu"* — a reader saying it does
+**not** hold a file on you — and `datamu` is a substring of `biodatamu`, so the highest-value
+FAIL in the release fired on the best sentence in the run. The tells are now **bounded at
+the head and open at the tail**: closed at the head because a prefix is where the accidents
+are, open at the tail because Indonesian is agglutinative and run 1 produced *"yang kamu
+pernah ceritain sendiri"*, which a `\b`-terminated pattern would miss. `BANNED_ROOTS_ID`'s
+reasoning, arrived at from the opposite direction.
+
+**3. THE SMOKE RUNNER NEEDED PRODUCTION'S RETRY, OR IT OVERSTATED THE COST OF A CEILING.**
+`speak()` retries once inside the same request with the refused reason named in the prompt
+(`C-R7`, `F1-D2`). A runner that made one call reported every refusal as a lost bubble —
+which is exactly the number Task 11 was calibrating from. With the retry in, **the repair
+line works**: runs 5 and 6 each recovered two turns (`too_long` and `source_tell`), and run
+6 lost none. A turn refused twice is now printed and **kept out of the transcript**, because
+production stores nothing and counting it put an over-ceiling bubble into the distribution
+the ceiling is calibrated from.
+
+**4. `usianya` CONTAINS `ianya`.** The Malay grep in `prompt.test.ts` is a substring match,
+so a perfectly ordinary Indonesian word in a new contract line failed it. Reworded to
+`umurnya`. Recorded because the next person to add an Indonesian sentence to a prompt will
+hit it, and the failure names a Malay word that is not there.
+
+### `probe:usage` on `glm-5.2`, and what it says about `C-D6`
+
+Run 2026-08-07, four calls, `## Providers`' requirement and F1's open item:
+
+```
+1. buffered                input=  2027  cached=     0  output=  22
+2. streamed, cold          input=  1967  cached=     0  output=  24
+3. streamed, warm (repeat) input=  1967  cached=  1920  output=  20
+4. streamed, short prompt  input=    84  cached=     0  output=  24
+```
+
+**Input tokens ARE reported and prompt caching IS honoured — 1920 of 1967 served from cache
+on the repeat, with the totals agreeing across the hit.** That is a fact about the chat's
+economics that the roadmap could not know: **every beat of a run shares its whole prefix
+with the previous beat** — the same contract, the same person, the same six answers, the
+same transcript minus one bubble — so a three-beat run is nowhere near three cold prompts.
+`C-D6`'s constraint is the PROMPT COUNT and not the token count, so this changes no ceiling;
+what it changes is any future argument that trims the context to save tokens.
+
+### What is still open
+
+- **The address rate in `id` is 40–90% and the band says over ~40% is a tic.** Six runs:
+  60, 50, 90, 40, 70, 70. A line capping it at one message in three was added to both
+  contracts after run 3 and **did not bind** (70% in runs 5 and 6). English sits at 20–40%
+  and is fine. The instrument is right and the prompt is not; the next attempt should
+  probably make the rule concrete in the persona blocks rather than the base contract.
+- **The gender guess survives its own prohibition** (finding 1). The next thing to try is
+  the same move `readers.en.ts` uses for everything else: put it in the worked example
+  rather than in a rule.
+- **A reader invents a clipping of ANOTHER READER's name** — `Thess`, in four of six runs.
+  `validateTurn` checks the querent's forms and the speaker's own name, not the other two,
+  and it reads as natural rather than wrong, so nothing was changed. Named so a future
+  session decides rather than discovers.
+- **`<=3` word bubbles are rare: 0, 0, 1, 1, 0, 2 of ten.** The contract licenses *"wkwk"*
+  twice and Adrian's example ends on a short bubble, and the readers still average 11–17
+  words. `CHAT_BREVITY_FLOOR` catches the pathological case and nothing pushes toward the
+  common one.
+- **A reply target that has scrolled out of the 40-message window resolves to `null`.** The
+  director picks its id from the same window and a run is at most four beats, so it is
+  unreachable in practice; the fix is a `messageById` read in `queries/chat.ts`, which is
+  F1's file.
+- **`localDate` is not on the advance path.** `VoiceInput` carries none, so the assembler
+  gets a UTC day. Its only use is the floor of a thirty-day reading lookback, so the error
+  is at most one row in `<riwayat>` — but **nothing here may ever render a date to a
+  person** on that basis.
+- **`CHAT_ATTACHMENT_BODY_CHARS` was not introduced.** F6 shipped
+  `ATTACHMENT_BODY_MAX_CHARS = 1600` with a measurement behind it, and a second cap on one
+  string is two numbers that must agree. §17 item 7's other two variables
+  (`CHAT_READING_LOOKBACK_DAYS`, `CHAT_ANSWERS_ENABLED`) are both live.
+- **Nobody has read a chat bubble on a phone.** Loop 4 and loop 6 are F4's, and a 31-word
+  Margaret bubble at 320px is the geometry nothing in this workstream can answer.

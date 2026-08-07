@@ -295,8 +295,8 @@ export type ChatLengthBudget = {
  * `docs/workstream-notes.md`.
  */
 export const CHAT_LENGTH_BUDGET: Record<Locale, ChatLengthBudget> = {
-  id: { maxWords: 22, minWords: 0, maxChars: 260 },
-  en: { maxWords: 22, minWords: 0, maxChars: 240 },
+  id: { maxWords: 24, minWords: 0, maxChars: 260 },
+  en: { maxWords: 24, minWords: 0, maxChars: 240 },
 };
 
 /**

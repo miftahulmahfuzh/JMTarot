@@ -15,13 +15,17 @@ const READER_IDS = READERS.map((r) => r.id);
 
 describe('CHAT_LENGTH_BUDGET', () => {
   /**
-   * `C-D19`'s ceiling. **22 and not 28**: `spread3`'s per-paragraph ceiling is one of
+   * `C-D19`'s ceiling. **24 and not 28**: `spread3`'s per-paragraph ceiling is one of
    * four paragraphs of a *reading*, which is denser prose than a chat message, and a
    * 28-word bubble at 390px is four lines — the chatbot tell `C-D19` names.
+   *
+   * **IT SHIPPED AT 22 AND THE FIRST THREE CALIBRATION RUNS MOVED IT**, because
+   * Margaret's resolved 29 refused three of her six English turns. See
+   * `CHAT_LENGTH_BUDGET`'s header for the measurement.
    */
-  it('is 22 words in both locales, and English is not a translation of a calibration', () => {
-    expect(CHAT_LENGTH_BUDGET.id.maxWords).toBe(22);
-    expect(CHAT_LENGTH_BUDGET.en.maxWords).toBe(22);
+  it('is 24 words in both locales, and English is not a translation of a calibration', () => {
+    expect(CHAT_LENGTH_BUDGET.id.maxWords).toBe(24);
+    expect(CHAT_LENGTH_BUDGET.en.maxWords).toBe(24);
   });
 
   /**
@@ -64,7 +68,8 @@ describe('chatBudgetFor', () => {
       expect(hers.maxWords).toBe(Math.round(base.maxWords * MARGARET_MULTIPLIER));
       expect(hers.maxChars).toBe(Math.round(base.maxChars * MARGARET_MULTIPLIER));
     }
-    expect(chatBudgetFor('id', 'margaret').maxWords).toBe(29);
+    /* 24 x 1.3 = 31, which is one subordinated sentence — the thing she was refused for. */
+    expect(chatBudgetFor('id', 'margaret').maxWords).toBe(31);
     expect(chatBudgetFor('id', 'margaret').maxChars).toBe(338);
   });
 
@@ -93,7 +98,7 @@ describe('chatBudgetFor', () => {
 
 describe('CHAT_MAX_TOKENS', () => {
   /**
-   * A runaway guard at roughly double her 29 words, the same relationship
+   * A runaway guard at roughly triple her 31 words, the same relationship
    * `MAX_TOKENS.spread3` and `PERSONA_MAX_TOKENS` have to their ceilings — generous
    * enough that a model finishes its sentence, tiny in absolute terms because `C-D6`
    * makes the chat's call budget scarce.

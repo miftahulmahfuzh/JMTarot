@@ -339,6 +339,23 @@ function matchesTic(haystack: string, tic: string): boolean {
 }
 
 /**
+ * A source tell, **BOUNDED AT THE HEAD AND OPEN AT THE TAIL**, and the asymmetry was
+ * measured rather than reasoned (2026-08-07, calibration run 3).
+ *
+ * A plain `includes` refused *"Kita cuma baca kartunya, Mif, bukan biodatamu"* — a reader
+ * DENYING that it holds a file on you — because `datamu` is inside `biodatamu`. That is
+ * the false rejection `[F3-12]` exists to prevent, in the one check that is a hard FAIL.
+ * So the head is closed: a prefix is where the accidents are.
+ *
+ * **THE TAIL STAYS OPEN BECAUSE INDONESIAN IS AGGLUTINATIVE**, which is
+ * `BANNED_ROOTS_ID`'s reasoning: run 1 produced *"yang kamu pernah ceritain sendiri"*, and
+ * `\bkamu pernah cerita\b` would not match it while `\bkamu pernah cerita` does.
+ */
+function matchesTell(haystack: string, phrase: string): boolean {
+  return new RegExp(`\\b${escapeRe(phrase)}`, 'i').test(haystack);
+}
+
+/**
  * Tokens in a VOCATIVE POSITION: the first word of the bubble, and any word adjacent to
  * a comma. That is where a name goes when somebody is being addressed, and restricting
  * the check to those positions is what makes it shape rather than a hunt for a substring.
@@ -531,7 +548,7 @@ export function checkTurn(
   if (closers.some((phrase) => last.includes(phrase))) return { ok: false, reason: 'register' };
 
   const tells = ctx.locale === 'id' ? CHAT_SOURCE_TELLS_ID : CHAT_SOURCE_TELLS_EN;
-  if (tells.some((phrase) => lower.includes(phrase))) return { ok: false, reason: 'source_tell' };
+  if (tells.some((phrase) => matchesTell(text, phrase))) return { ok: false, reason: 'source_tell' };
 
   /*
    * OVERRIDES THE ACCEPT BIAS, and **the carve-out is load-bearing**: the querent may

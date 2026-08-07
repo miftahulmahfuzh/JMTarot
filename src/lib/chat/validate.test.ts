@@ -233,6 +233,21 @@ describe('checkTurn — every refusal, with its near miss', () => {
   });
 
   /**
+   * **THE TELLS ARE BOUNDED AT THE HEAD AND OPEN AT THE TAIL, AND BOTH HALVES WERE
+   * MEASURED** (calibration run 3, and run 1).
+   *
+   * A plain `includes` refused *"bukan biodatamu"* — a reader DENYING that it holds a file
+   * on you — because `datamu` is inside `biodatamu`. And a `\b`-terminated match would
+   * have let *"yang kamu pernah ceritain sendiri"* through, because Indonesian
+   * affixation puts a suffix where the boundary would be.
+   */
+  it('13b. source_tell does not fire on a prefix, and does fire through a suffix', () => {
+    accepts('Kita cuma baca kartunya, Mif, bukan biodatamu.');
+    refuses('yang kamu pernah ceritain sendiri', 'source_tell');
+    accepts('kamu mau cerita?');
+  });
+
+  /**
    * **OVERRIDES THE ACCEPT BIAS** (`[F3-8]`), and **the carve-out is load-bearing**: the
    * querent may type a friend's name in the room, and a reader repeating it back is
    * natural and correct. What is refused is a name that arrived from a stored answer and
