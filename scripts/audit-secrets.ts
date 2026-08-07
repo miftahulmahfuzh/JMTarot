@@ -522,6 +522,44 @@ const FORBIDDEN: { prefix: string; allow: string[] }[] = [
    * is harmless. Same split as `moderation/types.ts` against `blocklist.ts`.
    */
   { prefix: 'lib/seo/origin.ts', allow: [] },
+  /*
+   * **v0.7.0 / `[F3-19]`. THE OTHER HALF OF THE CHAT FENCE.**
+   *
+   * F1 taught the needle derivation about `src/lib/chat/**` (see `deriveNeedles`), which
+   * is what makes a leaked chat prompt DETECTABLE in a built bundle. This is what makes
+   * it detectable in the SOURCE, transitively, in one second, with the whole chain
+   * named — and it is the half that catches the mistake before the bundle exists.
+   *
+   * **THE PROMPT IS THE PRODUCT ON THIS SURFACE, AND UNDER `C-D8` IT CARRIES THE SIX
+   * RAW ONBOARDING ANSWERS.** A client component that reached `@/lib/chat/context` or
+   * `@/lib/chat/prompt/**` — even through two harmless-looking hops — would put a
+   * querent's own `worst_thing` answer in a file a browser caches. That is the one
+   * failure non-negotiable 2 exists for.
+   *
+   * FIVE EXCEPTIONS, AND EVERY ONE OF THEM IS A FILE F4 HAS TO NAME:
+   *
+   *   types.ts          the DTOs and `AdvanceReply`. A leaf by contract, no prose.
+   *   attachmentView.ts F6's projection for the bubble. `'use client'` names it.
+   *   machine.ts        F1's pure state decision, no clock and no handle.
+   *   address.ts        PURE, a LEAF, zero imports.
+   *   voices/pace.ts    the pace. F4 honours `delayMs`, so it may want the function.
+   *
+   * **`validate.ts` IS NOT ON THE LIST, AND THAT IS DELIBERATE.** It reaches
+   * `@/lib/prompt/lotus` for `properNames` and `sharesNgram`, so it carries the reading
+   * prompt layer behind it; the smoke script imports it under
+   * `--conditions=react-server` and a client component has no business checking a
+   * bubble it did not generate.
+   */
+  {
+    prefix: 'lib/chat/',
+    allow: [
+      'lib/chat/types.ts',
+      'lib/chat/attachmentView.ts',
+      'lib/chat/machine.ts',
+      'lib/chat/address.ts',
+      'lib/chat/voices/pace.ts',
+    ],
+  },
 ];
 
 /** Resolve an import specifier to a file under src/, or null if it leaves the tree. */
