@@ -345,6 +345,26 @@ const en: Catalog = {
     'this conversation — so they answer you rather than anybody.',
   'chat.first_open.link': 'What that means',
 
+  /*
+   * v0.7.0 / F6 — the attachment. WRITTEN, not translated; `id.ts` carries the full
+   * account of each choice.
+   *
+   * `Discuss in the group` and not `Ask the group`, for `Bahas`'s reason: an
+   * attachment with no text is a normal move, and `Ask` would make it read as a slip.
+   *
+   * `In Indonesian` / `In English` rather than the bare language name: the chip sits
+   * inside an English card describing two foreign lines, and the preposition is what
+   * makes it a label rather than a heading.
+   */
+  'chat.attach.action': 'Discuss in the group',
+  'chat.attach.hint': 'Send this reading to Thessaly, Margaret and Adrian.',
+  'chat.attach.staged': 'Reading attached',
+  'chat.attach.remove': 'Remove attachment',
+  'chat.attachment.open': 'Open the reading',
+  'chat.attachment.language.id': 'In Indonesian',
+  'chat.attachment.language.en': 'In English',
+  'chat.attachment.gone': 'That reading is gone.',
+
   'locale.code.id': 'ID',
   'locale.code.en': 'EN',
 

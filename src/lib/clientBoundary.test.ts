@@ -224,6 +224,71 @@ describe('the client boundary', () => {
     }
   });
 
+  /*
+   * v0.7.0 / F6's task 3. **THE CHAT IS THE SURFACE WHERE RULE 1 IS EASIEST TO
+   * BREAK, BECAUSE THE PROMPT IS THE PRODUCT** (roadmap §0.3) -- and the attachment
+   * is the part of it a client component genuinely has to name, which is exactly the
+   * shape that produces a leak.
+   *
+   * `@/lib/chat/attachmentBlock` carries the `<lampiran>` labels, the verdict
+   * vocabulary and the language names a model reads. `@/lib/chat/attachmentView`
+   * carries the projection `ReadingAttachment` and F4's composer both need. **The
+   * pair is `@/lib/translate/contract` and `@/lib/translate/keys`, one release
+   * later**, and the split exists for the reason stated in `attachmentView.ts`'s own
+   * header: the regex below does not know the `type` keyword, so even an erased
+   * `import type` from a client file fails this test -- which is what makes a
+   * SEPARATE module the only way to name the shape from the browser.
+   *
+   * **NARROW ON PURPOSE, AND NOT A `@/lib/chat/**` GLOB.** F1 owns that directory
+   * and its `types.ts` is a LEAF that F4's client components are supposed to import;
+   * a blanket fence here would fail on the design rather than on a mistake. The
+   * server-only modules beside it (`run.ts`, `direct/plan.ts`) carry the marker, so
+   * they fail the build instead, and `scripts/audit-secrets.ts` already derives its
+   * needles from the whole directory.
+   */
+  it('lets no client component import the chat attachment block', () => {
+    for (const file of CLIENT) {
+      const offending = importsOf(file.source).filter(
+        (spec) => spec === '@/lib/chat/attachmentBlock',
+      );
+      expect({ [file.path]: offending }).toEqual({ [file.path]: [] });
+    }
+  });
+
+  it('keeps `@/lib/chat/attachmentView` free of prompt prose, so the exception stays earned', () => {
+    /*
+     * The other half, asserted on the SOURCE with comments stripped -- the same shape
+     * the `sanitize`, `persona/lines` and `share/slug` exceptions use, and for the
+     * same reason `queries/contract.test.ts` records: that file's header explains at
+     * length what it may not carry, so a check that reads the prose describing the
+     * rule is a check people delete.
+     *
+     * `server-only` and `process.env` are asserted absent because the module is
+     * imported by a client component: the first would be a build error and the second
+     * would silently read `undefined` in the browser, which is the trap
+     * `localeSwitcherEnabled()`'s header records living in `LocaleSwitch.tsx` for ten
+     * minutes.
+     */
+    const raw = readFileSync(join(ROOT, 'lib/chat/attachmentView.ts'), 'utf8');
+    const code = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+    expect(code).not.toContain("import 'server-only'");
+    expect(code).not.toContain('process.env');
+    /*
+     * The block's own vocabulary, by name. If a label ever migrates into the
+     * client-importable half "so the bubble can show it too", this fires -- and the
+     * fence above stops being the thing that protects the labels.
+     */
+    for (const sentinel of ['lampiran', 'pertanyaan', 'jawaban', 'kartu:', 'teks:']) {
+      expect({ sentinel, present: code.includes(sentinel) }).toEqual({
+        sentinel,
+        present: false,
+      });
+    }
+    // The stripper must not have eaten the code it is checking.
+    expect(code).toContain('ATTACHMENT_SNIPPET_MAX_CHARS');
+  });
+
   it('lets no client component import the database', () => {
     // Not W6's rule, but the same class and the check is free.
     for (const file of CLIENT) {

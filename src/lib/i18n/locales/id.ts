@@ -597,6 +597,78 @@ const id = {
     'ini sendiri — supaya mereka menjawab kamu, bukan orang umum.',
   'chat.first_open.link': 'Selengkapnya',
 
+  /*
+   * ── v0.7.0 / F6 — THE ATTACHMENT. `Bahas di grup`, and the bubble it becomes ──
+   *
+   * **AUTHORED BY F6 AND TRANSCRIBED HERE BY F6, WHICH IS A DEVIATION FROM ITS OWN
+   * PLAN'S D1** — that discrepancy hands these strings to F4 as prose, on S7's
+   * `.env.example` pattern. It cannot work in this order: `MessageKey` is a union
+   * derived from this object, so `AttachReadingLink` and `ReadingAttachment` (F6's
+   * tasks 4 and 5, which land before F3, four workstreams ahead of F4) would not
+   * typecheck against a key that does not exist yet. The strings are §2.1's table
+   * verbatim; **F4 owns every other `chat.*` key and must not re-add these.**
+   *
+   * `Bahas di grup` AND NOT `Tanya di grup`: the roadmap names it *"bahas di grup"*
+   * and *bahas* is the honest verb — requirement 7 makes the text optional, so the
+   * querent may be SHOWING the reading rather than asking about it, and `Tanya` would
+   * make the empty-text case read as a mistake.
+   *
+   * `grup` AND NOT `grup obrolan`. Indonesian, not padded: nobody says *grup
+   * obrolan* in a message, and the two-word button fits at 320px where the
+   * three-word one does not.
+   *
+   * **THE HINT NAMES THE THREE READERS, AND THAT IS THE DISCLOSURE THAT MAKES THE
+   * BUTTON HONEST.** `[F6-11]`: this control sits directly above `ShareFooter`'s, it
+   * looks like it, and the two must never converge — *attaching* shows a reading to
+   * three characters who already hold the querent's six onboarding answers (`C-D8`);
+   * *sharing* puts it on the public internet. Naming the readers is what keeps the
+   * two apart at the moment of the tap.
+   */
+  'chat.attach.action': 'Bahas di grup',
+  'chat.attach.hint': 'Kirim bacaan ini ke Thessaly, Margaret dan Adrian.',
+  // The staged card above the composer, and the control that unstages it. F4 mounts
+  // both; the copy is F6's because the card is.
+  'chat.attach.staged': 'Bacaan terlampir',
+  'chat.attach.remove': 'Lepas lampiran',
+  // The whole bubble is one link to `/history/[id]`, so it needs a label a screen
+  // reader can read instead of three card names and a date.
+  'chat.attachment.open': 'Buka bacaannya',
+  /*
+   * The language chip, and it renders ONLY when the reading's prose is not in the
+   * viewer's language (§7.1).
+   *
+   * **TWO KEYS RATHER THAN §2.1's ONE**, because the plan's table gives that single
+   * key two values per locale and only ever renders one of them: with exactly two
+   * locales the foreign language is always "the other one", so a single key would be
+   * correct today and silently wrong the day a third locale exists. Keyed by the
+   * PROSE's locale, chosen by the renderer.
+   *
+   * **NAMED IN THE VIEWER'S LANGUAGE, WHICH IS THE OPPOSITE OF `locale.name.*`.**
+   * Those are written in their own language because a switcher has to be readable by
+   * somebody who cannot read the locale they are in. This is a chip inside the
+   * viewer's own chrome describing two foreign lines, so it belongs in the language
+   * the rest of the card is in.
+   *
+   * `Bahasa Inggris` AND NOT `Inggris`: the chip names a language, and the bare
+   * demonym reads as a country.
+   */
+  'chat.attachment.language.id': 'Bahasa Indonesia',
+  'chat.attachment.language.en': 'Bahasa Inggris',
+  /*
+   * §8. **UNREACHABLE TODAY AND KEYED ANYWAY.** `readings` rows are deleted by
+   * exactly one path — the hard delete thirty days after a soft account deletion —
+   * and that path cascades `chat_messages` on `user_id` first, so
+   * `attached_reading_id IS NULL` under a stored bubble is insurance in the schema
+   * rather than a state the product produces.
+   *
+   * It is rendered by `ReadingAttachment`'s CALLER, in the querent's own bubble, and
+   * only when there is no text either — a bubble with words in it is just a text
+   * bubble, with no slot and no placeholder. **It is the app labelling an empty slot,
+   * never a reader's voice** and never a `chat_messages` row a director could point a
+   * beat at.
+   */
+  'chat.attachment.gone': 'Bacaan ini sudah tidak ada.',
+
   // The SHORT tags, for the two-item toggle inside the menu (R1/VD12). The long
   // names in `locale.name.*` stay exactly as they are and stay on /login -- see
   // LocaleSwitch's header for why both are correct in the place each applies.
