@@ -86,51 +86,27 @@ export const ATTACHMENT_BODY_MAX_CHARS = 1600;
  */
 export const ATTACHMENT_TAG = 'lampiran';
 
-/*
- * ── THE ONE THING IN THIS FILE THAT IS SCAFFOLDING, AND WHEN TO DELETE IT ───────
+/**
+ * Every field passes through here on its way into the block.
  *
- * `stripUntrusted`'s alternation does not know `lampiran`. F6 does not own
- * `src/lib/prompt/sanitize.ts` — reconciliation `[R12]` gives that file to **F3**,
- * which adds `obrolan` and `lampiran` in one commit and moves the header's count from
- * six to eight. Until then, §5.5's guarantee that *"a body that spells `</lampiran>`
- * cannot close its own fence"* is stated and false.
+ * ── THE PRIVATE COPY OF THE FENCE LOOP IS GONE, AS F6's HEADER ASKED ────────────
  *
- * So this module strips its OWN tag, with `sanitize.ts`'s exact regex shape and
- * `stripDelimiters`'s exact fixpoint loop:
+ * This function used to run a second, module-local fixpoint stripper for
+ * `lampiran`, because `stripUntrusted`'s alternation did not know the tag and F6
+ * does not own `src/lib/prompt/sanitize.ts`. **F3 landed `obrolan` and `lampiran` in
+ * that alternation** (reconciliation `[R12]`, header count six → eight), so
+ * `stripUntrusted` now closes the hole itself and F6's instruction was explicit:
+ * delete this, and the call to it, in that commit. A second implementation of a rule
+ * with one owner is how the two drift — and the deleted copy would have become a
+ * silent no-op, which is worse than either.
  *
- *   - ONE PASS IS NOT ENOUGH. Deleting a tag closes the gap between whatever sat on
- *     either side of it, and those two halves can spell a fresh tag —
- *     `'</lamp</lampiran>iran>halo'` needs two passes. Terminates because every
- *     iteration that continues has strictly shortened the string.
- *   - It runs AFTER `stripUntrusted`, never before, because that function removes the
- *     control and format characters a zero-width space inside a tag name would use to
- *     defeat this regex.
- *
- * **DELETE THIS, AND THE `clean()` CALL TO IT, IN THE COMMIT THAT LANDS `lampiran` IN
- * `stripUntrusted`'s ALTERNATION.** It becomes a no-op then, not a bug — the pass is
- * idempotent — but a second implementation of a rule that has one owner is how the
- * two drift.
- *
- * F6's plan (§12, task 2) asked for the fence test to be left RED as the forcing
- * function for that edit. It is green instead, and the trade is deliberate: a red
- * `npm test` between two commits of one release is a suite nobody can use to verify
- * anything else, and this comment plus the test's own name is the marker. The
- * assertion is committed either way, which was the actual point.
+ * §5.5's guarantee — *"a body that spells `</lampiran>` cannot close its own
+ * fence"* — is now true where it was stated and false, and it is true for the same
+ * reason every other fence in this app is: one alternation, one fixpoint loop, one
+ * test block.
  */
-const OWN_FENCE = new RegExp(`<\\s*/?\\s*${ATTACHMENT_TAG}(?:[^>]*)>`, 'gi');
-
-function stripOwnFence(input: string): string {
-  let out = input;
-  for (;;) {
-    const next = out.replace(OWN_FENCE, '');
-    if (next === out) return out;
-    out = next;
-  }
-}
-
-/** Every field passes through here on its way into the block. */
 function clean(raw: string): string {
-  return stripOwnFence(stripUntrusted(raw));
+  return stripUntrusted(raw);
 }
 
 /**
