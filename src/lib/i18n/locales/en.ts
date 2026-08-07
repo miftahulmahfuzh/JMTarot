@@ -222,17 +222,29 @@ const en: Catalog = {
   'onboarding.q.worst_thing.title': 'The heaviest thing you have watched happen',
   'onboarding.q.worst_thing.framing':
     'The dark shapes a person too. But you do not have to tell it here.',
+  /*
+   * **AMENDED 2026-08-07 FOR v0.7.0's GROUP CHAT** (`C-D8`, `[R14]`). The Indonesian
+   * catalog carries the full account; the short version is that this string promised
+   * the opposite of what the chat does, **while the querent was typing the answer**,
+   * and nobody re-reads `/privacy` but everybody reads this.
+   *
+   * REWRITTEN, NOT TRANSLATED, per this project's rule for the English half — but the
+   * three facts it must carry are the same three: locked at rest, abstracted in a
+   * reading, verbatim in the room.
+   */
   'onboarding.q.worst_thing.hint':
-    'As little or as much as you want. This answer is kept locked, is never ' +
-    'shown again, and is never quoted inside your reading. Leaving it takes ' +
-    'nothing away.',
+    'As little or as much as you want. This answer is kept locked and is never shown ' +
+    'back to you. A reading uses only an abstract summary of it; in the group chat, ' +
+    'the readers see it as you wrote it. Leaving it takes nothing away.',
 
   'onboarding.q.most_loved.title': 'The person you love most in this life',
   'onboarding.q.most_loved.framing':
     'Every reading has one person standing behind it, even when their name is ' +
     'never said.',
+  /** **AMENDED 2026-08-07** (`C-D8`, `[R14]`). See the Indonesian catalog. */
   'onboarding.q.most_loved.hint':
-    'Just say who they are to you. Their name will never appear in a reading.',
+    'Just say who they are to you. Their name will never appear in a reading, and ' +
+    'the readers will not use it in the chat.',
 
   'onboarding.q.introversion.title': 'Where do you stand?',
   'onboarding.q.introversion.framing':
@@ -322,6 +334,16 @@ const en: Catalog = {
   'account.menu.gallery': 'Card gallery',
   'account.menu.blog': 'Writing',
   'account.menu.signOut': 'Sign out',
+
+  /*
+   * v0.7.0. **F1 OWNS THIS COPY; F4 OWNS THE SURFACE** (`[R14]`). The Indonesian
+   * catalog carries the full account of why the room says this rather than a modal
+   * asking you to agree to it. REWRITTEN, not translated.
+   */
+  'chat.first_open.notice':
+    'In this room the three readers can see your opening answers, your readings, and ' +
+    'this conversation — so they answer you rather than anybody.',
+  'chat.first_open.link': 'What that means',
 
   'locale.code.id': 'ID',
   'locale.code.en': 'EN',

@@ -1,6 +1,6 @@
 /**
- * The five features that may be switched off to stop reaching a model, and
- * nothing else (2026-07-30, Miftah's ruling).
+ * The features that may be switched off to stop reaching a model, and nothing
+ * else (2026-07-30, Miftah's ruling; **five became seven on 2026-08-07**, `C-D15`).
  *
  * ── WHY THIS LIVES IN `src/lib/llm/` ────────────────────────────────────────
  *
@@ -21,6 +21,10 @@
  * and forget. `flags.test.ts` asserts `READING_ENABLED` and
  * `TRANSLATION_ENABLED` appear nowhere in this file, because the way that rule
  * dies is somebody adding a sixth entry for symmetry.
+ *
+ * **THE LIST GREW TO SEVEN AND THAT IS NOT A LICENCE.** `C-D15`: the list growing
+ * is a licence to add a switch for a *new feature that can be off*, never one for
+ * symmetry. The group chat is a new feature that can be off; a reading is not.
  *
  * The moderation classifier is absent for the opposite reason: it already has
  * `MODERATION_CLASSIFIER_ENABLED`, in `moderation/gate.ts`, named there so it
@@ -192,6 +196,53 @@ export function gistEnabled(): boolean {
 }
 
 /**
+ * The group chat's generation — the director and every voice (`C-D15`, v0.7.0).
+ *
+ * **THE HIGHEST-VOLUME FLAG IN THIS FILE, AND BY SOME MARGIN.** A run is 2–5 model
+ * calls and a talkative afternoon is many runs, which is the whole reason
+ * `LLM_WINDOW_CHAT_CEILING` exists beside it.
+ *
+ * OFF: **the room still opens, every past message still renders, and the composer is
+ * disabled with one line of copy.** `GET /api/chat/messages` is untouched;
+ * `/api/chat/state` reports `chatEnabled: false`; `/api/chat/advance` and `mintRun()`
+ * decline. **A kill switch that blanks a screen is a worse outage than the quota it
+ * protects** — `sharingEnabled()`'s rule, and every flag here already follows it.
+ *
+ * **AND IT IS THE LOTUS SIDE OF THIS FILE'S ASYMMETRY, NOT THE PERSONA SIDE**
+ * (`[F1-20]`): it writes nothing, so it is self-healing. There is no stored artifact
+ * whose hash could freeze, because a run left `pending` is picked up the moment the
+ * flag returns to `1`, and `/api/chat/state` has an empty-state answer for every
+ * querent — which is the property `/api/persona` lacks and the reason that route
+ * 500s. **A message the querent posted is still STORED while this is off**: off means
+ * "write nothing new", and a querent's own words are not new generation.
+ */
+export function chatEnabled(): boolean {
+  return process.env.CHAT_ENABLED !== '0';
+}
+
+/**
+ * Unprompted runs only (`C-D15`, `C-N2`).
+ *
+ * **THIS IS THE FLAG AN OPERATOR REACHES FOR FIRST**, because proactive runs are the
+ * ones with no human waiting and therefore the cheapest to lose. A posted message
+ * still gets answered.
+ *
+ * OFF: `mintRun()` declines for every trigger that is not `'user_message'` — the
+ * reading route's hook, `/api/chat/state`'s tick and `/api/cron/nudge`. Nothing is
+ * written, so it is self-healing in `chatEnabled()`'s way.
+ *
+ * **IT GATES A MINT RATHER THAN A CALL, WHICH IS WHY `flagCoverage.test.ts` GREW A
+ * THIRD TABLE** (`[R13]`). `C-D15` binds it into `DEFERRABLE_FLAGS`, and the existing
+ * two tables have no shape for a flag with no `getProvider()` line behind it — so the
+ * test grew rather than the decision changing. The assertion `C-D15` names, *"the set
+ * of model call sites is exactly its two tables"*, is untouched: `GATES` holds no
+ * call site.
+ */
+export function chatProactiveEnabled(): boolean {
+  return process.env.CHAT_PROACTIVE_ENABLED !== '0';
+}
+
+/**
  * The register. `docs/DEPLOY-VERCEL.md` §2d orders the same five by what an
  * operator should reach for FIRST (gist, then verdict, summary, persona, Lotus);
  * this list is in feature order instead, because it is what `.env.example` and the
@@ -233,5 +284,21 @@ export const DEFERRABLE_FLAGS = [
     enabled: gistEnabled,
     /** ONE CALL PER READING. The largest reduction available. */
     what: "the per-reading gist that feeds a later reading's callback",
+  },
+  {
+    env: 'CHAT_ENABLED',
+    enabled: chatEnabled,
+    /** 2–5 calls PER RUN, and a run happens whenever somebody speaks. The largest
+     *  single lever in this file since GIST_ENABLED, and the reason
+     *  `LLM_WINDOW_CHAT_CEILING` exists beside it. */
+    what: "the group chat's director and voices",
+  },
+  {
+    env: 'CHAT_PROACTIVE_ENABLED',
+    enabled: chatProactiveEnabled,
+    /** The unprompted half only. **REACH FOR THIS ONE FIRST**: nobody is waiting on a
+     *  proactive run, so it is the cheapest thing in the app to lose. It gates a MINT
+     *  rather than a call, which is why `flagCoverage.test.ts` has a `GATES` table. */
+    what: 'unprompted chat runs — a posted message still gets answered',
   },
 ] as const;

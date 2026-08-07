@@ -155,8 +155,32 @@ export type ReadingUsage = {
  * ITS header records as a known caveat rather than a precedent — a third unrelated feature
  * behind one cost row.
  *
- * **TWO OPS NOW MEASURE THE DASHBOARD AND THE CMS RATHER THAN THE APP**, so a
- * cost-per-reading denominator must exclude `insight` AND `blog_format`.
+ * ── `chat_plan` AND `chat_turn` ARE THE TWELFTH AND THIRTEENTH, 2026-08-07 ───
+ *
+ * v0.7.0's group chat, `C-D5`, and they were asked for through the same process. The
+ * argument that earned them is `insight`'s: Miftah asked for the chat's token
+ * consumption to be visible in `/admin`, and **a cost table cannot say what the chat
+ * costs if the chat's calls are filed under `reading`.**
+ *
+ * **TWO, NOT ONE.** The director and a voice have wildly different token shapes — the
+ * director is a large prompt and a tiny JSON reply, a voice is a large prompt and a
+ * two-sentence reply — and averaging them makes both figures meaningless.
+ *
+ * **TWO, NOT THREE.** A *proactive* turn is a `chat_turn`; what made it proactive is
+ * `chat_runs.trigger`, which `/admin/chat` groups by. **An op is what the call IS, not
+ * why it happened.**
+ *
+ * **FOUR OF THIRTEEN OPS NOW MEASURE SOMETHING OTHER THAN A READING**, so a
+ * cost-per-reading denominator must exclude `insight`, `blog_format`, `chat_plan`
+ * **and** `chat_turn`. F7 owns fixing that wherever it already exists (seam S10), and
+ * F1 must not "helpfully" patch one of A3's queries while adding these two.
+ *
+ * **AND `llm_calls.reading_id` IS NULL FOR BOTH** (`[R8]`). `readingCostsFor` and
+ * `callsForReading` fold every `reading_id`-bearing ledger row into a reading's *Biaya
+ * generasi* with no `op` predicate, and a chat run has two plausible reading pointers
+ * (`chat_runs.trigger_reading_id`, and an attachment's `attached_reading_id`). Left
+ * alone, **a chat run would inflate the cost of the reading that triggered it,
+ * silently.** Neither call site passes one; F7 writes the negative control.
  *
  * Adding a value here is deliberately not free: `OP_ORDER` in
  * `@/lib/analytics/rollup` carries a type-level `AssertNever` over `Exclude`, so a
@@ -174,7 +198,9 @@ export type LLMOp =
   | 'translation'
   | 'translation_repair'
   | 'insight'
-  | 'blog_format';
+  | 'blog_format'
+  | 'chat_plan'
+  | 'chat_turn';
 
 export type LLMCallOpts = {
   signal?: AbortSignal;

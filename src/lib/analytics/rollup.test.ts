@@ -37,7 +37,7 @@ describe('the module contract', () => {
     expect(code).not.toContain('@/lib/db');
   });
 
-  it('names all eleven ops and no twelfth', () => {
+  it('names all thirteen ops and no fourteenth', () => {
     /*
      * The COMPILE-TIME guard is `_MissingOps` in the module, which is what actually
      * fails when A2's union grows. This is the other direction: a value in `OP_ORDER`
@@ -54,12 +54,24 @@ describe('the module contract', () => {
      * **TWO VALUES IN ONE DAY IS THE THING TO BE SUSPICIOUS OF**, so the count is spelled
      * out here rather than derived: the rule was never that ten is a magic number, it is
      * that a new value is a question for Miftah. Both were put and both were granted.
+     *
+     * **AND 11 -> 13 ON 2026-08-07**, v0.7.0's group chat (`C-D5`): `chat_plan` and
+     * `chat_turn`, put and granted on `insight`'s argument — Miftah asked for the chat's
+     * token consumption to be visible in `/admin`, and a cost table cannot say what the
+     * chat costs if the chat's calls are filed under `reading`. **Two and not one**,
+     * because a large prompt with a tiny JSON reply and a large prompt with a
+     * two-sentence reply average into two meaningless figures.
+     *
+     * **FOUR OF THE THIRTEEN NOW MEASURE SOMETHING OTHER THAN A READING**, and the order
+     * puts all four last for exactly that reason.
      */
-    expect(OP_ORDER).toHaveLength(11);
-    expect(new Set(OP_ORDER).size).toBe(11);
+    expect(OP_ORDER).toHaveLength(13);
+    expect(new Set(OP_ORDER).size).toBe(13);
     expect([...OP_ORDER].sort()).toEqual(
       [
         'blog_format',
+        'chat_plan',
+        'chat_turn',
         'day_summary',
         'frequency',
         'gist',

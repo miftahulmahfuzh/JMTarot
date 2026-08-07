@@ -187,9 +187,31 @@ async function derivedNeedles(): Promise<{ needle: string; origin: string }[]> {
    */
   const CLIENT_BY_DESIGN = ['moderation/resources.ts', 'moderation/types.ts'];
 
+  /*
+   * ── `src/lib/chat/**` JOINED THE LIST IN v0.7.0, AND IT WAS THE MOST IMPORTANT
+   *    OF THE RECONCILIATION'S NINE UNOWNED FILES (§4, F3's finding) ────────
+   *
+   * **THIS SCRIPT DERIVED ITS NEEDLES FROM TWO DIRECTORIES ONLY, SO NON-NEGOTIABLE 2
+   * WAS UNENFORCED FOR EVERY STRING THE CHAT PROMPT LAYER WRITES** — and the
+   * `derived ZERO needles` guard below could not fire, because the two old
+   * directories keep it comfortably non-zero. The audit would have gone on passing
+   * while the surface it most needed to cover shipped unwatched.
+   *
+   * **THE CHAT IS THE SURFACE WHERE THIS IS EASIEST TO BREAK, BECAUSE THE PROMPT IS
+   * THE PRODUCT** (§0.3): three persona blocks, a director prompt, an address-form
+   * list and — under `C-D8` — a block built from six raw onboarding answers. A voice
+   * prompt leaking into a client bundle would put the querent's own `worst_thing`
+   * answer in a file a browser caches.
+   *
+   * F1 owns the edit; F3 supplied the path. `src/lib/chat/types.ts` is deliberately
+   * NOT excluded the way `moderation/types.ts` is — a client component names its
+   * types, but the file carries no prose (its contract test asserts exactly that), so
+   * it contributes no needles and needs no exception.
+   */
   const modules = [
     ...walk(join(ROOT, 'src', 'lib', 'prompt')),
     ...walk(join(ROOT, 'src', 'lib', 'moderation')),
+    ...walk(join(ROOT, 'src', 'lib', 'chat')),
   ].filter(
     (f) =>
       /\.ts$/.test(f) &&

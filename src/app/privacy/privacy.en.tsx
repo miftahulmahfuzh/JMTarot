@@ -48,7 +48,18 @@ export function PrivacyEn({ effective }: { effective: string }) {
             here word for word, because a policy that calls that &ldquo;certain personal
             reflections&rdquo; is worse than no policy at all.
           </P>
-          <P>Four things about that answer:</P>
+          <P>Five things about that answer:</P>
+          {/*
+            v0.7.0 / C-D8, and A1's R31 is the governing precedent: **the third bullet
+            was FALSE the day the group chat shipped**, so it is AMENDED IN PLACE rather
+            than contradicted by a new clause somewhere below. R31, in its own words:
+            *"Amending only 3 and 8 would leave a policy that is technically amended
+            and still misleading, which is worse than one plainly out of date."*
+
+            The fifth bullet is new, and it is C-D8 condition 5 written down: a skipped
+            answer stays skipped, because **a reader who asks about the thing you
+            refused to answer is the worst possible version of this feature.**
+          */}
           <List
             items={[
               <>
@@ -59,10 +70,22 @@ export function PrivacyEn({ effective }: { effective: string }) {
                 in the source code and not in the database.
               </>,
               <>
-                <strong>Only an abstract summary ever reaches the language model.</strong>{' '}The
-                distillation is instructed to abstract rather than restate: what reaches a reading
-                looks like &ldquo;carries a heavy memory of loss&rdquo;, never the incident. Any
-                name you mention never travels with it.
+                <strong>In a reading, only an abstract summary ever reaches the language
+                model.</strong>{' '}The distillation is instructed to abstract rather than restate:
+                what reaches a reading looks like &ldquo;carries a heavy memory of loss&rdquo;,
+                never the incident. Any name you mention never travels with it.
+              </>,
+              <>
+                <strong>In the group chat, your answer is sent word for word.</strong>{' '}This is
+                different from a reading, and we say so plainly because it is the entire point of
+                that room: so the three readers can respond to your actual life rather than to a
+                summary of it. If you would rather they did not, do not open the chat &mdash; or
+                clear the answer, which takes effect immediately for both. See{' '}
+                <Link href="#2-7">clause 2.7</Link>.
+              </>,
+              <>
+                <strong>What you skipped stays skipped.</strong>{' '}A question you did not answer is
+                never sent anywhere, and no reader will ask you about it.
               </>,
               <>
                 <strong>You can clear it at any time</strong>, one answer at a time, without
@@ -129,6 +152,44 @@ export function PrivacyEn({ effective }: { effective: string }) {
           </P>
           <P>We never write the text of your question to a log ourselves.</P>
         </SubClause>
+
+        {/*
+          2.7 — v0.7.0's group chat. A NEW SUBCLAUSE rather than a sentence inside 2.3,
+          because a room is not a reading and the retention story is different: a chat
+          message is stored in PLAINTEXT (C-D20), exactly like `readings.question`, and
+          nothing sweeps it.
+
+          **THE SAME ANCHOR SET AS THE INDONESIAN DOCUMENT**, or `legal.test.ts` goes
+          red — which is what makes "both locales" mechanical rather than promised.
+        */}
+        <SubClause id="2-7" n="2.7" title="The group chat">
+          <Callout>
+            <P>
+              <strong>Anything you type in the chat is stored as written, unencrypted</strong>{' '}
+              &mdash; exactly like the question you type under the cards. There is no automatic
+              deletion, and no button to unsend one message.
+            </P>
+          </Callout>
+          <P>
+            What is stored: the text of every message, who wrote it, its language, which message it
+            quotes, which reading was attached, and when. The readers&rsquo; own messages are stored
+            too, because that is what makes the next stretch of the conversation follow from the
+            last.
+          </P>
+          <P>
+            <strong>No human reads this room.</strong>{' '}The operator can see how many messages
+            there are and when &mdash; not what they say. See{' '}
+            <Link href="#3-1">clause 3.1</Link>.
+          </P>
+          <P>
+            Your messages are not translated. If you write in English, what is stored and what the
+            readers read is English.
+          </P>
+          <P>
+            The room goes entirely when you delete your account &mdash; see{' '}
+            <Link href="#8">clause 8</Link>.
+          </P>
+        </SubClause>
       </Clause>
 
       <Clause id="3" n="3." title="Why we use each of these">
@@ -137,6 +198,7 @@ export function PrivacyEn({ effective }: { effective: string }) {
             'The Google data: so you can sign in, and so we know this account is yours.',
             'The opening answers: so a reading sounds like it is for you rather than for anybody.',
             'Readings: so the app remembers what you have already asked.',
+            'The group chat: so the readers answer you, this person, and not a generic one — which is the only reason they see your opening answers as written in there.',
             'Analytics: so we know what is broken and what is used.',
             'Moderation: so a wrong refusal can be found and fixed.',
             'Running the Service: so breakage can be fixed, a request about your own data can be answered, and the Terms can be enforced.',
@@ -173,6 +235,19 @@ export function PrivacyEn({ effective }: { effective: string }) {
             whose it was, which answer, and when. That record never holds the answer itself. And if
             that row cannot be written, the answer is not opened.
           </P>
+          {/*
+            v0.7.0 / [R15]. Miftah's ruling on Q4: **counts and no text** on
+            `/admin/users/[id]`. F7's argument, which the roadmap did not have: A-D16's
+            audited one-key-per-request reveal *"was built for a thing you read one
+            of"*, and a conversation would be two hundred audit rows for one act of
+            reading. Recorded in the policy because a limit nobody wrote down is a
+            limit the next release quietly removes.
+          */}
+          <P>
+            <strong>The contents of the chat cannot be opened at all.</strong>{' '}Not one at a time,
+            not through the access log &mdash; there is no path. What is visible is how many
+            messages exist and when the last one was.
+          </P>
           <P>
             What cannot be done: changing your profile, your answers, your readings, or the
             portrait written about you. The operator only reads.
@@ -205,6 +280,18 @@ export function PrivacyEn({ effective }: { effective: string }) {
               your opening answers to {PROVIDER.name}.
             </P>
           </Callout>
+          {/*
+            v0.7.0 / C-D8. **THE SENTENCE ABOVE BECAME FALSE FOR THE CHAT SURFACE**,
+            and A1's R31 says an incomplete amendment is worse than an out-of-date
+            policy. It is left exact for readings and answered here for the room,
+            rather than softened into something true of neither.
+          */}
+          <P>
+            <strong>From the group chat we send more:</strong>{' '}the message you wrote there, the
+            earlier messages in that room, and{' '}
+            <strong>your six opening answers word for word</strong>{' '}&mdash; not a summary of them.
+            See <Link href="#2-2">clause 2.2</Link> and <Link href="#2-7">2.7</Link>.
+          </P>
           <P>
             <strong>
               This provider&rsquo;s API terms prohibit using what we send to train or improve their
@@ -304,6 +391,16 @@ export function PrivacyEn({ effective }: { effective: string }) {
               deliberately not on the clock below &mdash; every memory feature reads them.
             </>,
             'Daily summaries: for the life of your account.',
+            /*
+              v0.7.0. **NO NUMBER, AND `facts.ts` GAINS NO VARIABLE** — there is no
+              retention variable to read, because nothing sweeps this table. A
+              hand-typed number here is exactly what `facts.ts` exists to prevent.
+            */
+            <>
+              <strong>The group chat: for the life of your account</strong>, with no automatic
+              sweep &mdash; like readings, and for the same reason: every message is material for
+              the next stretch of the conversation.
+            </>,
             <>
               Analytics records: <strong>{RETENTION.eventsDays} days</strong>, then deleted.
             </>,
@@ -356,9 +453,23 @@ export function PrivacyEn({ effective }: { effective: string }) {
         </P>
         <P>
           <strong>Within {RETENTION.erasureGraceDays} days</strong>{' '}the real deletion runs: your
-          profile, opening answers, Lotus avatar, every reading and its cards, and your daily
-          summaries are removed from the database. During that window you can undo it by signing in
-          again.
+          profile, opening answers, Lotus avatar, every reading and its cards, your daily
+          summaries, <strong>and the whole of the group chat</strong>{' '}are removed from the
+          database. During that window you can undo it by signing in again.
+        </P>
+        {/*
+          v0.7.0 / F1-D10, and the honest version of "the cascade covers it". The room
+          is on `readings`' side of `delete.ts`'s asymmetry, not `moderation_flags`':
+          **`cascade` does not outlive the account, `set null` does** — so the chat is
+          NOT cleared at the soft delete, deliberately, because clearing it would break
+          the thirty-day restore the sentence above promises. That is precisely why
+          `clearFreeTextAnswers()` is absent from the same transaction.
+        */}
+        <P>
+          During that window your chat is still intact in the database, because that is what makes
+          undoing it mean anything: if you sign back in, the conversation is still there. The only
+          thing redacted immediately is the text of a refused question, because that row does not go
+          with the account and therefore cannot wait.
         </P>
         <P>
           What survives: analytics records and moderation records, with no link to your account

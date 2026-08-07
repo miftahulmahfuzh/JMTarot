@@ -386,10 +386,32 @@ const id = {
   'onboarding.q.worst_thing.title': 'Hal paling berat yang pernah kamu saksikan',
   'onboarding.q.worst_thing.framing':
     'Yang gelap pun ikut membentuk. Tapi kamu tidak perlu menceritakannya di sini.',
+  /*
+   * ── AMENDED 2026-08-07 FOR v0.7.0's GROUP CHAT (`C-D8`, `[R14]`) ───────────
+   *
+   * **THIS STRING PROMISED THE OPPOSITE OF WHAT THE CHAT DOES, AND IT IS READ WHILE
+   * THE QUERENT IS TYPING THE ANSWER.** It said *"tidak pernah dikutip di dalam
+   * bacaanmu"*, which survives `C-D8` on the letter — a chat is not a *bacaan* — and
+   * does not survive in spirit at all: **the whole point of the feature is Thessaly
+   * quoting it back at you.**
+   *
+   * The reconciliation calls this the most serious finding of the exercise, and the
+   * reason is placement: **nobody re-reads `/privacy`; everybody reads the hint.** So
+   * amending `/privacy` was necessary and not sufficient, and this is the load-bearing
+   * half of the pair.
+   *
+   * The new text keeps the two promises that are still true (locked at rest, never
+   * displayed back) and states the one that changed, in the same breath, with the
+   * remedy beside it. **It must not be softened into "may be used to personalise your
+   * experience"** — that is the sentence this project exists not to write, and
+   * `/privacy` clause 2.2 quotes the question itself word for word rather than calling
+   * it "certain personal reflections" for exactly this reason.
+   */
   'onboarding.q.worst_thing.hint':
-    'Sesedikit atau sebanyak yang kamu mau. Jawaban ini disimpan terkunci, tidak ' +
-    'pernah ditampilkan lagi, dan tidak pernah dikutip di dalam bacaanmu. ' +
-    'Melewatinya tidak mengurangi apa pun.',
+    'Sesedikit atau sebanyak yang kamu mau. Jawaban ini disimpan terkunci dan tidak ' +
+    'pernah ditampilkan lagi. Di dalam bacaan hanya ringkasan abstraknya yang dipakai; ' +
+    'di ruang obrolan, para pembaca membacanya apa adanya. Melewatinya tidak ' +
+    'mengurangi apa pun.',
 
   /*
    * The framing and the hint together are a promise the user can read, which is
@@ -401,8 +423,16 @@ const id = {
   'onboarding.q.most_loved.framing':
     'Setiap bacaan punya satu orang yang berdiri di belakangnya, walau namanya ' +
     'tidak pernah disebut.',
+  /*
+   * **AMENDED 2026-08-07** (`C-D8`, `[R14]`), and this one survived `C-D8` in spirit
+   * as well as on the letter — F3's `validateTurn` mechanically refuses a proper name
+   * lifted from an answer. It is amended anyway, because a promise that holds only
+   * because of a validator somebody could relax is a promise worth restating in terms
+   * of what actually happens.
+   */
   'onboarding.q.most_loved.hint':
-    'Cukup sebut siapa dia bagimu. Namanya tidak akan pernah muncul di dalam bacaan.',
+    'Cukup sebut siapa dia bagimu. Namanya tidak akan pernah muncul di dalam bacaan, ' +
+    'dan para pembaca tidak akan menyebutnya di ruang obrolan.',
 
   'onboarding.q.introversion.title': 'Di mana kamu berdiri?',
   'onboarding.q.introversion.framing':
@@ -539,6 +569,33 @@ const id = {
   'account.menu.gallery': 'Galeri kartu',
   'account.menu.blog': 'Tulisan',
   'account.menu.signOut': 'Keluar',
+
+  /*
+   * ==========================================================================
+   * v0.7.0 — THE ONE CHAT KEY F1 OWNS. F4 owns every other `chat.*` string, and
+   * `[R14]` splits this one deliberately: **F4 owns the surface; F1 owns the copy.**
+   *
+   * ── WHY THIS SENTENCE EXISTS AT ALL ───────────────────────────────────────
+   *
+   * `C-D8` lets the three readers see the six raw onboarding answers, and `Q-F1-1`
+   * asked whether that should bump `TERMS_VERSION` and force re-acceptance. Miftah
+   * ruled **no**: a forced re-accept is a modal people dismiss, which buys **the
+   * appearance of consent and not the thing.**
+   *
+   * **SO THE ROOM SAYS SO ITSELF, ONCE, ON FIRST OPEN.** One line above the first
+   * bubble, with a link to `/privacy`, dismissed forever on any interaction. Shown to
+   * the person, **at the moment it becomes true, on the screen where it happens** —
+   * which is the only version of this worth anything, and the answer to the objection
+   * that `/privacy` is read by nobody.
+   *
+   * It is deliberately NOT an apology and NOT a consent gate. It states a fact and
+   * points at the document. **If it ever grows an "I agree" button it has become the
+   * modal this ruling refused.**
+   */
+  'chat.first_open.notice':
+    'Di ruang ini ketiga pembaca bisa melihat jawaban awalmu, bacaanmu, dan obrolan ' +
+    'ini sendiri — supaya mereka menjawab kamu, bukan orang umum.',
+  'chat.first_open.link': 'Selengkapnya',
 
   // The SHORT tags, for the two-item toggle inside the menu (R1/VD12). The long
   // names in `locale.name.*` stay exactly as they are and stay on /login -- see

@@ -69,7 +69,18 @@ export function PrivacyId({ effective }: { effective: string }) {
             mengutipnya di sini apa adanya, karena kebijakan yang menyebutnya &ldquo;refleksi
             pribadi tertentu&rdquo; lebih buruk daripada tidak ada kebijakan sama sekali.
           </P>
-          <P>Empat hal yang perlu kamu tahu tentang jawaban itu:</P>
+          <P>Lima hal yang perlu kamu tahu tentang jawaban itu:</P>
+          {/*
+            v0.7.0 / C-D8, and A1's R31 is the governing precedent: **the third bullet
+            was FALSE the day the group chat shipped**, so it is AMENDED IN PLACE rather
+            than contradicted by a new clause somewhere below. R31, in its own words:
+            *"Amending only 3 and 8 would leave a policy that is technically amended
+            and still misleading, which is worse than one plainly out of date."*
+
+            The fifth bullet is new, and it is C-D8 condition 5 written down: a skipped
+            answer stays skipped, because **a reader who asks about the thing you
+            refused to answer is the worst possible version of this feature.**
+          */}
           <List
             items={[
               <>
@@ -80,10 +91,25 @@ export function PrivacyId({ effective }: { effective: string }) {
                 kunci yang tidak ada di dalam kode program dan tidak ada di dalam basis data.
               </>,
               <>
-                <strong>Hanya ringkasan abstraknya yang sampai ke model bahasa.</strong>{' '}Penyulingan
-                itu diperintahkan untuk mengabstraksi, bukan mengulang: yang sampai ke sebuah bacaan
-                berbentuk seperti &ldquo;membawa ingatan kehilangan yang berat&rdquo;, bukan
-                peristiwanya. Nama orang yang kamu sebut tidak pernah ikut.
+                <strong>Di dalam bacaan, hanya ringkasan abstraknya yang sampai ke model bahasa.</strong>{' '}
+                Penyulingan itu diperintahkan untuk mengabstraksi, bukan mengulang: yang sampai ke
+                sebuah bacaan berbentuk seperti &ldquo;membawa ingatan kehilangan yang berat&rdquo;,
+                bukan peristiwanya. Nama orang yang kamu sebut tidak pernah ikut.
+              </>,
+              <>
+                <strong>
+                  Di dalam ruang obrolan, jawabanmu dikirim apa adanya kepada model bahasa.
+                </strong>{' '}
+                Ini berbeda dari bacaan, dan kami menuliskannya terus terang karena memang itulah
+                gunanya ruang itu: supaya ketiga pembaca bisa menanggapi hidupmu yang sebenarnya,
+                bukan versi yang sudah diringkas. Kalau kamu tidak menginginkannya, jangan buka
+                ruang obrolan &mdash; atau hapus jawabannya, yang berlaku seketika untuk keduanya.
+                Lihat <Link href="#2-7">klausul 2.7</Link>.
+              </>,
+              <>
+                <strong>Yang kamu lewati tetap terlewati.</strong>{' '}Pertanyaan yang tidak kamu
+                jawab tidak pernah dikirim ke mana pun, dan tidak ada pembaca yang akan
+                menanyakannya kepadamu.
               </>,
               <>
                 <strong>Bisa kamu hapus kapan saja</strong>, satu per satu, tanpa menghapus akun.
@@ -158,6 +184,43 @@ export function PrivacyId({ effective }: { effective: string }) {
             Kami sendiri tidak pernah mencatat isi pertanyaanmu ke dalam log.
           </P>
         </SubClause>
+
+        {/*
+          2.7 — v0.7.0's group chat. A NEW SUBCLAUSE rather than a sentence inside 2.3,
+          because a room is not a reading and the retention story is different: a chat
+          message is stored in PLAINTEXT (C-D20), exactly like `readings.question`, and
+          nothing sweeps it.
+        */}
+        <SubClause id="2-7" n="2.7" title="Ruang obrolan">
+          <Callout>
+            <P>
+              <strong>
+                Apa pun yang kamu ketik di ruang obrolan disimpan apa adanya, tanpa dienkripsi
+              </strong>{' '}
+              &mdash; sama seperti pertanyaan yang kamu ketik di bawah kartu. Tidak ada penghapusan
+              otomatis, dan tidak ada tombol untuk membatalkan satu pesan.
+            </P>
+          </Callout>
+          <P>
+            Yang disimpan: isi setiap pesan, siapa yang menulisnya, bahasanya, pesan mana yang
+            dikutipnya, bacaan mana yang dilampirkan, dan waktunya. Pesan dari para pembaca juga
+            disimpan, karena itulah yang membuat percakapan berikutnya nyambung dengan yang
+            sebelumnya.
+          </P>
+          <P>
+            <strong>Tidak ada manusia yang membaca ruang ini.</strong>{' '}Operator Layanan bisa
+            melihat berapa banyak pesan yang ada dan kapan &mdash; tidak isinya. Lihat{' '}
+            <Link href="#3-1">klausul 3.1</Link>.
+          </P>
+          <P>
+            Pesanmu tidak diterjemahkan. Kalau kamu menulis dalam bahasa Indonesia, yang tersimpan
+            dan yang dibaca para pembaca adalah bahasa Indonesia.
+          </P>
+          <P>
+            Ruang ini ikut terhapus seluruhnya ketika kamu menghapus akun &mdash; lihat{' '}
+            <Link href="#8">klausul 8</Link>.
+          </P>
+        </SubClause>
       </Clause>
 
       <Clause id="3" n="3." title="Kenapa kami memakainya">
@@ -166,6 +229,7 @@ export function PrivacyId({ effective }: { effective: string }) {
             'Data dari Google: supaya kamu bisa masuk dan supaya kami tahu akun ini akunmu.',
             'Jawaban awal: supaya bacaanmu terasa ditujukan kepadamu dan bukan kepada orang umum.',
             'Bacaan: supaya aplikasi ini mengingat apa yang sudah kamu tanyakan.',
+            'Ruang obrolan: supaya para pembaca menjawab kamu, orang ini, dan bukan orang umum — itulah satu-satunya alasan mereka melihat jawaban awalmu apa adanya di sana.',
             'Analitik: supaya kami tahu bagian mana yang rusak dan bagian mana yang dipakai.',
             'Moderasi: supaya penolakan yang keliru bisa ditemukan dan diperbaiki.',
             'Pengelolaan Layanan: supaya kerusakan bisa diperbaiki, permintaanmu tentang datamu bisa dijawab, dan Syarat & Ketentuan bisa ditegakkan.',
@@ -208,6 +272,19 @@ export function PrivacyId({ effective }: { effective: string }) {
             membuka, milik siapa, jawaban yang mana, dan kapan. Baris itu tidak pernah memuat
             jawabannya. Kalau baris itu gagal ditulis, jawabannya tidak dibuka.
           </P>
+          {/*
+            v0.7.0 / [R15]. Miftah's ruling on Q4: **counts and no text** on
+            `/admin/users/[id]`. F7's argument, which the roadmap did not have: A-D16's
+            audited one-key-per-request reveal *"was built for a thing you read one
+            of"*, and a conversation would be two hundred audit rows for one act of
+            reading. Recorded in the policy because a limit nobody wrote down is a
+            limit the next release quietly removes.
+          */}
+          <P>
+            <strong>Isi ruang obrolan tidak bisa dibuka sama sekali.</strong>{' '}Bukan satu per satu,
+            bukan lewat catatan akses &mdash; tidak ada jalannya. Yang terlihat hanyalah berapa
+            banyak pesan yang ada dan kapan yang terakhir.
+          </P>
           <P>
             Yang tidak bisa dilakukan: mengubah profilmu, jawabanmu, bacaanmu, atau sosok yang
             ditulis tentangmu. Operator hanya membaca.
@@ -241,6 +318,18 @@ export function PrivacyId({ effective }: { effective: string }) {
               <strong>Pertanyaanmu meninggalkan Indonesia.</strong>{' '}Untuk membuat setiap bacaan dan
               untuk memeriksa setiap pertanyaan, kami mengirimkan pertanyaanmu, kartu yang kamu
               tarik, dan ringkasan abstrak dari jawaban awalmu ke {PROVIDER.name}.
+            </P>
+            {/*
+              v0.7.0 / C-D8. **THE SENTENCE ABOVE BECAME FALSE FOR THE CHAT SURFACE**,
+              and A1's R31 says an incomplete amendment is worse than an out-of-date
+              policy. It is left exact for readings and answered here for the room,
+              rather than softened into something true of neither.
+            */}
+            <P>
+              <strong>Dari ruang obrolan, yang dikirim lebih banyak:</strong>{' '}pesan yang kamu tulis
+              di sana, pesan-pesan sebelumnya di ruang itu, dan{' '}
+              <strong>keenam jawaban awalmu apa adanya</strong>{' '}&mdash; bukan ringkasannya. Lihat{' '}
+              <Link href="#2-2">klausul 2.2</Link> dan <Link href="#2-7">2.7</Link>.
             </P>
           </Callout>
           <P>
@@ -373,6 +462,16 @@ export function PrivacyId({ effective }: { effective: string }) {
               jangka waktu di bawah &mdash; setiap fitur ingatan membacanya.
             </>,
             'Ringkasan harian: selama akunmu ada.',
+            /*
+              v0.7.0. **NO NUMBER, AND `facts.ts` GAINS NO VARIABLE** — there is no
+              retention variable to read, because nothing sweeps this table. A
+              hand-typed number here is exactly what `facts.ts` exists to prevent.
+            */
+            <>
+              <strong>Ruang obrolan: selama akunmu ada</strong>, dan tidak ada penyapuan otomatis
+              &mdash; sama seperti bacaan, dan untuk alasan yang sama: setiap pesan adalah bahan
+              untuk percakapan berikutnya.
+            </>,
             <>
               Catatan analitik: <strong>{RETENTION.eventsDays} hari</strong>, lalu dihapus.
             </>,
@@ -428,8 +527,22 @@ export function PrivacyId({ effective }: { effective: string }) {
         <P>
           <strong>Dalam {RETENTION.erasureGraceDays} hari</strong>{' '}berikutnya, penghapusan
           sesungguhnya dijalankan: profil, jawaban awal, avatar Lotus, seluruh bacaan dan kartunya,
-          serta ringkasan harian dihapus dari basis data. Dalam jangka waktu itu kamu masih bisa
-          membatalkannya dengan masuk kembali.
+          ringkasan harian, <strong>dan seluruh isi ruang obrolan</strong>{' '}dihapus dari basis data.
+          Dalam jangka waktu itu kamu masih bisa membatalkannya dengan masuk kembali.
+        </P>
+        {/*
+          v0.7.0 / F1-D10, and the honest version of "the cascade covers it". The room
+          is on `readings`' side of `delete.ts`'s asymmetry, not `moderation_flags`':
+          **`cascade` does not outlive the account, `set null` does** — so the chat is
+          NOT cleared at the soft delete, deliberately, because clearing it would break
+          the thirty-day restore the sentence above promises. That is precisely why
+          `clearFreeTextAnswers()` is absent from the same transaction.
+        */}
+        <P>
+          Selama jangka waktu itu ruang obrolanmu masih utuh di basis data, karena itulah yang
+          membuat pembatalan berarti sesuatu: kalau kamu masuk kembali, percakapanmu masih ada.
+          Yang dihapus seketika hanyalah teks pertanyaan yang pernah ditolak, karena baris itu tidak
+          ikut terhapus bersama akun dan karenanya tidak boleh menunggu.
         </P>
         <P>
           Yang tetap ada: catatan analitik dan catatan moderasi, tanpa kaitan ke akunmu &mdash;

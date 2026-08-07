@@ -121,6 +121,32 @@ function softCeiling(): number {
 }
 
 /**
+ * The group chat's share of the same window (`C-D6` consequence 2, v0.7.0).
+ * **HALF THE HARD CEILING — 140 of 280.**
+ *
+ * ── WHY THE NUMBER LIVES HERE AND THE ENFORCEMENT LIVES IN `chat/budget.ts` ──
+ *
+ * `reserveChatCall()` peeks its own counter, calls `reserveModelCall('deferred')`,
+ * and only then consumes — so it imports this module and this module must not import
+ * it back. Resolving the number here rather than there keeps `_ceilings()` the ONE
+ * answer to *"what are this app's model-call limits"*, which is what F7's panel needs
+ * (`adminCopy.test.ts` forbids reading a ceiling from `process.env` in that tree) and
+ * what an operator reads at 4am.
+ *
+ * **DERIVED FROM `hardCeiling()` AND NOT WRITTEN AS A LITERAL**, so that the day the
+ * February 2027 credit migration moves 280 this moves with it. A hardcoded 140 beside
+ * a ceiling that had moved would be a sub-budget that is suddenly the whole budget,
+ * or a tenth of it, with nothing saying which.
+ *
+ * **WITHOUT IT a single enthusiastic querent's afternoon reaches the soft line and
+ * every deferred feature in the app — the gist, the day summary, the frequency
+ * verdict — goes quiet with them.**
+ */
+function chatCeiling(): number {
+  return positive(process.env.LLM_WINDOW_CHAT_CEILING, Math.floor(hardCeiling() / 2));
+}
+
+/**
  * A garbage value falls back rather than becoming zero. Same defensiveness and
  * same reason as `auth/ttl.ts`: a ceiling of 0 refuses every model call in the
  * app, which is a typo taking the product down.
@@ -130,9 +156,14 @@ function positive(raw: string | undefined, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-/** Test seam: the two numbers as resolved from the environment. */
+/**
+ * Test seam, and **since v0.7.0 also F7's accessor**: the three numbers as resolved
+ * from the environment. `adminCopy.test.ts` bans reading a ceiling out of
+ * `process.env` in the admin tree, so a panel that wants to show what the limits are
+ * asks here.
+ */
 export function _ceilings() {
-  return { hard: hardCeiling(), soft: softCeiling() };
+  return { hard: hardCeiling(), soft: softCeiling(), chat: chatCeiling() };
 }
 
 export type Reservation =

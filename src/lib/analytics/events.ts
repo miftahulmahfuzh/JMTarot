@@ -192,6 +192,63 @@ export const EVENT_NAMES = [
   'admin.blog_saved',
   'admin.blog_status_changed',
 
+  /*
+   * — the group chat (v0.7.0) —
+   *
+   * **SIX NAMES, 70 -> 76, AND TWENTY WERE DRAFTED ACROSS SIX WORKSTREAMS.** `C-D14`
+   * gives this file ONE OWNER for the release and it is F1; every other workstream
+   * declares its events in its own plan and F1 folds them in — and **folding a
+   * declaration in means TRANSCRIBING it, not narrowing it.** A prop shape is narrowed
+   * only by a written argument, which is what the ledger below is.
+   *
+   * The full ledger is in `docs/plans/2026-08-07-chat-spine.md` `## Events`. The short
+   * version, because this file is the data dictionary people read:
+   *
+   *   FOLDED  F2's four plan names (`plan_generated`, `plan_invalid`,
+   *           `plan_fallback`, `silence`) -> TWO PROPS on `chat.run_planned`
+   *           (`outcome`, `reject_reason`). `C-R6`'s silence rate and `C-N1d`'s ask
+   *           rate become one table scan instead of a four-way union.
+   *   FOLDED  `beat_executed` / `beat_failed` / F3's `turn_invalid` ->
+   *           `chat.turn_generated.outcome` + `reject_reason`.
+   *   FOLDED  F3's `address_used` -> `chat.turn_generated.address_form`, a CLOSED
+   *           class and **never the form itself**, which is a slice of a nickname
+   *           somebody typed.
+   *   FOLDED  `run_completed` / `run_abandoned` -> `chat.run_finished.status`.
+   *   FOLDED  F4's `button_clicked` -> the click IS the open; `chat.opened.from` says
+   *           where from.
+   *   FOLDED  F5's `proactive_minted` -> a proactive run is a `chat.run_planned` whose
+   *           `trigger` is not `user_message`.
+   *   FOLDED  F6's `attachment_added` -> `chat.message_sent.attached_from`, keeping
+   *           `reading_id` because the attachment rate's denominator is *readings
+   *           finished*, not messages sent, and that join is impossible without it.
+   *   DROPPED `chat.message_blocked` -- a refusal is `moderation.refused` with
+   *           `surface: 'chat'`. A second name would double-count the one thing W7
+   *           already measures and would put a chat refusal outside every existing
+   *           moderation query.
+   *   DROPPED `chat.run_minted` -- a mint with no plan is not yet a fact worth a row.
+   *   DROPPED F4's `scrolled` and F6's `attachment_opened` -- v0.4.0's `revealed`
+   *           precedent: a look-and-close changes no decision.
+   *   DROPPED F4's `typing_shown` -- derivable from `chat.turn_generated.delay_ms`,
+   *           and a fact table and an event stream recording one fact is how they
+   *           drift.
+   *   DROPPED F5's `proactive_replied` -- `C-N2f`'s reply rate is a QUERY over
+   *           `chat_messages` and `chat_runs`. Firing it would mean the message route
+   *           joining back to find the run: **a join on a write path to record a fact
+   *           the tables already hold.** That is the line, and `chat.message_sent`
+   *           survives the same objection because it is a buffered scalar push in a
+   *           handler that already has the facts.
+   *   DROPPED F5's `nudge_ran` -- `/api/cron/sweep` logs rather than emitting, and the
+   *           nudge follows it.
+   *
+   * **NO FREE TEXT.** A chat message's LENGTH is a prop; its body is not.
+   */
+  'chat.message_sent',
+  'chat.run_planned',
+  'chat.turn_generated',
+  'chat.run_finished',
+  'chat.opened',
+  'chat.proactive_skipped',
+
   // — self-diagnostics —
   'analytics.local_date_fallback',
   'analytics.events_dropped',
@@ -487,9 +544,30 @@ export type EventMap = {
   'terms.viewed':              { version: string; from: string };
   'terms.accepted':            { version: string };
   'privacy.viewed':            { version: string; from: string };
+  /*
+   * ── `surface` ARRIVED WITH v0.7.0, AND `reader_id`/`service_id` WIDENED ────
+   *
+   * **THE CHAT IS THE SECOND SURFACE THAT CAN BE REFUSED, AND THESE THREE EVENTS WERE
+   * WRITTEN WHEN THERE WAS ONLY ONE.** A chat refusal has no reader and no service, so
+   * both fields become `| null` — which is a widening and not a rename, so every
+   * existing query keeps working.
+   *
+   * **`surface` IS NOT COSMETIC AND IT IS THE ONLY FIX AVAILABLE.**
+   * `moderation_flags` has no surface column, and `C-D13` correctly refuses to store
+   * the refused text as a `chat_messages` row — so unlike a blocked reading, **a
+   * blocked chat message leaves no other trace at all.** Without this prop a spike in
+   * false positives on the chat surface is invisible in a table that mixes the two,
+   * and W7's whole tuning argument — *"a false positive is an accusation delivered to
+   * somebody who did nothing wrong"* — has no instrument on the surface where it
+   * matters most.
+   *
+   * A column on `moderation_flags` is the better answer and is refused for now: it is
+   * W7's table and this release has spent its migration. `Q-F1-3` records it.
+   */
   'moderation.refused':        { source: 'blocklist' | 'classifier' | 'timeout'; category: string;
                                  confidence_bucket: 'low' | 'medium' | 'high' | null;
-                                 reader_id: string; service_id: string };
+                                 surface: 'reading' | 'chat';
+                                 reader_id: string | null; service_id: string | null };
   /*
    * The classifier did not answer. `failed_open` is the whole point of the row:
    * W7-D7 fails OPEN on a clean blocklist and CLOSED on a Tier-B suspicion, and
@@ -498,7 +576,8 @@ export type EventMap = {
    * policy. `reason` separates a slow provider from a broken one.
    */
   'moderation.timeout':        { failed_open: boolean; reason: 'timeout' | 'error';
-                                 reader_id: string; service_id: string };
+                                 surface: 'reading' | 'chat';
+                                 reader_id: string | null; service_id: string | null };
   /*
    * A near-miss we let through: the classifier named a category, and the
    * threshold on `other` said it was not confident enough to refuse anybody.
@@ -506,7 +585,8 @@ export type EventMap = {
    * side of tuning is invisible forever.
    */
   'moderation.allowed_flagged':{ category: string; confidence_bucket: 'low' | 'medium' | 'high' | null;
-                                 reader_id: string; service_id: string };
+                                 surface: 'reading' | 'chat';
+                                 reader_id: string | null; service_id: string | null };
 
   /*
    * The distributed limiter fell back to per-instance memory. **WITHOUT THIS
@@ -859,6 +939,124 @@ export type EventMap = {
                                  via: 'form' | 'auto_format' | 'auto_translate';
                                  model_called: boolean };
   'admin.blog_status_changed': { slug: string; locale: string; from: string; to: string };
+
+  /**
+   * The querent posted, and it was STORED. A refused message fires
+   * `moderation.refused` with `surface: 'chat'` and never this.
+   *
+   * `length` AND NEVER THE BODY. `attached_from` is F6's folded declaration: the two
+   * surfaces that can attach a reading, and `null` when nothing was attached — **a
+   * sometimes-absent prop is `| null`, never optional** (rule 5).
+   *
+   * **`reading_id` SURVIVED THE FOLD ON F6's CONDITION**, and the condition is right:
+   * the attachment rate's denominator is *readings finished*, not messages sent, and
+   * that join is impossible without it. It is not new exposure — `reading.completed`
+   * already carries the querent's own reading id.
+   *
+   * `minted_run: false` is `CHAT_ENABLED=0`, or a live run already in flight. The
+   * message is stored either way (`[F1-19]`: a querent's own words are not new
+   * generation), so this prop is how an operator tells a quiet room from a broken one.
+   */
+  'chat.message_sent':         { length: number; locale: string;
+                                 reply_to: boolean;
+                                 attached_from: 'history' | 'draw' | null;
+                                 reading_id: string | null;
+                                 minted_run: boolean };
+
+  /**
+   * The director answered. **THE RELEASE'S OWN SCORECARD LIVES IN THESE PROPS.**
+   *
+   * `beats: 0` with `outcome: 'silence'` is `C-R6`'s rate, and **a rate of ZERO means
+   * the director is not really deciding** — so numerator and denominator are one scan
+   * over one event rather than a join between two, which is exactly why
+   * `reading.choice_offered` was folded into two props on 2026-07-29.
+   *
+   * `asks` is `C-N1d`, one of the two things this release is measured by.
+   * `replies_to_old` is `C-D11`'s "out of nowhere" reply being reachable at all.
+   * `cast` is how many distinct readers the sheet names.
+   *
+   * **`cast` AND `asks` ARE INTEGERS AND NOT ARRAYS, AND THAT IS NOT A PREFERENCE**
+   * (`[F1-25]`): `sanitizeProps()` DROPS non-scalars, so an array prop arrives as an
+   * ABSENT KEY with nothing logged and nothing thrown. W5's `recalled_ids` and V8's
+   * `facets` were both flattened for this.
+   *
+   * `reject_reason` is `validatePlan`'s CLOSED set, never a message
+   * (`persona.generated.reject_reason` is the precedent). `null` on `outcome: 'ok'`.
+   */
+  'chat.run_planned':          { trigger: string; locale: string;
+                                 beats: number; cast: number; asks: number;
+                                 replies_to_old: number;
+                                 outcome: 'ok' | 'fallback' | 'silence';
+                                 reject_reason: string | null;
+                                 total_ms: number };
+
+  /**
+   * One beat executed, or skipped. **FIRES ONCE PER BEAT, INCLUDING A SKIP**, so
+   * `chat.run_finished`'s `beats_planned - beats_delivered` and this event's `outcome`
+   * distribution are two ways of reading one number and must agree.
+   *
+   * `attempt` is 1 or 2 (`F1-D2`) — the retry is inside one request, so there is no
+   * run column for it and this prop is the only record.
+   *
+   * `chars`, NEVER the body (rule 1); it is the sum across a beat's one or two bubbles
+   * (`[R19]`). `delay_ms` is what the SERVER told the client to wait (seam S3), which
+   * is **the only way to tell a metronome from a pace** — `C-R4`: *a constant is a
+   * metronome and a metronome is the thing that reads as a bot.*
+   *
+   * `address_form` is a CLASS. The forms themselves are `mif`, `tah`, `jo` — slices of
+   * a nickname a person typed, and `events` rows survive erasure.
+   */
+  'chat.turn_generated':       { reader_id: string; intent: string; trigger: string;
+                                 beat_index: number; attempt: number;
+                                 outcome: 'ok' | 'skipped';
+                                 reject_reason: string | null;
+                                 replied_to_reader: boolean;
+                                 address_form: 'nickname' | 'clipped' | 'none';
+                                 chars: number; delay_ms: number; total_ms: number };
+
+  /**
+   * The run ended. **`beats_planned - beats_delivered` IS `C-R7`'s SKIP RATE**, and
+   * `total_ms` is wall-clock from the plan to the finish — which for a proactive run is
+   * the only measurement of how long a querent waited without knowing they were
+   * waiting.
+   *
+   * **IT IS NOT FOLDED INTO `chat.run_planned`, AND THE ABANDONED-AT-PLANNING CASE IS
+   * WHY:** that case fires zero turn events, so `C-R7`'s skip rate would have no
+   * denominator without a run event that always fires.
+   *
+   * `'abandoned'` and a zero-beat `'done'` are indistinguishable from the room by
+   * design (`C-R7`); they are distinguishable HERE, which is where an operator can act
+   * on the difference and a querent cannot.
+   */
+  'chat.run_finished':         { trigger: string; status: 'done' | 'abandoned';
+                                 beats_planned: number; beats_delivered: number;
+                                 error_kind: string | null; total_ms: number };
+
+  /**
+   * F4's, folded. `unread` at open is `C-N2b`'s red dot actually working: **a
+   * distribution centred on zero means the badge is showing something that is not
+   * there.**
+   *
+   * `from: 'attach'` is F6's entry point. `'button'` is `C-D17`'s circle.
+   */
+  'chat.opened':               { unread: number; from: 'button' | 'direct' | 'attach';
+                                 had_pending_run: boolean };
+
+  /**
+   * F5's, and **the only new name that measures something that did NOT happen.**
+   *
+   * `C-N2e`: *a trigger with no material does not fire*, and **a high rate here means
+   * the eligibility rules are wrong rather than that the querent is boring.** The run
+   * that did not happen cannot be a prop on an event that only exists when one did,
+   * which is why this survived the fold that killed `chat.proactive_minted`.
+   *
+   * Both unions closed. `reason: 'quiet_hours'` is present because `[R17]` ruled
+   * Option A — no local quiet hours — and folded `utc_offset_minutes` into `0014` so
+   * that ruling the other way later is one line. **It is never emitted today.**
+   */
+  'chat.proactive_skipped':    { source: 'reading_completed' | 'idle_nudge' | 'unanswered' | 'cron';
+                                 reason: 'no_material' | 'throttled' | 'too_soon'
+                                       | 'quiet_hours' | 'disabled' | 'run_in_flight' };
 
   'analytics.local_date_fallback': { reason: 'absent' | 'malformed' | 'out_of_range'; received: string | null; surface: string };
   'analytics.events_dropped':  { count: number; reason: 'unknown_name' | 'queue_overflow' | 'oversize_batch' };

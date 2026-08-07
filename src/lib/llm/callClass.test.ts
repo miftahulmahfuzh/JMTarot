@@ -116,6 +116,51 @@ const COMPLETE_CALLS: Array<{
     why: 'an ADMIN convenience on a fleet-wide ceiling, and skipped entirely on an already-sectioned paste; the tier is its kill switch',
   },
   {
+    /*
+     * **v0.7.0's DIRECTOR, AND IT SPENT THE TWELFTH `op`.** `C-D5`, asked and granted
+     * through the same process `insight` and `blog_format` went through: Miftah asked
+     * for the chat's token consumption to be visible in `/admin`, and a cost table
+     * cannot say what the chat costs if the chat's calls are filed under `reading`.
+     *
+     * **TWO OPS AND NOT ONE**, because the director is a large prompt with a tiny JSON
+     * reply and a voice is a large prompt with a two-sentence reply — averaging them
+     * makes both figures meaningless.
+     *
+     * **`deferred` IS THE ONE ROW IN THIS TABLE WHERE A QUERENT IS WATCHING AND THE
+     * ANSWER IS STILL `deferred`.** The three admin rows above are `deferred` because
+     * nobody but an operator is waiting; this one is `deferred` in spite of somebody
+     * waiting, and the reason is arithmetic rather than taxonomy: **a run is 2–5 calls,
+     * sixty runs exhaust the app's whole five-hour quota, and the next thing refused
+     * would be somebody's reading.** `C-D6` is the ruling; `chat/budget.ts` is the
+     * sub-budget that keeps the chat inside its own half of it.
+     */
+    file: 'src/lib/chat/direct/plan.ts',
+    op: ['chat_plan'],
+    opMarker: "op: 'chat_plan'",
+    expect: 'deferred',
+    marker: "callClass: 'deferred'",
+    why: 'a chat run is 2-5 calls and sixty runs exhaust the fleet quota; when the chat and a reading compete the reading wins (C-D6)',
+  },
+  {
+    /*
+     * **v0.7.0's VOICE, THE THIRTEENTH `op`.** Same grant, same tier, same argument.
+     * The row above carries it in full.
+     *
+     * **NEITHER SITE PASSES A `readingId`, AND THAT IS `[R8]`.** `readingCostsFor` and
+     * `callsForReading` fold every `reading_id`-bearing ledger row into a reading's
+     * *Biaya generasi* with no `op` predicate, and a chat run has two plausible reading
+     * pointers — `chat_runs.trigger_reading_id`, and an attachment's
+     * `attached_reading_id`. Passing one would make **a chat run inflate the cost of
+     * the reading that triggered it, silently.**
+     */
+    file: 'src/lib/chat/voices/turn.ts',
+    op: ['chat_turn'],
+    opMarker: "op: 'chat_turn'",
+    expect: 'deferred',
+    marker: "callClass: 'deferred'",
+    why: 'the same promise to the reading as the planner, and a proactive turn is this op too -- what made it proactive is chat_runs.trigger',
+  },
+  {
     file: 'src/lib/moderation/classify.ts',
     op: ['moderation'],
     opMarker: "op: 'moderation'",
@@ -328,16 +373,19 @@ describe('every streamReading() call site reserves for itself', () => {
  *
  * A3 groups its entire cost breakdown by `llm_calls.op` and roadmap seam 3 says: nine
  * values, closed, no tenth and no alias. **A7 asked for the tenth and Miftah granted it
- * on 2026-07-31** — through the process the seam demands rather than around it; the
- * argument is in `@/lib/llm/types` and in
- * `docs/plans/2026-07-31-admin-panel-insights-design.md` §3. The set is CLOSED AT TEN and
- * the next one is the same question again. The compiler enforces that for a `CompleteOpts`
- * literal; it enforces nothing about a `recordCall` at a streaming site, and nothing at
- * all about a value that exists in the union with no producer.
+ * on 2026-07-31**, `blog_format` took the eleventh the same day, and **v0.7.0's group
+ * chat took the twelfth and thirteenth on 2026-08-07** (`C-D5`) — every one through the
+ * process the seam demands rather than around it. **The rule was never that ten is a
+ * magic number: a new value is a question for Miftah.** The arguments are in
+ * `@/lib/llm/types`.
+ *
+ * The compiler enforces the set for a `CompleteOpts` literal; it enforces nothing about
+ * a `recordCall` at a streaming site, and nothing at all about a value that exists in
+ * the union with no producer.
  */
 describe('the op set is exactly LLMOp, in both directions', () => {
   /** Kept as a literal, NOT derived from the tables -- a set derived from the thing it
-   *  checks cannot disagree with it. This is the eleventh value's only home. */
+   *  checks cannot disagree with it. This is the twelfth and thirteenth values' only home. */
   const LLM_OPS: LLMOp[] = [
     'reading',
     'moderation',
@@ -350,9 +398,11 @@ describe('the op set is exactly LLMOp, in both directions', () => {
     'translation_repair',
     'insight',
     'blog_format',
+    'chat_plan',
+    'chat_turn',
   ];
 
-  it('the union in types.ts is exactly these eleven', () => {
+  it('the union in types.ts is exactly these thirteen', () => {
     // Parsed off the source, so widening `LLMOp` without touching this list is red.
     const src = read('src/lib/llm/types.ts');
     const block = src.slice(src.indexOf('export type LLMOp'));

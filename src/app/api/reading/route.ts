@@ -494,6 +494,9 @@ export async function POST(request: Request) {
       track('moderation.timeout', {
         failed_open: !verdict.blocked,
         reason: 'timeout',
+        // v0.7.0: the chat is the second surface that can be refused, and these
+        // three events were written when there was only one. See `events.ts`.
+        surface: 'reading',
         reader_id: reader,
         service_id: service,
       });
@@ -502,6 +505,7 @@ export async function POST(request: Request) {
       track('moderation.allowed_flagged', {
         category: verdict.category,
         confidence_bucket: bucket(verdict.confidence),
+        surface: 'reading',
         reader_id: reader,
         service_id: service,
       });
@@ -567,6 +571,7 @@ export async function POST(request: Request) {
         source: gated.verdict.source,
         category: gated.verdict.category,
         confidence_bucket: bucket(gated.verdict.confidence),
+        surface: 'reading',
         reader_id: reader,
         service_id: service,
       });

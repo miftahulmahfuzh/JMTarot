@@ -9773,3 +9773,215 @@ cliff by parking US$20 in the account should know that this would (a) buy a warn
 (b) immediately invalidate the argument that keeps `prices.ts`'s zeros honest — at which point
 the pay-as-you-go rows become the truthful ones. **Do not do it without changing `prices.ts` in
 the same commit.**
+
+---
+
+## F1 — the chat spine (v0.7.0, 2026-08-07)
+
+**What landed:** three tables and migration `0014`; `src/lib/chat/{types,machine,model,budget,log,run}.ts`;
+the two model call sites `chat/direct/plan.ts` and `chat/voices/turn.ts` with placeholder
+prompts for F2 and F3; five API routes; two `LLMOp` values (11 → 13); two flags (5 → 7);
+six event names (70 → 76) and three widened prop shapes; `/privacy` amended in both
+locales; **both onboarding hints amended in both locales**; and `CHAT_ANSWERS_ENABLED`.
+
+`docs/plans/2026-08-07-chat-spine.md` is the plan and `CLAUDE.md` will carry only the
+rules. **What is here is what it cost to be right, and the things a future session will
+otherwise re-derive.**
+
+### The three bugs this workstream actually paid for
+
+**1. `now()` IS FROZEN INSIDE A TRANSACTION, AND `[R19]` WALKED STRAIGHT INTO IT.**
+
+`created_at` defaults to `defaultNow()`, which postgres resolves as
+`transaction_timestamp()` — **identical for every row written in one transaction.** Every
+ordering in `queries/chat.ts` breaks its tie on `id desc`, which is a random uuid.
+
+Miftah granted F3's ask that **one beat may produce two bubbles** ("a person who has more
+to say sends a second message rather than a longer one"), and `completeBeat` writes both in
+one transaction. So the room would have rendered a reader's two sentences **in either
+order, differently on each page load**, with nothing anywhere looking broken — a
+naturalness bug arriving through the mechanism added to buy naturalness.
+
+**It was found by the keyset-pagination test**, which is the only place five rows are ever
+written in one transaction, and which failed with `['m1', 'm4']` where `['m4', 'm3']` was
+expected. Fixed by stamping the bubbles of a beat one millisecond apart, explicitly, which
+is also honest: the second bubble genuinely is sent after the first.
+
+**The generalisation: any test that writes several rows through `withRollback` and asserts
+an ORDER is asserting something production does not guarantee.** It is the same family as
+`answersUpdatedAt`'s *"`sql<T>` is an assertion the driver is not obliged to honour"* —
+a default that looks like a clock and is not.
+
+**2. `greatest(col, $date)` IN A RAW `sql` TEMPLATE THROWS AT RUNTIME ON A GREEN
+TYPECHECK.**
+
+`markRead`'s monotonic cursor is `greatest(last_read_at, $2)`. Inside a raw `sql` template
+there is **no column for drizzle to hang an encoder on**, so a JS `Date` reaches
+postgres.js's serializer untouched and dies with `ERR_INVALID_ARG_TYPE: … Received an
+instance of Date` — from a statement whose parameter types drizzle had already correctly
+declared as `1184` (timestamptz).
+
+The fix is `${upTo.toISOString()}::timestamptz`. **Inside a template, do the conversion
+yourself.** Same file, same lesson as `answersUpdatedAt`, one direction along: there the
+driver returned a string where a `Date` was asserted; here it refused a `Date` where the
+template implied one.
+
+**3. `run.ts` CANNOT BE IMPORTED UNDER VITEST, AND THE FIRST VERSION OF `run.test.ts`
+DISCOVERED IT BY DYING SEVEN TIMES.**
+
+`run.ts` reaches `@/lib/db/client`, which throws `Missing required environment variable:
+DATABASE_URL` at import. **That is not a limitation to work around; it is why
+`machine.ts` exists.** The state machine's decision is `nextAction()`, pure, in its own
+file, and `run.test.ts` drives it with a table in `gate.decide()`'s idiom.
+
+Fourth member of a family this repo keeps rediscovering — `swipeDeck.ts`, `choice.ts`,
+`rollup.ts`, `history/dates.ts` — and the reason is always the same: **the pure part is
+what tests can reach.**
+
+### Two things the contract tests caught before they could ship
+
+- **`beatsRemaining()` could not live in `queries/chat.ts`.** `queries/contract.test.ts`
+  asserts *"the handle is the first parameter of every exported function"* over every file
+  matching `/queries/`, and a pure fold has no handle to take. It went into `types.ts`,
+  typed structurally so the leaf does not acquire `schema.ts`. Same wall W3, W5, V6 and A3
+  each hit.
+- **`types.contract.test.ts` failed on its own doc comment.** The header says the words
+  `process.env` out loud while forbidding them, and the assertion matched the prose. Fixed
+  by stripping comments first — `queries/contract.test.ts`'s recorded lesson, paid for
+  again: *"a rule that fires on prose describing the rule is a rule people delete."*
+
+### The lease, as shipped
+
+Two predicates in the claim statement and **neither is redundant**:
+
+```sql
+  ... where user_id = $1
+        and status in ('pending','planning','running')
+        and (lease_until is null or lease_until < now())
+      order by created_at asc limit 1
+      for update skip locked
+```
+
+`for update skip locked` skips a row another transaction currently HOLDS — two tabs in the
+same millisecond. `lease_until < now()` excludes a row whose holder has already
+**COMMITTED** — two tabs a second apart, which is far more common and **is not a locked
+row**. Delete either and the second tab executes the same beat: the same bubble in the room
+twice.
+
+`chat.integration.test.ts` proves it across **two real postgres connections** (it cannot
+use `withRollback`, which is one transaction), and **asserts the message COUNT rather than
+the run's status** — `tee.ts`'s reason: a run at `beats_done = 1` with two messages is the
+exact bug, and only the count sees it. Three sibling cases cover the expired lease, the
+live committed lease, and a stale `beats_done` rolling the insert back.
+
+### The events ledger: twenty drafted, six landed
+
+The full table is in the plan and transcribed into `events.ts` beside the names. The two
+folds worth restating, because they are the ones a future session will try to re-add:
+
+- **`chat.proactive_replied` DROPPED, `chat.message_sent` KEPT** — both duplicate a row,
+  and **the line between them is the cost of writing them.** `message_sent` is a buffered
+  scalar push in a handler that already holds every fact; `proactive_replied` would need
+  **a join at write time** to discover which run it answers. `C-N2f`'s reply rate is a
+  query, and F7 owns it.
+- **`chat.message_blocked` DROPPED in favour of `surface: 'chat'`** on
+  `moderation.refused`. A second name would double-count what W7 already measures **and
+  would put every chat refusal outside every existing moderation query.**
+
+`moderation.{refused,timeout,allowed_flagged}` gained `surface` and widened `reader_id` /
+`service_id` to `| null`. **That prop is the only instrument a blocked chat message
+leaves**: `C-D13` refuses to store the refused text, `moderation_flags` has no surface
+column, so without it a spike in false positives on the chat surface is invisible.
+`Q-F1-3` records the column as the better answer, deferred because the release spent its
+migration.
+
+### `LLM_WINDOW_CALL_CEILING`: re-derived 2026-08-07, unchanged at 280
+
+`C-D6` required the exercise and **"re-derived and unchanged" is a real outcome of it.**
+The argument that decided it is better than the roadmap's: **a bigger number does not
+create quota.** z.ai meters prompts; raising 280 raises what this app is willing to spend,
+not what the plan will serve — and `## The z.ai plan` says the far side is `1113
+Insufficient Balance` on the first call, instantly, against a balance that is zero.
+
+`LLM_WINDOW_CHAT_CEILING = 140`, **peeked before the fleet ceiling and consumed after it**,
+so a call refused by either window is charged to neither. The number is resolved in
+`meter.ts`'s `_ceilings()` and derived from the hard ceiling, so February 2027's credit
+re-derivation moves both together.
+
+### Six decisions worth finding again
+
+- **`chat_messages.model` exists and is never selected by a route.** Every other table
+  holding generated prose records its model; a chat bubble would have been the only one
+  that could not say what wrote it, on the one surface running a model nothing else runs.
+  `audit-secrets.ts` cannot see a serialised column, so **explicit projections are the
+  enforcement** and `chat.contract.test.ts` greps for a bare `db.select()`.
+- **No CHECK over a column carrying `ON DELETE SET NULL`** (`[R7]`). The obvious pairings —
+  `(author = 'user') = (run_id IS NULL)` — live in `insertMessage`. The test for a new one
+  is **whether NULL satisfies it**: `id <> reply_to_message_id` passes that test and stays.
+- **`POST /api/chat/read` exists rather than folding into `state`**, because `state` is
+  polled from four pages that show no messages — a GET that moved the cursor would
+  **extinguish the red dot with the request that renders it.**
+- **The dot is lit by a stored bubble and never by a pending run** (`[R6]`), because
+  `C-R6` makes a zero-beat plan valid and a dot leading to an empty room is the opposite of
+  what a dot is for.
+- **`audit-secrets.ts` now walks `src/lib/chat/**`.** Before this it derived needles from
+  two directories, so **non-negotiable 2 was unenforced for every string F3 will write** —
+  and the `derived ZERO needles` guard could not fire, because the old directories keep the
+  count comfortably non-zero. F3's finding, and the most important of the reconciliation's
+  nine unowned files.
+- **The placeholder director plans SILENCE and the placeholder voice REFUSES.** An
+  accepting stub would store placeholder text as a bubble, and **a stored bubble is context
+  for every future turn in the room** — `C-R7`'s reason for having no error bubble,
+  arriving through the back door.
+
+### Two corrections to prose the release inherited
+
+- **`/api/cron/sweep`'s header said Vercel's free plan allows "a small number of cron
+  invocations".** It allows **100 per project on every plan** (verified 2026-08-07;
+  changelog 2026-01-20), so F5's nudge gets its own job. The sentence is corrected rather
+  than deleted, and the conclusion survives on its other leg. **And `17 3 * * *` is 10:17
+  WIB, not 03:17** — Vercel cron is always UTC, which the roadmap built an argument on.
+- **`OP_ORDER`'s header said "The ten" over an eleven-member array.** One of `[R13]`'s
+  three stale op counts. Now thirteen, with the count written out because **the boundary
+  below it is what a reader needs, and a number that is checkable is what makes the
+  boundary checkable.**
+
+### What F1 deliberately did NOT do
+
+- **Fix the cost-per-reading denominator** anywhere it already exists. Seam S10 gives it to
+  F7, and F1 "helpfully" patching one of A3's queries is how two workstreams both half-fix
+  one thing. `[R8]`'s rule — `llm_calls.reading_id` is NULL for both chat ops — is written
+  at the call sites; F7 writes the negative control.
+- **Touch `sanitize.ts`.** `[R2]`: `<jawaban>` is the third of six fences that already
+  exist, and `C-D8`'s "a sixth fence" was a miscount. **`<obrolan>` and `<lampiran>` are
+  the genuinely new ones and F3 owns that edit** (`[R12]`); adding a seventh alternative
+  for `jawaban` breaks `sanitize.test.ts`'s fixpoint assertions for a reason that reads
+  like a real defect.
+- **Edit `gate.ts` or the middleware matcher.** `/chat` is refused by omission
+  (`F1-D11`), and the deliverable is the negative controls in `gate.test.ts` — including
+  **the one named for the worst outcome available in this release**, `/en/chat`.
+
+### Still open when F1 landed
+
+- **`Q-F1-2` — what date does `/api/cron/nudge` use for `proactive_count_date`?** It has no
+  client and therefore no `x-jm-local-date` header. **`chat_threads.utc_offset_minutes` is
+  the answer the reconciliation folded in** (`[R17]`, §2.3) — the cron can derive the
+  querent's day from the last offset their browser reported. Nothing reads it yet; F5 owns
+  the derivation.
+- **`Q-F1-4` — nothing deletes a `chat_messages` row.** No status column, no soft delete,
+  no unsend. A querent who posts something they regret into a room three characters will
+  quote back at them has no remedy short of deleting the account. **A real product gap and
+  a deliberate one**, named so the first bug report is met with a decision rather than a
+  scramble.
+- **`Q-F1-5` — `hit('chat:advance:<uid>', 400/h)` is on the default backend.** It is the
+  highest-frequency authenticated budget this app has ever had — five round trips per
+  posted message — and `events:` was moved to memory for that shape of reason. **Measure it
+  on the first preview**; `RATELIMIT_CHAT_BACKEND` is reserved and deliberately unwritten.
+- **`npm run probe:usage` has NOT been run for `CHAT_MODEL=glm-5.2`.** It is a model change
+  and `## Providers` requires it. F1 ships nothing that calls the model in earnest — both
+  prompts are placeholders — so the honest place for it is the commit that makes F2 or F3
+  real.
+- **Nothing has exercised these routes against a cold lambda.** `/api/chat/message` and
+  `/api/chat/read` both WRITE, and **a user action that writes is one of the few things
+  likely to be the request that wakes a suspended Neon compute.** 1348ms warm from WSL told
+  us nothing last time.

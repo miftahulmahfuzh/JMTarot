@@ -45,7 +45,9 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import type {
   Locale,
@@ -65,6 +67,15 @@ import type {
  * reason, because `BlogStatus` lives beside a module that will.
  */
 import type { Block } from '@/content/types';
+/**
+ * v0.7.0's three chat tables. **A TYPE-ONLY IMPORT OF A LEAF**, on exactly `Block`'s
+ * argument above: `src/lib/chat/types.ts` is PURE and CLIENT-IMPORTABLE and its only
+ * import is `@/data/types` — the same import-free module everything else here reaches.
+ * The narrowing rule forbids `schema.ts` depending on a module that depends on
+ * `schema.ts`, and nothing under `src/lib/chat/types.ts` does or may
+ * (`types.contract.test.ts` is the fence).
+ */
+import type { BeatIntent, BeatSheet, ChatAuthor, RunStatus, RunTrigger } from '@/lib/chat/types';
 
 /** Every timestamp in this schema. timestamptz, UTC, never a bare `timestamp`. */
 const tsCol = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
@@ -1561,6 +1572,455 @@ export const adminInsights = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// The group chat (v0.7.0, F1). Three tables, one migration, `0014`.
+//
+// **BUILT FROM `docs/plans/2026-08-07-RECONCILIATION-v0.7.0.md` §2, NOT THE
+// ROADMAP'S §3**, which that file supersedes: five workstreams each proved they
+// needed a column §3 did not have, and all six plus two indexes are folded there.
+//
+// `C-D2`: **one thread per querent, forever.** There is no `thread_id` column
+// anywhere in this release and adding one is a mistake — `chat_messages.user_id`
+// is the key everything joins on, and it is what makes account erasure a cascade
+// rather than a join.
+//
+// **NO `CHECK` MAY INVOLVE A COLUMN CARRYING `ON DELETE SET NULL`** (`F1-D7`,
+// `[R7]`). A1's `23502` lesson generalised: `admin_access_log.admin_user_id` was
+// declared `not null` beside `on delete set null`, and the consequence was that the
+// hard delete of any user an admin had ever looked at would abort — the erasure
+// `/privacy` clause 8 promises, failing for exactly the population most likely to
+// have asked for it, visible only in a cron log. A CHECK has the same shape: the
+// referential action fires DURING a delete, and if it lands the row on the wrong
+// side of a constraint the DELETE raises. The obvious pairings —
+// `(author = 'user') = (run_id IS NULL)` and `(run_id IS NULL) = (beat_index IS
+// NULL)` — are therefore enforced in `insertMessage`, the only writer, which is
+// where they belong: an insert-time rule a route can violate, rather than a
+// delete-time landmine.
+// ---------------------------------------------------------------------------
+
+/**
+ * ONE ROW PER QUERENT. The read cursor and the proactive bookkeeping — **not
+ * plurality** (`C-D2`).
+ *
+ * Every timestamp here is DENORMALISED from `chat_messages` on purpose, for
+ * `readings.shared_at`'s reason: F5's eligibility predicate runs inside
+ * `/api/chat/state`'s `after()` on every page of the app, and it must not join.
+ */
+export const chatThreads = pgTable('chat_threads', {
+  /**
+   * THE ONLY KEY. A surrogate `id` on a table whose natural key is already a uuid
+   * buys nothing and costs a second unique index. `profiles`, `lotus_avatars` and
+   * `personas` take the same exception.
+   */
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  /**
+   * The badge's cursor. **NULL MEANS NEVER OPENED**, which is not the same as zero
+   * unread and is what `C-D18`'s M14 contract renders as no dot at all.
+   *
+   * **IT NEVER MOVES BACKWARDS** — `markRead` writes `greatest(last_read_at, $2)`,
+   * so an out-of-order request from a slow tab cannot resurrect a dot the querent
+   * already cleared.
+   */
+  lastReadAt: tsCol('last_read_at'),
+  /** Silence measurement for F5's triggers. */
+  lastUserMessageAt: tsCol('last_user_message_at'),
+  lastReaderMessageAt: tsCol('last_reader_message_at'),
+  /** The proactive throttle's left-hand side. */
+  lastProactiveAt: tsCol('last_proactive_at'),
+  proactiveCountToday: integer('proactive_count_today').notNull().default(0),
+  /**
+   * **A `'YYYY-MM-DD'` STRING, NEVER A `Date`** (`C-N2d`, `[F1-21]`). `dateCol`'s
+   * rule, and this column is where it bites hardest: it is the QUERENT'S calendar
+   * day, sent by the client, and it decides whether a reader is allowed to message
+   * somebody today. A `Date` renders in the server's zone and is a day out for
+   * anyone in Jakarta between midnight and 07:00.
+   *
+   * NULLABLE, because a thread exists before any proactive run has been considered.
+   */
+  proactiveCountDate: dateCol('proactive_count_date'),
+  /**
+   * The querent's offset from UTC in minutes, as their browser last reported it.
+   *
+   * **FOLDED INTO `0014` THOUGH NOTHING READS IT YET** (`[R17]`, reconciliation
+   * §2.3). Miftah ruled Option A on quiet hours — *do nothing special* — because
+   * sources 1 and 2 only fire when the querent is demonstrably in the app and source
+   * 3 is a UTC cron whose schedule (`0 12 * * *` = 19:00 WIB) **is** the mechanism.
+   * The column lands anyway so that ruling the other way later is one line rather
+   * than a migration, and because `/api/cron/nudge` has no client and therefore no
+   * `x-jm-local-date` header — this is how it can know a querent's day at all.
+   *
+   * **A NULL COLUMN NOBODY READS COSTS NOTHING; A MIGRATION IN A LATER SESSION
+   * COSTS A MIGRATION**, and `0015` is reserved rather than available.
+   */
+  utcOffsetMinutes: integer('utc_offset_minutes'),
+  createdAt: tsCol('created_at').notNull().defaultNow(),
+  /**
+   * **SET BY HAND IN EVERY UPSERT** (`[F1-22]`). `$onUpdate()` applies to
+   * `db.update()` only and does NOT fire inside `onConflictDoUpdate`, and this is
+   * the only column that can say when the cursors last moved.
+   */
+  updatedAt: tsCol('updated_at')
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
+
+/**
+ * THE LOG. Append-only.
+ *
+ * **THERE IS NO `status` COLUMN AND NO SOFT DELETE.** A message cannot be edited or
+ * unsent in v0.7.0. Adding either later is a migration; adding a column now for a
+ * feature nobody asked for is how a schema rots. `Q-F1-4` records the product gap
+ * deliberately, so the first bug report is met with a decision rather than a scramble.
+ */
+export const chatMessages = pgTable(
+  'chat_messages',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /**
+     * `'user' | 'thessaly' | 'margaret' | 'adrian'`.
+     *
+     * **ONE COLUMN, NOT A NULLABLE `reader_id` BESIDE A BOOLEAN**: two columns that
+     * must agree is two columns that will not.
+     *
+     * Bare `text` narrowed with `$type<ChatAuthor>()`. That does **not** breach this
+     * file's narrowing rule, for the same reason `Block` does not: the rule forbids
+     * `schema.ts` depending on a module that depends on `schema.ts`, and
+     * `@/lib/chat/types` is a LEAF whose only import is `@/data/types` — the same
+     * import-free module everything above already reaches.
+     */
+    author: text('author').$type<ChatAuthor>().notNull(),
+    /**
+     * **TEXT A PERSON TYPED, IN PLAINTEXT, EXACTLY LIKE `readings.question`**
+     * (`C-D20`) — and already through `sanitizeAnswer` (`F1-D9`), because this string
+     * enters every subsequent prompt in the room (`C-R5`). A delimiter that survives
+     * storage is a delimiter in every future prompt, not just one.
+     *
+     * Three consequences: **never log a driver error from a path that binds it**
+     * (`[F1-23]`; a postgres error quotes its bound parameters); `/privacy` names it
+     * as stored user text; and `events.props` carries a length and never this.
+     */
+    body: text('body').notNull(),
+    /**
+     * The language **this message** is in (`C-D9`). Not the viewer's, not the
+     * thread's — there is no thread language. A bubble carries a `lang` attribute
+     * matching this; the page does not.
+     */
+    locale: text('locale').$type<Locale>().notNull(),
+    /**
+     * `C-D11`. **`set null`, NEVER cascade**: deleting a quoted message must not
+     * delete the reply. Both sides may use it — the querent from the UI, a reader
+     * when the beat sheet says so.
+     */
+    replyToMessageId: uuid('reply_to_message_id').references(
+      (): AnyPgColumn => chatMessages.id,
+      { onDelete: 'set null' },
+    ),
+    /**
+     * F6's. **IN `0014` SO F6 NEEDS NO MIGRATION.** `set null`, so the bubble
+     * outlives its reading and F6 decides what that renders.
+     *
+     * **`POST /api/chat/message` VERIFIES IT BELONGS TO THE CALLER** (`[F1-11]`),
+     * as a `WHERE user_id = $caller` and not a 403 branch on a separate read. Without
+     * it a querent posts a stranger's reading id and three readers read a stranger's
+     * reading aloud, in a room, from a body the attacker never had access to.
+     */
+    attachedReadingId: uuid('attached_reading_id').references(() => readings.id, {
+      onDelete: 'set null',
+    }),
+    /** NULL for a user message. Paired with `beatIndex` by `insertMessage`, **not by
+     *  a CHECK** — see this section's header. */
+    runId: uuid('run_id').references((): AnyPgColumn => chatRuns.id, {
+      onDelete: 'set null',
+    }),
+    beatIndex: integer('beat_index'),
+    /**
+     * WHAT THE BEAT WAS FOR. `BeatIntent`, or NULL for `author = 'user'` and for a
+     * reader turn whose beat carried none.
+     *
+     * **REQUIRED BY F5 AND F7, AND IT IS A DECLARED FACT RATHER THAN AN INFERRED
+     * ONE** (reconciliation §2.1). F5's unanswered-ask material must know a reader
+     * asked something; inferring a question from a `?` is `CLAUDE.md`'s bare-`lagi`
+     * trap in a new place — a pattern that fires on most sentences of casual writing
+     * and reports a rate that is entirely noise. F7's ask rate (`C-N1d`) is the same
+     * column, and `C-N1d` is one of the two things this release is measured by.
+     */
+    intent: text('intent').$type<BeatIntent>(),
+    /**
+     * F4's idempotency key for the ONE permitted timeout retry.
+     *
+     * **`POST /api/locale`'s RULE 3 IS WHAT MAKES THIS NECESSARY** (reconciliation
+     * §2.1): *a timeout is the one outcome that means UNKNOWN, so it is the only one
+     * retried.* Without a key the retry double-posts the querent's sentence — and
+     * then **both copies are context for every future turn in the room** (`C-R5`),
+     * so one dropped packet is quoted back at them forever.
+     *
+     * Unique per `(user_id, client_key)` where not null. NULL for every reader
+     * message and for a client that did not send one.
+     */
+    clientKey: text('client_key'),
+    /**
+     * **THE RESOLVED MODEL, NULL FOR `author = 'user'`** (`F1-D6`). Every other table
+     * holding generated prose carries one — `readings`, `personas`,
+     * `daily_summaries`, `frequency_verdicts`, `admin_insights`, `lotus_avatars` — and
+     * a chat bubble would otherwise be the only generated prose in this database that
+     * cannot say what wrote it. `C-D4` makes the chat the one surface running a model
+     * nothing else runs, which is exactly the case where that gets asked.
+     *
+     * **NEVER SELECTED BY A QUERY THAT FEEDS A ROUTE** (`[F1-12]`). §0.3 forbids a
+     * model name reaching the browser and `audit-secrets.ts` greps the built bundle
+     * for env VALUES — it cannot see a column a route JSON-serialised. Explicit
+     * projections in `queries/chat.ts` are the enforcement, and a bare `db.select()`
+     * in that file is a defect `chat.contract.test.ts` fails on.
+     *
+     * `prompt_version` was considered and refused: `translations.prompt_version`
+     * exists because a cached row must be invalidated when the prompt changes, and a
+     * chat message is never regenerated and never invalidated.
+     */
+    model: text('model'),
+    createdAt: tsCol('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    /**
+     * **THE ONLY READ PATTERN THE SURFACE HAS**, and the keyset-pagination index:
+     * `where user_id = $1 and (created_at, id) < ($2, $3) order by created_at desc,
+     * id desc limit $4`. The `id desc` tail is what makes the tuple comparison
+     * index-ordered rather than a sort.
+     *
+     * **THE BADGE COUNT RIDES ON IT AND GETS NO INDEX OF ITS OWN**, which is a
+     * refusal recorded rather than an omission: the two leading columns already
+     * reduce the unread window to a handful of rows, and a fourth index on the
+     * highest-write table in this release is write amplification for a count over
+     * five. Revisit if a thread ever holds enough unread messages for the filter to
+     * matter — which would itself be a bug in `C-N2d`'s throttle.
+     */
+    index('chat_messages_user_created_idx').on(t.userId, t.createdAt.desc(), t.id.desc()),
+    /**
+     * `C-R5`'s per-run read — every beat sees every earlier beat of its own run —
+     * AND the FK's own index. **AN FK IS NOT AN INDEX AND POSTGRES WILL NOT MAKE
+     * ONE**: `reading_cards_reading_idx`'s lesson is that a referential action
+     * performs one sequential scan PER parent row, and `set null` scans exactly as
+     * `cascade` does.
+     */
+    index('chat_messages_run_idx').on(t.runId).where(sql`run_id is not null`),
+    /** The self-FK's `set null` scan. PARTIAL, because almost every row is null. */
+    index('chat_messages_reply_idx')
+      .on(t.replyToMessageId)
+      .where(sql`reply_to_message_id is not null`),
+    /** The `set null` from `readings`, which deletes in bulk at the hard erasure. */
+    index('chat_messages_reading_idx')
+      .on(t.attachedReadingId)
+      .where(sql`attached_reading_id is not null`),
+    /**
+     * F4's retry idempotency. **A CONSTRAINT, NOT A CHECK-THEN-INSERT RACE** — two
+     * tabs retrying one timed-out POST is exactly the case a read-then-write loses.
+     *
+     * **PARTIAL, AND NOT `nulls not distinct`.** Every reader message has a NULL key,
+     * so `nulls not distinct` would collapse the whole room into one row. V7's
+     * `share_links` trap points the other way here and inverting it is the mistake.
+     */
+    uniqueIndex('chat_messages_user_client_key_uq')
+      .on(t.userId, t.clientKey)
+      .where(sql`client_key is not null`),
+    /** The closed set. A CHECK rather than a pgEnum, per this file's header. */
+    check(
+      'chat_messages_author_ck',
+      sql`${t.author} in ('user', 'thessaly', 'margaret', 'adrian')`,
+    ),
+    /** `BeatIntent`, `[R9]`'s six. `aside` was dropped and must not reappear here. */
+    check(
+      'chat_messages_intent_ck',
+      sql`${t.intent} is null or ${t.intent} in ('answer', 'ask', 'react', 'tease', 'agree', 'push_back')`,
+    ),
+    /**
+     * **A READER NEVER STORES AN EMPTY BUBBLE.** `C-R7` says a failed beat stores
+     * nothing; an empty string is that failure arriving as data and being read aloud
+     * by the next beat as a message somebody sent.
+     *
+     * The `author = 'user'` escape is F6's: **an attachment with no text is a
+     * perfectly good conversational move** and must produce a run. The route refuses
+     * a user message that is empty AND unattached; the column does not, because
+     * `attached_reading_id` carries `on delete set null` and this section's header
+     * forbids a CHECK over such a column.
+     */
+    check('chat_messages_reader_body_ck', sql`${t.author} = 'user' or length(${t.body}) > 0`),
+    /**
+     * A self-reply renders an infinite quote stub.
+     *
+     * **THIS IS THE ONE CHECK HERE THAT TOUCHES A `SET NULL` COLUMN, AND IT IS SAFE
+     * FOR A REASON WORTH WRITING DOWN RATHER THAN A CONVENTION WORTH BENDING.** The
+     * header's rule exists because a referential action that lands a row on the wrong
+     * side of a constraint makes the DELETE raise. Here the action sets the column to
+     * NULL, `NULL <> id` evaluates to NULL, and a CHECK treats NULL as satisfied — so
+     * erasure cannot detonate it. **The test for a new CHECK over such a column is
+     * whether NULL satisfies it**, and `(author = 'user') = (run_id IS NULL)` fails
+     * that test, which is why it lives in `insertMessage` instead.
+     */
+    check('chat_messages_no_self_reply_ck', sql`${t.replyToMessageId} <> ${t.id}`),
+  ],
+);
+
+/**
+ * THE UNIT OF GENERATION (`C-D1`). One trigger produces one row, which produces
+ * 1–4 messages from 1–3 readers.
+ *
+ * **AN ABANDONED RUN AND A PROACTIVE RUN ARE THE SAME OBJECT** (`C-D7`), which is
+ * the whole design: the querent closing the tab mid-run does not cancel it, and a
+ * proactive run is simply a run nobody posted a message for. So there is one engine
+ * and one delivery path, and F5 builds triggers rather than a second pipeline.
+ */
+export const chatRuns = pgTable(
+  'chat_runs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /**
+     * **F5 OWNS THE VALUES; THE SET IS CLOSED AND LIVES HERE.**
+     * `'user_message' | 'reading_completed' | 'idle_nudge' | 'unanswered' | 'cron'`.
+     *
+     * `C-D5`: **a proactive turn is a `chat_turn`, and what made it proactive is this
+     * column.** An op is what the call *is*; this is why it happened. `/admin/chat`
+     * groups by it.
+     */
+    trigger: text('trigger').$type<RunTrigger>().notNull(),
+    /** The posted message, for `'user_message'`. `set null` — a run whose trigger is
+     *  gone is still a run that happened. */
+    triggerMessageId: uuid('trigger_message_id').references(
+      (): AnyPgColumn => chatMessages.id,
+      { onDelete: 'set null' },
+    ),
+    triggerReadingId: uuid('trigger_reading_id').references(() => readings.id, {
+      onDelete: 'set null',
+    }),
+    status: text('status').$type<RunStatus>().notNull().default('pending'),
+    /**
+     * The run's language (`C-D9`). Declared by the director from the querent's text,
+     * validated against `id | en`, falling back to `users.locale`. **There is no
+     * language detector in this repo and this release does not add one** — the model
+     * already reads the message and can say.
+     */
+    locale: text('locale').$type<Locale>().notNull(),
+    /**
+     * THE BEAT SHEET. `BeatSheet` from `@/lib/chat/types`, quoted verbatim there —
+     * seam S1: **F1 owns the shape, F2 owns the contents.**
+     *
+     * NULL until the director has answered, and `[F1-4]` makes
+     * `status = 'planning' AND beats IS NOT NULL` unrepresentable: the write and the
+     * status flip are ONE UPDATE.
+     */
+    beats: jsonb('beats').$type<BeatSheet>(),
+    beatsDone: integer('beats_done').notNull().default(0),
+    /**
+     * `C-R3`. Two tabs must not execute the same beat. **~90s AND RECLAIMABLE**: a
+     * lambda killed mid-beat must not lock the room until somebody notices, and the
+     * only thing that makes reclaiming safe is `[F1-1]` — the message insert and the
+     * `beats_done` increment are one transaction, so a reclaim can at worst
+     * re-execute a beat whose message was never committed.
+     */
+    leaseUntil: tsCol('lease_until'),
+    /** An opaque per-request token. **NEVER a session id** — a session id in a row
+     *  F7 may render is an identifier with no reason to be there. */
+    leaseOwner: text('lease_owner'),
+    /** The resolved planner model, `llm_calls.model`'s neighbour. `chatModelName()`,
+     *  which restates `ledger.ts`'s chain (`[F1-15]`) so the two cannot disagree. */
+    planModel: text('plan_model'),
+    /**
+     * **DID THE DIRECTOR ANSWER, OR DID THE FALLBACK?** `'model' | 'fallback'`.
+     *
+     * Required by F7 (reconciliation §2.2) and it is the **only** way to see
+     * `validatePlan`'s refusal rate: F2's fallback is never zero-beat and is
+     * otherwise indistinguishable from a real plan, so without this column the panel
+     * measuring the director measures nothing.
+     */
+    planSource: text('plan_source').notNull().default('model'),
+    /**
+     * F5's de-duplication key for a proactive run — *"have I already messaged this
+     * person about this?"* NULL for every run with a querent behind it.
+     */
+    materialKey: text('material_key'),
+    /**
+     * `classifyStreamError()`'s vocabulary plus this engine's own
+     * (`plan_invalid`, `all_beats_failed`). **A SHORT CLASSIFIER, NEVER A MESSAGE** —
+     * unbounded cardinality makes every `group by` useless and a message can carry a
+     * prompt fragment or a key.
+     *
+     * **SNAPSHOT IT BEFORE ANY `await`** (`tee.ts`'s trap): `finish()` read its fields
+     * after `await source.usage`, by which time a cancelled controller had made the
+     * catch overwrite `errorKind` with `'unknown'` — so every abandoned reading was
+     * recorded as failing for an unknown reason.
+     */
+    errorKind: text('error_kind'),
+    createdAt: tsCol('created_at').notNull().defaultNow(),
+    updatedAt: tsCol('updated_at')
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    /**
+     * THE CLAIM QUERY AND `activeRunFor`. **PARTIAL on the three live statuses**, so
+     * the index stays the size of the app's in-flight work forever rather than the
+     * size of its history.
+     */
+    index('chat_runs_user_active_idx')
+      .on(t.userId, t.createdAt)
+      .where(sql`status in ('pending', 'planning', 'running')`),
+    /** F5's suppression rule (seam S5): *has a run already been minted for reading
+     *  X?* Also the `set null` scan from `readings`. */
+    index('chat_runs_trigger_reading_idx')
+      .on(t.triggerReadingId)
+      .where(sql`trigger_reading_id is not null`),
+    /** The `set null` scan from `chat_messages`. */
+    index('chat_runs_trigger_message_idx')
+      .on(t.triggerMessageId)
+      .where(sql`trigger_message_id is not null`),
+    /** F7 groups by trigger over a date range. */
+    index('chat_runs_trigger_created_idx').on(t.trigger, t.createdAt.desc()),
+    /** F7's fleet-wide panels (reconciliation §2.4). */
+    index('chat_runs_created_idx').on(t.createdAt.desc()),
+    /** F7's per-user drill-down and F5's eligibility read (reconciliation §2.4). */
+    index('chat_runs_user_created_idx').on(t.userId, t.createdAt.desc()),
+    /**
+     * F5's proactive de-duplication, **as a CONSTRAINT rather than a check-then-insert
+     * race** (reconciliation §2.2).
+     *
+     * **DO NOT "FIX" IT TO `nulls not distinct`.** That is V7's `share_links` trap
+     * pointing the other way: every non-proactive run has a NULL key, and treating
+     * NULLs as equal would collapse all of them into one row.
+     */
+    uniqueIndex('chat_runs_user_material_uq')
+      .on(t.userId, t.materialKey)
+      .where(sql`material_key is not null`),
+    check(
+      'chat_runs_status_ck',
+      sql`${t.status} in ('pending', 'planning', 'running', 'done', 'abandoned')`,
+    ),
+    check(
+      'chat_runs_trigger_ck',
+      sql`${t.trigger} in ('user_message', 'reading_completed', 'idle_nudge', 'unanswered', 'cron')`,
+    ),
+    check('chat_runs_plan_source_ck', sql`${t.planSource} in ('model', 'fallback')`),
+    check('chat_runs_beats_done_ck', sql`${t.beatsDone} >= 0`),
+    /**
+     * **A HALF-SET LEASE IS A LOCK NOBODY OWNS**, and the claim statement would then
+     * either never reclaim it or reclaim it from under a live executor.
+     * `blog_post_locales_hero_pair_ck` is the precedent for the shape. Safe under
+     * `F1-D7` because neither column carries a referential action.
+     */
+    check(
+      'chat_runs_lease_pair_ck',
+      sql`(${t.leaseUntil} is null) = (${t.leaseOwner} is null)`,
+    ),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Row types
 //
 // `X` is what a select returns; `NewX` is what an insert accepts (columns with
@@ -1609,3 +2069,10 @@ export type BlogPostLocale = typeof blogPostLocales.$inferSelect;
 export type NewBlogPostLocale = typeof blogPostLocales.$inferInsert;
 export type AdminInsight = typeof adminInsights.$inferSelect;
 export type NewAdminInsight = typeof adminInsights.$inferInsert;
+/** `ChatThread`, singular, though the table is plural: one row is one room. */
+export type ChatThread = typeof chatThreads.$inferSelect;
+export type NewChatThread = typeof chatThreads.$inferInsert;
+export type ChatMessage = typeof chatMessages.$inferSelect;
+export type NewChatMessage = typeof chatMessages.$inferInsert;
+export type ChatRun = typeof chatRuns.$inferSelect;
+export type NewChatRun = typeof chatRuns.$inferInsert;

@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { afterAll, describe, expect, it } from 'vitest';
-import { moderationFlags, shareLinks, users } from '@/lib/db/schema';
+import { chatMessages, chatRuns, chatThreads, moderationFlags, shareLinks, users } from '@/lib/db/schema';
 import { closeTestDb, testDb, withRollback } from '@/lib/db/testing/harness';
 import type { Tx } from '@/lib/db/types';
 import { deleteAccount } from './delete';
@@ -210,6 +210,107 @@ describe('the transaction boundary, asserted on the source', () => {
     // `onboarding_answers` is `on delete cascade`; clearing it now would break
     // the thirty-day restore the confirmation copy promises.
     expect(/clearFreeTextAnswers\s*\(/.test(src)).toBe(false);
+  });
+});
+
+/**
+ * ── v0.7.0's ERASURE AUDIT (`F1-D10`, `C-D20`) ────────────────────────────
+ *
+ * `C-D20` requires this written down **even if the answer is "the cascade covers
+ * it"**, and it is not quite trivial, so here it is both written and asserted.
+ *
+ * **THE CHAT IS ON `readings`' SIDE OF `delete.ts`'s ASYMMETRY, NOT
+ * `moderation_flags`'.** That header states the rule that decides it: *"the asymmetry
+ * with `moderation_flags` IS the asymmetry in the foreign keys: `set null` outlives the
+ * account, `cascade` does not."* `moderation_flags.user_id` is `set null`, so a
+ * self-harm disclosure would sit there for thirty more days and is therefore redacted
+ * inside the erasure transaction. `chat_threads`, `chat_messages` and `chat_runs` all
+ * CASCADE, so they are gone at the hard delete — **and clearing them at the soft delete
+ * would break the thirty-day restore the confirmation copy promises**, which is
+ * precisely why `clearFreeTextAnswers()` is deliberately absent from that transaction.
+ *
+ * **SO `deleteAccount()` GAINS ZERO LINES AND `redactForUser` IS NOT EXTENDED.** These
+ * two cases are the audit; the first is named for the PROMISE rather than for the
+ * mechanism, per `C-D20`.
+ */
+describe("the group chat and the erasure promise", () => {
+  /** A thread, a run, a user message and a reader message, all committed to `tx`. */
+  async function seedRoom(tx: Tx, userId: string) {
+    await tx.insert(chatThreads).values({ userId, lastUserMessageAt: new Date() });
+    const [run] = await tx
+      .insert(chatRuns)
+      .values({ userId, trigger: 'user_message', locale: 'id', status: 'done' })
+      .returning({ id: chatRuns.id });
+    await tx.insert(chatMessages).values([
+      { userId, author: 'user', body: 'hal paling berat yang pernah aku lihat', locale: 'id' },
+      { userId, author: 'adrian', body: 'kapan itu?', locale: 'id', runId: run.id, beatIndex: 0 },
+    ]);
+  }
+
+  const counts = async (tx: Tx, userId: string) => {
+    const one = async (table: typeof chatThreads | typeof chatMessages | typeof chatRuns) => {
+      const [row] = await tx
+        .select({ n: sql<number>`count(*)::int` })
+        .from(table)
+        .where(sql`user_id = ${userId}`);
+      return row.n;
+    };
+    return {
+      threads: await one(chatThreads),
+      messages: await one(chatMessages),
+      runs: await one(chatRuns),
+    };
+  };
+
+  it('THE WHOLE ROOM GOES WITH THE ACCOUNT, at the hard delete', () =>
+    withRollback(async (tx) => {
+      /*
+       * **NAMED FOR THE PROMISE**: `/privacy` clause 8 says the room is removed from
+       * the database within thirty days, and this is the only thing that makes that
+       * sentence true. The mechanism is the cascade on `user_id`.
+       *
+       * **`chat_messages.user_id` MUST STAY `on delete cascade`.** The day somebody
+       * changes it to `set null` "to keep the analytics", a redaction obligation
+       * arrives with it and this paragraph becomes false — silently, because the
+       * account would still look deleted.
+       */
+      const userId = await seedUserWithFlag(tx);
+      await seedRoom(tx, userId);
+      expect(await counts(tx, userId)).toEqual({ threads: 1, messages: 2, runs: 1 });
+
+      await tx.delete(users).where(sql`id = ${userId}`);
+
+      expect(await counts(tx, userId)).toEqual({ threads: 0, messages: 0, runs: 0 });
+    }));
+
+  it('the SOFT delete keeps it, because the restore window has to mean something', () =>
+    withRollback(async (tx) => {
+      /*
+       * **NOT AN OVERSIGHT — THE SAME RULING `clearFreeTextAnswers()` IS ABSENT
+       * UNDER.** The confirmation copy promises thirty days in which signing back in
+       * undoes everything, and a room cleared at the soft delete would make that
+       * promise false in the one way the querent would notice most.
+       */
+      const userId = await seedUserWithFlag(tx);
+      await seedRoom(tx, userId);
+
+      const out = await deleteAccount(tx, userId);
+      expect(out.deleted).toBe(true);
+
+      expect(await counts(tx, userId)).toEqual({ threads: 1, messages: 2, runs: 1 });
+    }));
+
+  it('deleteAccount gains zero lines for the chat, asserted on the source', async () => {
+    /*
+     * `F1-D10`'s conclusion, made mechanical. If a future session "helpfully" adds a
+     * chat redaction here, this fails and sends them to the paragraph above — where
+     * the reason it must not exist is written down.
+     */
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync('src/lib/account/delete.ts', 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/.*$/gm, '');
+    expect(src).not.toMatch(/chat_?[Mm]essages|chatThreads|chatRuns/);
   });
 });
 
