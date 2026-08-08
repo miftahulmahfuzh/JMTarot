@@ -5,6 +5,480 @@ All notable changes to JMTarot are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.7.0] - 2026-08-09
+
+**Three readers and the querent in one room, that keeps going when nobody is looking at
+it.** Seven workstreams, one roadmap, one reconciliation that outranked it, and
+thirty-nine commits. Every release before this one made the app answer a question; this
+one makes it start a conversation. **It is measured by two things and nothing else — how
+NATURAL and how PROACTIVE the room feels — and every trade in these documents was taken
+in their favour, including the ones that look like infrastructure.**
+
+**The design that carries most of it is a RUN ENGINE rather than a request/response
+endpoint.** One trigger produces one `chat_runs` row, which produces a beat sheet, which
+the voices execute **one beat per short request**. It fits Vercel's 60s ceiling, and — the
+load-bearing part — **it makes an abandoned run and a proactive run the same object.**
+Close the tab mid-conversation and the remaining bubbles land later behind a red dot; F5
+therefore built **triggers, not a second pipeline**, and a design in which unprompted
+messages have their own route, table or renderer is wrong.
+
+**Seven plans written in parallel, none able to see the others, found six factual errors
+in the contract they were written against — and every one was found by the workstream it
+would have hurt.** The taxonomy was already 70 names against the roadmap's 67, so the
+first new name is red for the right reason. `<jawaban>` was the third of six fences that
+already existed rather than a sixth to add; what is genuinely new is `<obrolan>` and
+`<lampiran>`, and **`sanitize.ts` had no owner — flagged independently by two agents that
+could not see each other.** Vercel Hobby allows 100 cron jobs, not "a small number". Vercel
+cron is always UTC, so `sweep`'s `17 3 * * *` is 10:17 WIB and an argument about a terrible
+hour to message somebody rested on nothing. Three routes were given `maxDuration: default`
+two paragraphs above a citation of `POST /api/locale`, which is the route that ten-second
+default killed. And the build order was inverted, so **F6 splits and runs twice.**
+
+**The finding no agent could have made alone is the consent one.** F3 went to read the
+onboarding catalog to get the querent's register right, and found that
+`onboarding.q.worst_thing.hint` promises — *while the querent is typing the answer* — that
+it is "tidak pernah dikutip di dalam bacaanmu", which is the exact thing this feature
+exists to do. It survives on the letter, because a chat is not a *bacaan*, and does not
+survive in spirit at all. **A workstream about prose style found the release's consent
+problem.** Miftah ruled the same day: granted, with all five of `C-D8`'s conditions intact,
+`/privacy` **and both onboarding hints** amended in both locales, `TERMS_VERSION` not
+bumped, and `CHAT_ANSWERS_ENABLED` shipped as the reversal that needs no prompt-layer
+redeploy. **Nobody re-reads `/privacy`; everybody reads the hint** — which is why the hint
+is the load-bearing edit and the reconciliation called it that.
+
+**And the lesson that generalises past this release: read the header line the runner
+already prints.** Every measurement F5 took ran on `glm-4.6`, because `C-D4` puts the whole
+chat on `CHAT_MODEL=glm-5.2` and a `.env.local` written before v0.7.0 does not set it. The
+runner printed `chat model=glm-4.6 (CHAT_MODEL=unset)` at the top of all three runs and it
+was read past all three times. On the wrong model, everything else identical, **three
+defects appeared that do not exist on the right one**: a voice emitted a whole transcript
+inside one bubble, complete with a fake querent line and another reader's name, in a room
+where every stored bubble is context for the next turn; two readers produced the same
+sentence verbatim in one blind read; and it invented nouns more often. The fix is not a
+better header line — it is a **warning that names those three consequences**, because a
+faithful line nobody reads is worth nothing.
+
+3593 unit tests across 189 files; 642 integration across 45. **One migration** (`0014`),
+taking the schema from eighteen tables to **twenty-one**. `LLMOp` **11 → 13**, kill switches
+**5 → 7**, prompt fences **6 → 8**, the event taxonomy **70 → 76**. **No new dependency.**
+
+### Added
+
+- **`/chat` — the room.** `src/app/chat/**`, `ChatRoom.tsx` and seven `Chat*` components.
+  `page.tsx` **reads nothing**: the default day separator is the querent's calendar day and
+  the server cannot compute it, because `toISOString()` rolls over at 07:00 in Jakarta. It is
+  `noindex`, not in `isPublic()`, inside the middleware matcher, and **`/en/chat` 404s** per
+  contract G2. `gate.test.ts` carries the negative control named for the worst outcome
+  available in this release.
+- **`src/lib/chat/**` — the spine, the director, the voices and the triggers.** `types.ts`,
+  `machine.ts`, `run.ts`, `budget.ts`, `model.ts`, `log.ts`, `context.ts`, `address.ts`,
+  `validate.ts`, plus `prompt/**` (the contract and three voices, both locales), `direct/**`
+  (the beat sheet), `voices/**` (the turn and its pacing) and `proactive/**` (eligibility,
+  material, detection, minting, the two note tables and the fixtures).
+- **Three tables and migration `0014`** — `chat_threads`, `chat_runs`, `chat_messages`,
+  eighteen tables to twenty-one — **including the six columns five workstreams each
+  independently proved they needed**:
+  `client_key`, `intent`, `model`, `material_key`, `plan_source` and `utc_offset_minutes`.
+  Most sharply F4's client idempotency key, without which the one permitted timeout retry
+  double-posts the querent's sentence **and both copies are context for every future turn.**
+- **Five routes and one cron.** `/api/chat/{state,messages,read,message,advance}` at 30 / 15 /
+  15 / 20 / 60 seconds, and `/api/cron/nudge` with its own `vercel.json` entry at `0 12 * * *`.
+  **`GET /api/chat/state` answers 200 with an empty state when the database is down** — it is
+  deliberately not the fourth route in this app that 500s.
+- **A turn is buffered and delivered whole, never streamed** (`C-D3`). A naturalness decision
+  and not a performance one: watching Adrian type character by character is a chatbot tell. It
+  also buys validation before display and one code path for turns nobody is watching.
+  **`ReadingView`'s streaming machinery is not reused and must not be.**
+- **`LLM_WINDOW_CHAT_CEILING`, the chat's own sub-budget, PEEKED before the fleet ceiling and
+  CONSUMED after it**, so a call refused by either window is charged to neither. It **defaults
+  to half the hard ceiling and is derived in `meter.ts` rather than written as a literal**, so
+  February 2027's credit re-derivation moves both together. Chat calls are `deferred`, and
+  that is a promise to the reading: a run is 2–5 calls and sixty runs would exhaust the app's
+  whole five-hour quota. **A shed beat is not an error** — the run stays `running` and the next
+  visit delivers it.
+- **`LLM_WINDOW_CALL_CEILING` re-derived 2026-08-07 and UNCHANGED at 280.** "Re-derived and
+  unchanged" is a real outcome of the exercise rather than a skipped task. **A bigger number
+  does not create quota** — the denominator is a property of the plan, not of the app; the
+  balance on the account is zero, so the far side is `1113 Insufficient Balance` on the first
+  call, instantly, for everybody; and the right instrument for "the chat multiplies calls
+  5–10×" is the sub-budget.
+- **`chat_plan` and `chat_turn` are the twelfth and thirteenth `LLMOp`s.** **Two, not one**,
+  because averaging a tiny JSON reply with a two-sentence one makes both figures meaningless;
+  **two, not three**, because a proactive turn is a `chat_turn` and what made it proactive is
+  `chat_runs.trigger`. **`llm_calls.reading_id` is NULL for both** — `readingCostsFor` folds
+  every `reading_id`-bearing row with no `op` predicate, so a non-null there would silently
+  inflate the cost of the reading that triggered the conversation.
+- **`src/lib/admin/ops.ts` — the machine-checked list of the four ops with no querent behind
+  them**: `insight`, `blog_format`, `chat_plan`, `chat_turn`. It carries a compile guard that
+  makes a **fourteenth** op an error until somebody classifies it, and it exists because the
+  same rule was stated in prose four times and **three of the four were stale.**
+- **`CHAT_ENABLED` and `CHAT_PROACTIVE_ENABLED`, on `ANALYTICS_ENABLED`'s rule** — only the
+  literal `'0'` disables. **Off gates the model call, never the cached read**: the room still
+  opens and every past message still renders.
+- **`CHAT_MODEL`, one variable for the director and all three voices, set to `glm-5.2`.**
+  `ADMIN_MODEL`'s shape pointing the opposite way: that one points *away* from `LLM_MODEL`
+  because nothing on the admin surface is in a reader's voice, this one because **everything
+  on the chat surface is.** By accident it is already on the right side of the ~February 2027
+  renewal line.
+- **`address.ts` — code derives the address forms and the model picks one from the list**
+  (`C-D10`), which is `effectiveYesNo()`'s and `validateChoice`'s rule in a third place. PURE,
+  a LEAF, **zero imports asserted over the source**; the full nickname is always candidate
+  zero; and **an empty candidate list is a correct outcome, never an error** — a derivation
+  refined until it always produces something is how a person ends up being called `Ne`.
+- **`voices/pace.ts` — the wait before a bubble is the previous bubble's length, the next
+  reader's temperament, and how much that reader is about to write.** Three bubbles exactly
+  2000ms apart is something no group chat has ever produced, and a person notices it inside
+  four bubbles without being able to say why. **The jitter is derived by FNV-1a over the beat's
+  own fields, never `Math.random`**, which is what lets `npm test` assert anything about pacing
+  at all.
+- **`<obrolan>` and `<lampiran>` are the seventh and eighth fences.** `<obrolan>` is the
+  sharpest of the eight: forty messages the querent typed, handed to a model whose next output
+  goes straight onto a screen. **The Indonesian-looking word is the safe one** for R17's reason
+  — an English querent will never type "obrolan" and would absolutely type "chat".
+  `<lampiran>` gets its own alternative **even though it nests inside `<obrolan>`**, because the
+  stripper works on the alternation and a nested tag it cannot name is a hole in exactly the
+  block that carries the querent's own text.
+- **`CHAT_LENGTH_BUDGET`, `chatBudgetFor` and `CHAT_MAX_TOKENS` in `budget.ts`** — a second
+  table rather than a row in `LENGTH_BUDGET`, because `maxParagraphWords` is meaningless for a
+  thing that is one paragraph by definition. **The floor is zero in both locales and exists as
+  a constant rather than being absent**: "wkwk", "iya sih" and "hm" are how a group chat reads,
+  and a floor that forbids them makes three readers who each deliver a paragraph.
+  `MARGARET_MULTIPLIER` reaches the ceilings and never the floor.
+- **`Bahas di grup` on `/history/[id]` and under a finished reading**, with `<lampiran>`, the
+  staged card in the composer and the attachment drawn in the log. On the draw screen the
+  control sits **inside the completed-reading condition**: a one-tap exit from a streaming page
+  aborts the reading and books it as the querent's choice. Ownership is a `where` predicate on
+  `readingWithCards`, never a remembered check.
+- **`/admin/chat` — nine panels, one `withAdminRead`, and no control of any kind.** It measures
+  and never restrains: no pause button, no ceiling editor. Its one `Hero` is the proactive reply
+  rate, **whose denominator is runs whose 24-hour window has CLOSED** — an open run is in neither
+  the numerator nor the denominator and is reported separately as `menunggu`, because including
+  it makes the release's own scorecard fall every time the operator picks a range ending today,
+  which is the default filter.
+- **`/admin/users/[id]` gets a chat section with counts and no text.** `A-D16`'s audited reveal
+  was built for a thing you read *one* of; a conversation would be two hundred audit rows for one
+  act of reading. **And the asymmetry cuts the opposite way from the obvious one:** the six
+  onboarding answers are encrypted at rest and `chat_messages.body` is plaintext, so the
+  protection there is that nothing reads it — a property of the code, which a reveal component is
+  precisely the code to change. An integration test serialises the whole return value and asserts
+  a fixture body is absent.
+- **`tools/make_avatars.py` and `public/readers/*`** — three faces cropped out of the 2:1
+  landscape scenes in `public/dukuns/`, which at 28px are a smudge. The crop table is three
+  hand-written boxes reviewed against a contact sheet, not face detection: **Adrian's left edge
+  moved 566 → 554 after the first sheet, because a face 3% off centre is invisible in a square
+  and is not in a circle.** 7.9KB for all three, byte-identical on a re-run.
+- **`LotusMark.tsx`, extracted from `AccountButton`** so the querent's chat avatar is *the same
+  glyph* rather than a second `<svg>` with the same four `d` strings, with a byte-identity test
+  holding the two drawings in step. **The readers are photographs and the querent is a glyph**,
+  and that asymmetry is the point: three authored characters with portraits in this repo, and a
+  person about whom this app deliberately holds no picture.
+- **`corner` in `tokens.ts`** — the geometry `AccountButton.module.css` already shipped as the
+  literals 10, 44 and 8, named, because F4 may not edit that stylesheet and `ChatButton` has to
+  sit beside it. `tokens.css` mirrors it and derives slot 1 in CSS, so `10 + 44 + 8 = 62` has one
+  home. **The coupling is one-way and asserted rather than shared.**
+- **Six event names, 70 → 76**: `chat.opened`, `chat.message_sent`, `chat.run_planned`,
+  `chat.turn_generated`, `chat.run_finished` and `chat.proactive_skipped`. **The ritual held** —
+  `chat.button_clicked` was folded away with the sentence *the click IS the open*, and
+  `chat.opened.from` narrowed to three values.
+- **Three smoke commands, and they are the release gate.** `npm run smoke -- --chat` (a scripted
+  multi-turn group chat with the names covered), `--chat --proactive` (an unprompted opening) and
+  `--chat --director` (the beat sheets alone). **`npm run smoke -- --chat --director --voices` is
+  the joined run**, and it had to exist: `--chat` cans the sheets and `--chat --director` cans the
+  voices, each so a failure in one is not read as a failure in the other, and **neither can see a
+  sheet that reads well and produces three paragraphs that sound alike**, because that failure
+  only exists where the two meet.
+- **A brevity check that is the only inverted instrument in the repository**: it FAILS when the
+  *shortest* bubble in a whole conversation is over six words. Every other length check here fails
+  on output being too long once; this one fails when brevity never happens, which is `C-D19`'s
+  named worst outcome and which no existing check can see because every ceiling was met.
+
+### Changed
+
+- **The readers see the six raw onboarding answers, and this amends `A5` by name** (`C-D8`,
+  granted with all five conditions intact). One decrypt site, in F3's assembler through
+  `queries/onboarding.ts`; **not one decrypted byte reaches the browser**; `<jawaban>` fences it;
+  and **a skipped answer stays skipped**, because a reader who asks about the thing you refused to
+  answer is the worst version of this feature. A skipped answer's *key* appears nowhere either, so
+  the model cannot learn the question exists and was declined.
+- **`/privacy` amended at all seven touch points and both onboarding hints amended, in both
+  locales.** The reconciliation's most serious finding rather than a footnote.
+- **`prose.test.ts`'s payload ceiling moves 20,000 → 23,000, the first widening it has ever had,
+  with the written reason that file demands.** v0.7.0 adds a whole screen and 39 `chat.*` keys
+  across three workstreams — 1,848 bytes, 8.7% of the catalog; `id` measures 21,161 over 376 keys.
+  **Nothing was relaxed to fit**: every one of the 39 is chrome, the longest is 84 characters,
+  `MAX_VALUE` did not move, and `/chat` renders no authored document. **The new headroom is
+  deliberately tighter than the 21% this started with**, so the next screen meets the same test.
+- **A chat message is never translated** (`C-D9`). `TRANSLATABLE` gets no entry and `translations`
+  no `entity`: translating one would make Thessaly say something she did not say, in a room where
+  the querent can see the original. The chrome still follows `t()`; a bubble carries its own `lang`
+  and the page does not.
+- **`CHAT_LENGTH_BUDGET.en.maxWords` moved 22 → 24 and then 24 → 27, both times on evidence, both
+  times for one reader in one locale.** At 24, Margaret's English came in at 25–31 against a
+  resolved 31 and **two runs of three lost a bubble to `too_long` — both casualties reader-to-reader
+  beats, the most distinctive mechanic this release has.** The confirmation run had no `too_long` at
+  all, delivered her at 31, 32 and 34, and overlap stayed at 0.017–0.076, so **the readers did not
+  converge when the ceiling moved**, which was the risk. `maxChars` deliberately did not move — her
+  longest stored English bubble was 164 characters against 312, so moving both would have been a
+  change with evidence for half of it. **If a third round moves it again the lever is wrong**, and
+  the answer is a per-(locale, reader) multiplier rather than a third raise.
+- **`CHAT_SENTENCE_RATIO` back to 1.5 from the plan's 1.25.** The plan lowered it fearing that at a
+  22-word bubble the ratio compresses. Measured 1.96–4.94 across six runs: it does not.
+- **`sweep`'s cron header corrected in place** — `17 3 * * *` is 10:17 WIB, not 03:17, because
+  Vercel cron is always UTC; and the claim that the free plan allows "a small number of cron
+  invocations" is 100, verified 2026-08-07.
+- **`ADMIN_MODEL` is one variable for all three admin model calls and points the other way**
+  (2026-08-01, Miftah's ruling; `src/lib/admin/model.ts`, a LEAF). The Insight button, Auto Format
+  and `Terjemahkan otomatis` are the only sites whose caller is the operator, and
+  `flagCoverage.test.ts` already named them as one class — **so three variables would be three
+  chances for one dashboard to answer in two different voices.** `insight.ts`'s header used to be
+  titled *"NO INSIGHT_MODEL VARIABLE"* and left the door open in as many words; the reason it
+  predicted is the reason this landed.
+- **The Insight prompt asks for a finding, not a summary.** It asked *"apa yang dikatakan
+  angkanya"* and got a tally back — true, and worth nothing under a chart the operator had just
+  read. It now asks for problem → one piece of evidence → one concrete step, bounds a suggestion to
+  what this dashboard can do, and **names *"tidak ada masalah"* as a CORRECT answer** so the model
+  does not invent a finding to be useful. **The false-positive half is the expensive one** and gets
+  a list of what is NOT a problem plus *if you are unsure, it is not*: an operator sent to chase a
+  healthy panel stops reading the box.
+- **`validateInsight` grew a `tally` refusal and it is still shape, not truth** — every sentence
+  carrying a digit over ≥3 sentences, or any one sentence carrying ≥5 numbers, both tuned to
+  ACCEPT. `NUMBER`'s class holds the hyphen, or a finding that cites its own date counts as three
+  numbers and is refused.
+- **`prices.ts` carries a `glm-5.2` row at zero, dated the day a human opened the pricing page**
+  rather than backdated like its neighbours, with the verified pay-as-you-go figures in the note as
+  a **counterfactual and not as the rate** — that would make `costUsd` quote a bill nobody receives.
+- **CLAUDE.md gains `## The z.ai plan`, and it exists because the wrong inference was already drawn
+  once.** A session that reads z.ai's current docs and stops there concludes this repo's prices and
+  its call ceiling are wrong. They are not: the plan is a **legacy annual Pro Coding Plan bought
+  February 2026**, `devpack/transition` cancelled auto-renew for exactly that class on 30 April
+  2026, and it predates GLM-5.2 entirely. **The argument works by modus tollens** — an out-of-plan
+  call would `1113` against an unfunded balance, production readings work, therefore the calls are
+  plan-served and zero is true. **The generalisation is the mirror of this repo's own trap**: not a
+  fact that rots because nobody re-runs it, but a fact the repo *can* re-run, re-runs correctly, and
+  still gets wrong, because the page describes what is sold today and the account is on something
+  older.
+
+### Fixed
+
+- **An integration fixture had been red for eight days and it was a time bomb, not a defect.**
+  `userList.integration.test.ts` seeded a ledger row with `local_date: '2026-07-20'` and left
+  `created_at` at its `now()` default; `userCostLeague` windows on `created_at`, so the row was
+  inside the range while the clock was still in July and **stopped being on 2026-08-01** — the
+  aggregate came back `null` and read as `adminUserListPage` having broken.
+  `metrics.integration.test.ts`'s `row()` helper documents this exact trap in its header and pins
+  both clocks for every fixture; **this is the same lesson paid for twice.** Now pinned, plus a
+  **negative control that turns the seam into an assertion** — a row inside the range by
+  `local_date` and outside it by `created_at` must not be counted — which is what stops the next
+  person "fixing" the fixture by switching the query, and which states the real consequence: a call
+  at 23:00 WIB on the 31st can make the same querent's figures differ between `/admin/users` and
+  `/admin/users/[id]`. A scan across every other integration fixture found no second bomb.
+- **`now()` is frozen inside a transaction, so two bubbles from one beat shared a microsecond and
+  ordered by random uuid.** The room would have rendered a reader's two sentences in either order,
+  differently on each page load, with nothing looking broken. Found by the keyset-pagination test;
+  the context integration test writes explicit timestamps for the same reason, and failed one run in
+  three before the fix.
+- **`greatest(col, $date)` in a raw `sql` template throws at runtime on a green typecheck** — there
+  is no column for drizzle to hang an encoder on. The neighbour of `answersUpdatedAt`'s
+  `sql<T>`-is-an-assertion rule.
+- **A histogram on `/admin/chat` is `InlineBars`, not `StackedBar`, and only a 1440px screenshot
+  showed it.** `stackSegments` normalises every row to 100% of its own total, so a one-segment row
+  is always full width: rendered live, the beat histogram was `0 beat` at full width beside five
+  empty outlines and the intent histogram was six identical empty outlines. **The distribution,
+  which is the entire content of those panels, encoded nothing** — and the plan had asserted the
+  opposite. The same property makes `chat.cast`'s bar *lengths* meaningless, so its copy now says to
+  compare the numbers at the row ends. Two more the shot caught: the tiles sat flush against the
+  bars, and the two quota meters came out different widths because `.lead` is `max-content 1fr`,
+  right for a hero beside a meter and wrong for a meter beside a meter on a panel built for
+  comparison.
+- **`chat.opened.from = 'attach'` could never have fired.** F4 matched a literal `?from=attach`,
+  but one URL key carries two features and the presence of `?attach=` is what means it — so every
+  attach-initiated open would have reported `'direct'`, the one entry point that prop exists to
+  distinguish. Decided on the server and read from a ref, because the event fires after two awaited
+  fetches and by then the URL has been tidied.
+- **The draw screen's attach would have 400'd on every press.** The plan said `from: 'reading'`;
+  F1 had folded the event into `chat.message_sent.attached_from` with the union
+  `'history' | 'draw' | null` and the route's zod enum matches — wrong on exactly one of the two
+  surfaces, and the one a querent reaches most often.
+- **`chat.typing.one` could not exist.** `PluralKey` is derived as `StripOne<MessageKey>`, so a key
+  ending in `.one` declares a plural family and `catalog.test.ts` then demands a matching `.other`.
+  It was never a plural — the room shows one indicator at a time, because beats execute serially.
+  **In this catalog a suffix is a TYPE, not a name.**
+- **`usianya` contains `ianya`, so an ordinary Indonesian word failed the Malay grep**, and
+  `datamu` matched inside `biodatamu` and refused the best sentence in a calibration run — a reader
+  *denying* that it holds a file on you. The source tells are now bounded at the head and open at
+  the tail: closed at the head because a prefix is where the accidents are, open at the tail because
+  a real run produced "kamu pernah ceritain sendiri".
+- **The reader-to-reader lever was measuring nothing, and the fix was to retire the number rather
+  than push the prompt.** It was recorded as "0% across five runs and ~40 beats". Both halves were
+  wrong: joined runs measure 5–13%, and **the zero was an artefact of the fixture** — with no voices
+  attached the room never accumulates generated bubbles, so the director had four hand-written
+  reader lines to point at instead of a thread growing under it. **A director-only run is the wrong
+  instrument for a lever about the room answering itself.** And the prose does it far more often
+  than `to` says: *"he's right though"* and *"she said it like a checklist"* are both the room
+  talking to itself and both score as help-desk beats. **Two prompt pushes were spent on this before
+  the join existed and the second had to be reverted.**
+- **Rule 1 was biased hard toward one beat and the model obeyed it exactly** — *"Kebanyakan run
+  cukup SATU. Dua sudah ramai"* plus *"kalau ragu, artinya tidak perlu"* produced a 1:7 / 2:0 cast
+  mix, which is three readers taking turns being the only reader. Rewritten to name the *case* for a
+  second beat, with "if in doubt, no" scoped to the third.
+- **Rule 6 needed the actual strings.** *"wkwk iya sih"* was answered with an `answer` quoting a
+  four-minute-old message. Naming the shapes — *tawa* ("wkwk", "haha"), *tanda setuju pendek* ("iya
+  sih", "oke") — moved it to `beats: []` in every run since. **A description of brevity does not
+  produce brevity; a list of the words does.**
+- **The director did not know what `BAHAN` was for.** `assemble.ts` had rendered `BAHAN:` /
+  `MATERIAL:` above the window since F2 and the ten rules never named it. On a `user_message` run
+  that costs nothing — the newest line in the window obviously *is* the trigger — but **on a
+  proactive run it is the whole feature**, because the newest line is hours or days old and the
+  reason the room was woken is not in the window at all. Measured across three runs: 3 of 6, then 4
+  of 6 with the note table calibrated, then **5 of 6 with rule 11 and a third worked example, and it
+  reaches the BUBBLES**. The fix was a **worked example, not a longer rule** — the blog editor's
+  `at:` lesson, one release on.
+- **`OP_ORDER`'s header said "The ten" over an eleven-member array, `analytics-queries.md` said
+  ten and named only `insight`, and `copy.ts` said "Sepuluh op".** Seam S10 asked for a
+  cost-per-reading denominator to be corrected; **a full sweep found no such arithmetic anywhere in
+  this repository.** What exists is the *rule* about one, stated in prose four times, **three of
+  them already stale** — so the honest reading was to fix the rule and give it one machine-checked
+  home rather than invent a tile in order to have something to correct.
+
+### Removed
+
+- **`attachmentBlock.ts`'s private fixpoint loop, and the scaffolding comment that asked for its
+  own deletion.** Its `</lampiran>` guarantee was **stated and false** while the tag was not in
+  `sanitize.ts`'s alternation; it is now true for the same reason every other fence here is.
+- **The plan's `direct/plan.ts` facade, `direct.ts` and `index.ts`, drafted and never built.**
+  F1's `plan.ts` is already the former and is named **by string** in `callClass.test.ts` and
+  `flagCoverage.test.ts`; an index would be a second import surface with one consumer. The facade
+  is `system.ts` / `system.{id,en}.ts` and **the exported function names stay the plan's**, so the
+  prose remains greppable against the document that specifies it.
+- **The reader-directed *rate* as a tuning target.** The runner now labels it **a floor, not a
+  rate**, with *"DO NOT TUNE THE PROMPT AGAINST THIS"* beside it, and the release question it
+  belonged to was rewritten to ask it of the prose. **Nothing in the prompt was changed for this,
+  and that is the point.**
+- **`ChatSurface`'s four-value union, drafted and never built** — it lost its consumer when
+  `chat.button_clicked` was folded away with the sentence *the click IS the open* and
+  `chat.opened.from` narrowed to three values. **`ChatButton` tracks nothing**; the entry point
+  travels as `?from=button` and the room fires the event once.
+- **`top` from the `recurring` proactive facts**, so the card's name appears exactly once — the
+  `reading` note's reasoning inverted for a material whose subject IS the card.
+- **A `CHAT_PLANNER_MODEL`, refused rather than added for symmetry.** Its only effect would be
+  letting somebody make the director dumber than the readers it directs, at 2am, and never notice.
+- **A `CHAT_ATTACHMENT_BODY_CHARS`, refused for the same class of reason**: F6 shipped
+  `ATTACHMENT_BODY_MAX_CHARS` with a measurement behind it, and a second cap on one string is two
+  numbers that must agree.
+
+### Security
+
+- **`audit-secrets.ts` walks `src/lib/chat/**`, and it was verified by making it fail** — a
+  tripwire nobody has seen fire is a tripwire nobody knows is connected. Before this, the
+  non-negotiable was **unenforced for every string F3 would write**, and the "derived ZERO needles"
+  guard could not fire because the two old directories kept the count non-zero. `lib/chat/` also
+  joined `FORBIDDEN_IMPORTS`, which catches the leak in the **source**, transitively, in one second,
+  with the whole chain named. Both directions were checked and reverted, and the **two-hop** one is
+  the one that matters: `clientBoundary.test.ts` fences the direct import and does not know the
+  `type` keyword.
+- **`chat_messages.body` is text a person typed, in plaintext** (`C-D20`) — `readings.question`'s
+  neighbour in every privacy commitment. **Never log a driver error from any path that runs a chat
+  query**, `events.props` carries a length and never a body, and **nothing in
+  `queries/admin/chat.ts` selects the column at all.**
+- **A posted message goes through the W7 gate, and a refusal is never in a reader's voice**
+  (`C-D13`): `RefusalNotice`, not a bubble, because a reader who refuses you is a friend who refuses
+  you. **The classifier is not "tightened" for this surface** — grief, illness and a frightening
+  partner are what the room is for — and **a reader's own output is not classified.** Verified live:
+  Tier-A harm refused 403 with nothing stored, and *"haruskah aku pergi dari suamiku yang kasar"*
+  allowed through, which is the whole point.
+- **Four prompt rules make `C-D8` survivable and each is asserted separately because each is
+  separately deletable**: you may ASK, you may not COPY a sentence, you may not NAME a person from
+  `<jawaban>`, and **you may never say how you know.** The failure this release can produce is not a
+  forbidden word — it is *"kamu pernah bilang neneknya meninggal waktu SMA"*: true, sourced,
+  correctly recalled, and the ugliest sentence available. The prompt is one of four guards;
+  `validateTurn`, the smoke greps and the blind read are the others.
+- **The director sees the room and nothing about the person, enforced by construction.**
+  `PlanInput` has no field for a nickname, a birth date, the Lotus or an onboarding answer — a
+  director that also read the six answers would make condition 1 false on the day it shipped, for
+  zero gain, since its job is *who speaks*. A contract test asserts it on the source: no
+  `getAnswers`, no `decryptField`, no `<jawaban>`, no `profile: 'voice'`.
+- **The block order is the injection answer.** Four fenced blocks and exactly one unfenced one, so
+  *"abaikan aturan di atas"* lands inside `<obrolan>`, which the contract has already declared to be
+  material. The test asserts every angle bracket in the user turn belongs to one of the fences, and
+  **the builder strips its own material**, because `chat_messages.body` stores what a person typed
+  verbatim.
+- **There is no random number generator anywhere under `direct/**`, asserted as a grep with
+  comments stripped.** The tempting shortcut is a coin flip — silence 20% of the time, two beats 35%
+  — and it is refused on three grounds. **A room that is quiet at random is not quiet for a reason**,
+  and the silences land on the messages that deserved an answer. It destroys the only instrument this
+  release has, because a dice roll produces a different sheet for the same input and *"did my prompt
+  change help"* stops being answerable. And **it hides a broken director behind a plausible
+  distribution**: a model that has stopped returning JSON and a model that is deciding well produce
+  the same histogram once a coin flip is in front of them.
+- **A run never chains**, asserted as a second grep: nothing under `direct/**` may reach `mintRun`
+  or the engine. **The failure mode is not a bug, it is a loop** — beat 4 of run 1 mints run 2, whose
+  beat 4 mints run 3, nothing throws, and then every reading in the fleet starts being shed. Every
+  legitimate reason to keep going is already a trigger.
+- **`/readers/*` gets a middleware-matcher entry and its own cache header.** Without the first,
+  middleware runs on every avatar and puts a `Set-Cookie` on a static image — **per message
+  rendered**, since this is the one asset class a signed-in querent hits on every chat render. The
+  header is `max-age=86400` plus a week of `stale-while-revalidate` and **not `/cards/*`'s year of
+  `immutable`**: the crop table will be tuned after somebody sees it on a phone, and three
+  non-content-hashed filenames plus `immutable` means every install keeps a bad crop until 2027.
+  That exact mistake was made once already, with `/wallpapers/`.
+
+### Known gaps at this tag
+
+- **Nothing here has been deployed.** Migration `0014` is committed and unapplied in production,
+  which is the exact shape of the worst outage this project has had — `npm run build` runs the
+  deploy migration first and fails rather than skipping, so the rail is there. **Everything v0.6.0
+  listed as undeployed is still undeployed**, including `0013`, `ADMIN_EMAILS` and the five older
+  kill switches, and **six new environment variables must be set on Vercel before the room works as
+  designed**: `CHAT_MODEL`, `ADMIN_MODEL`, `CHAT_ENABLED`, `CHAT_PROACTIVE_ENABLED`,
+  `CHAT_ANSWERS_ENABLED` and `LLM_WINDOW_CHAT_CEILING`. **`CHAT_MODEL` unset is not an outage but is
+  a different room**, and the three defects it produces are named above.
+- **Loop 6 is deliberately unspent, and it is the largest gap in this release.** Miftah is the only
+  user of this app and is testing the phone half directly on production. Unmeasured on hardware: the
+  composer with the keyboard up — it is a grid row and not `position: fixed`, which is the decision
+  most likely to be wrong and the one WSL cannot judge; the bubble and the whole-card tap target at
+  375; the staged attachment; and the three avatar crops, which is what their cache header is short
+  for. **The iOS standalone Google sign-in remains the largest unverified risk in the project.**
+- **The voices still invent an occasional specific, and `base.{id,en}.ts` already forbids it in as
+  many words.** `glm-5.2` lowered the rate without reaching zero — *"How many days since you last
+  talked to your mum"*, *"that first year on your own"*. **Not shape-testable, and it must not be
+  faked with a test that pretends to be**: `validateTurn` refuses shape, not truth. A reader who
+  invents your mother is worse than one who says nothing, so **this is the sharpest naturalness risk
+  left and it is loop 6's to judge.**
+- **`recurring` is the one of six proactive materials that does not reliably land**, across four
+  measured runs in two locales, and it is recorded rather than chased: two prompt pushes were already
+  spent chasing a number before the join existed and the second had to be reverted. **A third would
+  be chasing variance.**
+- **Two director numbers are out of band and were not tuned.** The English ask rate is 56% against a
+  25–35% target and the Indonesian silence rate swings 11–33%. The fixture is nine probes chosen to
+  test **rules** rather than to be representative traffic, and temperature is unset by design.
+  **Measure on real traffic before moving rule 6 or rule 7.**
+- **The director's persona sketches are three one-line summaries and the cost is drift.** The full
+  blocks are not imported, for two sufficient reasons — a director holding 2,400 characters of
+  persona instruction is being invited to draft the message, and it runs on every run against a quota
+  where sixty runs exhaust the app's five hours. **If the director starts routing wrongly the
+  sketches are the first thing to read.**
+- **`LLM_WINDOW_CHAT_CEILING` is unexercised outside the route.** The smoke script calls `complete()`
+  directly, so it charges the fleet meter and never `reserveChatCall`. Related, and measured: **five
+  smoke runs in twenty minutes tripped the fleet soft ceiling** and a run died mid-transcript at
+  exactly 196 calls — 280 × 0.7 — on the **local** SRH counter. The reset before a calibration session
+  is a `DEL` of the two `llm:window` keys; raising the ceiling would work too and is worse, because it
+  changes the thing being measured.
+- **`GET /api/chat/messages` fans out one lookup per distinct attached reading in the page.** If it
+  ever matters the repair is a **batched read and never a cap**, because a cap draws
+  `chat.attachment.gone` under a reading that is right there in the table.
+- **A reply target that has scrolled out of the forty-row window resolves to null**, and the
+  three-line recoveries `voices/pace.ts` and `context.ts` make for inputs their signatures do not
+  carry are written into their headers rather than solved. `checkPlan` **cannot** refuse a zero-beat
+  proactive plan through `validatePlan`; the trigger-aware refusal ships at the four call sites
+  instead.
+- **`'persona'` is still a live `share_links` union value resolving to null**, `share.viewed` has
+  still not been observed firing, `src/content/blog/**` is still committed and still no longer the
+  source, and the four launch rows keep their old hero `alt` until `blog-import.ts` is re-run.
+- **`npm run test:all` still fails ~12–22 of V9's limiter tests** — the harness race on the one
+  shared `serverless-redis-http`, not a regression. `npm test` passes **3593** across 189 files and
+  `npm run test:integration` passes **642** across 45; run the two projects separately for a true
+  answer.
+
 ## [v0.6.0] - 2026-07-31
 
 **v0.5.0 built the surface the operator can see. v0.6.0 is what happened when the
@@ -1939,6 +2413,7 @@ app as it now stands. The iOS tree is preserved on `feat/ios` and
 - Two superseded design exports; the Clickable export is the single visual
   reference. Both remain in history at `d7fdd89`.
 
+[v0.7.0]: https://github.com/miftahulmahfuzh/JMTarot/releases/tag/v0.7.0
 [v0.6.0]: https://github.com/miftahulmahfuzh/JMTarot/releases/tag/v0.6.0
 [v0.5.0]: https://github.com/miftahulmahfuzh/JMTarot/releases/tag/v0.5.0
 [v0.4.0]: https://github.com/miftahulmahfuzh/JMTarot/releases/tag/v0.4.0
