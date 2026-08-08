@@ -10263,23 +10263,77 @@ competing for attention in a prompt whose length is the thing being calibrated, 
 removed. `## Localization`'s standing instruction against *"chasing variance"*, applied to a
 director instead of a word budget.
 
-### The lever that did not land, recorded rather than fixed
+### The lever that read 0% — CLOSED, and it was the METRIC that was broken
 
-**Reader-directed beats are 0% across five runs and ~40 beats.** Not one beat set `to` to a
-reader, in either locale, including on the probe that literally asks one reader whether she
-agrees with another. The beats are *reader-aware* — their angles name Thessaly, they answer what
-she said — they simply address the querent while doing it, which is also how a real group chat
-often reads (*"nah, tapi kata Thessaly tadi…"*). §11 calls 0% *"three parallel help desks in one
-window"*, and the honest position is that the metric and the phenomenon have drifted apart:
-`to` is a prompt fact for `validateTurn`'s address check, not a measure of whether the room talks
-to itself.
+**Recorded first as *"the one lever that did not land"*: reader-directed beats were 0% across
+five director-only runs and ~40 beats.** §11 calls 0% *"three parallel help desks in one
+window"*, and the obvious next move was another prompt push. **Both halves of that reading were
+wrong, and `--chat --director --voices` is what showed it.**
 
-**Two things a future session should try before touching code**, in this order: the worked
-example is the lever that has worked twice, so give the Indonesian example a second beat whose
-`to` is a reader *and* whose angle is plainly about that reader; and if that fails, measure
-whether the ANGLES name another reader, which is the thing actually being asked for.
-**`CLAUDE.md`'s standing rule applies — the fix is the prompt and never the validator**, and
-`checkPlan` must not start deriving `to` from the angle.
+**1. It is not 0%.** Joined runs measure **5–13%** — `adrian -> thessaly` fired in the first
+Indonesian joined run and in the English one. The earlier zero was **an artefact of the
+fixture**: with no voices attached, the room never accumulates generated bubbles, so the director
+had four hand-written reader lines to point at instead of a thread that was actually growing
+under it. **A director-only run is the wrong instrument for a lever about the room answering
+itself**, and nothing about that was visible until the two halves were joined.
+
+**2. And the prose does it far more often than `to` says.** Three lines from one run, all with
+`to: user`:
+
+```
+adrian   (tease):  so is this actually happening or is it just your monthly move-out rehearsal
+thessaly (ask):    he's right though. you need somewhere to go first.
+adrian   (answer): yeah i do. but she said it like a checklist and that's not what's stopping
+                   you. your dad is.
+```
+
+*"he's right though"* and *"she said it like a checklist"* **are** the room talking to itself, and
+the metric scores all three as help-desk beats. The one that did set `to` is the one that reads
+most like a group:
+
+```
+thessaly (answer):      that's my point. start looking today, give notice once you find something.
+adrian -> thessaly:     she knows that, Thess. she's stalling because the whole thing feels
+                        heavy, not because she forgot how apartments work.
+```
+
+**RULING: `to` IS A PROMPT FACT, NOT A NATURALNESS METRIC, AND §11's LEVER IS RETIRED AS A
+NUMBER.** It exists so `build.ts` can write `Bicara kepada:` and so `validateTurn` knows whether a
+nickname may appear; it was never a count of anything. **The instrument for *"does this room talk
+to itself"* is the joined blind read and nothing else** — which is also the answer §15.4 gives to
+its own question 3. The runner still prints the two counts, now labelled as what they are.
+
+**Nothing in the prompt was changed for this**, and that is the point: **two prompt pushes were
+spent on a lever that was measuring the wrong thing**, and the second one (`[F2-19]`'s reverted
+rule-4 clause) cost the cast mix. `CLAUDE.md`'s standing rule survives intact — the fix is the
+prompt and never the validator, and **`checkPlan` must still never derive `to` from the angle.**
+
+### `--chat --director --voices`, the join, and why it is the release's real gate
+
+The third mode: the real director plans, and the real voices execute its beats into a room that
+grows under them — `C-R5` exactly as `run.ts` does it, including `C-R7`'s one retry. Fixture
+context, no database, no browser, and `chatFixtureContext` is **one builder shared with
+`--chat`** so the only difference between the two runs is the sheet.
+
+**`--chat` cans the sheets and `--chat --director` cans the voices, each so a failure in one is
+not read as a failure in the other. Neither can see `[F2-2]`** — a sheet that reads well and
+produces three paragraphs that sound alike — because that failure only exists where they meet.
+
+**The canned reader lines are context and are excluded from the blind read.** They are written by
+hand in the readers' voices to set the probes up, so putting them in front of somebody guessing
+who is who would be marking my own homework. The querent's lines stay, as scaffolding.
+
+Measured over a joined run of both locales, 17 beats: **every voice turn passed on attempt 1**,
+`fallback rate 0%`, one `self_reply` repair and one `angle` repair. The `self_reply` is `P4`
+working in the wild — Thessaly quoted her own message, the pointer was nulled, the beat survived,
+and it produced *"he's right though"*, the best line in the run. **A repair that dropped the beat
+would have deleted it.**
+
+Two numbers that are out of band and are recorded rather than chased: **the English ask rate is
+56%** in two separate runs against a 25–35% target (rule 7 already says *not every run*), and the
+**Indonesian silence rate swings 11–33%** across runs. The fixture is nine probes chosen to test
+RULES rather than to be representative traffic, so neither number is traffic-shaped — and
+temperature is unset by design. **Measure on real traffic before moving rule 6 or rule 7.**
 
 ### What is measured and cheap
 
@@ -10301,11 +10355,18 @@ whether the ANGLES name another reader, which is the thing actually being asked 
 
 ### Still open when F2 landed
 
-- **Nobody has read the BUBBLES that came out of a real beat sheet.** `--chat` cans the sheets
-  and `--chat --director` cans the voices, deliberately (a failure in either would otherwise be
-  indistinguishable). **The two have never been joined**, and `[F2-2]`'s failure mode — a sheet
-  that reads well and produces three paragraphs that sound alike — is only visible when they
-  are. That is the honest last gate on `[C-N1]` and it needs F4's `/chat` or a third smoke mode.
+- **CLOSED by `--chat --director --voices`** (and independently by F4's first joined run through
+  `/chat`). The bubbles that came out of real beat sheets have been read, in both locales; the
+  section above is what they showed.
+- **THE LOCAL `llm:window` COUNTER IS SHARED BY EVERY SMOKE RUN AND EVERY DEV PAGE LOAD, AND IT
+  SHEDS CALIBRATION RUNS SILENTLY-ISH.** The first joined run died on
+  `ModelCeilingError (soft)` — `C-D6` working perfectly, on a counter that four calibration runs
+  plus F3's and F4's had already filled, and F4's own joined run lost its third beat to the same
+  thing. It is a **local** SRH on `127.0.0.1:8079` (`.env.local`'s own header records the day it
+  pointed at production instead), so the honest reset before a calibration session is
+  `DEL jmt:rl:280:18000:llm:window:<bucket>` and its `llm:chat:window` sibling over SRH's HTTP
+  API. **Raising `LLM_WINDOW_CALL_CEILING` for the run would work too and is worse** — it changes
+  the thing being measured.
 - **`direct/prompt.ts` has no test at all.** It imports `@/lib/db/client`, so Vitest cannot load
   it; `contract.test.ts` asserts its fences on the source and every decision it makes lives in a
   pure module. The memo's behaviour under a real run is unverified — same standing as
