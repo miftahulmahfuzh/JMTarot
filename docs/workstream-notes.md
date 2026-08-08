@@ -10831,14 +10831,9 @@ against a 24 ceiling (Margaret 31). No tally, no empty opener, no bare greeting.
 ### Still open when F5 landed
 
 - **THE MATERIAL REACHES THE VOICE ONLY THROUGH THE DIRECTOR'S `angle`, AND THE DIRECTOR'S SYSTEM
-  PROMPT NEVER MENTIONS `BAHAN:`.** `assemble.ts` renders the line and `system.{id,en}.ts`'s rules
-  do not refer to it, so the model treats it as an unexplained header and often plans from the
-  newest transcript message instead. Measured: after the note calibration, `recurring` and `lotus`
-  still produced prose about the room rather than about the material. **This is F2's file and F5 may
-  not edit it** (roadmap §7: *must not touch the director's prompt*), so it is recorded rather than
-  fixed. The repair is one rule in the director's contract naming `BAHAN` as the reason the room is
-  being woken, plus a worked example — `insightPrompt.ts`'s finding-not-summary lesson, and the blog
-  editor's *"the index rule needs a worked example, not a definition"*, in a third place.
+  PROMPT DID NOT MENTION `BAHAN:`.** Recorded here as F5 left it, and **CLOSED the same day** by
+  the F2 amendment in the section below. F5 could not close it: roadmap §7 forbids this workstream
+  from touching the director's prompt, so what F5 shipped was the measurement and the diagnosis.
 - **One plan in twelve came back `unparseable`** — glm-4.6 emitted a duplicate `angle` key in one
   beat. `checkPlan` refused it and production would have fallen back to one beat; the smoke run
   fails loudly on it, which is F2's own rule (*any fallback rate is a prompt problem, not a
@@ -10856,3 +10851,93 @@ against a 24 ceiling (Margaret 31). No tally, no empty opener, no bare greeting.
 - **The blind read prints all six runs as one stream.** Guessing who is who works; guessing which
   run was which material is easier than it should be from the ordering. A per-run separator inside
   the blind block would fix it and would also make the material key readable against it.
+
+---
+
+## The `BAHAN` rule — an F2 amendment from F5's measurement (v0.7.0, 2026-08-08)
+
+**A line nothing in the rules referred to.** `assemble.ts` has rendered `BAHAN:` / `MATERIAL:`
+above the window since F2, and `system.{id,en}.ts`'s ten rules named `KECOCOKAN`,
+`MENUNGGU JAWABAN`, `[belum dijawab]` and `BAHASA TERAKHIR` — **and never `PEMICU` or `BAHAN`.**
+For a `user_message` run that costs nothing: the newest line in the window obviously *is* the
+trigger. For a proactive run it is the whole feature, because the newest line in the window is
+hours or days old and **the reason the room was woken is not in the window at all.**
+
+### What was measured, and why it needed three runs to see
+
+Six live proactive fixtures per run, glm-4.6, `npm run smoke -- --chat --proactive --locale id`.
+
+| Run | Change under test | Runs visibly about their own material |
+|---|---|---|
+| 1 | F5 as first written | **3 of 6** — `reading`, `recurring` and `lotus` planned from the transcript |
+| 2 | the note table calibrated (`hal baru sejak ruangan ini terakhir bicara: …`) | **4 of 6** — the `reading` run's ANGLE named the cards; its prose still did not |
+| 3 | + rule 11 and a third worked example | **5 of 6**, and the material now reaches the BUBBLES |
+
+**Run 3's evidence, in the prose rather than in the angles**, which is the only place it counts:
+`occasion` had **both** beats greet the birthday where run 2 had one; `reading` produced *"The
+Star-nya muncul berarti dia tahu kok kalau ditunda malah gak sehat"*; `lotus` produced *"karena
+akhirnya kamu berhenti diam"*, which is the Lotus summary said back in Margaret's voice; `orphan`
+correctly stayed about the transcript, **because for that material the transcript IS the
+material.** `recurring` improved to using the dominance word in its angle and still named no card
+in the prose — the one of six that did not fully land.
+
+### The three parts of the repair, and why each is shaped as it is
+
+**1. A THIRD WORKED EXAMPLE, not a longer rule.** This file's own header already carries the
+lesson twice — *"THE INDEX RULE NEEDS A WORKED EXAMPLE, NOT A DEFINITION"*, from the blog editor's
+`at:` bug, where an accurate description read backwards and three live runs after `[0] → at:0`
+produced zero rejections. So the proactive shape is **shown**: a header with `PEMICU` and `BAHAN`,
+a window whose newest line is a day old, and a plan in which **no beat replies to it and both
+`reply` fields are null.** `system.test.ts` asserts that third example parses, survives `checkPlan`
+against its own printed window with zero repairs, and **quotes nothing** — a `reply` pointing into
+that stale window would teach the exact behaviour rule 11 exists to stop, with a worked example's
+authority.
+
+**2. Rule 11, in four bullets**, each of which fails differently if deleted: the material is what
+the run is about; **do not answer the stale line as though it had just arrived** (the behaviour
+that was actually wrong); `reply` is null unless the material names a message; and `beats: []` is
+**not** the answer here, which is `[F5-7]` — nobody spoke, so there is nothing to decline to
+answer, and `[F5-13]`'s counter already spent the querent's day at the mint.
+
+**3. RULES ARE REFERRED TO BY NAME, NEVER BY NUMBER.** The first draft said *"aturan 1–10 berlaku
+seperti biasa"* and *"Aturan 6 soal diam"*, and `[F2-9]`'s digit test caught both — every digit in
+the system half must be an address, an interpolated cap or a rule number at the start of its own
+line. **The right fix was the prose, not the fence**: the existing rules already say *"Baris
+KECOCOKAN"* and *"Baris MENUNGGU JAWABAN"* rather than citing numbers, so rule 11 now says
+`Aturan DIAM ITU BOLEH` and `seluruh aturan di atas`. Widening the stripper would have bought one
+sentence at the cost of the guarantee.
+
+### What it cost, stated because the director runs on every run
+
+**The plan prompt went from ~2,700 to ~3,500 input tokens, about +30%.** `[F2-10]` refuses to
+import the persona blocks partly because *"doubling the plan prompt for a routing decision spends
+the one thing this release is actually short of"* — +30% is well inside that and was spent on the
+one thing the director could not otherwise know, but it is the number to watch if a fourth example
+is ever proposed.
+
+**And bubbles got longer.** Mean words per bubble moved 9.7 → 14.8 across the same eleven-bubble
+run, with one Margaret bubble at 26 against the base ceiling of 24 (legal — her multiplier allows
+31). Nothing failed and the direction is explicable: a run with real material has more to be about
+than a run improvising off an old transcript. **If the mean keeps climbing, the instrument is
+`CHAT_LENGTH_BUDGET` and not this prompt.**
+
+### Still open
+
+- **`recurring` is the one of six that does not name its own subject in the prose.** The dominance
+  word reaches the angle and the card names do not reach the bubble. V3's rule is why the material
+  cannot simply be shouted louder — *the counts are deleted, not forbidden* — so the honest next
+  step is a run with a different top pair to find out whether this is the fixture or the prompt.
+- **`checkPlan` STILL CANNOT REFUSE A ZERO-BEAT PROACTIVE PLAN**, which is seam S-new-3 and
+  `[F5-7]`. Rule 11 now tells the model not to, and **the prompt is not the enforcement.**
+  `validatePlan` has `input.trigger` in hand and does not pass it to `checkPlan`; threading it
+  would make a zero-beat proactive plan fall to `planFallback`, which produces one beat when the
+  material is present. That is a small change and it is F2's to make.
+- **One plan in twelve came back `unparseable`** across runs 2 and 3 (a duplicate `angle` key from
+  glm-4.6, in run 2 only). Run 3 refused none of six.
+- **A hallucinated noun in one bubble**: the `unanswered` run produced *"cuma nanyain kabar apa mau
+  ngomong soal ambulans"* — nothing in the fixture mentions an ambulance. That is a voice-layer
+  finding rather than a director one, `validateTurn` refuses shape rather than truth, and it is the
+  second reason to read this instrument by eye rather than by its exit code.
+- **The English half of the amendment is unread.** `--chat --proactive` runs one locale by default,
+  and the third example and rule 11 in `system.en.ts` have been asserted by `system.test.ts` and
+  never seen against a live model.

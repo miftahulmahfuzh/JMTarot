@@ -88,6 +88,37 @@ describe('the contract carries its rules, in both locales', () => {
    * reviewer who sees an English example about a work deadline knows in five seconds that
    * somebody translated the file.
    */
+  /**
+   * **THE `BAHAN` RULE, ASSERTED BY NAME BECAUSE IT WAS ADDED FROM A MEASUREMENT AND WILL
+   * OTHERWISE READ AS FURNITURE** (F5's amendment, 2026-08-08).
+   *
+   * `assemble.ts` renders a `BAHAN:` / `MATERIAL:` line on every proactive run and the rules
+   * did not mention it, so the model treated it as an unexplained header and planned from the
+   * newest line in the window instead — measured over six live proactive runs, twice, with
+   * `recurring` and `lotus` producing prose about the room rather than about the material.
+   *
+   * The three clauses below are the whole repair, and each fails differently if deleted: the
+   * label is what the model looks for, the *do not answer the stale line* clause is the
+   * behaviour that was actually wrong, and the *not silence* clause is `[F5-7]` — a
+   * zero-beat proactive plan spends the querent's daily budget on nothing, because
+   * `[F5-13]`'s counter increments at the mint and does not refund.
+   */
+  for (const locale of LOCALES) {
+    it(`the rules name the material line and what to do with it (${locale})`, () => {
+      const half = HALVES[locale];
+      const label = locale === 'id' ? 'BAHAN' : 'MATERIAL';
+      /* Named in the RULES, not merely in a worked example: an example teaches a shape and a
+       * rule is what a model consults when the shape does not match. */
+      const rules = half.slice(half.indexOf(locale === 'id' ? '\nATURAN\n' : '\nRULES\n'));
+      expect(rules).toContain(label);
+      expect(rules).toContain(locale === 'id' ? 'PEMICU' : 'TRIGGER');
+      /* `beats: []` is a correct answer for a posted message and a wrong one here. */
+      expect(rules).toContain('"beats":[]');
+      /* And the worked example exists, in the half, above the rules. */
+      expect(half.indexOf(label)).toBeLessThan(half.indexOf(rules));
+    });
+  }
+
   it('the two halves share no worked-example body', () => {
     const idBodies = exampleWindowBodies(HALVES.id);
     const enBodies = exampleWindowBodies(HALVES.en);
@@ -151,11 +182,18 @@ describe('no quantity the model could copy', () => {
  * rule needs a worked example, not a definition* — and an example that would itself be
  * repaired teaches the model the wrong protocol with full confidence.
  */
-describe('both worked examples survive checkPlan against their own printed window', () => {
+describe('every worked example survives checkPlan against its own printed window', () => {
   for (const locale of LOCALES) {
     it(`the examples are legal plans (${locale})`, () => {
       const examples = examplesIn(HALVES[locale]);
-      expect(examples).toHaveLength(2);
+      /*
+       * **THREE SINCE F5.** The third is the proactive shape — a run nobody sent a message
+       * for — and it was added because the measured failure was the director planning from
+       * the newest line in the window when that line was hours old. Rule 11 says so and
+       * this example shows it, which is the blog editor's lesson in a third place: *an
+       * index rule needs a worked example, not a definition.*
+       */
+      expect(examples).toHaveLength(3);
 
       for (const example of examples) {
         const window = buildWindow({
@@ -172,8 +210,21 @@ describe('both worked examples survive checkPlan against their own printed windo
         expect(result.locale).toBe(locale);
       }
 
-      /* The first example speaks twice; the second is silence. */
-      expect(examplesIn(HALVES[locale]).map((e) => JSON.parse(e.json).beats.length)).toEqual([2, 0]);
+      /* The first speaks twice, the second is silence, the third speaks twice about a
+       * material — and `[F5-7]` is why the third is NOT another silence: on a proactive run
+       * nobody spoke, so there is nothing to decline to answer, and the querent's daily
+       * budget was already spent at the mint. */
+      expect(examplesIn(HALVES[locale]).map((e) => JSON.parse(e.json).beats.length)).toEqual([
+        2, 0, 2,
+      ]);
+
+      /*
+       * **THE THIRD EXAMPLE'S WHOLE POINT IS THAT IT QUOTES NOTHING.** The window it prints
+       * is days old; a `reply` pointing into it would teach exactly the behaviour rule 11
+       * exists to stop, and it would do it with a worked example's authority.
+       */
+      const proactive = JSON.parse(examples[2].json) as { beats: Array<{ reply: string | null }> };
+      for (const beat of proactive.beats) expect(beat.reply).toBeNull();
     });
   }
 });

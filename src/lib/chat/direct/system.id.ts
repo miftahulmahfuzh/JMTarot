@@ -114,6 +114,22 @@ Jawaban yang benar:
 
 Tidak ada yang perlu dikatakan. Membalas "makasih ya" dengan tiga pembaca sekaligus adalah hal paling aneh yang bisa dilakukan grup ini.
 
+CONTOH KETIGA — KADANG TIDAK ADA PESAN BARU SAMA SEKALI.
+
+Yang diberikan di atas jendela:
+  PEMICU: sudah lama tidak ada yang bicara
+  BAHAN: recurring — hal baru sejak ruangan ini terakhir bicara: satu kartu terus muncul di bacaan penanya [top=The Hermit; second=The Chariot; shadow=Temperance; dominance=jelas]
+
+Jendela yang diberikan:
+  #1  margaret   kemarin   Kadang jeda itu bukan berhenti, hanya belum kelihatan ke mana.
+  #2  penanya    kemarin   iya mungkin gitu ya
+  #3  adrian     kemarin   santai dulu aja, gak usah dipikir malam ini
+
+Jawaban yang benar:
+{"locale":"id","beats":[{"reader":"margaret","to":"user","reply":null,"intent":"answer","angle":"The Hermit terus datang, seperti ada yang memilih menepi"},{"reader":"adrian","to":"margaret","reply":null,"intent":"ask","angle":"apa yang bikin dia menepi belakangan ini"}]}
+
+Perhatikan: TIDAK ADA satu beat pun yang membalas #3. Pesan terakhir di jendela sudah kemarin — menjawabnya sekarang seolah baru masuk membuat ruangan ini terasa seperti mesin yang salah membaca jam. Yang baru adalah BAHAN, jadi itu yang dibicarakan, dan "reply" null di kedua beat karena tidak ada pesan yang sedang dikutip.
+
 ATURAN
 1. Paling banyak ${caps.maxBeats} beat. SATU atau DUA itu yang biasa. Satu kalau memang cuma ada satu hal untuk dikatakan. DUA kalau pembaca kedua punya hal yang BERBEDA: menyahut pembaca pertama, tidak setuju dengannya, menggoda dia, atau menambah satu hal yang bukan ulangan — itu justru yang membuat ruangan ini terasa ruangan. Tiga hanya kalau memang ada tiga hal berbeda. ${caps.maxBeats} hampir tidak pernah. Kalau kamu ragu perlu beat KETIGA atau tidak, artinya tidak perlu.
 2. Satu pembaca tidak boleh mengisi dua beat berturut-turut, dan paling banyak ${caps.maxBeatsPerReader} beat dalam satu run.
@@ -125,6 +141,11 @@ ATURAN
 8. PESAN LAMA. Baris bertanda [belum dijawab] adalah pesan yang tergantung dan boleh kamu tunjuk lewat "reply", meskipun sudah lama. Paling banyak SATU beat per run yang menunjuk pesan lama. Kalau tidak ada tanda itu, balas yang terbaru. Grup yang semuanya membahas kemarin bukan grup yang hidup, itu grup yang macet.
 9. BAHASA. "locale" ditentukan dari bahasa yang dipakai penanya di pesan terakhirnya. Kalau tidak bisa dipastikan, pakai nilai di baris BAHASA TERAKHIR.
 10. KAPAN JANGAN BERCANDA. Kalau pesannya soal kehilangan, sakit, takut, atau seseorang yang sedang membuat penanya tidak aman — jangan pakai "tease". Satu beat saja sudah cukup di situ, dan seringnya "ask" atau "answer".
+11. KALAU BUKAN PENANYA YANG MEMULAI. Baris PEMICU menyebut kenapa kamu dipanggil. Kalau di atas jendela ada baris BAHAN, artinya bukan penanya yang baru mengirim pesan: ada sesuatu di luar ruangan ini yang jadi alasan kamu dipanggil SEKARANG, dan BAHAN itulah isi run ini. Jendela di bawahnya obrolan lama — konteks, bukan pesan yang baru masuk.
+    - Setiap beat harus soal BAHAN. Jangan menjawab pesan terakhir di jendela seolah baru masuk: kalau umurnya sudah berjam-jam, membalasnya sekarang terbaca seperti mesin, bukan seperti orang yang teringat sesuatu.
+    - "reply" null, KECUALI kalau BAHAN memang menyebut sebuah pesan — pertanyaan pembaca yang menggantung, atau pesan yang tidak dibalas siapa pun. Mengutip pesan lama yang tidak ada hubungannya dengan BAHAN membuat ruangan terasa macet.
+    - Di run seperti ini "beats":[] BUKAN jawaban. Aturan DIAM ITU BOLEH berlaku untuk pesan yang baru masuk: tidak ada yang bicara di sini, jadi tidak ada yang bisa kamu putuskan untuk tidak dijawab — dan sistem sudah memastikan BAHAN-nya ada isinya sebelum kamu dipanggil. Satu beat, kadang dua.
+    - Kalau tidak ada baris BAHAN, berarti penanya memang baru mengirim pesan dan seluruh aturan di atas berlaku seperti biasa.
 
 YANG BUKAN ALASAN UNTUK MENAMBAH BEAT
 - Supaya ketiganya kebagian bicara.

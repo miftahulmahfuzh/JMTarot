@@ -50,7 +50,13 @@ export type PlanInput = {
   /**
    * F5's closed material token, plus deck card names when the material is a reading.
    * **A closed token and card names, never free text** (§6.3, seam with F5). Null on a
-   * `user_message` run and until F5 lands.
+   * `user_message` run, and null again when the subject could not be rebuilt.
+   *
+   * **`materialLineForRun` IS THE PRODUCER AND RULE 11 IS WHAT MAKES IT LAND.** The line
+   * shipped before the rules mentioned it, and the director then read it as an
+   * unexplained header and planned from the newest message in the window instead —
+   * measured over six live proactive runs, twice. `system.{id,en}.ts`'s rule 11 and its
+   * third worked example are the repair; `system.test.ts` asserts both by name.
    */
   material: string | null;
   caps: PlanCaps;

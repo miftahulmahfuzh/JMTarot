@@ -203,16 +203,23 @@ export function validatePlan(raw: string, input: DirectorInput): PlanCheck {
 /**
  * The deterministic fallback. **ONE BEAT, NEVER TWO** (`[F2-13]`).
  *
- * ── `hasMaterial` UNTIL F5 LANDS ───────────────────────────────────────────
+ * ── `hasMaterial`, AND WHY THE DERIVATION STAYED ───────────────────────────
  *
  * `C-N2e`: **a trigger with no material does not fire**, and F5's eligibility predicate is
- * what guarantees it. F5 does not exist yet, so the proactive arms derive material presence
- * from what F2 can actually see — a reading behind the trigger, or a reader question still
- * hanging. `idle_nudge` and `cron` therefore fall to zero beats **on the fallback path
- * only**: the model path still plans normally, and a nudge whose planner failed and which
- * has nothing to be about would produce *"hai, apa kabar?"*, which the roadmap names as the
- * emptiest thing this feature could ship. **When F5 lands, `PlanInput.material` is the
- * input and this derivation goes.**
+ * what guarantees it. This header used to end *"when F5 lands, `PlanInput.material` is the
+ * input and this derivation goes."* **F5 landed; the input arrived; the derivation stayed**,
+ * and the correction is worth more than the prediction was.
+ *
+ * `PlanInput.material` is now the first arm and answers for every real proactive run. The
+ * arms below it are reached only when the material line could **not be rebuilt** — a cold
+ * Neon compute, a reading deleted between the mint and the plan — and in that case they
+ * derive material presence from what F2 can actually see: a reading behind the trigger, or
+ * a reader question still hanging. `idle_nudge` and `cron` still fall to zero beats there,
+ * because a nudge whose planner failed AND which has nothing to be about would produce
+ * *"hai, apa kabar?"*, the emptiest thing this feature could ship.
+ *
+ * **Deleting them would turn a failed read into a silent room**, which is the opposite of
+ * what `[F5-7]` asks for on this path.
  */
 export function planFallback(input: DirectorInput): Beat[] {
   const memo = MEMOS.get(input.runId);
