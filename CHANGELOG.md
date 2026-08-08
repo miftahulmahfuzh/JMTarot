@@ -424,14 +424,33 @@ taking the schema from eighteen tables to **twenty-one**. `LLMOp` **11 → 13**,
 
 ### Known gaps at this tag
 
-- **Nothing here has been deployed.** Migration `0014` is committed and unapplied in production,
-  which is the exact shape of the worst outage this project has had — `npm run build` runs the
-  deploy migration first and fails rather than skipping, so the rail is there. **Everything v0.6.0
-  listed as undeployed is still undeployed**, including `0013`, `ADMIN_EMAILS` and the five older
-  kill switches, and **six new environment variables must be set on Vercel before the room works as
-  designed**: `CHAT_MODEL`, `ADMIN_MODEL`, `CHAT_ENABLED`, `CHAT_PROACTIVE_ENABLED`,
-  `CHAT_ANSWERS_ENABLED` and `LLM_WINDOW_CHAT_CEILING`. **`CHAT_MODEL` unset is not an outage but is
-  a different room**, and the three defects it produces are named above.
+- **THIS IS THE FIRST RELEASE THAT WAS ALREADY LIVE BEFORE ANYBODY DECIDED TO DEPLOY IT, AND THE
+  DRAFT OF THIS BULLET SAID THE OPPOSITE.** It read *"Nothing here has been deployed"*, copied
+  forward from v0.5.0 and v0.6.0 where it was true. **Auto-deploy on `main` is on**, so the merge
+  push shipped v0.7.0 to production and applied migration `0014` — the second build reported
+  `[migrate:deploy] schema is up to date`, which is how the first one is known to have run it. The
+  rail worked exactly as designed and **nobody had decided to pull the lever.** Everything v0.6.0
+  listed as undeployed, including `0013`, went out on the same push. **The generalisation, and it
+  is the one worth keeping: a release checklist that ends in "deploy" is wrong in a repository
+  where `git push` IS the deploy** — the changelog step comes after the merge, so the entry is
+  written by a session whose own push already shipped what it is describing.
+- **FIVE environment variables, not six, and the sixth was the mistake.** `CHAT_MODEL`,
+  `ADMIN_MODEL`, `CHAT_ENABLED`, `CHAT_PROACTIVE_ENABLED` and `CHAT_ANSWERS_ENABLED` are set on
+  Production and verified by reading them back. **`LLM_WINDOW_CHAT_CEILING` is deliberately UNSET
+  and this entry's draft was wrong to list it** — `meter.ts` derives it as half the hard ceiling
+  precisely so February 2027's credit re-derivation moves both together, and writing `140` into a
+  dashboard is the literal that rule forbids, agreeing with the derived value today and drifting
+  from it silently on the day the ceiling moves. **A default that exists to couple two numbers is
+  not a variable somebody has forgotten to set.**
+- **The four chat variables are stored `--no-sensitive`, and that is a change of what "verified"
+  means here.** They are configuration `.env.example` already publishes, not credentials, so
+  `vercel env pull` reads back `CHAT_MODEL="glm-5.2"` rather than `[SENSITIVE]`. **`CHAT_MODEL` was
+  re-asserted rather than trusted** for exactly that reason: it was already set and unreadable, and
+  a wrong value there is not benign — it is the three defects named above. `LLM_API_KEY`,
+  `AUTH_SECRET`, `FIELD_ENCRYPTION_KEY`, `DATABASE_URL` and `CRON_SECRET` stay sensitive.
+- **Preview has no `CHAT_MODEL`, so a preview deployment is the different room.** Production-only
+  follows the precedent of `ADMIN_MODEL` and the five older kill switches; it is a real gap the
+  first time somebody judges the chat on a preview URL.
 - **Loop 6 is deliberately unspent, and it is the largest gap in this release.** Miftah is the only
   user of this app and is testing the phone half directly on production. Unmeasured on hardware: the
   composer with the keyboard up — it is a grid row and not `position: fixed`, which is the decision
