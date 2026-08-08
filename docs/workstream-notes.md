@@ -10546,7 +10546,7 @@ the chip: the chip is the accessible path and the only one any loop here can see
   a user id that no longer exists and every chat route answers as if the room were empty; re-mint
   through `POST /api/auth/dev-session` after seeding or the badge reads zero for the wrong reason.
 
-### The keyboard, answered by a phone (2026-08-09)
+### The cropped composer: two explanations, and the second one was right (2026-08-09)
 
 **The first loop-6 finding against this surface, and it is the one the list above named second:
 *the composer with the keyboard up*.** Reported from an iPhone in Safari — tap `Balas` on a
@@ -10639,12 +10639,29 @@ reader's bubble, type, and the field is cropped with `Kirim` under the glass.
 - **`REPLY_PREVIEW_WORDS = 8` IS A DIFFERENT CEILING FROM THE QUOTE'S 120 CHARACTERS, ON
   PURPOSE.** A quote inside a bubble is content and is read; the stub above the box is a label on
   a control, read once at a glance with the keyboard up and the room at its shortest.
-- **STILL LOOP 6's.** `npm test` holds the arithmetic (`keyboardInset.test.ts`, one 390×844 phone
-  with a 336px keyboard) and `chatSurface.test.ts` holds the wiring; **neither can see whether
-  the room now behaves**, because loop 5's Chrome has no software keyboard and reports
-  `visualViewport.height` equal to the layout viewport in every state. The check is a preview URL
-  on the phone: reply, four lines of draft, then the same with a staged reading — in Safari and
-  in the standalone instance, whose bottom inset differs.
+- **FIXED, CONFIRMED ON PRODUCTION FROM iOS SAFARI, 2026-08-09.** So the second explanation was
+  the right one and **the first was a correct fact about an unrelated thing.** Both are recorded
+  because the pair is the lesson, and it has three parts worth more than the fix:
+  1. **THE QUERENT SAID "WIDTH" IN THEIR OWN WORDS AND WAS TALKED PAST.** The first report —
+     *"the typing field got cropped, so I cannot see the send button"* — was read as a vertical
+     symptom because the reader arrived holding a vertical theory. The second report said the
+     width was getting too long and named the reply stub as the trigger, and that was the whole
+     answer. **A report from the only person holding the instrument outranks a structural
+     argument from somebody holding none.**
+  2. **A GREEN LOOP-4 MEASUREMENT IS EVIDENCE ABOUT CHROME.** `_chatfit.html` reported zero
+     overflow at 320 in both locales on a seeded 400-character bubble, and it was right — the
+     `min-width: 0` it was measuring does clamp the contribution, in Chrome. The same sentence
+     loop 5 already carries about width applies to loop 4 about **intrinsic sizing**, and this
+     is the first time it cost anything.
+  3. **THE COMMENT CLAIMING TWO THINGS ARE ONE MECHANIC IS WHERE TO LOOK FIRST.** The composer's
+     stub said it read as one with the in-bubble quote. It was the sentence that was true of the
+     border and false of everything that mattered, and diffing the two stylesheets against that
+     claim would have found this in a minute at any point in the release.
+- **THE KEYBOARD WORK STAYS AND IS STILL UNCONFIRMED.** `dvh` genuinely cannot see the keyboard
+  and `--kb-inset` genuinely binds the room to the visual viewport, but **no report has ever
+  turned out to be about it**, so nothing on this screen is known to depend on it. `npm test`
+  holds the arithmetic (`keyboardInset.test.ts`) and the wiring (`chatSurface.test.ts`); the
+  behaviour is loop 6's and unmeasured. Do not read its presence as evidence it was ever needed.
 
 ---
 
