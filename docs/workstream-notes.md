@@ -10318,3 +10318,169 @@ whether the ANGLES name another reader, which is the thing actually being asked 
 - **`OLD_REPLY_MIN_AGE_MINUTES = 30` is still a guess** (`F2-Q5`), and across five runs exactly
   one beat quoted an old message. If `C-D11` never fires in production, that number is the first
   thing to move — and rule 8 is the second.
+
+---
+
+## F4 — the surface (v0.7.0, 2026-08-08)
+
+**What landed:** `src/app/chat/{page.tsx,ChatRoom.tsx}` and their two stylesheets;
+`src/components/{ChatButton,ChatAvatar,ChatBubble,ChatTyping,ChatComposer,LotusMark}.tsx` with
+their stylesheets; `src/lib/chatSurface.ts` (the pure part) and its 33 unit tests;
+`src/components/chatSurface.test.ts` (the deny-shaped guard, 20 assertions); `tools/make_avatars.py`
+plus `npm run avatars` and three committed 112px WebP; the `corner` rail in `tokens.ts` mirrored
+into `tokens.css`; the `/readers/*` matcher entry and cache header; 26 `chat.*` keys in both
+catalogs; a seeded chat thread in `npm run db:seed`; and `public/cards/_chatfit.html`.
+
+`docs/plans/2026-08-07-chat-surface.md` is the plan. What follows is what the plan could not
+know, the two things it got wrong, and the measurements.
+
+### The first joined run — F2's last open item, closed
+
+F2's notes end with *"nobody has read the BUBBLES that came out of a real beat sheet … it needs
+F4's `/chat`"*. It does now. One message typed into the composer on `localhost:3001`, against
+the real director and the real voices:
+
+```
+me        halo semuanya. aku lagi mikirin soal kerjaan lagi
+ADRIAN    > kamu: halo semuanya…
+          eh, nggak usah pura-pura lupa. kemaren kan kita udah bahas kerjaan
+          kecuali ini kerjaan beda lagi
+THESSALY  > kamu: halo semuanya…
+          ini beda sama kemarin? atau itu masalah yang sama?
+```
+
+Two readers, two intents (`tease` then `ask`), both quoting the querent, neither summarising.
+**And the third beat was SHED by `LLM_WINDOW_CHAT_CEILING`** — `[chat] voice failed …
+ModelCeilingError` in the log, and **the room showed nothing at all**, which is exactly
+`C-D6` plus `C-R7` working: no error bubble, no spinner, no notice. The querent cannot tell that
+outcome from `C-R6`'s *"nobody replies"*, and that is the design rather than a gap in it.
+
+**THE ADVANCE COUNT IS `beats + 2`, NOT the plan's `n + 1`.** Measured: 2 bubbles, 4 calls —
+one plan, one per beat, one that returns `done`. §10.3's arithmetic is off by one and this is
+the corrected identity, which matters because it is the number loop 5 checks to catch `F4-8`'s
+dependency-array bug. Latencies: `message` 1481ms (the classifier), the plan 1790ms, each beat
+~1000ms, the closing call 72ms.
+
+### `chat.opened` has ONE fire site, and the button therefore tracks nothing
+
+F1 folded F4's four declared events into one and narrowed `from` to
+`'button' | 'direct' | 'attach'` — so the four-value `ChatSurface` union the plan gave
+`ChatButton` had no consumer left. **The prop is gone**; the entry point travels as
+`?from=button` on the link, and `ChatRoom` fires the event once, after its `state` call settles.
+
+The alternative — the button firing on click and the room firing on mount — double-counts every
+open that came from the button, which is the exact objection F1 used to fold
+`chat.button_clicked` away (*"the click IS the open"*). The type-level fence the plan wanted is
+replaced by `chatSurface.test.ts`'s denylist, which names `app/chat/` and the draw screen.
+
+`window.location.search` and not `useSearchParams()`: read once, in an effect, on the client —
+and `useSearchParams` would put the room under a Suspense requirement for a value nothing
+renders.
+
+### `chat.typing.one` could not exist, and the catalog said so at the last moment
+
+The plan's key ends in `.one`. **`PluralKey` is DERIVED as `StripOne<MessageKey>`**, so a key
+ending in `.one` declares a plural family — `catalog.test.ts` then requires a matching `.other`
+and requires the Indonesian pair to be identical, and both failed. It was never a plural: the
+room shows one indicator at a time because beats execute serially (`C-R5`). It is
+`chat.typing.reader`.
+
+**Generalisation worth keeping: in this catalog a suffix is a TYPE, not a name.** `.one` means
+plural, and the next collision will be somebody writing `foo.other` for "the other thing".
+
+### `prose.test.ts`'s payload ceiling had to move, and it is the first time
+
+`MAX_BYTES` was 20,000 and `id` measured 21,161 across 376 keys. **v0.7.0 adds a whole screen**
+and 39 `chat.*` keys across three workstreams (F1's notice, F6's attachment copy, F4's room) —
+1,848 bytes, 8.7% of the catalog. Raised to 23,000 with the written reason that file demands,
+`MAX_VALUE` untouched, and the new headroom deliberately TIGHTER (8.7%) than the 21% it started
+with, so the next screen meets the same test and has to answer it in writing.
+
+### Five bounded fetches, one helper, and why the shape differs from the blog editor
+
+`MarkdownEditor` uses `signal: AbortSignal.timeout(X)` inline and `admin.blog.contract.test.ts`
+counts those. **These five must ALSO abort on unmount**, so they go through one `openRequest(ms)`
+that opens a controller, sets the timer, registers it for the unmount sweep and reports whether
+the abort was a TIMEOUT or a teardown — which `F4-12` needs, because a timeout is retried once
+and a teardown must never be. `chatSurface.test.ts` therefore counts `await fetch(` (5),
+`openRequest(` (5), `signal: req.signal` (5) and `new AbortController()` (**1**), plus the five
+bound constants by name.
+
+### `_chatfit.html`, and two things that cost an hour each
+
+**`/cards/*` CARRIES A YEAR OF `immutable`, AND THE HARNESSES LIVE THERE.** An edited harness
+reloads as the OLD harness, silently, with plausible numbers: the first run reported the widest
+bubble as exactly the container width at all four widths, because it was still executing the
+previous version. Load it as `/cards/_chatfit.html?v=$(date +%s)`. Every `public/cards/_*.html`
+in this repo is exposed to this and none of them says so.
+
+**THE WINDOWS-CHROME `--virtual-time-budget` PATH DOES NOT FINISH THIS HARNESS.** It is fine for
+`_slotfit.html`, whose page is server-rendered; `/chat` fetches its own messages, and eight
+iframes each doing two fetches under virtual time produced a partial table and no error.
+`tools/e2e/run.sh` — the real Chrome in WSL, over CDP — runs it in ~40 seconds. **That is loop
+5's browser doing loop 4's job and it is legitimate here**, because the measurement is an iframe
+of a known width and does not depend on the outer viewport, which is the one thing loop 5 cannot
+give you.
+
+**`_chatfit.html` IS GITIGNORED, and the plan's task table lists it as a committed file.** The
+repo convention wins: `.gitignore` carries `public/cards/_*.html` and **not one of the fourteen
+harnesses in that directory is tracked.** The plan's sentence is about the MATCHER — the path is
+excluded there, which is the only reason a harness loads at all — and it was read as being about
+git. Recording the divergence because the file will not be in a fresh checkout, and this section
+is where the next session will look for it.
+
+**Measured 2026-08-08, eight green.** Nothing overflows at 320/360/375/390 in either locale;
+every tap target is at or above 44 (Kirim 44, composer 48, `Balas` 44, the quote stub 50); the
+widest bubble is 238 at 320 (78% of the content box) and stops at 259.48 from 360 up, which is
+`34ch` binding. The quote stub holds one line at every width, including a stub of the
+400-character seeded bubble.
+
+### The reply-to chip, verified the only way it can be
+
+Loop 5, the *"does the UI agree with what it sends"* check that this repo's two worst bugs
+needed: the page's `fetch` patched from the harness, a bubble tapped, `Balas` tapped, a reply
+sent — and `reply_to_message_id` in the POST body is byte-identical to the `data-message-id` of
+the bubble whose text is rendered in the stub, with a `client_key` beside it. The chip measured
+44px in its shown state.
+
+**Whether tap-to-select reads as selecting TEXT under a thumb is loop 6 and nothing else can
+answer it.** If it reads wrong, the repair is to ADD swipe as an accelerator, never to replace
+the chip: the chip is the accessible path and the only one any loop here can see.
+
+### Two shapes that will look wrong and are not
+
+- **The `Balas` chip is always in the DOM and clipped until its bubble is selected**
+  (`clip-path: inset(50%)`, plus `:focus-visible`). Rendering it conditionally would make the
+  app's only reply affordance unreachable by keyboard and invisible to a screen reader. The
+  clipped state takes no space, so nothing reflows when it appears — and a document-wide
+  `querySelector` for it finds the FIRST bubble's clipped chip and reports a 2px tap target,
+  which is what the harness did before it learned to look inside the selected row.
+- **The bubble is a `<div role="button">`, not a `<button>`.** A `<button>` may not contain the
+  quote stub's `<button>` — nested interactive content is invalid HTML and Safari renders it
+  unpredictably. The keyboard path is the chip.
+
+### Still open when F4 landed
+
+- **Nothing on this surface has been seen on a phone.** The whole loop-6 list is in the plan's
+  §10.4: the reply gesture under a thumb, the composer with the keyboard up, `100dvh` against
+  Safari's collapsing toolbar, the safe-area insets in standalone, the badge in the second cookie
+  jar, whether `delayMs` reads as a person pausing, whether the avatar crops read as portraits at
+  28px on a 3× screen, and whether `overscroll-behavior: contain` actually holds on iOS.
+- **The room never renders the querent's nickname**, so the plan's *"24-character nickname"*
+  width case has nothing to measure. It is exercised as text inside a seeded bubble instead. If
+  F5 or F6 ever puts the nickname in the chrome, that case becomes real.
+- **`chat.error.rateLimit` names no number**, diverging from the plan's *"render the header's own
+  `retry-after`"*: the measured value on a tripped ceiling is 291 seconds and is **not** the
+  window length, so a rendered figure is honest about the header and wrong about the room. Every
+  other surface in this app says it the same way.
+- **The pill, the older-page button and the offline path are unexercised.** The seeded thread is
+  six messages, so `hasMore` is false and nothing paginates; `receive`'s not-at-the-bottom branch
+  needs a room taller than a screen.
+- **The badge and the rail ARE verified in a browser, and this is the one thing on the corner
+  that could not be checked any other way.** On `/history` after a re-mint: `aria-label` reads
+  *"Buka grup, 1 pesan baru"*, the dot renders, and the box measures **44×44 at top 10, right 62**
+  — which is `corner.inset + corner.size + corner.gap` resolved through `--corner-slot-1`, so the
+  one-way coupling in `tokens.ts` is not merely asserted in a test, it is the number on screen.
+  **`npm run db:seed` deletes and recreates the dev users**, so an existing session cookie names
+  a user id that no longer exists and every chat route answers as if the room were empty; re-mint
+  through `POST /api/auth/dev-session` after seeding or the badge reads zero for the wrong reason.

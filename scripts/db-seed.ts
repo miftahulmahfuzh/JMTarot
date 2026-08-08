@@ -10,7 +10,7 @@
  * Run it as often as you like: it deletes the two dev users before inserting,
  * so it is idempotent by deletion rather than by upsert.
  */
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { config } from 'dotenv';
 import { inArray, like, or } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
@@ -368,6 +368,138 @@ async function main() {
         readingIndex += 1;
       }
     }
+
+    // ---- v0.7.0: one chat thread, for the width harness -------------------
+    //
+    // **`public/cards/_chatfit.html` DRIVES THE REAL `/chat`**, because inlining
+    // the CSS would measure a snapshot of the stylesheet and drift from it
+    // silently -- `_slotfit.html`'s own stated failure mode. So the room has to
+    // CONTAIN the pathological content, and the only way to put it there without
+    // a model call per harness run is here (reconciliation §4 assigns this to
+    // F4).
+    //
+    // Dev-only by construction: this script refuses a non-local DATABASE_URL and
+    // CLAUDE.md forbids a migration that inserts rows, so production pays
+    // nothing for any of it.
+    //
+    // FOUR HARD CASES, one per thing loop 4 measures:
+    //   1. a 400-character single-paragraph bubble whose longest token has no
+    //      spaces -- `overflow-wrap: anywhere` is what stops a pasted URL blowing
+    //      the row, and nothing else in this app has ever needed it;
+    //   2. a quote stub of that bubble, which is the widest stub obtainable;
+    //   3. all three readers, since `Margaret` is the longest name and Cinzel at
+    //      --ls-button is wider than it looks;
+    //   4. a MIDNIGHT CROSSING, so the day separator is exercised in the
+    //      querent's own zone rather than in UTC.
+    //
+    // `last_read_at` is deliberately BEHIND the last reader bubble, so the badge
+    // has something to show: a dot at zero is unmeasurable, and `C-N2b`'s red dot
+    // is half of this release's acceptance criteria.
+    const chatRunId = randomUUID();
+    await db.insert(schema.chatRuns).values({
+      id: chatRunId,
+      userId: miftah.id,
+      trigger: 'user_message',
+      status: 'done',
+      locale: 'id' as Locale,
+      beats: { v: 1, beats: [] },
+      beatsDone: 0,
+      planSource: 'model',
+    });
+
+    const minutesAgo = (n: number) => new Date(Date.now() - n * 60_000);
+    /** Yesterday at 23:50 and today at 00:05 IN THE MACHINE's zone -- the crossing
+     *  has to be local, because that is the only thing the separator reads. */
+    const localAt = (dayOffset: number, h: number, m: number) => {
+      const d = new Date();
+      d.setDate(d.getDate() + dayOffset);
+      d.setHours(h, m, 0, 0);
+      return d;
+    };
+
+    /* A single paragraph, no line breaks, and one 96-character unbroken token. */
+    const LONG_BUBBLE =
+      'ini yang aku maksud kemarin, soal kerjaan yang bikin aku mikir terus sampai kebawa mimpi, ' +
+      'dan aku juga sempat baca sesuatu di ' +
+      'https://contoh.example.com/artikel/tentang-arah-hidup-dan-pekerjaan-yang-panjang-sekali-sampai-tidak-muat ' +
+      'yang bikin makin bingung, jadi sebenarnya aku pengen tahu menurut kalian bertiga gimana';
+
+    const bigId = randomUUID();
+    const chatRows: schema.NewChatMessage[] = [
+      {
+        userId: miftah.id,
+        author: 'thessaly',
+        body: 'kamu masih kepikiran yang kemarin itu, mif?',
+        locale: 'id' as Locale,
+        runId: chatRunId,
+        beatIndex: 0,
+        intent: 'ask',
+        model: 'seed',
+        createdAt: localAt(-1, 19, 40),
+      },
+      {
+        id: bigId,
+        userId: miftah.id,
+        author: 'user',
+        body: LONG_BUBBLE,
+        locale: 'id' as Locale,
+        createdAt: localAt(-1, 23, 50),
+      },
+      {
+        userId: miftah.id,
+        author: 'margaret',
+        body: 'mulai dari yang paling kecil. yang lain menyusul sendiri.',
+        locale: 'id' as Locale,
+        replyToMessageId: bigId,
+        runId: chatRunId,
+        beatIndex: 1,
+        intent: 'answer',
+        model: 'seed',
+        // 00:05 -- the other side of the crossing.
+        createdAt: localAt(0, 0, 5),
+      },
+      {
+        userId: miftah.id,
+        author: 'adrian',
+        body: 'wkwk',
+        locale: 'id' as Locale,
+        runId: chatRunId,
+        beatIndex: 2,
+        intent: 'react',
+        model: 'seed',
+        createdAt: minutesAgo(90),
+      },
+      {
+        userId: miftah.id,
+        author: 'user',
+        body: 'iya sih',
+        locale: 'id' as Locale,
+        createdAt: minutesAgo(80),
+      },
+      {
+        userId: miftah.id,
+        author: 'adrian',
+        body: 'emang kenapa? kalau kamu udah tahu jawabannya, kenapa masih nanya ke kami bertiga.',
+        locale: 'id' as Locale,
+        runId: chatRunId,
+        beatIndex: 3,
+        intent: 'tease',
+        model: 'seed',
+        createdAt: minutesAgo(20),
+      },
+    ];
+    await db.insert(schema.chatMessages).values(chatRows);
+
+    await db.insert(schema.chatThreads).values({
+      userId: miftah.id,
+      /* Behind Adrian's LAST bubble and ahead of his first, so `unread` is 1 --
+         verified in a browser: the button reads "Buka grup, 1 pesan baru" and grows
+         its dot. `unreadCount` counts reader rows after this instant, so moving it
+         moves the badge. */
+      lastReadAt: minutesAgo(85),
+      lastUserMessageAt: minutesAgo(80),
+      lastReaderMessageAt: minutesAgo(20),
+    });
 
     // ---- A handful of events ---------------------------------------------
     //
