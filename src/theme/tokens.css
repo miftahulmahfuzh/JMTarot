@@ -84,6 +84,16 @@
   --radius-card: 10px;
   --radius-chip: 2px;
 
+  /* --- Corner chrome rail (v0.7.0 / F4, seam S9) ------------------------- */
+  /* MIRROR ONLY. `corner` in tokens.ts carries the reasoning: F4 may not edit
+     AccountButton.module.css, which still holds `10px` and `44px` as literals, so
+     ChatButton derives its slot from here and a test asserts the two agree.
+     Slot 0 is AccountButton's own literal; slot 1 is ChatButton, 10 + 44 + 8. */
+  --corner-inset: 10px;
+  --corner-size: 44px;
+  --corner-gap: 8px;
+  --corner-slot-1: calc(var(--corner-inset) + var(--corner-size) + var(--corner-gap));
+
   /* --- Charts (src/theme/chart.ts, v0.5.0 / A4) -------------------------- */
   /* MIRROR ONLY. Every value below has a counterpart in `chart.ts`, which carries
      the reasoning and the measurements, and `tokens.ts` is deliberately NOT touched

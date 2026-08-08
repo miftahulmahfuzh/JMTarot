@@ -399,8 +399,17 @@ export const config = {
    * is a direct S-D10 breach on the response where CDN caching matters most.
    * `cards/` and `dukuns/` are here for the same reason, and this entry lands
    * before S5's files do so the pipeline cannot ship into a gated path.
+   *
+   * ── `readers/` JOINED IN v0.7.0 (F4, `F4-18`, and `R7` again) ──────────────
+   *
+   * The three reader avatars, `tools/make_avatars.py`'s output. Same rule as
+   * `wallpapers/` with one difference that makes it worse rather than better:
+   * these are fetched by a SIGNED-IN querent, on every render of a room that may
+   * hold hundreds of bubbles, so middleware running here would write the locale
+   * cookie onto a static image PER MESSAGE. `/readers` in `isPublic()` would also
+   * return 200 and would not stop any of that; **only the matcher does.**
    */
   matcher: [
-    '/((?!_next/|cards/|dukuns/|wallpapers/|favicon|icon|apple-icon|manifest|sitemap|robots).*)',
+    '/((?!_next/|cards/|dukuns/|readers/|wallpapers/|favicon|icon|apple-icon|manifest|sitemap|robots).*)',
   ],
 };

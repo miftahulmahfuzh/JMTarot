@@ -256,6 +256,41 @@ const nextConfig: NextConfig = {
       },
       {
         /*
+         * v0.7.0's three reader avatars (F4, `C-D16`, `F4-18`). Written by
+         * `tools/make_avatars.py`, committed, never hand-edited.
+         *
+         * **DELIBERATELY NOT `/cards/*`'s YEAR OF `immutable`, AND THE REASON IS
+         * `/wallpapers/*`'s ONE-COMMIT MISTAKE REPEATED IN ADVANCE.** That entry
+         * shipped as `immutable` because it was written from `/cards/*`'s
+         * reasoning rather than from a declaration, and was corrected a commit
+         * later. The declaration here: **the crop boxes are a hand-written table
+         * of three rows that will be tuned once somebody has seen them at 28px on
+         * glass** (loop 6), and the filenames are `thessaly.webp`,
+         * `margaret.webp`, `adrian.webp` -- no content hash, no `?v=`. A year of
+         * `immutable` means every existing install keeps a bad crop until 2027.
+         *
+         * The traffic shape does not argue the other way either: three files
+         * totalling ~8KB, fetched once and then served from the memory cache for
+         * the life of the room. 86400 plus a week of `stale-while-revalidate`
+         * costs nothing measurable and lets a re-crop propagate on its own.
+         *
+         * **`readers/` ALSO HAS TO JOIN `src/middleware.ts`'s NEGATIVE LOOKAHEAD,
+         * AND THAT IS A SEPARATE RULE** (`R7`). Without it middleware runs on
+         * every avatar request and puts a `Set-Cookie` on a static image -- per
+         * message rendered, since this is the one asset class a signed-in querent
+         * hits on every chat render. Adding `/readers` to `isPublic()` instead
+         * returns 200 and prevents none of it.
+         */
+        source: '/readers/:path*',
+        headers: [
+          {
+            key: 'cache-control',
+            value: 'public, max-age=86400, stale-while-revalidate=604800',
+          },
+        ],
+      },
+      {
+        /*
          * V7's public page, and the two headers Miftah's security amendment calls
          * the most important lines in it.
          *

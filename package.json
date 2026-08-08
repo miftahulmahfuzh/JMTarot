@@ -26,6 +26,7 @@
     "cards": "python3 tools/generate_cards.py",
     "assets": "python3 tools/normalize_cards.py",
     "wallpapers": "python3 tools/make_wallpapers.py",
+    "avatars": "python3 tools/make_avatars.py",
     "smoke": "ANALYTICS_ENABLED=0 RES_OPTIONS=no-aaaa NODE_OPTIONS=--conditions=react-server tsx scripts/smoke-llm.ts",
     "probe:moderation": "ANALYTICS_ENABLED=0 RES_OPTIONS=no-aaaa NODE_OPTIONS=--conditions=react-server tsx scripts/probe-moderation.ts",
     "probe:usage": "ANALYTICS_ENABLED=0 RES_OPTIONS=no-aaaa NODE_OPTIONS=--conditions=react-server tsx scripts/probe-usage.ts"
