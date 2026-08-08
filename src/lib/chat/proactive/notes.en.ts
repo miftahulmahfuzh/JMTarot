@@ -19,13 +19,14 @@ import type { MaterialNotes } from './notes';
 export const MATERIAL_NOTES_EN: MaterialNotes = {
   reading: () => 'new since this room last spoke: the querent finished laying cards out',
 
-  unanswered: () => 'a reader asked something and the querent never came back to it',
+  unanswered: () =>
+    'a reader asked something and the querent never came back to it; this is material to come at from another side, not to chase an answer for',
 
   orphan: () =>
     "a reader's message was left sitting there; this is material to build on, not to nudge about",
 
-  recurring: () =>
-    'new since this room last spoke: one card keeps turning up across their recent readings',
+  recurring: (m) =>
+    `new since this room last spoke: ${m.mechanic.topName} keeps turning up across their readings`,
 
   occasion: (m) =>
     m.occasion === 'birthday'

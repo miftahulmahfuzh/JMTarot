@@ -2895,7 +2895,12 @@ async function runDirector(locales: Locale[], withVoices = false) {
       });
       const ms = Date.now() - started;
 
-      const checked = checkPlan(reply.text, { window, fallbackLocale: locale, caps });
+      const checked = checkPlan(reply.text, {
+        window,
+        fallbackLocale: locale,
+        caps,
+        trigger: 'user_message',
+      });
       process.stdout.write(`\n--- ${no}. ${line.body}\n    (${line.probes})\n`);
 
       if (!checked.ok) {
@@ -3180,6 +3185,30 @@ async function runProactive(locales: Locale[]) {
       `caps: maxBeats=${caps.maxBeats} perReader=${caps.maxBeatsPerReader}\n`,
   );
 
+  /*
+   * **A MEASUREMENT ON THE FALLBACK MODEL IS NOT A MEASUREMENT OF THIS RELEASE, AND THIS
+   * LINE EXISTS BECAUSE THREE RUNS WERE READ BEFORE ANYBODY NOTICED** (2026-08-08).
+   *
+   * `C-D4` puts the chat — director AND voices — on `CHAT_MODEL`, `glm-5.2`, *"the best
+   * model we have"*, and unset silently falls back to `LLM_MODEL`. `.env.example` sets it;
+   * a `.env.local` written before v0.7.0 does not. The header above named the model
+   * faithfully and got read past three times, so what was being judged was glm-4.6.
+   *
+   * **It is not a fatal error**, because comparing the two models on this instrument is a
+   * legitimate thing to want. It is a warning that names the consequence, which is the only
+   * kind anybody reads.
+   */
+  if (!process.env.CHAT_MODEL) {
+    process.stdout.write(
+      '\nWARN  CHAT_MODEL is unset, so this run is on LLM_MODEL and NOT on the model the\n' +
+        '      chat ships with (C-D4: glm-5.2, "the best model we have"). The naturalness\n' +
+        '      judgement below is therefore about the wrong model. Measured on 2026-08-08:\n' +
+        '      the fallback emitted a whole transcript inside one bubble, repeated another\n' +
+        '      reader\'s line verbatim, and invented a noun the fixture never mentioned --\n' +
+        '      three defects that vanished on glm-5.2. Set CHAT_MODEL in .env.local.\n',
+    );
+  }
+
   const problems: string[] = [];
   const conversations: Record<string, Array<{ author: string; body: string }>> = {};
   /** The key the blind read prints: which run was about what. */
@@ -3257,7 +3286,16 @@ async function runProactive(locales: Locale[]) {
         model: chatModel(),
       });
       const planMs = Date.now() - started;
-      const checked = checkPlan(reply.text, { window, fallbackLocale: locale, caps });
+      /* **THE FIXTURE'S OWN TRIGGER**, so `silence_on_proactive` is reachable here — a
+       * runner that passed `'user_message'` would file a zero-beat proactive plan as a
+       * correct silence and the check `[F5-7]` asks for would be untested by the one
+       * instrument that can see it. */
+      const checked = checkPlan(reply.text, {
+        window,
+        fallbackLocale: locale,
+        caps,
+        trigger: fixture.trigger,
+      });
 
       if (!checked.ok) {
         process.stdout.write(

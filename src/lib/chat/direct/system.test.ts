@@ -195,7 +195,7 @@ describe('every worked example survives checkPlan against its own printed window
        */
       expect(examples).toHaveLength(3);
 
-      for (const example of examples) {
+      for (const [i, example] of examples.entries()) {
         const window = buildWindow({
           messages: example.window,
           locale,
@@ -203,7 +203,19 @@ describe('every worked example survives checkPlan against its own printed window
           triggerMessageId: example.window[example.window.length - 1]?.id ?? null,
           now: NOW,
         });
-        const result = checkPlan(example.json, { window, fallbackLocale: locale, caps: CAPS });
+        /*
+         * **THE THIRD EXAMPLE IS CHECKED AS THE PROACTIVE RUN IT DEPICTS.** Passing
+         * `'user_message'` for all three would let a zero-beat third example pass as a
+         * correct silence — which is exactly what `[F5-7]` forbids and what rule 11 tells
+         * the model not to do, so the example would be teaching the opposite of the rule
+         * printed beneath it and this test would agree.
+         */
+        const result = checkPlan(example.json, {
+          window,
+          fallbackLocale: locale,
+          caps: CAPS,
+          trigger: i === 2 ? 'cron' : 'user_message',
+        });
         if (!result.ok) throw new Error(`${locale}: ${result.reason}`);
         expect(result.repairs).toEqual([]);
         expect(result.dropped).toBe(0);

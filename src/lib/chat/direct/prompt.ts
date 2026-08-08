@@ -186,6 +186,13 @@ export function validatePlan(raw: string, input: DirectorInput): PlanCheck {
     window,
     fallbackLocale: input.fallbackLocale,
     caps: memo?.input.caps ?? planCaps(),
+    /*
+     * **`[F5-7]`, seam S-new-3.** On a proactive trigger an explicit `beats: []` is refused
+     * rather than filed under `C-R6`'s silence: nobody spoke, so there is nothing to decline
+     * to answer, and `[F5-13]`'s daily counter was already spent at the mint. `planFallback`
+     * runs next and produces the one plausible beat.
+     */
+    trigger: input.trigger,
   });
 
   if (!checked.ok) return { ok: false, reason: checked.reason };

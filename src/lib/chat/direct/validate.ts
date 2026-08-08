@@ -42,7 +42,7 @@ import { isReaderId } from '@/data/readers';
 import type { Locale, ReaderId } from '@/data/types';
 import { LOCALES } from '@/lib/i18n/locale';
 import { stripUntrusted } from '@/lib/prompt/sanitize';
-import type { Beat, BeatIntent } from '../types';
+import type { Beat, BeatIntent, RunTrigger } from '../types';
 import { BEAT_INTENTS } from '../types';
 import type { PlanCaps } from './caps';
 import { resolveOrdinal, type WindowEntry } from './window';
@@ -51,7 +51,28 @@ import { resolveOrdinal, type WindowEntry } from './window';
  * WHY THE WHOLE PLAN WENT. **A CLOSED SET, NEVER A MESSAGE** — it reaches
  * `chat.run_planned.reject_reason` and `events.props` may hold no free text.
  */
-export type PlanRefusal = 'unparseable' | 'shape' | 'no_usable_beat';
+export type PlanRefusal =
+  | 'unparseable'
+  | 'shape'
+  | 'no_usable_beat'
+  /**
+   * **A ZERO-BEAT SHEET FOR A RUN NOBODY SENT A MESSAGE FOR** (`[F5-7]`, seam S-new-3).
+   *
+   * `C-R6`'s *"the director may say nobody replies"* is an affordance for a POSTED
+   * MESSAGE, where declining to answer is a naturalness signal and one of the strongest
+   * this release has. **Applied to a proactive trigger it is a contradiction: nobody
+   * spoke, so there is nothing to decline to answer.**
+   *
+   * And it is not free. `[F5-13]`'s daily counter increments **at the mint** and does not
+   * refund — *"a limiter that refunds is a limiter with a race"* — so a director having a
+   * bad afternoon would spend the querent's whole daily budget on silence, with nothing on
+   * screen and nothing in the ledger to explain it.
+   *
+   * **THE PROMPT IS NOT THE ENFORCEMENT.** Rule 11 of `system.{id,en}.ts` says this in
+   * prose and a model may still answer `[]`; this is the refusal that makes it land, and
+   * `planFallback` turns it into the one plausible beat `[F2-13]` specifies.
+   */
+  | 'silence_on_proactive';
 
 /** What was fixed. Same rule: closed, and the FIRST one is what F7 would read. */
 export type PlanRepair =
@@ -84,6 +105,16 @@ export type PlanCheckContext = {
   /** `users.locale`, per `C-D9`'s fallback. Used when the model's `locale` is unusable. */
   fallbackLocale: Locale;
   caps: PlanCaps;
+  /**
+   * WHY THIS RUN EXISTS. **The one field that changes whether `beats: []` is an answer**
+   * (`silence_on_proactive` above).
+   *
+   * **REQUIRED RATHER THAN DEFAULTED TO `'user_message'`**, and that is the whole design of
+   * this field: a default would make the lax reading the one a caller gets by forgetting,
+   * and the thing being forgotten is a rule about a run with nobody watching it. Four call
+   * sites, each of which now has to say what kind of run it is holding.
+   */
+  trigger: RunTrigger;
 };
 
 /**
@@ -318,6 +349,16 @@ export function checkPlan(raw: string, ctx: PlanCheckContext): PlanCheckResult {
    * director is deciding.
    */
   if (proposed.length > 0 && kept.length === 0) return { ok: false, reason: 'no_usable_beat' };
+
+  /*
+   * **`[F5-7]`, AND IT IS CHECKED AFTER `no_usable_beat` ON PURPOSE.** A proactive run whose
+   * every beat named a fourth reader is a model that misunderstood the task, which is a
+   * sharper thing to know than *"it chose silence"* — so the more specific reason wins and
+   * this one is left with the case it is actually about: an explicit, deliberate `[]`.
+   */
+  if (kept.length === 0 && ctx.trigger !== 'user_message') {
+    return { ok: false, reason: 'silence_on_proactive' };
+  }
 
   return { ok: true, beats: kept, locale, repairs, dropped };
 }

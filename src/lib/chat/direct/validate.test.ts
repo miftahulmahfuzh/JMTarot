@@ -32,6 +32,10 @@ const CTX: PlanCheckContext = {
   }),
   fallbackLocale: 'id',
   caps: CAPS,
+  /* The default for this file: a run the querent started, where `beats: []` is silence and
+   * silence is the single most important acceptance in the function. The proactive block at
+   * the bottom overrides it, which is the only place the other reading is legal. */
+  trigger: 'user_message',
 };
 
 function plan(beats: unknown[], extra: Record<string, unknown> = {}): string {
@@ -352,6 +356,58 @@ describe('the run language', () => {
     const result = checkPlan(JSON.stringify({ beats: [] }), CTX);
     if (!result.ok) throw new Error(result.reason);
     expect(result.repairs).toEqual([]);
+  });
+});
+
+/**
+ * `[F5-7]`, seam S-new-3. **SILENCE IS AN ANSWER TO A MESSAGE AND NOT AN ANSWER TO A
+ * TRIGGER.**
+ *
+ * `C-R6` makes a zero-beat plan valid, desirable and measured — *"a rate of zero means the
+ * director is not really deciding"* — and every one of those sentences is about a POSTED
+ * MESSAGE. On a proactive run nobody spoke, so there is nothing to decline to answer, and
+ * `[F5-13]`'s daily counter incremented **at the mint** and does not refund: a director
+ * having a bad afternoon would otherwise spend the querent's whole day on silence, with
+ * nothing on screen and nothing in the ledger to explain it.
+ *
+ * **The refusal is what makes rule 11 land.** The prompt says it in prose and a model may
+ * still answer `[]`; `planFallback` turns this reason into the one plausible beat `[F2-13]`
+ * specifies.
+ */
+describe('a proactive run may not answer with silence', () => {
+  const PROACTIVE_TRIGGERS = ['reading_completed', 'idle_nudge', 'unanswered', 'cron'] as const;
+
+  for (const trigger of PROACTIVE_TRIGGERS) {
+    it(`refuses \`beats: []\` on \`${trigger}\``, () => {
+      expect(checkPlan(plan([]), { ...CTX, trigger })).toEqual({
+        ok: false,
+        reason: 'silence_on_proactive',
+      });
+    });
+  }
+
+  it('still accepts silence on a posted message, which is the whole of C-R6', () => {
+    /* The negative control, and it is the one that must never start failing: a change that
+     * refused silence everywhere would delete the strongest naturalness signal this release
+     * has, and every other assertion in this file would still pass. */
+    const result = checkPlan(plan([]), { ...CTX, trigger: 'user_message' });
+    expect(result).toEqual({ ok: true, beats: [], locale: 'id', repairs: [], dropped: 0 });
+  });
+
+  it('accepts a real proactive plan, so the refusal is about EMPTINESS and nothing else', () => {
+    const result = checkPlan(plan([BEAT]), { ...CTX, trigger: 'cron' });
+    expect(result.ok).toBe(true);
+  });
+
+  it('prefers `no_usable_beat` when the model proposed beats and none survived', () => {
+    /*
+     * **THE ORDERING IS THE POINT.** A proactive plan whose every beat named a fourth reader
+     * is a model that misunderstood the task, which is sharper than *"it chose silence"* — so
+     * the more specific reason wins and `silence_on_proactive` keeps the case it is about.
+     */
+    expect(
+      checkPlan(plan([{ ...BEAT, reader: 'morgana' }]), { ...CTX, trigger: 'idle_nudge' }),
+    ).toEqual({ ok: false, reason: 'no_usable_beat' });
   });
 });
 

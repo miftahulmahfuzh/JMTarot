@@ -320,10 +320,17 @@ export function describeMaterial(m: Material, locale: Locale): MaterialBrief {
        * `dominance` is a bucket precisely because a bucket cannot be accidentally
        * recited as a figure.
        */
+      /*
+       * **`top` IS ABSENT AND THE NOTE CARRIES IT INSTEAD.** The note is the line the
+       * director demonstrably reads — measured: with a generic note it took `dominance`
+       * into its angle and no card name reached the bubble — and naming the card in both
+       * places would put the same noun in the prompt twice, which is the thing the
+       * `reading` note refuses to do for the opposite reason. One noun, one place, and the
+       * place is the one that works.
+       */
       return {
         kind: m.kind,
         facts: {
-          top: m.mechanic.topName,
           second: m.mechanic.secondName,
           shadow: m.mechanic.shadowName,
           pulse: m.mechanic.pulseGloss,

@@ -10921,23 +10921,77 @@ run, with one Margaret bubble at 26 against the base ceiling of 24 (legal — he
 than a run improvising off an old transcript. **If the mean keeps climbing, the instrument is
 `CHAT_LENGTH_BUDGET` and not this prompt.**
 
+### Closing the four open items, and the one nobody had noticed (2026-08-08, same day)
+
+**THE FIRST THING FOUND WAS THAT EVERY MEASUREMENT ABOVE WAS ON THE WRONG MODEL.** `C-D4` puts
+the chat — director *and* voices — on `CHAT_MODEL`, `glm-5.2`, *"the best model we have"*, and
+unset **silently falls back to `LLM_MODEL`.** `.env.example` sets it; a `.env.local` written before
+v0.7.0 does not. The runner printed `chat model=glm-4.6 (CHAT_MODEL=unset)` at the top of all three
+runs and it was read past all three times.
+
+On glm-4.6, with everything else identical, **three defects appeared that do not exist on
+glm-5.2**:
+
+- a voice emitted **a whole transcript inside one bubble** — *"Mifta: jujur aja, aku cuma takut
+  ditilang mobilnya [REDACTED]: wkwk"* — a fake querent line and another reader's name, in a room
+  where every stored bubble becomes context for the next turn;
+- **two readers produced the same sentence verbatim** in one blind read;
+- and it invented nouns (*"soal ambulans"*) more often.
+
+**So `runProactive` now WARNS when `CHAT_MODEL` is unset, and the warning names those three
+defects.** The header line was faithful and useless; a warning that states the consequence is the
+only kind anybody reads. It is not fatal, because comparing the two models on this instrument is a
+legitimate thing to want.
+
+**`[F5-7]` / seam S-new-3 is BUILT, and it fired on its first live run.** `PlanCheckContext` gains
+a **required** `trigger` — required rather than defaulted to `'user_message'`, because a default
+makes the lax reading the one a caller gets by forgetting, and the thing forgotten is a rule about
+a run with nobody watching. `PlanRefusal` gains `silence_on_proactive`, checked **after**
+`no_usable_beat` so the sharper reason wins. Four call sites now each say what kind of run they
+hold.
+
+Measured immediately: on glm-5.2 the `unanswered` fixture answered `{"beats":[]}` — **and that
+reading was coherent.** The last thing said in the room was a reader's question, the querent had
+not replied, so there was nothing to reply to. The refusal caught it and `planFallback` would have
+covered it in production, but **a run that needs the fallback every time is a prompt that is not
+landing.** The cause was F5's own note, which stated a state and not a move.
+
+**So the `unanswered` note gained its direction, which is what the `orphan` note already had and
+for the same reason.** `C-N1d` says *a reader who asks and then never refers to the answer is worse
+than one who never asked*, and §7.3's inverse says *a reader who chases is worse than both* — so
+the note now says *"bahannya untuk mendekati pertanyaan itu dari sisi lain, bukan untuk menagih
+jawabannya"*. On the next run that fixture produced *"apa yang bikin susah, takut salah kata atau
+cuma gak enak udah lama balesnya?"* — the question approached from another side, which is exactly
+the move. **Six of six clean, both locales.**
+
+**The English six have now been read**, for the first time. Rule 11 and the third example land:
+`occasion` produced *"Mif is today actually your birthday or am I making that up"* and Margaret
+braided the birthday to the deposit the room had been discussing; `unanswered` came at the refused
+freelance job from the other side. All clean.
+
 ### Still open
 
-- **`recurring` is the one of six that does not name its own subject in the prose.** The dominance
-  word reaches the angle and the card names do not reach the bubble. V3's rule is why the material
-  cannot simply be shouted louder — *the counts are deleted, not forbidden* — so the honest next
-  step is a run with a different top pair to find out whether this is the fixture or the prompt.
-- **`checkPlan` STILL CANNOT REFUSE A ZERO-BEAT PROACTIVE PLAN**, which is seam S-new-3 and
-  `[F5-7]`. Rule 11 now tells the model not to, and **the prompt is not the enforcement.**
-  `validatePlan` has `input.trigger` in hand and does not pass it to `checkPlan`; threading it
-  would make a zero-beat proactive plan fall to `planFallback`, which produces one beat when the
-  material is present. That is a small change and it is F2's to make.
-- **One plan in twelve came back `unparseable`** across runs 2 and 3 (a duplicate `angle` key from
-  glm-4.6, in run 2 only). Run 3 refused none of six.
-- **A hallucinated noun in one bubble**: the `unanswered` run produced *"cuma nanyain kabar apa mau
-  ngomong soal ambulans"* — nothing in the fixture mentions an ambulance. That is a voice-layer
-  finding rather than a director one, `validateTurn` refuses shape rather than truth, and it is the
-  second reason to read this instrument by eye rather than by its exit code.
-- **The English half of the amendment is unread.** `--chat --proactive` runs one locale by default,
-  and the third example and rule 11 in `system.en.ts` have been asserted by `system.test.ts` and
-  never seen against a live model.
+- **`recurring` IS STILL THE ONE OF SIX THAT DOES NOT LAND, AND IT HAS NOW BEEN CHASED TWICE.**
+  The note names the top card (and `top` was dropped from `facts` so the noun appears exactly
+  once, which is the `reading` note's own reasoning inverted for a material whose subject *is* the
+  card). It worked on some runs — *"The Moon terus datang, ketakutan yang bersembunyi di balik
+  kelegaan"* — and on others the director's angle came back empty and the prose went back to the
+  transcript. **Four measured runs across two locales, no stable answer.** F2's own notes record
+  the rule for exactly this: *"Two prompt pushes were spent chasing it before the join was built;
+  the second cost the cast mix and was reverted. The instrument is the blind read."* A third push
+  would be chasing variance, so it stops here and the number to move — if anything — is the
+  fixture's top pair, to find out whether the subject is simply weaker than a boss conversation.
+- **THE VOICES STILL INVENT AN OCCASIONAL SPECIFIC, AND THE CONTRACT ALREADY FORBIDS IT.**
+  `base.{id,en}.ts` says in as many words: *"If something is not written in `<penanya>`,
+  `<jawaban>`, `<riwayat>` or `<obrolan>`, you do not know it. Do not guess, do not invent."* On
+  glm-5.2 the rate fell but did not reach zero: *"How many days since you last talked to your
+  mum"* and *"that first year on your own"* both name a fact no fixture supplied. **This is not
+  shape-testable and must not be faked with a test that pretends to be** — `validateTurn` refuses
+  shape, not truth, which is `validateInsight`'s ruling and `F5-Q4`'s. Lowering a rate needs many
+  runs and a corpus, not an edit. **A reader who invents your mother is worse than one who says
+  nothing**, so this is the release's sharpest remaining naturalness risk and it is loop 6's to
+  judge.
+- **Margaret runs long on glm-5.2**: two English bubbles at 29 words against a base ceiling of 24
+  and her own of 31. Legal, unfailed, and the same direction the material change caused. If the
+  mean keeps climbing the lever is `CHAT_LENGTH_BUDGET`.
+- **One plan in eighteen came back `unparseable`** (a duplicate `angle` key), on glm-4.6 only.

@@ -194,14 +194,13 @@ describe('describeMaterial', () => {
      */
     for (const locale of LOCALES) {
       const brief = describeMaterial(FIXTURES.recurring, locale);
-      expect(Object.keys(brief.facts).sort()).toEqual([
-        'dominance',
-        'pulse',
-        'second',
-        'shadow',
-        'top',
-      ]);
+      /* `top` lives in the NOTE rather than here, so the card is named exactly once — see
+       * `describeMaterial`'s `recurring` arm. */
+      expect(Object.keys(brief.facts).sort()).toEqual(['dominance', 'pulse', 'second', 'shadow']);
       expect(materialLine(brief)).not.toMatch(/\d/);
+      /* And it IS named: a line that lost the card would be the failure this arm was
+       * measured into existence to fix. */
+      expect(materialLine(brief)).toContain('The Moon');
     }
   });
 
