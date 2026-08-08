@@ -293,10 +293,37 @@ export type ChatLengthBudget = {
  * above applies: if the first run fails on a band, that is data, not a bug. The
  * number moves once, on evidence, and the evidence is written into
  * `docs/workstream-notes.md`.
+ *
+ * ── IT RAN THREE TIMES ON 2026-08-09, AND `en` MOVED 24 → 27 ────────────────
+ *
+ * **THE EVIDENCE IS MARGARET AND ONLY MARGARET.** Her English bubbles across three
+ * runs of the release gate came in at **25, 26, 27, 29, 31, 31 words against a
+ * resolved ceiling of 31** — and **two of the three runs LOST a bubble to it**,
+ * `too_long`, refused twice and dropped. The two casualties were the
+ * reader-to-reader probe and a `push_back`: `C-N1a`'s *"they answer each other"*,
+ * which is the most distinctive mechanic this release has. The `id` half never
+ * failed once and its maximum was 21.
+ *
+ * So this is `validateTurn`'s own bias arriving as a measurement: **a false
+ * rejection costs a bubble and makes the room quieter, which is the failure this
+ * release cannot afford.** 27 resolves Margaret to 35, which clears every observed
+ * bubble including the two refused ones (~32–35).
+ *
+ * **`maxChars` DID NOT MOVE, BECAUSE IT WAS NEVER THE BINDING CONSTRAINT** — her
+ * longest stored English bubble was 164 characters against 312. The refusals were on
+ * WORDS, and moving both would have been a change with evidence for half of it.
+ *
+ * **AND `id` DID NOT MOVE EITHER.** The two locales are allowed to differ here now,
+ * which the header above said they would not — *"the two locales differ in `maxChars`
+ * and not in `maxWords`"* was a prediction about where the difference would show up,
+ * and the measurement put it in the other column. English carries the same thought in
+ * more, shorter words; the ratio the header names is real and points this way.
+ * **Nothing about the `id` band is a reason to touch it, and scaling it "to match"
+ * would be exactly the unevidenced half this note refuses.**
  */
 export const CHAT_LENGTH_BUDGET: Record<Locale, ChatLengthBudget> = {
   id: { maxWords: 24, minWords: 0, maxChars: 260 },
-  en: { maxWords: 24, minWords: 0, maxChars: 240 },
+  en: { maxWords: 27, minWords: 0, maxChars: 240 },
 };
 
 /**

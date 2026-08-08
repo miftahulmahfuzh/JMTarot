@@ -10995,3 +10995,235 @@ freelance job from the other side. All clean.
   and her own of 31. Legal, unfailed, and the same direction the material change caused. If the
   mean keeps climbing the lever is `CHAT_LENGTH_BUDGET`.
 - **One plan in eighteen came back `unparseable`** (a duplicate `angle` key), on glm-4.6 only.
+
+---
+
+## F7 — the operator's view (v0.7.0, 2026-08-08)
+
+**What landed:** `/admin/chat` with nine panels and its `Obrolan` tab;
+`src/lib/db/queries/admin/chat.ts` (ten query functions plus `chatRollup`);
+`src/app/admin/chat/{page,series,slots}`; the nine-panel `Insight` registry (`PANEL_IDS`
+13 → 22); `src/lib/admin/ops.ts`; `peakWindow5h`'s optional `ops` filter; the `Obrolan`
+section on `/admin/users/[id]`; `[R8]`'s negative control; `docs/analytics-queries.md`
+§19; and seven prose corrections to a rule that was stale in four places at once.
+
+`docs/plans/2026-08-07-chat-admin.md` is the plan. **Three of its assertions were wrong
+and the measurements are below** — that is the part of this section worth reading.
+
+### The plan said a histogram is a `StackedBar`. It is not, and only a screenshot showed it
+
+`[F7-10]` reads, in as many words: *"a histogram is a `StackedBar` with one segment per
+row, and the identity is carried by the row label, not by colour."* It was written
+against `StackedBar`'s API and never against its behaviour.
+
+**`stackSegments` normalises every row to 100% of its OWN total.** A row with one
+segment is therefore **always full width**, whatever its value. Rendered at 1440 signed
+in as an admin:
+
+- `chat.beats` — `0 beat` at full width with `1`, beside **five empty outlines** reading
+  `0`. The distribution, which is the whole panel, encoded nothing.
+- `chat.intent` — **six identical empty outlines.** Same.
+- `chat.cast` — thessaly, margaret and adrian all full width, so the *composition* inside
+  each bar was right and their **lengths were mutually uncomparable.**
+
+**This property was already documented in this repository.** `/admin/page.tsx`'s TTFT
+card says it about durations — *"three bars of duration would all fill the width and be
+mutually uncomparable"* — and F7's plan reached the opposite conclusion about the same
+component eight days later. **The lesson is not "read `StackedBar` more carefully"; it
+is that a plan cannot verify a rendering claim and only loop 3 can.**
+
+**The fix is `InlineBars`**, the page-local table furniture `/admin/tokens` already uses
+for the thirteen ops: a length encoding against the row MAXIMUM, in one sequential hue,
+spending no categorical slot. That is a better fit than the plan's design rather than a
+concession — `[F7-16]` forbids a new chart primitive and A-D9 forbids a fifth hue, and a
+bar whose colour carries nothing is legal on a nominal category where a value-ramp is
+not. **A second local copy** rather than a promotion, because the existing copy's own
+header refuses promotion: *"a primitive would invite somebody to use it as a bar chart."*
+
+**The emphasis slots went with it.** `0 beat`, `abandoned` and `ask` were each to wear a
+second colour; the emphasis now lives in the `StatTile` beside each panel, which is a
+number rather than a hue somebody has to decode.
+
+Two more the same screenshot caught, neither visible in any test:
+
+- **The tiles sat flush against the bars.** `ChartFrame` gives its children no
+  separation — correct after a `PlotFrame`, whose axis brings its own padding, and wrong
+  after `.inlineRows`. `.panelTiles` is a class rather than a margin on `KpiRow`, because
+  `KpiRow` is used in three other places where the spacing above it is already right.
+- **The two quota meters came out different widths**, because the first draft reused
+  `.lead` — `max-content 1fr`, right for a hero beside a meter and **wrong for a meter
+  beside a meter on a panel built for comparison.** `.meterPair` is `1fr 1fr`.
+
+### Loop 4 said the page fits, and the only wide element is inside its own scroller
+
+`public/cards/_adminchatfit.html` (gitignored, `_slotfit.html`'s pattern). An iframe IS a
+fixed-width container and it is same-origin, so the parent reads the real
+`scrollWidth`/`clientWidth` of the rendered document inside it. Measured:
+
+| width | body scrollWidth | clientWidth | verdict |
+|---|---|---|---|
+| 320 | 320 | 320 | fits |
+| 360 | 360 | 360 | fits |
+| 375 | 375 | 375 | fits |
+| 390 | 385 | 385 | fits |
+
+The widest element at every width is a `TableView` `<table>` at **627px**, inside its own
+`overflow-x: auto` scroller — which is the rule, not a violation.
+
+### Seam S10 inverted: there is no cost-per-reading arithmetic to fix
+
+`C-D5` gives F7 *"fixing the cost-per-reading denominator everywhere it already exists"*.
+**A sweep of `src/app/admin/**`, `src/lib/db/queries/admin/**`, `src/lib/analytics/**`,
+`src/lib/llm/**` and `docs/analytics-queries.md` for any expression dividing a cost, a
+token count or a call count by a reading count returns NOTHING.** What exists is:
+
+1. the **rule** about such a denominator, stated in prose in four places — **three of them
+   already stale.** `OP_ORDER`'s header said *"The ten"* over an eleven-member array;
+   `docs/analytics-queries.md:566` said ten and named only `insight`, missing
+   `blog_format` which landed the same day; `copy.ts` said *"Sepuluh op"*.
+2. **fourteen aggregation sites that sum across every `LLMOp` with no predicate**, almost
+   all of them correct unfiltered — a quota series counts every call that charged the
+   window, and the per-op table exists to show every op.
+3. **exactly two sites in the repo that filter on `op` at all**, both `op = 'reading'` in
+   the A-D17 drift check, both already correct.
+
+So the honest reading is **fix the rule, not an arithmetic that was never written.**
+Inventing a cost-per-reading tile in order to have something to correct would have forced
+`op` into `PriceableRow`, into `tokensByBucketAndModel`'s SQL and into `userCostLeague`'s
+SQL — three edits to A3's files, breaking six test files — to render a number nobody asked
+for.
+
+**`src/lib/admin/ops.ts` is the rule's one machine-checked home.** `NON_READING_OPS`, a
+derived `READING_OPS`, a hand-written literal twin and an `AssertNever` that makes a
+fourteenth op a compile error until somebody decides which side it is on. `OP_ORDER`'s own
+trade — a hand-written list plus a mechanical check — because `Array.prototype.filter` has
+no type-level result.
+
+**The highest-risk site turned out to be a PROMPT, not an arithmetic.** `kpiFacts` puts
+`OVERVIEW.kpi.spend` and `OVERVIEW.kpi.readings` in ONE `headline` list, and
+`INSIGHT_SYSTEM`'s rule 1 only forbids citing a number that is **not** in the block —
+which a quotient of two numbers that are is not. Three `notes` additions close it, and
+`opFacts` names `panels.ts:653`'s **rejected** exclusion at the site so the diff does not
+read as a reversal of it.
+
+### `[R8]`'s negative control could not be written the way the plan specified
+
+The plan asked for *"a `chat_turn` row **with** a `reading_id`, asserting `cost.calls` is
+unchanged — which fails today"*. The reconciliation then ruled the other half of the
+seam: **`reading_id` is NULL at F1's call site**, and `readingCostsFor` keeps no `op`
+predicate. So that assertion is unwritable — there is nothing in the query to make it
+true.
+
+It ships as **two halves of one fact**: a chat row as F1 actually writes it is not folded,
+and the same row **with** a `reading_id` **is** — 900 + 3100 input tokens under a label
+that says *Biaya generasi*. The second half is asserted rather than left implied because a
+future session reading `[R8]` and wondering *"why not just add an `op` predicate"* needs to
+see what the predicate's absence costs: adding one changes what that label means for every
+reading in history, and `costLabel` in `users/copy.ts` stops being true.
+
+### `CHAT_ROLLUP_QUERIES` is 13, and the first guess was 11
+
+Counted by hand as *"nine functions"*, asserted by a counting `Proxy`, and wrong twice:
+`runHealth` issues two statements and `peakWindow5h` is called twice. Then `callsByOp`
+joined for the fleet-share denominator. **The count is asserted precisely because a hand
+count is what this was.**
+
+### Three panels that are not what the plan asked for, and why
+
+- **The reply rate has no per-day line.** A daily rate over a handful of runs is the *"big
+  percentage over a small base"* `INSIGHT_SYSTEM` already lists as **not** a problem; a
+  chart of it would manufacture the finding the prompt forbids.
+- **The dropped-beat tile clamps at zero.** `[R19]` grants one beat two bubbles, so
+  `beats_planned - bubbles` is a SIGNED quantity. *"Beat dijatuhkan: −3"* reads as a broken
+  dashboard rather than as a reader who had two things to say. The raw value survives into
+  the facts block, which says which side of zero it fell on. **This was not hypothetical:**
+  the documented §19b query returned `difference = -4` on its very first run against the
+  dev database.
+- **`chat.latency`'s range-wide row is Postgres's**, from a `union all`, never the mean of
+  the daily figures. `ttftOverall`'s rule in a second place: the mean of thirty p95s is not
+  a p95.
+
+### Still open when F7 landed
+
+- **`/admin/chat` has been rendered but never *used*.** Nine panels of mostly-empty dev
+  data, read once. The reply rate needs a week of production traffic before it says
+  anything, and F7's own plan names the reading of it as *"not a loop, and the one that
+  decides the release"*.
+- **The insight box on these nine panels has never been pressed against real numbers.**
+  `[F7-9]` argues that seven of the nine are structurally insulated from the press's own
+  `llm_calls` row and that only `chat.quota` moves. **That is an argument, not a
+  measurement**, and A7's equivalent claim was wrong until somebody pressed the button.
+- **`chatSummaryForAdmin` runs five statements outside `CHAT_ROLLUP_QUERIES`' assertion**,
+  on a page that already issues fourteen. Nothing measures `/admin/users/[id]`'s total
+  round-trip count.
+- **The `Obrolan` tab's position is a guess** (F7-Q7, ruled by F7 rather than by Miftah):
+  third, on the argument that `/admin`, `/admin/tokens` and `/admin/chat` are the three
+  fleet-metric pages and `/admin/users`, `/admin/blog` the two per-subject ones.
+
+### The release gate, run four times on 2026-08-09 — and what it moved
+
+`npm run smoke -- --chat` is `C-N1f`'s instrument and §10.2's gate. F3's passing blind
+read predates F2's rewrite of the director, F2's `BAHAN` amendment and the whole of F5, so
+the assembly it described no longer existed. Three fresh runs plus a confirmation:
+
+**The three readers are separable and the numbers say so.** Sentence length
+`thessaly=5.2  margaret=18.3  adrian=19.0` in `id` (the 1.5× ratio holds), pairwise
+Jaccard overlap **0.026 / 0.098 / 0.156**, `push_back` and `agree` landing between readers,
+and the ending probe correctly producing **no beats at all** (`C-R6`) in every run.
+
+**`CHAT_LENGTH_BUDGET.en.maxWords` MOVED 24 → 27, AND THAT IS THE ONE NUMBER THAT
+CHANGED.** The evidence is Margaret and only Margaret: her English bubbles came in at
+**25, 26, 27, 29, 31, 31 against a resolved ceiling of 31**, and **two of the three runs
+LOST a bubble** to `too_long` — refused twice, dropped, silence. Both casualties were
+reader-to-reader beats, which is `C-N1a`'s most distinctive mechanic. The `id` half never
+failed and topped out at 21. `maxChars` did **not** move: her longest stored English bubble
+was 164 characters against 312, so the refusals were on words and moving both would have
+been a change with evidence for half of it. **The previous section of this file predicted
+exactly this** — *"Margaret runs long on glm-5.2… if the mean keeps climbing the lever is
+`CHAT_LENGTH_BUDGET`"* — which is what a recorded prediction is for.
+
+**THE CONFIRMATION RUN IS THE MEASUREMENT THAT MATTERS: no `too_long` at all**, and
+Margaret's English came in at **31, 32 and 34 against her new 35** — three bubbles that
+would each have been refused and dropped under the old 31, delivered instead. Sentence
+length `thessaly=6.8  margaret=32.3  adrian=22.0`, overlap 0.017 / 0.029 / 0.076: **the
+readers did not converge when the ceiling moved**, which was the risk of raising it.
+
+**AND `budget.test.ts` RECORDED THAT THIS IS THE SECOND ROUND, WHICH CHANGES WHAT IT
+MEANS.** That file's own comment says the number *"shipped at 22 and the first three
+calibration runs moved it"* — for the same reader, in the same locale, refusing three of
+her six English turns. **Twice now the base ceiling has been raised to accommodate one
+reader in one locale.** What that really says is that `MARGARET_MULTIPLIER = 1.3` is too
+small for English specifically: her English sentences run 3–4× the other two readers'
+where her Indonesian runs ~3.5× at a much lower absolute. **If a third round moves it
+again the lever is wrong, and the fix is a per-(locale, reader) multiplier rather than a
+third raise** — deliberately not taken on two rounds, because VD19 makes the multiplier a
+fact about the READER and splitting it by locale is a reconciliation question.
+
+**Still open from the same runs, and deliberately NOT fixed:**
+
+- **TWO REGISTER HITS IN FOUR COMPLETED RUNS, ON TWO DIFFERENT PHRASES IN TWO DIFFERENT
+  LOCALES — AND NEITHER REPEATED.** Thessaly in English, to *"how do you even know that
+  about me"*: **"you mentioned her once, that's all. nobody's digging."** — `[F3-9]`'s
+  surveillance tell, and `C-D8`'s whole reason for existing. Then, in a later run,
+  **`"kedua,"`** in Indonesian: enumeration language, which `C-N1b` bans because nobody
+  lists in a group chat.
+  **In both cases the smoke script's `REGISTER` check flagged the bubble AFTER it was
+  stored** — so `validateTurn` does not catch these phrases and the check is a REPORT,
+  not a fence. Left alone because **no phrase repeated**: tightening a prompt on one
+  sample each is what this repository's own rule (*"never tightened on one favourable
+  run"*) refuses in the other direction. **The signal to act on is one phrase recurring,
+  not the count.**
+- **FIVE SMOKE RUNS IN TWENTY MINUTES TRIPPED THE FLEET SOFT CEILING**, and the run died
+  mid-transcript with `ModelCeilingError (soft)`. The counter read **exactly 196** — 280 ×
+  0.7 — which is `C-D6`'s arithmetic arriving in practice rather than on paper: *"sixty
+  chat runs exhaust the entire app's five-hour quota."* **It charged the LOCAL SRH and not
+  production's Upstash** (`.env.local` points at the docker instance), and the dev key was
+  deleted to continue. Two things worth keeping: **a smoke run is not free against the
+  window**, and **the smoke script calls `complete()` directly**, so it exercises the fleet
+  meter and NOT `reserveChatCall` — there was no `chat` key in Redis at all, and
+  `LLM_WINDOW_CHAT_CEILING` remains unexercised outside the route.
+- **No bubble of ≤3 words appeared in `id` at all**, and only 2 in 10 in one English run.
+  `C-D19` requires that *"wkwk"* and *"hm"* be possible and the floor is `0`, so nothing
+  forbids them — the readers simply do not write them. The band is printed rather than
+  failed, and it is the honest measure of how far the room still is from how a group chat
+  actually reads.

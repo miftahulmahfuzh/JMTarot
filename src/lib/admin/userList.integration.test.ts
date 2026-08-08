@@ -163,6 +163,23 @@ describe('the aggregate figures, and what null means', () => {
         outputTokens: 350,
         status: 'ok',
         localDate: '2026-07-20',
+        /*
+         * ── PINNED, AND THIS FIXTURE WAS A TIME BOMB UNTIL IT WENT OFF ─────────────
+         *
+         * **`userCostLeague` FILTERS ON `created_at`, NOT ON `local_date`**, and this row
+         * left the column at its `now()` default. That was inside `RANGE` while the clock
+         * was still in July 2026 and stopped being on **2026-08-01**, so this test went red
+         * eight days later for a reason that has nothing to do with its subject: the
+         * aggregate came back `null` and read as `adminUserListPage` having broken.
+         *
+         * `metrics.integration.test.ts`'s `row()` helper already documents the exact trap
+         * in its header — *"half the catalogue filters on `created_at` and half on
+         * `local_date`, so a row left at the column default lands on today"* — and that
+         * file pins both clocks for every fixture. **This file is the same lesson, paid for
+         * twice.** The negative control below is what turns the seam into an assertion
+         * rather than a comment.
+         */
+        createdAt: new Date('2026-07-20T12:00:00Z'),
       });
 
       const page = await adminUserListPage(tx, { limit: 50, offset: 0, range: RANGE });
@@ -188,5 +205,39 @@ describe('the aggregate figures, and what null means', () => {
       // and on a capped league those are genuinely different facts.
       expect(item.calls).toBeNull();
       expect(item.inputTokens).toBeNull();
+    }));
+
+  it('THE NEGATIVE CONTROL: the aggregate window is `created_at`, never `local_date`', () =>
+    withRollback(async (tx) => {
+      /*
+       * **THE TWO BUCKET KEYS, AND THIS PAGE USES THE ONE ITS SIBLING DOES NOT.**
+       * `adminUserListPage` aggregates through `userCostLeague`, which windows on
+       * `created_at`; `/admin/users/[id]`'s token panel windows on `local_date` through
+       * `callTotalsForUser`. R25's rule is that the mixture must be visible rather than
+       * silent, and the honest consequence is that **the same querent's figures on the two
+       * pages can legitimately disagree at the edges of a range** — a call taken at 23:00
+       * WIB on the 31st has a `local_date` of the 31st and a `created_at` of the 1st.
+       *
+       * This row is inside the range by `local_date` and outside it by `created_at`. It must
+       * NOT be counted, and asserting that is what stops the next person "fixing" the fixture
+       * above by switching the query instead of the clock.
+       */
+      const id = await seedUser(tx);
+      await tx.insert(llmCalls).values({
+        userId: id,
+        op: 'reading',
+        model: 'glm-4.6',
+        callClass: 'interactive',
+        streamed: true,
+        inputTokens: 900,
+        outputTokens: 350,
+        status: 'ok',
+        localDate: '2026-07-31',
+        createdAt: new Date('2026-08-01T02:00:00Z'),
+      });
+
+      const page = await adminUserListPage(tx, { limit: 50, offset: 0, range: RANGE });
+      const item = page.items.find((i) => i.id === id)!;
+      expect(item.calls).toBeNull();
     }));
 });

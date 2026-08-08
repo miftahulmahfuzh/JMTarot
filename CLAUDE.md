@@ -68,6 +68,12 @@ npm run smoke -- --all --lotus   # the nine WITH a canned Lotus block, fixed han
 npm run smoke -- --all --fixed   # the nine without one, same hands, for the diff
 npm run smoke -- --all --choice  # EIGHTEEN, all asking a two-option question. THE ONLY
                      # instrument for the choice marker's FORMAT. READ THE MARKERS.
+npm run smoke -- --chat  # a scripted multi-turn group chat, names covered. THE RELEASE
+                     # GATE for v0.7.0 (`C-N1f`): if you cannot tell who is who, it is
+                     # not done. No unit test stands in for it.
+npm run smoke -- --chat --proactive  # an UNPROMPTED opening. Does it sound like somebody
+                     # thought of you, or like a cron job?
+npm run smoke -- --chat --director   # the beat sheets alone, for calibrating F2
 ```
 
 **Development** runs against Postgres in Docker; `db:up` must run before `npm run
@@ -126,6 +132,16 @@ through a deployment from scratch. Only the rules that bite are repeated here:
   gets the fallback template and nothing alerts on it.
 - **`TRANSLATION_MODEL` and `PERSONA_MODEL` default to `LLM_MODEL` and WANT the reading
   model**, not a cheap one — both produce prose a person reads, in a reader's voice.
+- **`CHAT_MODEL` IS ONE VARIABLE FOR THE DIRECTOR AND ALL THREE VOICES, AND IT IS SET TO
+  `glm-5.2`** (v0.7.0, `C-D4`, Miftah's ruling — *"the best model we have"*). `ADMIN_MODEL`'s
+  shape pointing the opposite way: that one points away from `LLM_MODEL` because nothing on the
+  admin surface is in a reader's voice, this one because **everything on the chat surface is.**
+  Unset falls back to `LLM_MODEL`, which is not an outage but is a different room.
+  **A `CHAT_PLANNER_MODEL` is not a fourth variable to add for symmetry** — its only effect
+  would be letting somebody make the director dumber than the readers it directs, at 2am, and
+  never notice. **`LLM_WINDOW_CHAT_CEILING` defaults to HALF the hard ceiling and is DERIVED
+  from it in `meter.ts`, never written as a literal**, so the February 2027 credit migration
+  moves both together.
 - **`ADMIN_MODEL` IS ONE VARIABLE FOR ALL THREE ADMIN MODEL CALLS AND POINTS THE OTHER WAY**
   (2026-08-01, Miftah's ruling; `src/lib/admin/model.ts`, a LEAF). The Insight button, Auto
   Format and `Terjemahkan otomatis` are the only sites whose caller is the operator, and
@@ -962,6 +978,105 @@ invariant lists, the traps each one paid for, the measurements and the design ar
 file loadable, and it is the one a future session is most likely to break by appending a
 postmortem here instead.
 
+## The group chat (v0.7.0)
+
+**Three readers and the querent in one room, that keeps going when nobody is looking at it.**
+`src/lib/chat/**` (types, machine, run, budget, model, address, context, prompt/**, direct/**,
+voices/**, proactive/**), `src/lib/db/queries/chat.ts`, `src/app/api/chat/**`,
+`src/app/api/cron/nudge`, `src/app/chat/**`, `src/components/Chat*.tsx`, `/admin/chat`.
+Seven workstreams, `PUBLIC_RELEASE_ROADMAP_v0.7.0.md` and
+`docs/plans/2026-08-07-RECONCILIATION-v0.7.0.md`, **and the reconciliation outranks the
+roadmap.** The full account of each is in `docs/workstream-notes.md` under F1–F7.
+
+**IT IS MEASURED BY TWO THINGS AND NOTHING ELSE — how NATURAL and how PROACTIVE the room
+feels.** Every trade below is traded in their favour, including the ones that look like
+infrastructure.
+
+- **A RUN IS THE UNIT, NOT A REQUEST.** One trigger produces one `chat_runs` row, which
+  produces 1–4 bubbles from 1–3 readers. The director writes a **beat sheet**; the voices
+  execute it **one beat per `POST /api/chat/advance`**. **An abandoned run and a proactive run
+  are the same object** (`C-D7`), which is why proactivity needed triggers rather than a second
+  pipeline. A design in which unprompted messages have their own route, table or renderer is
+  wrong.
+- **A TURN IS BUFFERED AND DELIVERED WHOLE, NEVER STREAMED** (`C-D3`) — a naturalness decision,
+  not a performance one: watching Adrian type character by character is a chatbot tell. It also
+  buys validation before display and one code path for turns nobody is watching.
+  **`ReadingView`'s streaming machinery is not reused and must not be.**
+- **CHAT CALLS ARE `deferred`, AND THAT IS A PROMISE TO THE READING** (`C-D6`). A chat run is
+  2–5 calls and sixty runs would exhaust the app's whole five-hour quota, so when the two
+  compete the reading wins. **`LLM_WINDOW_CHAT_CEILING` is the chat's own sub-budget**, peeked
+  before the fleet ceiling and defaulting to half of it. **A shed beat is not an error** — the
+  run stays `running` and the next visit delivers it.
+- **THE READERS SEE THE SIX RAW ONBOARDING ANSWERS, AND THIS AMENDS `A5` BY NAME** (`C-D8`,
+  granted with all five conditions intact). One decrypt site, in F3's assembler through
+  `queries/onboarding.ts`; **not one decrypted byte reaches the browser**; `<jawaban>` fences
+  it; **a skipped answer stays skipped**, because a reader who asks about the thing you
+  refused to answer is the worst version of this feature. `CHAT_ANSWERS_ENABLED` is the
+  reversal that needs no prompt-layer redeploy. **`/privacy` AND BOTH ONBOARDING HINTS were
+  amended in the same release** — the hints are the load-bearing edit, because nobody re-reads
+  `/privacy` and everybody reads the hint while typing the answer.
+- **A CHAT MESSAGE IS NEVER TRANSLATED** (`C-D9`). `TRANSLATABLE` gets no entry and
+  `translations` no `entity`: translating it would make Thessaly say something she did not say,
+  in a room where the querent can see the original. The chrome still follows `t()`; a bubble
+  carries its own `lang` and the page does not.
+- **CODE DERIVES THE ADDRESS FORMS AND THE MODEL PICKS ONE FROM THE LIST** (`C-D10`) —
+  `effectiveYesNo()`'s and `validateChoice`'s rule in a third place. `address.ts` is PURE and a
+  LEAF; **the full nickname is always candidate zero**, and **an empty candidate list is a
+  correct outcome, never an error.**
+- **THERE IS NO ERROR BUBBLE. A FAILURE IS SILENCE** (`C-R7`), and **a zero-beat plan is valid
+  and desirable** (`C-R6`). The two are indistinguishable from inside the room and are told
+  apart only on `/admin/chat`'s health panel. **A silence rate of zero is not good news** — it
+  means the director always answers, which is not what a group chat does.
+- **`/chat` IS GATED AND `isPublic()` MUST NEVER LEARN IT** (`C-D12`) — `/history`'s sentence
+  for a stronger reason, because this room contains the six answers spoken aloud. **`/en/chat`
+  404s**, per contract G2.
+- **A POSTED MESSAGE GOES THROUGH THE W7 GATE AND A REFUSAL IS NEVER IN A READER'S VOICE**
+  (`C-D13`). `RefusalNotice`, not a bubble: a reader who refuses you is a friend who refuses
+  you. **The classifier is not "tightened" for this surface** — grief, illness and a
+  frightening partner are what the room is for — and **a reader's own output is not
+  classified.**
+- **THE UNREAD DOT IS LIT BY A STORED BUBBLE AND NEVER BY A PENDING RUN** (`[R6]`, correcting
+  `C-D7`). `GET /api/chat/state` returns the count and the pending flag as **two fields**: the
+  count drives the dot, the flag drives the warm. A dot lit by a pending run can lead the
+  querent to a room with nothing new in it.
+- **`chat_messages.body` IS TEXT A PERSON TYPED, IN PLAINTEXT** (`C-D20`) — `readings.question`'s
+  neighbour in every privacy commitment. **Never log a driver error from any path that runs a
+  chat query**, `events.props` carries a length and never a body, and **nothing in
+  `queries/admin/chat.ts` selects the column at all.**
+- **`CHAT_MODEL` DEFAULTS TO `glm-5.2` AND IS ONE VARIABLE FOR THE DIRECTOR AND THE VOICES**
+  (`C-D4`, `ADMIN_MODEL`'s shape). It points *away* from `LLM_MODEL` for the opposite reason
+  `ADMIN_MODEL` does: everything on this surface is in a reader's voice. **The chat is, by
+  accident, already on the right side of the ~February 2027 line** `## The z.ai plan` describes.
+- **TWO NEW `LLMOp` VALUES, 11 → 13** (`C-D5`): `chat_plan` is one director call per run,
+  `chat_turn` one per beat. **Two, not one**, because averaging a tiny JSON reply with a
+  two-sentence one makes both figures meaningless; **two, not three**, because a proactive turn
+  is a `chat_turn` and what made it proactive is `chat_runs.trigger`. **`llm_calls.reading_id`
+  is NULL for both** (`[R8]`) — `readingCostsFor` folds every `reading_id`-bearing row with no
+  `op` predicate, so a non-null there would silently inflate the cost of the reading that
+  triggered the conversation.
+- **FOUR OF THE THIRTEEN OPS HAVE NO QUERENT BEHIND THEM AND `src/lib/admin/ops.ts` IS THE
+  MACHINE-CHECKED LIST.** `insight`, `blog_format`, `chat_plan`, `chat_turn`. It carries a
+  compile guard so a fourteenth op is an error until somebody classifies it — written because
+  the same rule was stated in prose four times and **three of the four were stale.**
+- **TWO NEW FLAGS, FIVE BECOMES SEVEN** (`C-D15`): `CHAT_ENABLED` and
+  `CHAT_PROACTIVE_ENABLED`, on `ANALYTICS_ENABLED`'s rule. **Off gates the model call, never
+  the cached read** — the room still opens and every past message still renders.
+- **`/admin/chat` MEASURES AND NEVER RESTRAINS.** No pause button, no ceiling editor. Its one
+  `Hero` is the proactive reply rate, **whose denominator is runs whose 24-hour window has
+  CLOSED** — including the open ones makes the release's own scorecard fall every time somebody
+  picks a range ending today. `/admin/users/[id]` shows **counts and no text** (`[R15]`),
+  because `A-D16`'s audited reveal was built for a thing you read one of.
+- **A HISTOGRAM ON THAT PAGE IS `InlineBars`, NOT `StackedBar`.** `stackSegments` normalises
+  every row to 100% of its own total, so a one-segment row is always full width and the
+  distribution encodes nothing. Measured at 1440 on 2026-08-08, after a plan asserted the
+  opposite. The same property makes `chat.cast`'s bar LENGTHS meaningless — compare the numbers
+  at the row ends.
+
+**Verify it with the blind read, not with a test.** `npm run smoke -- --chat` and
+`npm run smoke -- --chat --proactive` print an exchange with the names covered; if you cannot
+tell who is who, the release is not done. No unit test can stand in for it, and
+`/admin/chat`'s reply-rate panel is the only *continuous* measurement once it has shipped.
+
 ## Analytics and reading history (W4)
 
 Every reading, every card and every meaningful choice is persisted, and **none of it is on the path
@@ -1465,9 +1580,13 @@ the live verification, and the evidence is in `docs/workstream-notes.md`.
   measured at 1.44s against 3.32s. `admin.blog_saved.model_called` is the instrument: true on
   nearly every press means the PARSER is missing something.
 - **`blog_format` IS THE ELEVENTH `LLMOp`, AND THE SET GREW TWICE ON 2026-07-31.** The rule
-  was never that ten is a magic number — a new value is a question for Miftah. **Two ops now
-  measure the dashboard and the CMS rather than the app, so a cost-per-reading denominator
-  must exclude `insight` AND `blog_format`.**
+  was never that ten is a magic number — a new value is a question for Miftah. **FOUR of the
+  thirteen ops now measure something other than a reading** — `insight` and `blog_format` the
+  dashboard and the CMS, `chat_plan` and `chat_turn` the group chat — **so a cost-per-reading
+  denominator must exclude all four, and `src/lib/admin/ops.ts` is the machine-checked list**
+  with a compile guard that makes a fourteenth op an error until somebody classifies it.
+  *(This bullet said "two" over an eleven-member union for a whole release; F7 found the same
+  sentence stale in four places at once, which is the argument for the file.)*
 - **`flagCoverage.test.ts`'s ADMIN-ONLY EXEMPTION NOW HAS THREE MEMBERS AND IS OWED A CLASS
   SWITCH.** `callClass: 'deferred'` is the switch — the fleet-wide ceiling sheds an operator's
   press before any querent call. **The FOURTH admin-only call site must bring one

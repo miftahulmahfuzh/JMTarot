@@ -22,10 +22,32 @@ describe('CHAT_LENGTH_BUDGET', () => {
    * **IT SHIPPED AT 22 AND THE FIRST THREE CALIBRATION RUNS MOVED IT**, because
    * Margaret's resolved 29 refused three of her six English turns. See
    * `CHAT_LENGTH_BUDGET`'s header for the measurement.
+   *
+   * ── AND `en` MOVED AGAIN, 24 → 27, ON 2026-08-09 — THE SECOND ROUND ─────────
+   *
+   * **THE SAME READER, THE SAME LOCALE, THE SAME FAILURE.** Three fresh runs of the
+   * release gate on the final assembly: Margaret's English bubbles at 25, 26, 27, 29,
+   * 31, 31 against her resolved 31, with **two of the three runs losing a bubble** to
+   * `too_long`. `id` never failed and topped out at 21.
+   *
+   * **THE TWO LOCALES NOW DIFFER IN `maxWords`, WHICH THE TEST BELOW SAID THEY WOULD
+   * NOT** — that assertion was about `maxChars` being the axis of difference, and the
+   * measurement put it in this column instead. The `id` number is untouched, because
+   * nothing about the `id` band asked to move and scaling it "to match" would be a
+   * change with evidence for half of it.
+   *
+   * **IF A THIRD ROUND MOVES IT AGAIN, THE LEVER IS THE WRONG ONE.** Twice now the
+   * base ceiling has been raised to accommodate one reader in one locale, and what
+   * that really says is that `MARGARET_MULTIPLIER = 1.3` is too small for English —
+   * her English sentences run 3–4× the other two readers' where her Indonesian runs
+   * 3.5× at a much lower absolute. **The fix then is a per-(locale, reader)
+   * multiplier, not a third raise**, and it is deliberately not taken on two rounds
+   * of evidence: VD19 makes the multiplier a fact about the READER, and splitting it
+   * by locale is a reconciliation question rather than an authoring convenience.
    */
-  it('is 24 words in both locales, and English is not a translation of a calibration', () => {
+  it('is 24 words in `id` and 27 in `en`, each measured rather than translated', () => {
     expect(CHAT_LENGTH_BUDGET.id.maxWords).toBe(24);
-    expect(CHAT_LENGTH_BUDGET.en.maxWords).toBe(24);
+    expect(CHAT_LENGTH_BUDGET.en.maxWords).toBe(27);
   });
 
   /**
