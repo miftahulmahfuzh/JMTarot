@@ -3,6 +3,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 
 import { MAX_CHAT_MESSAGE_LENGTH } from '@/lib/chat/types';
+import { replyPreview } from '@/lib/chatSurface';
 import { useT } from '@/lib/i18n/LocaleProvider';
 import styles from './ChatComposer.module.css';
 
@@ -150,8 +151,17 @@ export function ChatComposer({
 
       {replyTo ? (
         <div className={styles.replyStub}>
-          <span className={styles.replyAuthor}>{replyTo.author}</span>
-          <span className={styles.replyText}>{replyTo.text}</span>
+          {/*
+            THE NAME ABOVE THE TEXT, AND THE TEXT CUT TO EIGHT WORDS. Both halves are
+            the 2026-08-09 width fix, and `replyPreview`'s header is where the argument
+            lives: a `nowrap` line beside the name made the stub's minimum width the
+            whole message, which on WebKit reached the room and took `Kirim` off the
+            right-hand edge. This is the shape the in-bubble quote has always had.
+          */}
+          <span className={styles.replyBody}>
+            <span className={styles.replyAuthor}>{replyTo.author}</span>
+            <span className={styles.replyText}>{replyPreview(replyTo.text)}</span>
+          </span>
           <button
             type="button"
             className={styles.replyCancel}

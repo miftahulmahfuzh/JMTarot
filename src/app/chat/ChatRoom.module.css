@@ -28,6 +28,11 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* And a zero MINIMUM width, for the same reason the composer carries one at every
+     level: this is a grid item in an auto-sized track, so without it the intrinsic
+     width of one long unbroken string inside the composer can make the whole room
+     wider than the shell that clips it. */
+  min-width: 0;
   /*
    * HOW MUCH OF THE ROOM THE SOFTWARE KEYBOARD IS SITTING ON, written inline on this
    * element by `useKeyboardInset` — read its header before touching this line.

@@ -388,6 +388,59 @@ function clamp(body: string): string {
   return flat.length <= REPLY_SNIPPET_CHARS ? flat : `${flat.slice(0, REPLY_SNIPPET_CHARS)}…`;
 }
 
+/**
+ * Words kept in the COMPOSER's reply stub — a different ceiling from the in-bubble
+ * quote's, and deliberately much shorter.
+ *
+ * A quote inside a bubble is content: it is what the reader was answering and it is
+ * read. The stub above the box is a **label on a control** — *which message am I
+ * replying to* — and it is read once, at a glance, while the keyboard is up and the
+ * room is at its shortest. Eight words identify a message; a hundred and twenty
+ * characters is a second copy of it.
+ */
+export const REPLY_PREVIEW_WORDS = 8;
+
+/**
+ * What the composer's reply stub renders (2026-08-09).
+ *
+ * ── THIS IS A WIDTH FIX, NOT A TIDY-UP, AND IT IS THE ONE THAT SHIPPED WRONG ──
+ *
+ * The stub took `replyTo.body` **raw** and drew it under `white-space: nowrap`, which
+ * makes an element's MIN-content width equal its max-content width — the whole message
+ * on one line, unbreakable. Everything above it inherits that as a minimum: the
+ * composer, the room, and finally `.shell`'s auto-sized grid track. Spec says
+ * `min-width: 0` on the text clamps that contribution to zero and Chrome agrees, which
+ * is why every loop in this repo measured it green; WebKit's intrinsic sizing through
+ * nested flex containers is where this class of bug actually lives, and the report is
+ * from an iPhone. When it goes wrong the row is wider than the screen, `overflow:
+ * hidden` on the shell eats the right-hand end, and **the querent sees a cropped field
+ * with no send button** — which is exactly what was reported.
+ *
+ * **THE IN-BUBBLE QUOTE NEVER HAD THE BUG, AND THE DIFFERENCE IS THE WHOLE LESSON.**
+ * `.quoteText` wraps, clamps by LINE, and carries `overflow-wrap: anywhere`, so its
+ * min-content is one character; `quoteFor` also clamps the string. The composer's stub
+ * had neither, while its comment claimed the two *"read as one mechanic"*. They now
+ * are one mechanic.
+ *
+ * So this is belt AND braces on purpose: the CSS makes a long string harmless, and
+ * this makes the string short. Either alone would do in a spec-correct browser, and
+ * the bug is that this app does not run in one.
+ */
+export function replyPreview(body: string, words = REPLY_PREVIEW_WORDS): string {
+  const flat = body.replace(/\s+/g, ' ').trim();
+  if (flat === '') return '';
+
+  const parts = flat.split(' ');
+  const kept = parts.slice(0, words).join(' ');
+  const cut = parts.length > words;
+
+  /* A word can be a 96-character URL — the seeded harness case — so the word cap is
+     not a length cap. `clamp` is the same ceiling the in-bubble quote already uses. */
+  const capped = clamp(kept);
+  if (!cut || capped.endsWith('…')) return capped;
+  return `${capped}…`;
+}
+
 // ---------------------------------------------------------------------------
 // The optimistic bubble
 // ---------------------------------------------------------------------------

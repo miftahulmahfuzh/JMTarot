@@ -12,6 +12,8 @@ import {
   prependMessages,
   previousDayKey,
   quoteFor,
+  REPLY_PREVIEW_WORDS,
+  replyPreview,
   settleOptimistic,
   shouldStickToBottom,
   typingReader,
@@ -430,5 +432,44 @@ describe('appending and prepending', () => {
       'c',
       'd',
     ]);
+  });
+});
+
+describe('replyPreview (the width fix, 2026-08-09)', () => {
+  /*
+   * The composer's reply stub took `replyTo.body` RAW and drew it `white-space:
+   * nowrap`, which makes an element's min-content width its max-content width — the
+   * whole message on one unbreakable line, inherited upward as a minimum. On WebKit
+   * that reached the room and took `Kirim` off the right-hand edge of a shell that
+   * clips. The CSS is the fix; this is the belt that makes the string short anyway.
+   */
+  it('keeps a short message whole and adds nothing to it', () => {
+    expect(replyPreview('Kartu itu bicara soal pilihan.')).toBe('Kartu itu bicara soal pilihan.');
+  });
+
+  it('cuts at the word ceiling and says so', () => {
+    const body = 'satu dua tiga empat lima enam tujuh delapan sembilan sepuluh';
+    expect(replyPreview(body)).toBe('satu dua tiga empat lima enam tujuh delapan…');
+    expect(replyPreview(body).split(' ').length).toBe(REPLY_PREVIEW_WORDS);
+  });
+
+  it('flattens newlines, because a stub is one label and not a paragraph', () => {
+    expect(replyPreview('dua\n\nbaris   di sini')).toBe('dua baris di sini');
+  });
+
+  it('caps a single monstrous word, because a word ceiling is not a length ceiling', () => {
+    /* The seeded harness case is a 96-character unbroken token; two of them are a
+       row wider than any phone, and they are ONE word each. */
+    const monster = `${'x'.repeat(96)} ${'y'.repeat(96)}`;
+    const out = replyPreview(monster);
+    expect(out.length).toBeLessThanOrEqual(121);
+    expect(out.endsWith('…')).toBe(true);
+    /* And exactly one ellipsis: the char cap must not stack on the word cap. */
+    expect([...out].filter((c) => c === '…').length).toBe(1);
+  });
+
+  it('returns the empty string for a message that is only an attachment', () => {
+    expect(replyPreview('')).toBe('');
+    expect(replyPreview('   ')).toBe('');
   });
 });

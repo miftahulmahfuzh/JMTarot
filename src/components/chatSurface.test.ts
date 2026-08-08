@@ -436,6 +436,47 @@ describe('the software keyboard (reported from a phone, 2026-08-09)', () => {
   });
 });
 
+describe('the reply stub cannot widen the room (2026-08-09)', () => {
+  /*
+   * The reported bug, and the one the keyboard fix did not touch: reply to a bubble on
+   * an iPhone and the field is cropped with `Kirim` gone. `white-space: nowrap` makes
+   * an element's MIN-content width equal its max-content width — the whole message on
+   * one unbreakable line — and nothing between it and `.shell`'s auto-sized grid track
+   * scrolls horizontally, so that minimum propagates all the way up. Spec says the
+   * `min-width: 0` on the text clamps it and Chrome agrees, which is why every loop
+   * here measured it green; the report is from WebKit.
+   */
+  it('wraps and clamps by line, exactly as the in-bubble quote always has', () => {
+    const composer = stripComments(css('components/ChatComposer.module.css'));
+    expect(composer).not.toContain('white-space: nowrap');
+    expect(composer).not.toContain('text-overflow: ellipsis');
+    /* `anywhere` and not `break-word`: only `anywhere` changes the MIN-content size,
+       which is the number this whole bug is about. */
+    expect(composer).toContain('overflow-wrap: anywhere;');
+    expect(composer).toContain('-webkit-line-clamp: 2;');
+
+    /* The two stubs are one mechanic now, which the composer's comment claimed before
+       it was true. The bubble's is one line because its name sits above it too. */
+    expect(stripComments(css('components/ChatBubble.module.css'))).toContain(
+      'overflow-wrap: anywhere;',
+    );
+  });
+
+  it('carries a zero minimum at every box between the text and the shell', () => {
+    /* One missing level is the whole chain: the list is safe from this by being a
+       scroll container and the composer has no such protection. */
+    const composer = stripComments(css('components/ChatComposer.module.css'));
+    expect(count(composer, /min-width: 0;/g)).toBeGreaterThanOrEqual(5);
+    expect(stripComments(css('app/chat/ChatRoom.module.css'))).toContain('min-width: 0;');
+  });
+
+  it('cuts the string as well, because the CSS is a spec argument and this is not', () => {
+    expect(stripComments(file('components/ChatComposer.tsx'))).toContain(
+      'replyPreview(replyTo.text)',
+    );
+  });
+});
+
 describe('the room survives a third child (2026-08-09)', () => {
   it('is a column, not a two-row grid, because the error line is a third child', () => {
     /*

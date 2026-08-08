@@ -10606,6 +10606,39 @@ reader's bubble, type, and the field is cropped with `Kirim` under the glass.
   `minmax(0, 1fr)` it replaces and the `0` is the load-bearing part**: with an `auto` basis the
   list contributes its whole content height, free space goes negative on a long thread, and every
   shrinkable sibling — the composer — is squeezed to pay for it.
+- **THE KEYBOARD FIX SHIPPED TO PRODUCTION AND THE BUG SURVIVED IT** (same day, measured by the
+  querent). Recorded rather than reverted: the `dvh`-cannot-see-a-keyboard argument is still
+  true and the room is still bound to the visual viewport. But it was not the reported defect,
+  and **a second fix stacked on an unconfirmed first is how a file ends up with three
+  explanations for one symptom.** What follows is the second hypothesis, and it fits facts the
+  first never explained — that the querent described a WIDTH problem in their own words, and
+  that they were certain the reply stub was the trigger.
+- **THE COMPOSER'S REPLY STUB WAS `white-space: nowrap` AND THE IN-BUBBLE QUOTE WAS NOT.** The
+  two are described in the composer's own comment as *"the same 2px gold rule the in-bubble quote
+  uses, so the two read as one mechanic"* — and they were built opposite. `.quoteText` wraps,
+  clamps by LINE and carries `overflow-wrap: anywhere`, and `quoteFor` clamps the string at
+  `REPLY_SNIPPET_CHARS`. `.replyText` had `nowrap` + `text-overflow: ellipsis` and got
+  `replyTo.body` **raw**. **`nowrap` makes an element's MIN-content width equal its max-content
+  width** — one unbreakable line — and nothing between the stub and `.shell`'s auto-sized grid
+  track scrolls horizontally, so that minimum propagates up. The list is immune by being a scroll
+  container; the composer had no such protection. When the track base exceeds the shell,
+  `overflow: hidden` eats the right-hand end and **the field looks cropped with no send button.**
+- **SPEC SAYS `min-width: 0` ON THE TEXT ALREADY CLAMPED THAT, AND CHROME AGREES — WHICH IS
+  EXACTLY WHY EVERY LOOP HERE MEASURED IT GREEN.** `_chatfit.html` reports zero overflow at 320
+  in both locales, on a seeded 400-character bubble, and it is right about Chrome. WebKit's
+  intrinsic sizing through nested flex containers is where this class of bug lives, and the
+  report is from an iPhone. **A loop-4 measurement is evidence about Chrome, not about the
+  platform this app ships to** — the same sentence loop 5 already carries about width.
+- **THE FIX IS THREE LAYERS AND TWO OF THEM WOULD BE REDUNDANT IN A SPEC-CORRECT BROWSER.**
+  `.replyText` takes `.quoteText`'s treatment declaration for declaration (`overflow-wrap:
+  anywhere` is the load-bearing one — `break-word` does NOT change min-content size, `anywhere`
+  does); `replyPreview` cuts the string to eight words so it is short whatever the CSS does; and
+  `min-width: 0` now sits on **every** box between the text and the shell, `.room` included,
+  which is the one that holds even if WebKit botches the inner clamp. The name moved above the
+  text, which is both the querent's suggestion and what makes a wrapped stub read.
+- **`REPLY_PREVIEW_WORDS = 8` IS A DIFFERENT CEILING FROM THE QUOTE'S 120 CHARACTERS, ON
+  PURPOSE.** A quote inside a bubble is content and is read; the stub above the box is a label on
+  a control, read once at a glance with the keyboard up and the room at its shortest.
 - **STILL LOOP 6's.** `npm test` holds the arithmetic (`keyboardInset.test.ts`, one 390×844 phone
   with a 336px keyboard) and `chatSurface.test.ts` holds the wiring; **neither can see whether
   the room now behaves**, because loop 5's Chrome has no software keyboard and reports
