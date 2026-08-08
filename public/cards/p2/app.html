@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>JMT probe 2 &mdash; the app</title>
+
+    <link rel="manifest" href="/cards/p2/app.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-icon.png" />
+    <meta name="theme-color" content="#0a0812" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="JMTProbe2" />
+
+    <style>
+      :root {
+        color-scheme: dark;
+        --canvas: #0a0812; --panel: #16112a; --line: #2c2447;
+        --text: #ece7f5; --dim: #9a92b4; --gold: #c9a961;
+        --yes: #6fcf97; --no: #eb7f7f;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: calc(16px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));
+        background: var(--canvas); color: var(--text);
+        font: 16px/1.5 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      }
+      h1 { font-size: 19px; margin: 0 0 4px; color: var(--gold); }
+      p.sub { margin: 0 0 20px; color: var(--dim); font-size: 14px; }
+      h2 {
+        font-size: 12px; letter-spacing: 0.09em; text-transform: uppercase;
+        color: var(--dim); margin: 22px 0 8px; font-weight: 600;
+      }
+      .panel {
+        background: var(--panel); border: 1px solid var(--line);
+        border-radius: 10px; padding: 12px 14px;
+      }
+      .verdict {
+        margin-top: 10px; padding: 12px 14px; border-radius: 10px;
+        border: 1px solid var(--line); background: var(--panel);
+        font-size: 15px; font-weight: 600; text-align: center;
+      }
+      dl { margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 7px 12px; }
+      dt { color: var(--dim); font-size: 14px; }
+      dd {
+        margin: 0; text-align: right; font-weight: 600; font-size: 14px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        overflow-wrap: anywhere; min-width: 0;
+      }
+      .yes { color: var(--yes); }
+      .no { color: var(--no); }
+      button {
+        display: block; width: 100%; min-height: 46px; margin-top: 8px;
+        background: #241c42; color: var(--text);
+        border: 1px solid var(--line); border-radius: 10px;
+        font: inherit; font-weight: 600; cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+      }
+      button:active { background: #2f2554; }
+      button.go { border-color: var(--gold); color: var(--gold); }
+      pre {
+        margin: 0; padding: 12px 14px; background: var(--panel);
+        border: 1px solid var(--line); border-radius: 10px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px; line-height: 1.55;
+        white-space: pre-wrap; overflow-wrap: anywhere;
+        max-height: 280px; overflow-y: auto;
+      }
+      ol { margin: 0; padding-left: 20px; color: var(--dim); font-size: 14px; }
+      ol li { margin-bottom: 9px; }
+      ol b { color: var(--text); font-weight: 600; }
+    </style>
+  </head>
+
+  <body>
+    <h1>Probe 2 &mdash; does a cookie cross back?</h1>
+    <p class="sub">
+      Probe 1 only ever set cookies inside the app. This one sets a cookie in the
+      <b>overlay</b> &mdash; the exact motion a Google sign-in makes &mdash; and asks whether
+      the installed app can see it afterwards.
+    </p>
+
+    <h2>The answer</h2>
+    <div class="verdict" id="verdict">&mdash;</div>
+
+    <h2>Right now</h2>
+    <div class="panel">
+      <dl>
+        <dt>display-mode</dt><dd id="s-dm">&mdash;</dd>
+        <dt>URL query</dt><dd id="s-q">&mdash;</dd>
+        <dt>Set in the app</dt><dd id="s-app">&mdash;</dd>
+        <dt>Set in the overlay</dt><dd id="s-out">&mdash;</dd>
+        <dt>Launches seen</dt><dd id="s-launch">&mdash;</dd>
+      </dl>
+    </div>
+
+    <h2>Actions</h2>
+    <button id="b-set">1 &mdash; Set an app-side cookie</button>
+    <button id="b-go" class="go">2 &mdash; Open the overlay &rarr; then press Done</button>
+    <button id="b-reload">3 &mdash; Hard reload (bypass the back/forward cache)</button>
+    <button id="b-copy">Copy report</button>
+    <button id="b-reset">Reset everything</button>
+
+    <h2>Event log</h2>
+    <pre id="log"></pre>
+
+    <h2>What to do</h2>
+    <ol>
+      <li>Open this page in Safari, then <b>Add to Home Screen</b>, then launch it from
+        the <b>icon</b>. Everything below happens in the installed app.</li>
+      <li>Tap <b>1</b>. This proves the app-side jar works.</li>
+      <li>Tap <b>2</b>. A page on <i>our own domain</i> opens in Safari's overlay and sets a
+        cookie there. Read the value it shows you, then press <b>Done</b>.</li>
+      <li>Read <b>The answer</b> without touching anything else &mdash; that is the
+        back/forward-cache reading.</li>
+      <li>Now tap <b>3</b> and read <b>The answer</b> again. If it changed, the bug is
+        staleness, not storage.</li>
+      <li>Tap <b>Copy report</b> and paste it back to me.</li>
+    </ol>
+
+    <script>
+      var C_APP = 'jmt_p2_app';
+      var C_OUT = 'jmt_p2_out';
+      var LS_LOG = 'jmt_p2_log';
+      var LS_LAUNCH = 'jmt_p2_launches';
+
+      function readCookie(name) {
+        var parts = document.cookie ? document.cookie.split('; ') : [];
+        for (var i = 0; i < parts.length; i++) {
+          var eq = parts[i].indexOf('=');
+          if (parts[i].slice(0, eq) === name) return parts[i].slice(eq + 1);
+        }
+        return null;
+      }
+
+      function writeCookie(name, value) {
+        document.cookie =
+          name + '=' + value + '; path=/; max-age=34560000; SameSite=Lax' +
+          (location.protocol === 'https:' ? '; Secure' : '');
+      }
+
+      function clock() {
+        var d = new Date();
+        return ('0' + d.getHours()).slice(-2) + ':' +
+               ('0' + d.getMinutes()).slice(-2) + ':' +
+               ('0' + d.getSeconds()).slice(-2);
+      }
+
+      function standalone() {
+        return navigator.standalone === true ||
+               (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+      }
+
+      var log = [];
+      try { log = JSON.parse(localStorage.getItem(LS_LOG) || '[]'); } catch (e) { log = []; }
+
+      function note(line) {
+        log.push(clock() + '  ' + line);
+        if (log.length > 60) log = log.slice(-60);
+        try { localStorage.setItem(LS_LOG, JSON.stringify(log)); } catch (e) {}
+        render();
+      }
+
+      function set(id, text, verdict) {
+        var el = document.getElementById(id);
+        el.textContent = text;
+        el.className = verdict === true ? 'yes' : verdict === false ? 'no' : '';
+      }
+
+      function render() {
+        var app = readCookie(C_APP);
+        var out = readCookie(C_OUT);
+        var launches = 0;
+        try { launches = Number(localStorage.getItem(LS_LAUNCH) || 0); } catch (e) {}
+        var q = location.search || '(none)';
+
+        set('s-dm', standalone() ? 'standalone' : 'browser', standalone());
+        set('s-q', q, q.indexOf('src=pwa') !== -1);
+        set('s-app', app || '(absent)', app ? true : false);
+        set('s-out', out || '(absent)', out ? true : false);
+        set('s-launch', String(launches));
+
+        var v = document.getElementById('verdict');
+        if (out) {
+          v.textContent = 'The overlay cookie IS visible here (' + out + ')';
+          v.className = 'verdict yes';
+        } else {
+          v.textContent = 'The overlay cookie is NOT visible here';
+          v.className = 'verdict no';
+        }
+
+        document.getElementById('log').textContent =
+          log.length ? log.join('\n') : '(nothing yet)';
+      }
+
+      function report() {
+        var launches = 0;
+        try { launches = Number(localStorage.getItem(LS_LAUNCH) || 0); } catch (e) {}
+        return [
+          '--- JMT probe 2: does a cookie cross back? ---',
+          'url            : ' + location.href,
+          'nav.standalone : ' + navigator.standalone,
+          'display-mode   : ' + (standalone() ? 'standalone' : 'browser'),
+          'app cookie     : ' + (readCookie(C_APP) || '(absent)'),
+          'OVERLAY cookie : ' + (readCookie(C_OUT) || '(absent)'),
+          'all cookies    : ' + (document.cookie || '(none)'),
+          'launches       : ' + launches,
+          'ua             : ' + navigator.userAgent,
+          '',
+          'log:',
+          log.join('\n')
+        ].join('\n');
+      }
+
+      document.getElementById('b-set').onclick = function () {
+        var v = 'app' + Math.random().toString(16).slice(2, 8);
+        writeCookie(C_APP, v);
+        note('SET app cookie=' + v);
+      };
+
+      document.getElementById('b-go').onclick = function () {
+        note('LEAVING to /cards/p2out/out.html (out of scope, same origin)');
+        location.href = '/cards/p2out/out.html';
+      };
+
+      document.getElementById('b-reload').onclick = function () {
+        note('HARD RELOAD requested');
+        location.reload();
+      };
+
+      document.getElementById('b-copy').onclick = function () {
+        var text = report();
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(text).then(
+            function () { note('report copied'); },
+            function () { window.prompt('Copy this:', text); }
+          );
+        } else {
+          window.prompt('Copy this:', text);
+        }
+      };
+
+      document.getElementById('b-reset').onclick = function () {
+        document.cookie = C_APP + '=; path=/; max-age=0';
+        document.cookie = C_OUT + '=; path=/; max-age=0';
+        try {
+          localStorage.removeItem(LS_LOG);
+          localStorage.removeItem(LS_LAUNCH);
+        } catch (e) {}
+        log = [];
+        render();
+      };
+
+      document.addEventListener('visibilitychange', function () {
+        note('visibilitychange -> ' + document.visibilityState +
+             ' | out=' + (readCookie(C_OUT) || '(absent)'));
+      });
+
+      window.addEventListener('pageshow', function (e) {
+        note('pageshow persisted=' + e.persisted +
+             ' | app=' + (readCookie(C_APP) || '(absent)') +
+             ' | out=' + (readCookie(C_OUT) || '(absent)'));
+      });
+
+      try {
+        localStorage.setItem(LS_LAUNCH, String(Number(localStorage.getItem(LS_LAUNCH) || 0) + 1));
+      } catch (e) {}
+
+      note('LOAD ' + (standalone() ? 'standalone' : 'browser') +
+           ' | app=' + (readCookie(C_APP) || '(absent)') +
+           ' | out=' + (readCookie(C_OUT) || '(absent)'));
+      render();
+    </script>
+  </body>
+</html>

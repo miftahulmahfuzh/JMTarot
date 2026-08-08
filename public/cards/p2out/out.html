@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>JMT probe 2 &mdash; the overlay</title>
+    <meta name="theme-color" content="#0a0812" />
+    <!-- DELIBERATELY NO MANIFEST AND NO apple-mobile-web-app-capable. This page
+         exists to be opened OUT of the probe app's scope (`/cards/p2/`), which is
+         what makes iOS hand it to Safari's overlay -- the same thing that happens
+         to accounts.google.com during a real sign-in. -->
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: calc(28px + env(safe-area-inset-top)) 18px calc(28px + env(safe-area-inset-bottom));
+        background: #0a0812; color: #ece7f5;
+        font: 16px/1.55 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+        text-align: center;
+      }
+      h1 { font-size: 19px; color: #c9a961; margin: 0 0 6px; }
+      p { color: #9a92b4; font-size: 14px; margin: 0 0 20px; }
+      .value {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 27px; font-weight: 700; color: #6fcf97;
+        padding: 18px 12px; margin-bottom: 18px;
+        background: #16112a; border: 1px solid #2c2447; border-radius: 12px;
+        overflow-wrap: anywhere;
+      }
+      .row {
+        display: flex; justify-content: space-between; gap: 12px;
+        padding: 9px 14px; text-align: left; font-size: 14px;
+        background: #16112a; border: 1px solid #2c2447;
+        border-radius: 10px; margin-bottom: 8px;
+      }
+      .row span:first-child { color: #9a92b4; }
+      .row span:last-child {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-weight: 600; overflow-wrap: anywhere; min-width: 0; text-align: right;
+      }
+      .yes { color: #6fcf97; }
+      .no { color: #eb7f7f; }
+      .done {
+        margin-top: 22px; padding: 16px; border-radius: 12px;
+        border: 1px solid #c9a961; color: #c9a961; font-weight: 700; font-size: 17px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <h1>You are in the overlay now</h1>
+    <p>
+      This page is on the same domain but outside the app's scope, so iOS opened it the
+      way it opens Google. It has just written a cookie from here.
+    </p>
+
+    <div class="value" id="v">&mdash;</div>
+
+    <div class="row">
+      <span>Can I see the app's cookie?</span><span id="app">&mdash;</span>
+    </div>
+    <div class="row">
+      <span>Everything in this jar</span><span id="all">&mdash;</span>
+    </div>
+
+    <div class="done">Now press <b>Done</b>, top-left &uarr;</div>
+
+    <script>
+      function readCookie(name) {
+        var parts = document.cookie ? document.cookie.split('; ') : [];
+        for (var i = 0; i < parts.length; i++) {
+          var eq = parts[i].indexOf('=');
+          if (parts[i].slice(0, eq) === name) return parts[i].slice(eq + 1);
+        }
+        return null;
+      }
+
+      /* Written the moment this page loads, exactly as a sign-in callback would
+         write a session cookie from inside the overlay. */
+      var value = 'out' + Math.random().toString(16).slice(2, 8);
+      document.cookie =
+        'jmt_p2_out=' + value + '; path=/; max-age=34560000; SameSite=Lax' +
+        (location.protocol === 'https:' ? '; Secure' : '');
+
+      document.getElementById('v').textContent = value;
+
+      /* The reverse direction, and it is worth as much as the forward one: if the
+         overlay can read a cookie set inside the installed app, the two share a jar
+         and the sign-in failure is NOT a storage problem. */
+      var app = readCookie('jmt_p2_app');
+      var appEl = document.getElementById('app');
+      appEl.textContent = app || 'no';
+      appEl.className = app ? 'yes' : 'no';
+
+      document.getElementById('all').textContent = document.cookie || '(none)';
+    </script>
+  </body>
+</html>
