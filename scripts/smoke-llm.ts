@@ -237,6 +237,19 @@ async function main() {
   const translate = process.argv.includes('--translate');
   const persona = process.argv.includes('--persona');
   /*
+   * `--chat`: THE RELEASE GATE FOR v0.7.0, AND THE ONLY INSTRUMENT FOR IT.
+   *
+   * `C-N1f` and roadmap §10.2: *"both halves, neither is a unit test."* Everything
+   * about the chat is unit-tested for SHAPE -- the address forms, the fifteen
+   * refusals, the pace, the fences -- and **nothing can unit-test whether three
+   * readers in a room sound like three people.** So this drives a scripted
+   * conversation through the real model, prints it, checks it, and ends on a blind
+   * read whose two questions are the acceptance criteria.
+   *
+   * It composes with `--all` like the other side runners.
+   */
+  const chat = process.argv.includes('--chat');
+  /*
    * `--choice`: THE ONLY INSTRUMENT FOR THE MARKER'S FORMAT.
    *
    * `reading.completed.choice` measures whether the reader named an option the
@@ -321,6 +334,56 @@ async function main() {
   if (persona) {
     await runPersona(sideLocales);
     if (!all) return;
+  }
+
+  if (chat) {
+    /*
+     * `--chat --director` IS F2's FLAG, AND F3's PLAN NAMES IT AS F2's IN THOSE WORDS.
+     *
+     * The two halves are separate instruments on purpose. `--chat` alone drives the
+     * VOICES against canned beat sheets, because *"chaining a planner call in would
+     * make a voice failure indistinguishable from a planning failure"* — `runPersona`'s
+     * reason for not chaining the Lotus, one workstream over. This drives the DIRECTOR
+     * against a canned transcript, for the mirror-image reason: a sheet judged by the
+     * prose that came out of it is a sheet nobody judged.
+     *
+     * `[F2-19]`: the beat sheet is what §15.4 asks five questions of, and no unit test
+     * can answer any of them.
+     */
+    if (process.argv.includes('--director')) {
+      /*
+       * `--voices` JOINS THE TWO HALVES, AND IT IS THE RELEASE'S REAL §10.2 GATE.
+       *
+       * `--chat` cans the sheets and `--chat --director` cans the voices, each so that a
+       * failure in one is not read as a failure in the other. **Neither can answer
+       * `[F2-2]`** — a beat sheet that reads well and produces three paragraphs that sound
+       * alike — because that failure only exists where the two meet. This runs the real
+       * director and then the real voices over its beats, in one growing room, with the
+       * same fixture context `--chat` uses so the ONLY difference between the two runs is
+       * the sheet.
+       */
+      await runDirector(sideLocales, process.argv.includes('--voices'));
+      if (!all) return;
+    } else if (process.argv.includes('--proactive')) {
+      /*
+       * `--chat --proactive` IS F5's HALF OF §10.2's GATE, AND IT IS ITS OWN RUNNER.
+       *
+       * `--chat` scripts a querent and cans the sheets; this one has **no querent at
+       * all.** Six unprompted runs, one per material kind, each starting from a room that
+       * went quiet hours ago — the director and the voices both live, because the whole
+       * question is whether the material reached the prose, and a canned sheet would
+       * answer it for the director instead of asking it.
+       *
+       * The two questions it ends on are the release's own: *does the opening message
+       * have something to be about, and does it sound like somebody thought of you or
+       * like a cron job?*
+       */
+      await runProactive(sideLocales);
+      if (!all) return;
+    } else {
+      await runChat(sideLocales, false);
+      if (!all) return;
+    }
   }
 
   if (!reader && !service && !all) {
@@ -2022,6 +2085,1411 @@ async function runPersona(locales: Locale[]) {
       '     above FAIL rather than warn.\n',
   );
 }
+
+
+// ---------------------------------------------------------------------------
+// `--chat` (F3). THE RELEASE GATE.
+// ---------------------------------------------------------------------------
+
+/**
+ * `[F3-25]`. **THE SHORTEST BUBBLE IN A WHOLE CONVERSATION MUST BE SHORT.**
+ *
+ * Every other length check in this repository fails on output being too long ONCE. This
+ * one fails when brevity NEVER HAPPENS — a run in which every bubble is 18–22 words is
+ * three readers delivering paragraphs, which is `C-D19`'s named worst outcome and which
+ * no existing instrument can see, because every ceiling was met.
+ */
+const CHAT_BREVITY_FLOOR = 6;
+
+/**
+ * Margaret's mean sentence must be this much longer than Thessaly's.
+ *
+ * **IT SHIPPED AT 1.25 AND THE FIRST THREE RUNS PUT IT BACK AT 1.5** (§17 item 5, open
+ * question 3, closed). The worry was that at a 22-word bubble everybody is short and the
+ * ratio compresses, so the reading path's 1.5 — calibrated on 28-word paragraphs — would
+ * fail on correct output. **Measured: 1.96, 2.57, 2.57, 3.06, 3.53 and 4.36 across six
+ * locale-runs**, so the compression did not happen; Margaret writes one long sentence
+ * where Thessaly writes half of one, and the shape survives the shorter ceiling intact.
+ *
+ * Back at 1.5 because the stricter number catches convergence earlier and the margin is
+ * still 0.46 below the worst observed run. The numbers are in
+ * `docs/workstream-notes.md`; if a future run fails on this, **that is data** and the
+ * honest alternative is to print it and stop failing on it.
+ */
+const CHAT_SENTENCE_RATIO = 1.5;
+
+/**
+ * The scripted conversation. **EIGHT MESSAGES PER LOCALE, EACH PROBING SOMETHING THE
+ * RELEASE IS JUDGED ON**, and `en` is REWRITTEN rather than translated
+ * (`## Localization` rule 3) so the two halves probe different failures.
+ */
+const CHAT_SCRIPT: Record<Locale, Array<{ text: string; probes: string }>> = {
+  id: [
+    { text: 'halo', probes: 'THE EMPTY OPENER. Does anybody answer at all, and is it short?' },
+    { text: 'lagi pusing sama kerjaan sih', probes: 'the ordinary one. baseline voice separation' },
+    {
+      text: 'gue mikirin nenek gue akhir-akhir ini',
+      probes: 'THE C-D8 PROBE. Reaches worst_thing: connect without quoting or diagnosing',
+    },
+    {
+      text: 'emang kalian tau apa soal gue',
+      probes: 'THE SURVEILLANCE PROBE. It invites "kamu pernah bilang" directly ([F3-9])',
+    },
+    { text: 'wkwk', probes: 'THE BREVITY PROBE. Does anybody answer a laugh with a paragraph?' },
+    {
+      text: 'menurut kalian mending resign apa nggak',
+      probes: 'THE READING PROBE. A choice-shaped question with no cards on the table',
+    },
+    {
+      text: '@margaret setuju sama adrian?',
+      probes: 'THE READER-TO-READER PROBE. Does she answer HIM, using his actual words?',
+    },
+    { text: 'iya deh', probes: 'THE ENDING PROBE. Does the room know to let it stop? (C-R6)' },
+  ],
+  en: [
+    { text: 'hey', probes: 'THE EMPTY OPENER' },
+    { text: 'work has been a lot lately', probes: 'the ordinary one' },
+    {
+      text: "my mum's been on my mind",
+      probes: 'THE C-D8 PROBE, en half. Reaches most_loved: DOES ANYBODY SAY "Sari"? ([F3-8])',
+    },
+    { text: 'how do you even know that about me', probes: 'THE SURVEILLANCE PROBE' },
+    { text: 'lol', probes: 'THE BREVITY PROBE' },
+    { text: 'should i quit or not, honestly', probes: 'THE READING PROBE' },
+    {
+      text: 'do you actually agree with him, margaret',
+      probes: 'THE READER-TO-READER PROBE',
+    },
+    { text: 'fair enough', probes: 'THE ENDING PROBE' },
+  ],
+};
+
+/**
+ * The canned beat sheets, one per user message: `[1] [1] [2] [1] [1] [3] [1] [0]`.
+ *
+ * **THE DIRECTOR IS NOT CALLED.** `--chat --director` would be F2's flag and F2's cost;
+ * this run is about the VOICES, and chaining a planner call in would make a voice failure
+ * indistinguishable from a planning failure — `runPersona`'s reason for not chaining the
+ * Lotus, one workstream over.
+ *
+ * The last sheet is EMPTY, deliberately: `C-R6` says a plan of length zero is valid and
+ * desirable, and the run has to be able to show that the room can let a conversation stop.
+ */
+const CHAT_SHEETS: Array<Array<{ reader: ReaderId; to: 'user' | ReaderId; intent: string; angle: string | null; replyToPrevious?: boolean }>> = [
+  [{ reader: 'adrian', to: 'user', intent: 'react', angle: null }],
+  [{ reader: 'thessaly', to: 'user', intent: 'ask', angle: 'how long it has been like this' }],
+  [
+    { reader: 'margaret', to: 'user', intent: 'answer', angle: null },
+    { reader: 'adrian', to: 'user', intent: 'ask', angle: null },
+  ],
+  [{ reader: 'thessaly', to: 'user', intent: 'answer', angle: null }],
+  [{ reader: 'adrian', to: 'user', intent: 'react', angle: null }],
+  [
+    { reader: 'thessaly', to: 'user', intent: 'answer', angle: 'the deadline' },
+    { reader: 'adrian', to: 'thessaly', intent: 'push_back', angle: null, replyToPrevious: true },
+    { reader: 'margaret', to: 'user', intent: 'agree', angle: null },
+  ],
+  [{ reader: 'margaret', to: 'adrian', intent: 'push_back', angle: null, replyToPrevious: true }],
+  [],
+];
+
+/** The fixture querent. `Mifta` is what `addressForms` derives `Mif` and `Ta` from. */
+const CHAT_NICKNAME = 'Mifta';
+
+/**
+ * `LOTUS_FIXTURE`'s answers, VERBATIM — a proper name (`Sari`), a genuinely heavy
+ * `worst_thing`, and a skipped `willow_wish`, so the name check, the quotation check and
+ * `[F3-7]` are all exercised by the same fixture the Lotus run uses.
+ */
+function chatFixtureAnswers(): Array<{ key: string; text: string }> {
+  return LOTUS_FIXTURE.answers
+    .filter((a) => a.text !== null && !a.skipped)
+    .map((a) => ({ key: a.key as string, text: a.text as string }));
+}
+
+/**
+ * The voice's `ChatContext`, from the fixtures.
+ *
+ * **ONE BUILDER FOR BOTH RUNNERS.** `--chat` drives it with canned beat sheets and
+ * `--chat --director --voices` drives it with real ones, and the two must differ in the
+ * SHEET and in nothing else — otherwise a difference between the runs is a difference
+ * between two fixtures, which is the measurement answering a question nobody asked.
+ */
+function chatFixtureContext(args: {
+  locale: Locale;
+  nickname: string;
+  forms: string[];
+  answers: Array<{ key: string; text: string }>;
+  messages: Array<{
+    id: string;
+    author: 'user' | ReaderId;
+    createdAt: string;
+    body: string;
+    replyToAuthor: 'user' | ReaderId | null;
+    attachment: string | null;
+  }>;
+  replyToId: string | null;
+}) {
+  const { locale } = args;
+  return {
+    profile: 'voice' as const,
+    locale,
+    nickname: args.nickname,
+    addressForms: args.forms,
+    facts: [
+      { kind: 'lifePath' as const, value: '8', gloss: locale === 'id' ? 'kerja panjang yang akhirnya kelihatan' : 'long work that finally shows' },
+      { kind: 'sun' as const, value: 'pisces', gloss: locale === 'id' ? 'ikut arus, lalu bertanya ke mana' : 'goes with the current, then asks where' },
+      { kind: 'element' as const, value: 'water', gloss: locale === 'id' ? 'terbawa perasaan sebelum tahu kenapa' : 'moved before knowing why' },
+    ],
+    lotus: LOTUS_BLOCK_FIXTURE.summary,
+    answers: args.answers,
+    readings: [0, 1, 2].map((i) => ({
+      localDate: `2026-08-0${i + 1}`,
+      readerId: (['thessaly', 'margaret', 'adrian'] as const)[i],
+      cards: fixedPicks(i, 3).map((p) => ({ cardId: p.id, reversed: p.reversed })),
+      gist:
+        locale === 'id'
+          ? ['sesuatu yang dibiarkan terlalu lama', 'satu keputusan yang ditunda', 'kabar yang belum datang'][i]
+          : ['something left too long', 'a decision put off', 'news that has not come'][i],
+    })),
+    repeatCardIds: [] as number[],
+    messages: args.messages,
+    replyTo: args.replyToId
+      ? (args.messages.find((m) => m.id === args.replyToId) ?? null)
+      : null,
+  };
+}
+
+/**
+ * `npm run smoke -- --chat`, and `--chat --proactive` for F5's half.
+ *
+ * **THE CONTEXT IS BUILT FROM FIXTURES RATHER THAN THROUGH `assembleChatContext`, AND
+ * THAT IS A DIVERGENCE FROM THE PLAN WITH A REASON.** §12.1 asks for a stub handle that
+ * answers the assembler's reads. Those reads are five real query modules that build
+ * drizzle statements; faking that builder chain would be testing the fake, and the
+ * assembler's own behaviour — the decrypt, the window, the director narrowing — is what
+ * `context.integration.test.ts` drives against a real row. **What this run is for is the
+ * PROSE**, so it assembles the same shape by hand from the fixtures `--lotus` and
+ * `--persona` already use, and stays Docker-free as `npm run smoke` must.
+ */
+async function runChat(locales: Locale[], proactive: boolean) {
+  const { CHAT_LENGTH_BUDGET, chatBudgetFor } = await import('@/lib/prompt/budget');
+  const { buildChatPrompt, chatPromptVersion } = await import('@/lib/chat/prompt/build');
+  const { addressForms } = await import('@/lib/chat/address');
+  const { pace } = await import('@/lib/chat/voices/pace');
+  const { chatModel, chatModelName } = await import('@/lib/chat/model');
+  const {
+    CHAT_CLOSERS_EN,
+    CHAT_CLOSERS_ID,
+    CHAT_EMOJI,
+    CHAT_MULTI_DASH,
+    CHAT_OPENERS_EN,
+    CHAT_OPENERS_ID,
+    CHAT_SOURCE_TELLS_EN,
+    CHAT_SOURCE_TELLS_ID,
+    CHAT_TICS_EN,
+    CHAT_TICS_ID,
+    checkTurnBodies,
+  } = await import('@/lib/chat/validate');
+  const { properNames, sharesNgram } = await import('@/lib/prompt/lotus');
+  const { MALAY } = await import('@/lib/copy/vocab');
+
+  process.stdout.write(
+    `\nchat model=${chatModelName()} (CHAT_MODEL=${process.env.CHAT_MODEL ?? 'unset'})\n`,
+  );
+
+  const NICKNAME = CHAT_NICKNAME;
+  const FORMS = addressForms(NICKNAME);
+  const ANSWERS = chatFixtureAnswers();
+  const RAW_ANSWERS = ANSWERS.map((a) => a.text);
+
+  const problems: string[] = [];
+  /** Every bubble a reader wrote, per locale, for the proxies. */
+  const perLocale: Record<string, Array<{ author: string; body: string; words: number }>> = {};
+  /** The WHOLE conversation in order, both sides, for the transcript and the blind read. */
+  const conversations: Record<string, Array<{ author: string; body: string }>> = {};
+
+  for (const locale of locales) {
+    const script = CHAT_SCRIPT[locale];
+    const messages: Array<{
+      id: string;
+      author: 'user' | ReaderId;
+      createdAt: string;
+      body: string;
+      replyToAuthor: 'user' | ReaderId | null;
+      attachment: string | null;
+    }> = [];
+    const spoken: Array<{ author: string; body: string; words: number }> = [];
+    let clock = Date.parse('2026-08-07T07:00:00.000Z');
+    let messageNo = 0;
+
+    process.stdout.write(`\n${'#'.repeat(70)}\nCHAT -- ${locale}\n${'#'.repeat(70)}\n`);
+
+    for (const [step, line] of script.entries()) {
+      clock += 60_000;
+      messageNo += 1;
+      messages.push({
+        id: `m${messageNo}`,
+        author: 'user',
+        createdAt: new Date(clock).toISOString(),
+        body: line.text,
+        replyToAuthor: null,
+        attachment: null,
+      });
+      process.stdout.write(`\n--- ${messageNo}. ${NICKNAME}: ${line.text}\n    (${line.probes})\n`);
+
+      const sheet = CHAT_SHEETS[step] ?? [];
+      if (sheet.length === 0) {
+        process.stdout.write('    [no beats -- C-R6, and this is a GOOD outcome]\n');
+        continue;
+      }
+
+      for (const [beatIndex, planned] of sheet.entries()) {
+        const previous = messages[messages.length - 1];
+        const beat = {
+          reader: planned.reader,
+          to: planned.to,
+          replyTo: planned.replyToPrevious ? previous.id : null,
+          intent: planned.intent as 'answer',
+          angle: planned.angle,
+        };
+        const budget = chatBudgetFor(locale, planned.reader);
+        const ctx = chatFixtureContext({
+          locale,
+          nickname: NICKNAME,
+          forms: FORMS,
+          answers: ANSWERS,
+          messages,
+          replyToId: beat.replyTo,
+        });
+
+        const delay = pace({ next: beat, previousChars: beatIndex === 0 ? null : previous.body.length });
+        const guards = {
+          locale,
+          reader: planned.reader,
+          budget,
+          addressForms: FORMS,
+          rawAnswers: RAW_ANSWERS,
+          conversation: messages.map((m) => m.body),
+        };
+
+        /*
+         * **THE RETRY IS HERE BECAUSE PRODUCTION HAS ONE** (`C-R7`, `F1-D2`): `speak()`
+         * calls the model a second time inside the same request, with the refused
+         * reason named in the prompt. A runner that made one call would report every
+         * refusal as a lost bubble and **overstate the cost of a tight ceiling** —
+         * which is exactly the number Task 11 is calibrating. It also measures the one
+         * thing no unit test can: whether the repair line actually recovers a turn.
+         */
+        let text = '';
+        let ms = 0;
+        let usage: { inputTokens: number | null; outputTokens: number | null } = {
+          inputTokens: null,
+          outputTokens: null,
+        };
+        let checked = checkTurnBodies('', guards);
+        let attempts = 0;
+        let repairReason: string | null = null;
+
+        for (const attempt of [1, 2] as const) {
+          attempts = attempt;
+          const prompt = buildChatPrompt({
+            ctx,
+            self: planned.reader,
+            beat,
+            budget,
+            now: clock,
+            repairReason: attempt === 2 ? repairReason : null,
+          });
+          const started = Date.now();
+          const reply = await getProvider().complete(prompt, {
+            op: 'chat_turn',
+            callClass: 'deferred',
+            model: chatModel(),
+          });
+          ms = Date.now() - started;
+          text = reply.text;
+          usage = reply.usage;
+          checked = checkTurnBodies(text, guards);
+          if (checked.ok) break;
+          repairReason = checked.reason;
+        }
+
+        /*
+         * **A TURN REFUSED TWICE STORES NOTHING** (`C-R7`, `[F3-13]`), so it must not
+         * enter this transcript either: in production the room simply never sees it, and
+         * counting it would put a bubble over the ceiling into the SHORTNESS distribution
+         * the ceiling is calibrated from. It is printed below instead.
+         */
+        for (const body of checked.ok ? checked.bodies : []) {
+          const words = body.split(/\s+/).filter(Boolean).length;
+          clock += Math.max(delay, 1000);
+          messageNo += 1;
+          messages.push({
+            id: `m${messageNo}`,
+            author: planned.reader,
+            createdAt: new Date(clock).toISOString(),
+            body,
+            replyToAuthor: beat.replyTo ? previous.author : null,
+            attachment: null,
+          });
+          spoken.push({ author: planned.reader, body, words });
+          process.stdout.write(
+            `    [${delay}ms] ${planned.reader} (${planned.intent}${beat.replyTo ? ` -> ${previous.author}` : ''}): ${body}\n` +
+              `        ${words}w ${body.length}c, ${ms}ms, attempt ${attempts}, tokens in=${usage.inputTokens ?? 'null'} out=${usage.outputTokens ?? 'null'}, ${chatPromptVersion(locale, planned.reader, budget)}\n`,
+          );
+        }
+
+        if (!checked.ok) {
+          /* BOTH attempts failed, which in production is `C-R7`'s skip: nothing stored,
+           * nothing shown, and the room is quieter. Printed so the run says which
+           * bubble was lost. */
+          process.stdout.write(`    [refused twice -- ${checked.reason}, nothing stored] ${text.trim().slice(0, 160)}\n`);
+          problems.push(
+            `[${locale}] ${planned.reader} beat ${beatIndex}: refused TWICE -- ${checked.reason}: ${JSON.stringify(text.slice(0, 120))}`,
+          );
+        } else if (attempts === 2) {
+          /* The repair line worked. PRINTED, not failed: this is the mechanism working. */
+          process.stdout.write(`        [repaired on attempt 2 after ${repairReason}]\n`);
+        }
+      }
+    }
+
+    perLocale[locale] = spoken;
+    conversations[locale] = messages.map((m) => ({ author: m.author, body: m.body }));
+
+    // ---- THE CHECKS (§12.3) -------------------------------------------------
+    const budget = CHAT_LENGTH_BUDGET[locale];
+    const counts = spoken.map((s) => s.words).sort((a, b) => a - b);
+    const mean = counts.reduce((a, b) => a + b, 0) / Math.max(counts.length, 1);
+    process.stdout.write(
+      `\n[shortness ${locale}] ${counts.length} bubbles, words ${counts.join(' ')}\n` +
+        `    min=${counts[0]} mean=${mean.toFixed(1)} max=${counts[counts.length - 1]} ` +
+        `ceiling=${budget.maxWords} (margaret ${chatBudgetFor(locale, 'margaret').maxWords})\n` +
+        `    <=3 words: ${counts.filter((c) => c <= 3).length} of ${counts.length} ` +
+        '(band: at least 1 in 10 -- PRINTED, not failed, and the plan\'s "2 in 16" was\n' +
+        '     arithmetic on beat sheets that come to ten beats, not sixteen)\n',
+    );
+    if (counts.length > 0 && counts[0] > CHAT_BREVITY_FLOOR) {
+      problems.push(
+        `[${locale}] SHORTNESS: the shortest bubble is ${counts[0]} words, over ${CHAT_BREVITY_FLOOR}. ` +
+          'Three readers each delivered a paragraph, which is C-D19\'s named worst outcome ([F3-25]).',
+      );
+    }
+    if (mean > budget.maxWords) {
+      problems.push(`[${locale}] SHORTNESS: mean ${mean.toFixed(1)} words is over the ${budget.maxWords} ceiling`);
+    }
+
+    const joined = spoken.map((s) => s.body).join('\n');
+    const lower = joined.toLowerCase();
+
+    /* `[F3-9]`. THE HIGHEST-VALUE GREP IN THE RELEASE. */
+    for (const tell of locale === 'id' ? CHAT_SOURCE_TELLS_ID : CHAT_SOURCE_TELLS_EN) {
+      if (lower.includes(tell)) problems.push(`[${locale}] SURVEILLANCE: a reader said "${tell}"`);
+    }
+
+    /* `[F3-8]`, and it is what keeps `onboarding.q.most_loved.hint`'s promise. */
+    const saidByQuerent = new Set(
+      script.flatMap((l) => properNames(l.text).map((n) => n.toLowerCase())),
+    );
+    for (const answer of RAW_ANSWERS) {
+      for (const name of properNames(answer)) {
+        if (saidByQuerent.has(name.toLowerCase())) continue;
+        if (new RegExp(`\\b${name}\\b`).test(joined)) {
+          problems.push(`[${locale}] NAME LEAK: a reader wrote "${name}", which only exists in a stored answer`);
+        }
+      }
+      const words = (t: string) => t.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean);
+      if (sharesNgram(words(answer), words(joined), 6)) {
+        problems.push(`[${locale}] QUOTATION: a six-word run from a stored answer reached a bubble`);
+      }
+    }
+
+    /* The smoke-only half of §7: stylistic tells rather than violations. */
+    for (const tic of locale === 'id' ? CHAT_TICS_ID : CHAT_TICS_EN) {
+      if (lower.includes(tic)) problems.push(`[${locale}] REGISTER: "${tic}"`);
+    }
+    for (const opener of locale === 'id' ? CHAT_OPENERS_ID : CHAT_OPENERS_EN) {
+      if (spoken.some((s) => s.body.toLowerCase().startsWith(opener))) {
+        problems.push(`[${locale}] REGISTER: a bubble opened with "${opener}"`);
+      }
+    }
+    for (const closer of locale === 'id' ? CHAT_CLOSERS_ID : CHAT_CLOSERS_EN) {
+      if (lower.includes(closer)) problems.push(`[${locale}] REGISTER: a bubble closed with "${closer}"`);
+    }
+    if (locale === 'id') {
+      for (const word of MALAY) {
+        if (new RegExp(`\\b${word}\\b`, 'i').test(joined)) {
+          problems.push(`[${locale}] MALAY: "${word}"`);
+        }
+      }
+    }
+    if (CHAT_MULTI_DASH.test(joined)) problems.push(`[${locale}] REGISTER: more than one em dash in a bubble`);
+
+    /*
+     * §7.5. **EMOJI ARE PRINTED, NOT FAILED.** People put emoji in group chats, so a
+     * refusal would cost bubbles for something that is not a harm; three readers who
+     * each emoji is its own tell. If the rate is non-zero across three runs the prompt is
+     * not binding and **the fix is the prompt.**
+     */
+    const emoji = spoken.filter((s) => CHAT_EMOJI.test(s.body)).length;
+    process.stdout.write(`[emoji ${locale}] ${emoji} of ${spoken.length} bubbles (contract forbids; validator accepts)\n`);
+
+    /* `C-N1e`. The band's shape is `chain_used / chain_offered`'s, and the numbers are
+       guesses until the first three runs. */
+    const named = spoken.filter((s) =>
+      FORMS.some((f) => new RegExp(`\\b${f}\\b`, 'i').test(s.body)),
+    ).length;
+    process.stdout.write(
+      `[address ${locale}] ${named}/${spoken.length} bubbles name the querent ` +
+        `(band: over ~40% is a tic, under ~5% and C-N1e did not happen -- GUESSES until three runs)\n`,
+    );
+
+    /* `C-N1d`. The closing half of the loop is not machine-checkable and goes to the read. */
+    const asked = spoken.filter((s) => s.body.trim().endsWith('?')).length;
+    process.stdout.write(
+      `[questions ${locale}] ${asked}/${spoken.length} bubbles end in a question ` +
+        '(band: under ~15% the readers are not asking, over ~50% it is an interrogation)\n',
+    );
+
+    /* THE THREE VOICE PROXIES (`C-N1f`), over each reader's own bubbles joined. */
+    const byReader = (id: ReaderId) => spoken.filter((s) => s.author === id).map((s) => s.body).join(' ');
+    for (const readerId of ['thessaly', 'margaret', 'adrian'] as ReaderId[]) {
+      const text = byReader(readerId);
+      if (!text) continue;
+      for (const word of CROSSOVER[locale][readerId]) {
+        if (text.toLowerCase().includes(word.toLowerCase())) {
+          problems.push(`[${locale}] CROSSOVER: ${readerId} used "${word}", which is their own forbidden vocabulary`);
+        }
+      }
+    }
+    const thessalyMean = meanSentenceWords(byReader('thessaly'));
+    const margaretMean = meanSentenceWords(byReader('margaret'));
+    process.stdout.write(
+      `[sentence length ${locale}] thessaly=${thessalyMean.toFixed(1)} margaret=${margaretMean.toFixed(1)} ` +
+        `adrian=${meanSentenceWords(byReader('adrian')).toFixed(1)} (ratio must be >= ${CHAT_SENTENCE_RATIO})\n`,
+    );
+    if (thessalyMean > 0 && margaretMean > 0 && margaretMean < thessalyMean * CHAT_SENTENCE_RATIO) {
+      problems.push(
+        `[${locale}] SENTENCE LENGTH: margaret ${margaretMean.toFixed(1)} < thessaly ${thessalyMean.toFixed(1)} x ${CHAT_SENTENCE_RATIO}`,
+      );
+    }
+    if (locale === 'en') {
+      const adrianRate = contractionRate(byReader('adrian'));
+      const margaretRate = contractionRate(byReader('margaret'));
+      process.stdout.write(`[contractions en] adrian=${adrianRate.toFixed(1)} margaret=${margaretRate.toFixed(1)} per 100 words\n`);
+      if (byReader('adrian') && adrianRate === 0) problems.push('[en] CONTRACTIONS: adrian used none');
+      if (margaretRate > 0) problems.push('[en] CONTRACTIONS: margaret used some');
+    }
+
+    /*
+     * READER OVERLAP. **THE REFERENCE BAND IS NOT `--all`'s.** A chat's vocabulary is
+     * bounded by the conversation, so all three readers share the querent's words by
+     * construction and the number sits far above 0.086. The FIRST run's number is the
+     * reference and goes into `docs/workstream-notes.md`; a JUMP is the signal.
+     */
+    const pairs: Array<[string, string, number]> = [];
+    const ids: ReaderId[] = ['thessaly', 'margaret', 'adrian'];
+    for (let i = 0; i < ids.length; i += 1) {
+      for (let j = i + 1; j < ids.length; j += 1) {
+        const a = byReader(ids[i]);
+        const b = byReader(ids[j]);
+        if (a && b) pairs.push([ids[i], ids[j], jaccard(a, b)]);
+      }
+    }
+    for (const [a, b, n] of pairs) {
+      process.stdout.write(`[overlap ${locale}] ${a} vs ${b}: ${n.toFixed(3)}\n`);
+    }
+  }
+
+  /*
+   * THE WHOLE THING AGAIN, AS A CONVERSATION AND NOTHING ELSE -- no timings, no counts,
+   * no reasons. The instrumented print above is for finding a defect; this is for reading,
+   * and roadmap §10.2's second question ("would a person send this?") cannot be answered
+   * off a page interleaved with millisecond figures.
+   */
+  for (const locale of locales) {
+    process.stdout.write(`\n${'='.repeat(70)}\nTRANSCRIPT -- ${locale}\n${'='.repeat(70)}\n`);
+    for (const line of conversations[locale] ?? []) {
+      process.stdout.write(`${line.author === 'user' ? NICKNAME : line.author}: ${line.body}\n`);
+    }
+  }
+
+  // ---- THE CHECK REPORT -----------------------------------------------------
+  process.stdout.write(`\n${'-'.repeat(70)}\nCHAT CHECKS\n${'-'.repeat(70)}\n`);
+  if (problems.length === 0) process.stdout.write('all clean\n');
+  else for (const pr of problems) process.stdout.write(`FAIL  ${pr}\n`);
+
+  // ---- THE BLIND READ (§12.4), AND IT IS THE RELEASE GATE --------------------
+  chatBlindPrint(conversations, locales, NICKNAME, proactive);
+
+  if (problems.length > 0) process.exitCode = 1;
+}
+
+/**
+ * `blindPrint`'s mechanism, applied to a conversation.
+ *
+ * **THE QUERENT'S MESSAGES STAY LABELLED AND UNREDACTED**, deliberately: they are the
+ * scaffolding, and an exchange with one side removed cannot be read at all. Each reader's
+ * own name is redacted from every body for `blindPrint`'s reason — *a broken
+ * self-introduction rule must not also void the test.*
+ */
+function chatBlindPrint(
+  conversations: Record<string, Array<{ author: string; body: string }>>,
+  locales: Locale[],
+  nickname: string,
+  proactive: boolean,
+): void {
+  process.stdout.write(`\n${'#'.repeat(70)}\nTHE BLIND READ\n${'#'.repeat(70)}\n`);
+
+  const key: string[] = [];
+  for (const locale of locales) {
+    const lines = conversations[locale] ?? [];
+    if (lines.length === 0) continue;
+
+    /* A FIXED, LOCALE-DERIVED SHUFFLE, so two runs can be diffed. `blindPrint`'s rule. */
+    const order: ReaderId[] =
+      locale === 'id'
+        ? ['margaret', 'adrian', 'thessaly']
+        : ['adrian', 'thessaly', 'margaret'];
+    const label = new Map(order.map((id, i) => [id, `PEMBACA ${String.fromCharCode(65 + i)}`]));
+
+    process.stdout.write(`\n===== ${locale} =====\n`);
+    for (const line of lines) {
+      /*
+       * **THE QUERENT'S OWN MESSAGES STAY LABELLED AND UNREDACTED.** They are the
+       * scaffolding: an exchange with one side removed cannot be read at all, and the
+       * question is who wrote the REPLIES.
+       */
+      if (line.author === 'user') {
+        process.stdout.write(`${nickname}: ${line.body}\n`);
+        continue;
+      }
+      const covered = line.body.replace(/\b(Thessaly|Margaret|Adrian)\b/gi, '[REDACTED]');
+      process.stdout.write(`${label.get(line.author as ReaderId) ?? line.author}: ${covered}\n`);
+    }
+    for (const id of order) key.push(`${locale}  ${label.get(id)} = ${id}`);
+  }
+
+  process.stdout.write(
+    '\nTWO QUESTIONS, AND THE SECOND ONE IS THIS RELEASE\'S OWN:\n' +
+      '\n  1. GUESS WHO IS WHO. Three of three, or the persona blocks need sharpening --\n' +
+      '     and the fix is CHAT_READER_PROMPTS_{ID,EN}, never the code.\n' +
+      (proactive
+        ? '\n  2. DOES THIS SOUND LIKE SOMEBODY THOUGHT OF YOU, OR LIKE A CRON JOB?\n' +
+          '       a. Is it ABOUT something, or is it "hai, apa kabar?" (C-N2e)\n' +
+          '       b. Does it open a conversation, or close one?\n'
+        : '\n  2. READ IT AGAIN AND ANSWER: WOULD A PERSON SEND THIS?\n' +
+          '     Three specific things, because "does it feel natural" is not a question\n' +
+          '     anyone can answer cold:\n' +
+          '       a. Did any reader deliver a PARAGRAPH? One is too many.\n' +
+          '       b. Did any reader SUMMARISE the querent back at themselves before\n' +
+          '          answering? That is the most bot-like move available and no grep\n' +
+          '          can see it.\n' +
+          '       c. Did the room ever GO QUIET, or does every message get answered by\n' +
+          '          somebody? A room where every message is answered is a focus group.\n') +
+      `\n  The querent is ${nickname} and their messages are NOT covered -- they are the\n` +
+      '  scaffolding. Write the answers, the shortness distribution and the overlap\n' +
+      '  number into docs/workstream-notes.md under "## The group chat (F3)".\n',
+  );
+
+  process.stdout.write('\n'.repeat(40));
+  process.stdout.write(`${'-'.repeat(30)}\nTHE KEY\n${'-'.repeat(30)}\n`);
+  for (const line of key) process.stdout.write(`${line}\n`);
+}
+
+// ---------------------------------------------------------------------------
+// `--chat --director` (F2). THE ONLY INSTRUMENT FOR A BEAT SHEET.
+// ---------------------------------------------------------------------------
+
+/**
+ * One line of the canned room. `after` is minutes since the previous line, so the ages the
+ * director reads are real relative durations and `[belum dijawab]` is reachable.
+ *
+ * A line with `probes` is a querent message the director is asked to plan for; every other
+ * line is scaffolding, and the reader lines are hand-written because **calling the voices
+ * here would make a bad sheet and a bad bubble indistinguishable**.
+ */
+type DirectorLine = {
+  author: 'user' | ReaderId;
+  body: string;
+  after: number;
+  probes?: string;
+};
+
+/**
+ * The eight probes, chosen to reach the four levers of the plan's §11 and the two prompt
+ * rules no unit test can see (5 and 10).
+ *
+ * **THE ENGLISH HALF IS A REWRITE, NOT A TRANSLATION** — different subjects on purpose, the
+ * same enforcement `## Localization` rule 3 applies to the worked examples. If a future
+ * version of this fixture says *atasan* and *boss* about the same week, somebody translated
+ * it.
+ */
+const DIRECTOR_SCRIPT: Record<Locale, DirectorLine[]> = {
+  id: [
+    { author: 'user', body: 'hai', after: 0, probes: 'THE EMPTY OPENER. Silence, or ONE small beat? Three beats here is the failure.' },
+    { author: 'adrian', body: 'eh, tumben. kenapa?', after: 1 },
+    { author: 'user', body: 'kerjaan gue numpuk banget, atasan minta semuanya kelar minggu ini', after: 2, probes: 'THE ORDINARY ONE. Affinity says thessaly. Does the room agree, and does anybody overrule it?' },
+    { author: 'thessaly', body: 'Berapa yang benar-benar harus minggu ini?', after: 2 },
+    { author: 'user', body: 'sori ketiduran. tiga sih sebenernya, sisanya bisa minggu depan', after: 95, probes: 'RULE 5. Thessaly asked and never heard back. Does she get the first beat?' },
+    { author: 'margaret', body: 'Tiga dan sisanya adalah dua daftar yang berbeda, dan yang kedua biasanya yang menahan orang.', after: 3 },
+    { author: 'user', body: 'wkwk iya sih', after: 1, probes: 'THE ONE-WORD PROBE. A real group lets this pass. Does this one?' },
+    { author: 'thessaly', body: 'Tulis tiga itu sekarang, sebelum lupa.', after: 2 },
+    { author: 'user', body: 'iya tapi ngga sesimpel itu, atasan gue tiap hari nambah', after: 2, probes: 'THE TWO-BEAT PROBE. A real group answers this twice: somebody pushes back on Thessaly and somebody sides with the querent.' },
+    { author: 'user', body: 'nenek gue meninggal tahun lalu dan gue masih kebayang terus', after: 40, probes: 'RULE 10. NO tease, and one beat is usually enough. A tease here is the worst outcome in the run.' },
+    { author: 'thessaly', body: 'Setahun itu belum lama.', after: 2 },
+    { author: 'user', body: 'margaret kamu setuju ngga sama thessaly?', after: 3, probes: 'DIRECTED AT A READER. Margaret should be in the cast, and to= should name somebody.' },
+    { author: 'adrian', body: 'nah itu dia. gue juga pengen tau jawabannya', after: 2 },
+    { author: 'user', body: 'pacar gue ngambek dari kemarin dan gue bingung mau ngomong apa', after: 5, probes: 'THE AFFINITY SWITCH. Adrian is the lead now. Does the cast move?' },
+    { author: 'user', body: 'oke deh, makasih ya', after: 4, probes: 'THE ENDING PROBE. `beats: []` is the correct answer (C-R6).' },
+  ],
+  en: [
+    { author: 'user', body: 'hey', after: 0, probes: 'THE EMPTY OPENER' },
+    { author: 'margaret', body: 'There you are.', after: 1 },
+    { author: 'user', body: 'my landlord wants an answer about the lease by friday', after: 2, probes: 'THE ORDINARY ONE. Affinity says thessaly.' },
+    { author: 'thessaly', body: 'What happens if you say no?', after: 2 },
+    { author: 'user', body: 'sorry, fell asleep. i think i just move out honestly', after: 100, probes: 'RULE 5. Thessaly asked and never heard back.' },
+    { author: 'adrian', body: 'you said that last month too though', after: 3 },
+    { author: 'user', body: 'lol fair', after: 1, probes: 'THE ONE-WORD PROBE' },
+    { author: 'thessaly', body: 'Then give notice this week.', after: 2 },
+    { author: 'user', body: 'thats easy for you to say, i have nowhere to go yet', after: 2, probes: 'THE TWO-BEAT PROBE. A real group answers this twice: one pushes back on Thessaly, one sides with the querent.' },
+    { author: 'user', body: 'my dad had a fall and i keep thinking about it', after: 45, probes: 'RULE 10. NO tease here.' },
+    { author: 'margaret', body: 'A fall frightens the people watching more than the person who fell.', after: 2 },
+    { author: 'user', body: 'adrian do you actually agree with her', after: 3, probes: 'DIRECTED AT A READER' },
+    { author: 'thessaly', body: 'He will say yes and then say something else.', after: 2 },
+    { author: 'user', body: 'my ex texted me and i havent replied for two days', after: 5, probes: 'THE AFFINITY SWITCH. Adrian is the lead now.' },
+    { author: 'user', body: 'ok thanks', after: 4, probes: 'THE ENDING PROBE' },
+  ],
+};
+
+/**
+ * `npm run smoke -- --chat --director`. Eight real `chat_plan` calls per locale.
+ *
+ * **THE CONTEXT IS THE FIXTURE ABOVE RATHER THAN `assembleChatContext`**, exactly as
+ * `runChat` does it and for the same reason: the assembler's reads are five real query
+ * modules building drizzle statements, and faking that chain would be testing the fake.
+ * `context.integration.test.ts` drives the assembler against a real row; **what this run is
+ * for is the DECISION.**
+ */
+async function runDirector(locales: Locale[], withVoices = false) {
+  const { buildPlanPromptFrom } = await import('@/lib/chat/direct/assemble');
+  const { affinityFor } = await import('@/lib/chat/direct/affinity');
+  const { planCaps } = await import('@/lib/chat/direct/caps');
+  const { checkPlan } = await import('@/lib/chat/direct/validate');
+  const { awaitingReader, buildWindow, recentlySpoke, renderBeatSheet } = await import(
+    '@/lib/chat/direct/window'
+  );
+  const { chatModel, chatModelName } = await import('@/lib/chat/model');
+  const { buildChatPrompt } = await import('@/lib/chat/prompt/build');
+  const { chatBudgetFor } = await import('@/lib/prompt/budget');
+  const { addressForms } = await import('@/lib/chat/address');
+  const { checkTurnBodies } = await import('@/lib/chat/validate');
+  const { pace } = await import('@/lib/chat/voices/pace');
+
+  const FORMS = addressForms(CHAT_NICKNAME);
+  const ANSWERS = chatFixtureAnswers();
+  const RAW_ANSWERS = ANSWERS.map((a) => a.text);
+  /** User lines and GENERATED bubbles only — never the canned ones (see below). */
+  const conversations: Record<string, Array<{ author: string; body: string }>> = {};
+
+  const caps = planCaps();
+  process.stdout.write(
+    `\ndirector model=${chatModelName()} (CHAT_MODEL=${process.env.CHAT_MODEL ?? 'unset'})\n` +
+      `caps: maxBeats=${caps.maxBeats} perReader=${caps.maxBeatsPerReader} angle=${caps.maxAngleChars} window=${caps.windowMessages} oldReply=${caps.oldReplyMinAgeMinutes}m\n`,
+  );
+
+  for (const locale of locales) {
+    process.stdout.write(`\n${'#'.repeat(70)}\nDIRECTOR -- ${locale}\n${'#'.repeat(70)}\n`);
+
+    const script = DIRECTOR_SCRIPT[locale];
+    const messages: Array<{
+      id: string;
+      author: 'user' | ReaderId;
+      body: string;
+      createdAt: string;
+      replyToAuthor: 'user' | ReaderId | null;
+      attachment: string | null;
+    }> = [];
+    let clock = Date.parse('2026-08-07T02:00:00.000Z');
+    let no = 0;
+    const spoken: Array<{ author: string; body: string }> = [];
+
+    /** Every sheet, for the levers at the end. */
+    const sheets: Array<{
+      beats: number;
+      readers: number;
+      asks: number;
+      /**
+       * `to` NAMING A READER — **AND IT IS A FLOOR, NOT A RATE. DO NOT TUNE THE PROMPT
+       * AGAINST THIS NUMBER.**
+       *
+       * §11's lever says *"beats whose `replyTo` names a reader message"*, and that half
+       * can only ever catch a quote of a PREVIOUS run: the first beat of this run has no
+       * `chat_messages` row yet, so the second beat cannot quote it. Within a run,
+       * answering another reader is `to`; across runs it is `replyTo`.
+       *
+       * **BUT THE PROSE ANSWERS ANOTHER READER FAR MORE OFTEN THAN `to` SAYS.** Measured
+       * on a joined run: *"he's right though"* and *"she said it like a checklist"* both
+       * scored as help-desk beats because `to` was `user`, and both are the room talking to
+       * itself. `to` exists so `build.ts` can write `Bicara kepada:` and so `validateTurn`
+       * knows whether a nickname may appear — **it was never a count of anything.** Two
+       * prompt pushes were spent chasing it before the join was built; the second cost the
+       * cast mix and was reverted. **The instrument is the blind read below.**
+       */
+      readerDirected: number;
+      readerQuotes: number;
+      oldReplies: number;
+      source: string;
+      followedLead: boolean | null;
+    }> = [];
+
+    for (const line of script) {
+      clock += line.after * 60_000;
+      no += 1;
+      messages.push({
+        id: `m${no}`,
+        author: line.author,
+        body: line.body,
+        createdAt: new Date(clock).toISOString(),
+        replyToAuthor: null,
+        attachment: null,
+      });
+      /*
+       * **A CANNED READER LINE IS CONTEXT AND NEVER PART OF THE BLIND READ.** They are
+       * written by hand, in the readers' voices, to set the probes up — so putting them in
+       * front of somebody guessing who is who would be marking my own homework. The
+       * querent's lines are scaffolding and are shown, exactly as `--chat` shows them.
+       */
+      if (line.author === 'user') spoken.push({ author: 'user', body: line.body });
+      if (!line.probes) continue;
+
+      const triggerId = `m${no}`;
+      const window = buildWindow({
+        messages,
+        locale,
+        caps,
+        triggerMessageId: triggerId,
+        now: clock,
+      });
+      const cast = recentlySpoke(window);
+      const affinity = affinityFor(line.body, locale, { recentlySpoke: cast });
+      const prompt = buildPlanPromptFrom(
+        {
+          trigger: 'user_message',
+          fallbackLocale: locale,
+          window,
+          affinity,
+          awaiting: awaitingReader(window),
+          material: null,
+          caps,
+        },
+        cast,
+      );
+
+      const started = Date.now();
+      const reply = await getProvider().complete(prompt, {
+        op: 'chat_plan',
+        callClass: 'deferred',
+        model: chatModel(),
+      });
+      const ms = Date.now() - started;
+
+      const checked = checkPlan(reply.text, {
+        window,
+        fallbackLocale: locale,
+        caps,
+        trigger: 'user_message',
+      });
+      process.stdout.write(`\n--- ${no}. ${line.body}\n    (${line.probes})\n`);
+
+      if (!checked.ok) {
+        /* **A REFUSAL IS THE FALLBACK, AND THE FALLBACK IS NOT SILENCE** (`[F2-7]`). It is
+         * printed as loudly as possible: a refusal rate above a few percent means the
+         * prompt is wrong, and `validatePlan` must be LOOSENED rather than the prompt
+         * blamed if the plans it refuses read as correct. */
+        process.stdout.write(
+          `    [REFUSED -- ${checked.reason}] raw: ${JSON.stringify(reply.text.slice(0, 200))}\n`,
+        );
+        sheets.push({
+          beats: 1,
+          readers: 1,
+          asks: 0,
+          readerDirected: 0,
+          readerQuotes: 0,
+          oldReplies: 0,
+          source: 'fallback',
+          followedLead: null,
+        });
+        continue;
+      }
+
+      const readerMessages = new Set(window.filter((e) => e.author !== 'user').map((e) => e.id));
+      const oldIds = new Set(
+        window.filter((e) => e.ageMinutes >= caps.oldReplyMinAgeMinutes).map((e) => e.id),
+      );
+      sheets.push({
+        beats: checked.beats.length,
+        readers: new Set(checked.beats.map((b) => b.reader)).size,
+        asks: checked.beats.filter((b) => b.intent === 'ask').length,
+        readerDirected: checked.beats.filter((b) => b.to !== 'user').length,
+        readerQuotes: checked.beats.filter((b) => b.replyTo !== null && readerMessages.has(b.replyTo))
+          .length,
+        oldReplies: checked.beats.filter((b) => b.replyTo !== null && oldIds.has(b.replyTo)).length,
+        source: 'model',
+        followedLead:
+          affinity.lead === null ? null : (checked.beats[0]?.reader ?? null) === affinity.lead,
+      });
+
+      process.stdout.write(
+        `${renderBeatSheet({
+          label: `    run ${no}`,
+          trigger: 'user_message',
+          locale,
+          source: 'model',
+          beats: checked.beats,
+          affinity,
+          window,
+        })}\n` +
+          `    ${ms}ms, tokens in=${reply.usage.inputTokens ?? 'null'} out=${reply.usage.outputTokens ?? 'null'}` +
+          `${checked.repairs.length > 0 ? `, repairs: ${checked.repairs.join(',')}` : ''}\n`,
+      );
+
+      if (!withVoices) continue;
+
+      /*
+       * ── THE JOIN. Every beat of this sheet, through the real voice. ───────────
+       *
+       * `C-R5`: **each beat sees every earlier beat of its own run, as ACTUAL PROSE** —
+       * which is why the generated bubble is pushed into `messages` before the next beat
+       * builds its context, and why beats run serially here exactly as `run.ts` runs them.
+       *
+       * `C-R7`'s one retry is included, for the reason F3's runner records: a runner that
+       * made one call would report every refusal as a lost bubble and overstate the cost of
+       * a tight ceiling.
+       */
+      for (const [beatIndex, beat] of checked.beats.entries()) {
+        const budget = chatBudgetFor(locale, beat.reader);
+        const previous = messages[messages.length - 1];
+        const delay = pace({
+          next: beat,
+          previousChars: beatIndex === 0 ? null : previous.body.length,
+        });
+
+        const guards = {
+          budget,
+          addressForms: FORMS,
+          rawAnswers: RAW_ANSWERS,
+          conversation: messages.map((m) => m.body),
+        };
+
+        let text = '';
+        let turnMs = 0;
+        let turn = checkTurnBodies('', { locale, reader: beat.reader, ...guards });
+        let repairReason: string | null = null;
+        let attempts = 0;
+
+        for (const attempt of [1, 2] as const) {
+          attempts = attempt;
+          const turnPrompt = buildChatPrompt({
+            ctx: chatFixtureContext({
+              locale,
+              nickname: CHAT_NICKNAME,
+              forms: FORMS,
+              answers: ANSWERS,
+              messages,
+              replyToId: beat.replyTo,
+            }),
+            self: beat.reader,
+            beat,
+            budget,
+            now: clock,
+            repairReason: attempt === 2 ? repairReason : null,
+          });
+          const startedTurn = Date.now();
+          const turnReply = await getProvider().complete(turnPrompt, {
+            op: 'chat_turn',
+            callClass: 'deferred',
+            model: chatModel(),
+          });
+          turnMs = Date.now() - startedTurn;
+          text = turnReply.text;
+          turn = checkTurnBodies(text, { locale, reader: beat.reader, ...guards });
+          if (turn.ok) break;
+          repairReason = turn.reason;
+        }
+
+        if (!turn.ok) {
+          /* `C-R7`: refused twice stores NOTHING, the room is quieter, and no notice
+           * reaches the screen. Printed here because the run has to say what was lost. */
+          process.stdout.write(
+            `    [${beat.reader} refused twice -- ${turn.reason}, nothing stored] ${text.trim().slice(0, 120)}\n`,
+          );
+          continue;
+        }
+
+        for (const body of turn.bodies) {
+          clock += Math.max(delay, 1000);
+          no += 1;
+          messages.push({
+            id: `m${no}`,
+            author: beat.reader,
+            body,
+            createdAt: new Date(clock).toISOString(),
+            replyToAuthor: beat.replyTo
+              ? (messages.find((m) => m.id === beat.replyTo)?.author ?? null)
+              : null,
+            attachment: null,
+          });
+          spoken.push({ author: beat.reader, body });
+          process.stdout.write(
+            `    [${delay}ms] ${beat.reader}` +
+              `${beat.to === 'user' ? '' : ` -> ${beat.to}`} (${beat.intent}): ${body}\n` +
+              `        ${body.split(/\s+/).filter(Boolean).length}w ${body.length}c, ${turnMs}ms, attempt ${attempts}\n`,
+          );
+        }
+      }
+    }
+
+    conversations[locale] = spoken;
+
+    // ---- §11's FOUR LEVERS. PRINTED, NEVER FAILED ---------------------------
+    /*
+     * **TARGETS FOR F7's PANELS, NOT THRESHOLDS ANYTHING ENFORCES.** A number outside the
+     * band is a reason to read the prompt, never a reason to add a clamp — and a clamp is
+     * the coin flip `[F2-17]` refuses, arriving in a different file.
+     */
+    const runs = sheets.length;
+    const silent = sheets.filter((s) => s.beats === 0).length;
+    const beats = sheets.reduce((n, s) => n + s.beats, 0);
+    const spread = [1, 2, 3, 4].map(
+      (n) => `${n}: ${sheets.filter((s) => s.beats === n).length}`,
+    );
+    const withLead = sheets.filter((s) => s.followedLead !== null);
+    const pct = (a: number, b: number) => (b === 0 ? '--' : `${Math.round((a / b) * 100)}%`);
+
+    process.stdout.write(
+      `\n${'-'.repeat(70)}\nDIRECTOR LEVERS -- ${locale}\n${'-'.repeat(70)}\n` +
+        `  silence rate       ${pct(silent, runs)}  (${silent}/${runs})  target 10-25%; 0% is a help desk, >40% has stopped reading\n` +
+        `  cast size          ${spread.join('  ')}  over ${runs - silent} speaking runs (target 1:45 2:35 3:15 4:5)\n` +
+        `  reader-directed    ${pct(sheets.reduce((n, s) => n + s.readerDirected, 0), beats)} of ${beats} beats set to=<reader>, ${sheets.reduce((n, s) => n + s.readerQuotes, 0)} quote one\n` +
+        `                     A FLOOR, NOT A RATE -- the prose answers another reader far more often\n` +
+        `                     than \`to\` says, and a quote of a sibling beat is impossible by design.\n` +
+        `                     DO NOT TUNE THE PROMPT AGAINST THIS. Read the bubbles instead.\n` +
+        `  ask rate           ${pct(sheets.filter((s) => s.asks > 0).length, runs)} of runs  target 25-35%; 0% and C-N1d did not ship\n` +
+        `  old quotes         ${sheets.reduce((n, s) => n + s.oldReplies, 0)} of ${beats} beats  (>15% and the room is stuck: fix rule 8, not the cap)\n` +
+        `  fallback rate      ${pct(sheets.filter((s) => s.source === 'fallback').length, runs)}  ANY of these is a prompt problem, not a validator problem\n` +
+        `  affinity followed  ${pct(withLead.filter((s) => s.followedLead).length, withLead.length)} of ${withLead.length} runs with a lead  (100% is a switchboard; 0% means the hint is noise)\n`,
+    );
+  }
+
+  process.stdout.write(
+    `\n${'-'.repeat(70)}\nHOW TO READ THE SHEETS ABOVE (§15.4)\n${'-'.repeat(70)}\n` +
+      '  The first two questions are the ones that matter.\n\n' +
+      '  1. Would a PERSON have said nothing here? If yes, and the sheet has two beats,\n' +
+      '     the silence rule is not landing and prompt rule 6 is where to look.\n' +
+      '  2. Is there a beat that exists only to be POLITE? A second `agree`, a closing\n' +
+      '     beat, a summary of the beat above it. That is the false positive the\n' +
+      '     "YANG BUKAN ALASAN" block exists to refuse, and it is the failure that will\n' +
+      '     actually ship.\n' +
+      '  3. Does anybody answer ANYBODY? **ASK THIS OF THE PROSE, NOT OF THE `to` COLUMN**\n' +
+      '     -- "he\'s right though" is the room talking to itself and scores as `to=user`.\n' +
+      '  4. Is the SAME READER always first? If so, the affinity demotion is not firing\n' +
+      '     or the lexicon is too coarse for this subject matter.\n' +
+      '  5. Is the angle a SUBJECT or a SENTENCE? If you could send it as it stands,\n' +
+      '     MAX_ANGLE_CHARS is too high and that is the number to move.\n\n' +
+      '  Then read the BUBBLES below. A sheet that reads well and produces three\n' +
+      '  indistinguishable paragraphs is `[F2-2]` failing, and the fix is in the director\n' +
+      '  rather than in the persona blocks.\n',
+  );
+
+  /*
+   * **THE JOINED BLIND READ IS THE ONE THAT COUNTS** (§10.2). Same mechanism as `--chat`'s
+   * — names covered, a fixed locale-derived shuffle so two runs can be diffed, the key
+   * after forty blank lines — but over prose that a REAL beat sheet asked for. The
+   * question to hold while reading is `[F2-2]`'s: are these three people, or is this one
+   * model wearing three hats because the director told all three the same thing?
+   */
+  if (withVoices) chatBlindPrint(conversations, locales, CHAT_NICKNAME, false);
+}
+
+
+// ---------------------------------------------------------------------------
+// `--chat --proactive` (F5). THE OTHER HALF OF §10.2's GATE.
+// ---------------------------------------------------------------------------
+
+/**
+ * `[F5-10]`'s failure, as a grep. **THE EXACT STRING THE ROADMAP NAMES.**
+ *
+ * `C-N2e`: *a proactive run with nothing to be about produces "hai, apa kabar?", which
+ * is the emptiest thing this feature could ship.* A run that HAD material and opened
+ * with it anyway means the brief did not reach the voice — which is a prompt problem,
+ * not a material problem, and it is invisible in every unit test because the material
+ * object was perfectly correct on its way in.
+ */
+const PROACTIVE_EMPTY_OPENER = /\b(apa kabar|gimana kabar|how are you|what'?s up|how's it going)\b/i;
+
+/**
+ * WARN, not FAIL. `tally.ts`'s two-tier argument verbatim: *"a scanner that flags
+ * legitimate output is a scanner somebody switches off within a week."* **"Selamat pagi"
+ * from a morning nudge is legitimate**; a bare *"hai"* opening an unprompted run usually
+ * is not, and the difference is a judgement a person makes while reading.
+ */
+const PROACTIVE_BARE_GREETING = /^\s*(hai|halo|hi|hey)\b/i;
+
+/**
+ * `npm run smoke -- --chat --proactive`. **Six real runs, one per material kind, with no
+ * querent and no database.**
+ *
+ * ── WHY BOTH HALVES ARE LIVE HERE, WHERE `--chat` CANS ONE ────────────────
+ *
+ * `--chat` cans the sheets and `--chat --director` cans the voices, each so that a
+ * failure in one is not read as a failure in the other. **Neither split works for this
+ * question.** What F5 ships is a *brief*, and the only way to find out whether a brief
+ * reached the prose is to let it travel the whole way: material -> director -> voice. A
+ * canned sheet would answer the question for the director; canned prose would answer it
+ * for the voices.
+ *
+ * ── ONE LOCALE BY DEFAULT, AND THE REASON DIFFERS FROM `--all`'s ──────────
+ *
+ * `--all` defaults to both because W6's whole risk *is* the second locale. Here the risk
+ * is the **material**, and twelve unprompted runs is more prose than anybody reads in one
+ * sitting — **and the blind read is the gate, so a run nobody finishes reading is a gate
+ * nobody passes.** `--locale en` switches.
+ */
+async function runProactive(locales: Locale[]) {
+  const { buildPlanPromptFrom } = await import('@/lib/chat/direct/assemble');
+  const { affinityFor } = await import('@/lib/chat/direct/affinity');
+  const { planCaps } = await import('@/lib/chat/direct/caps');
+  const { checkPlan } = await import('@/lib/chat/direct/validate');
+  const { awaitingReader, buildWindow, recentlySpoke, renderBeatSheet } = await import(
+    '@/lib/chat/direct/window'
+  );
+  const { chatModel, chatModelName } = await import('@/lib/chat/model');
+  const { buildChatPrompt } = await import('@/lib/chat/prompt/build');
+  const { CHAT_LENGTH_BUDGET, chatBudgetFor } = await import('@/lib/prompt/budget');
+  const { addressForms } = await import('@/lib/chat/address');
+  const { checkTurnBodies } = await import('@/lib/chat/validate');
+  const { pace } = await import('@/lib/chat/voices/pace');
+  const { describeMaterial, materialLine } = await import('@/lib/chat/proactive/material');
+  const { PROACTIVE_ROOMS, proactiveFixtures } = await import('@/lib/chat/proactive/fixtures');
+  const { tallyFailures } = await import('@/lib/memory/tally');
+
+  const caps = planCaps();
+  const FORMS = addressForms(CHAT_NICKNAME);
+  const ANSWERS = chatFixtureAnswers();
+  const RAW_ANSWERS = ANSWERS.map((a) => a.text);
+
+  process.stdout.write(
+    `\nproactive model=${chatModelName()} (CHAT_MODEL=${process.env.CHAT_MODEL ?? 'unset'})\n` +
+      `caps: maxBeats=${caps.maxBeats} perReader=${caps.maxBeatsPerReader}\n`,
+  );
+
+  /*
+   * **A MEASUREMENT ON THE FALLBACK MODEL IS NOT A MEASUREMENT OF THIS RELEASE, AND THIS
+   * LINE EXISTS BECAUSE THREE RUNS WERE READ BEFORE ANYBODY NOTICED** (2026-08-08).
+   *
+   * `C-D4` puts the chat — director AND voices — on `CHAT_MODEL`, `glm-5.2`, *"the best
+   * model we have"*, and unset silently falls back to `LLM_MODEL`. `.env.example` sets it;
+   * a `.env.local` written before v0.7.0 does not. The header above named the model
+   * faithfully and got read past three times, so what was being judged was glm-4.6.
+   *
+   * **It is not a fatal error**, because comparing the two models on this instrument is a
+   * legitimate thing to want. It is a warning that names the consequence, which is the only
+   * kind anybody reads.
+   */
+  if (!process.env.CHAT_MODEL) {
+    process.stdout.write(
+      '\nWARN  CHAT_MODEL is unset, so this run is on LLM_MODEL and NOT on the model the\n' +
+        '      chat ships with (C-D4: glm-5.2, "the best model we have"). The naturalness\n' +
+        '      judgement below is therefore about the wrong model. Measured on 2026-08-08:\n' +
+        '      the fallback emitted a whole transcript inside one bubble, repeated another\n' +
+        '      reader\'s line verbatim, and invented a noun the fixture never mentioned --\n' +
+        '      three defects that vanished on glm-5.2. Set CHAT_MODEL in .env.local.\n',
+    );
+  }
+
+  const problems: string[] = [];
+  const conversations: Record<string, Array<{ author: string; body: string }>> = {};
+  /** The key the blind read prints: which run was about what. */
+  const materialKey: string[] = [];
+
+  for (const locale of locales) {
+    process.stdout.write(`\n${'#'.repeat(70)}\nPROACTIVE -- ${locale}\n${'#'.repeat(70)}\n`);
+    const spoken: Array<{ author: string; body: string; words: number }> = [];
+    const transcript: Array<{ author: string; body: string }> = [];
+    let runNo = 0;
+
+    for (const fixture of proactiveFixtures(locale)) {
+      runNo += 1;
+      /*
+       * A FIXED CLOCK PER RUN, so two runs of this script produce the same ages and can
+       * be diffed. `[F5-2]`'s injected clock, extended to the instrument.
+       */
+      let clock = Date.parse('2026-08-07T12:00:00.000Z');
+      const messages = PROACTIVE_ROOMS[locale][fixture.room].map((m) => ({
+        id: m.id,
+        author: m.author,
+        body: m.body,
+        createdAt: new Date(clock - m.minutesAgo * 60_000).toISOString(),
+        replyToAuthor: null as 'user' | ReaderId | null,
+        attachment: null as string | null,
+      }));
+
+      const brief = describeMaterial(fixture.material, locale);
+      const line = materialLine(brief);
+
+      process.stdout.write(
+        `\n--- run ${runNo}: ${fixture.kind} (trigger ${fixture.trigger}, room "${fixture.room}")\n` +
+          `    BAHAN: ${line}\n` +
+          `    replyTo: ${brief.replyTo ?? 'none'}\n`,
+      );
+      /* The room the run starts from, printed once so the bubbles have something to sit
+       * against. It is context, not part of the blind read's answer. */
+      for (const m of messages) {
+        process.stdout.write(`      ${m.author === 'user' ? CHAT_NICKNAME : m.author}: ${m.body}\n`);
+      }
+
+      const window = buildWindow({
+        messages,
+        locale,
+        caps,
+        /*
+         * **A PROACTIVE RUN HAS NO TRIGGER MESSAGE**, which is exactly the shape
+         * `[F2-5]` describes: the affinity is scored on the trigger message alone, so it
+         * scores `''` and no hint line is emitted at all. The material is what the
+         * director decides on instead, which is the whole point of this run.
+         */
+        triggerMessageId: brief.replyTo,
+        now: clock,
+      });
+      const cast = recentlySpoke(window);
+      const affinity = affinityFor('', locale, { recentlySpoke: cast });
+
+      const prompt = buildPlanPromptFrom(
+        {
+          trigger: fixture.trigger,
+          fallbackLocale: locale,
+          window,
+          affinity,
+          awaiting: awaitingReader(window),
+          material: line,
+          caps,
+        },
+        cast,
+      );
+
+      const started = Date.now();
+      const reply = await getProvider().complete(prompt, {
+        op: 'chat_plan',
+        callClass: 'deferred',
+        model: chatModel(),
+      });
+      const planMs = Date.now() - started;
+      /* **THE FIXTURE'S OWN TRIGGER**, so `silence_on_proactive` is reachable here — a
+       * runner that passed `'user_message'` would file a zero-beat proactive plan as a
+       * correct silence and the check `[F5-7]` asks for would be untested by the one
+       * instrument that can see it. */
+      const checked = checkPlan(reply.text, {
+        window,
+        fallbackLocale: locale,
+        caps,
+        trigger: fixture.trigger,
+      });
+
+      if (!checked.ok) {
+        process.stdout.write(
+          `    [PLAN REFUSED -- ${checked.reason}] ${JSON.stringify(reply.text.slice(0, 200))}\n`,
+        );
+        problems.push(`[${locale}] ${fixture.kind}: the plan was refused -- ${checked.reason}`);
+        continue;
+      }
+
+      process.stdout.write(
+        `${renderBeatSheet({
+          label: `    plan`,
+          trigger: fixture.trigger,
+          locale,
+          source: 'model',
+          beats: checked.beats,
+          affinity,
+          window,
+        })}\n    ${planMs}ms, tokens in=${reply.usage.inputTokens ?? 'null'} out=${reply.usage.outputTokens ?? 'null'}\n`,
+      );
+
+      if (checked.beats.length === 0) {
+        /*
+         * **`[F5-7]`: A PROACTIVE RUN'S BEAT SHEET IS NEVER EMPTY.** `C-R6`'s *"the
+         * director may say nobody replies"* is an affordance for a POSTED MESSAGE, where
+         * declining to answer is a naturalness signal. Applied to a proactive trigger it
+         * is a contradiction — nobody spoke, so there is nothing to decline to answer —
+         * and `[F5-13]`'s non-refunding counter means the querent's day was spent on
+         * silence.
+         */
+        problems.push(
+          `[${locale}] ${fixture.kind}: ZERO BEATS on a proactive trigger ([F5-7]). The day's ` +
+            'budget was spent on silence; F2 owns the enforcement.',
+        );
+        continue;
+      }
+
+      const runBubbles: string[] = [];
+      for (const [beatIndex, beat] of checked.beats.entries()) {
+        const budget = chatBudgetFor(locale, beat.reader);
+        const previous = messages[messages.length - 1];
+        const delay = pace({
+          next: beat,
+          previousChars: beatIndex === 0 ? null : previous.body.length,
+        });
+        const guards = {
+          locale,
+          reader: beat.reader,
+          budget,
+          addressForms: FORMS,
+          rawAnswers: RAW_ANSWERS,
+          conversation: messages.map((m) => m.body),
+        };
+
+        let text = '';
+        let turnMs = 0;
+        let turn = checkTurnBodies('', guards);
+        let repairReason: string | null = null;
+        let attempts = 0;
+
+        /* The retry is here because production has one (`C-R7`, `F1-D2`): a runner that
+         * made one call would report every refusal as a lost bubble. */
+        for (const attempt of [1, 2] as const) {
+          attempts = attempt;
+          const turnPrompt = buildChatPrompt({
+            ctx: chatFixtureContext({
+              locale,
+              nickname: CHAT_NICKNAME,
+              forms: FORMS,
+              answers: ANSWERS,
+              messages,
+              replyToId: beat.replyTo,
+            }),
+            self: beat.reader,
+            beat,
+            budget,
+            now: clock,
+            repairReason: attempt === 2 ? repairReason : null,
+          });
+          const startedTurn = Date.now();
+          const turnReply = await getProvider().complete(turnPrompt, {
+            op: 'chat_turn',
+            callClass: 'deferred',
+            model: chatModel(),
+          });
+          turnMs = Date.now() - startedTurn;
+          text = turnReply.text;
+          turn = checkTurnBodies(text, guards);
+          if (turn.ok) break;
+          repairReason = turn.reason;
+        }
+
+        if (!turn.ok) {
+          /* `C-R7`: refused twice stores nothing and the room is simply quieter. */
+          process.stdout.write(
+            `    [${beat.reader} refused twice -- ${turn.reason}, nothing stored] ${text.trim().slice(0, 120)}\n`,
+          );
+          problems.push(
+            `[${locale}] ${fixture.kind} beat ${beatIndex}: refused TWICE -- ${turn.reason}`,
+          );
+          continue;
+        }
+
+        for (const body of turn.bodies) {
+          clock += Math.max(delay, 1000);
+          const words = body.split(/\s+/).filter(Boolean).length;
+          messages.push({
+            id: `g${messages.length + 1}`,
+            author: beat.reader,
+            body,
+            createdAt: new Date(clock).toISOString(),
+            replyToAuthor: null,
+            attachment: null,
+          });
+          spoken.push({ author: beat.reader, body, words });
+          transcript.push({ author: beat.reader, body });
+          runBubbles.push(body);
+          process.stdout.write(
+            `    [${delay}ms] ${beat.reader}${beat.to === 'user' ? '' : ` -> ${beat.to}`} ` +
+              `(${beat.intent}): ${body}\n        ${words}w ${body.length}c, ${turnMs}ms, attempt ${attempts}\n`,
+          );
+        }
+      }
+
+      // ---- §11.2's THREE CHECKS, PER RUN ------------------------------------
+      const opener = runBubbles[0] ?? '';
+      if (opener !== '' && PROACTIVE_EMPTY_OPENER.test(opener)) {
+        problems.push(
+          `[${locale}] ${fixture.kind}: THE EMPTY OPENER. The run had material and opened with ` +
+            `${JSON.stringify(opener.slice(0, 80))} -- C-N2e's named worst outcome, and it means ` +
+            'the brief did not reach the voice.',
+        );
+      }
+      for (const body of runBubbles) {
+        /*
+         * **A DIGIT IN THE OUTPUT WAS INVENTED.** M4 hands over a Shadow Arcana, a pulse
+         * word and a dominance bucket and **never a count** (`[F5-9]`); `material.test.ts`
+         * asserts the brief carries no digit, and this asserts the prose did not grow one.
+         * V3's entire finding, in a new place.
+         */
+        for (const hit of tallyFailures(body, { locale })) {
+          problems.push(`[${locale}] ${fixture.kind}: A TALLY -- ${hit.pattern}: ${JSON.stringify(body.slice(0, 100))}`);
+        }
+      }
+      if (opener !== '' && PROACTIVE_BARE_GREETING.test(opener)) {
+        process.stdout.write(
+          `    WARN  a bare greeting opens this run: ${JSON.stringify(opener.slice(0, 60))}\n` +
+            '          "Selamat pagi" from a morning nudge is legitimate; a bare "hai" usually is not.\n',
+        );
+      }
+
+      materialKey.push(`${locale}  run ${runNo} = ${fixture.kind} (${fixture.trigger})`);
+      /* The room's own lines are context and are NOT part of the blind read: they are
+       * hand-written in the readers' voices to set the run up, so showing them to
+       * somebody guessing who is who would be marking my own homework. */
+    }
+
+    conversations[locale] = transcript;
+
+    // ---- THE BUDGET, ASSERTED SO THE PROMPT AND THE TABLE CANNOT DRIFT ------
+    const budget = CHAT_LENGTH_BUDGET[locale];
+    const counts = spoken.map((s) => s.words).sort((a, b) => a - b);
+    if (counts.length > 0) {
+      const mean = counts.reduce((a, b) => a + b, 0) / counts.length;
+      process.stdout.write(
+        `\n[shortness ${locale}] ${counts.length} bubbles, words ${counts.join(' ')}\n` +
+          `    min=${counts[0]} mean=${mean.toFixed(1)} max=${counts[counts.length - 1]} ` +
+          `ceiling=${budget.maxWords} (margaret ${chatBudgetFor(locale, 'margaret').maxWords})\n`,
+      );
+      if (mean > budget.maxWords) {
+        problems.push(
+          `[${locale}] SHORTNESS: mean ${mean.toFixed(1)} words is over the ${budget.maxWords} ceiling`,
+        );
+      }
+    }
+  }
+
+  process.stdout.write(`\n${'-'.repeat(70)}\nPROACTIVE CHECKS\n${'-'.repeat(70)}\n`);
+  if (problems.length === 0) process.stdout.write('all clean\n');
+  else for (const pr of problems) process.stdout.write(`FAIL  ${pr}\n`);
+
+  chatBlindPrint(conversations, locales, CHAT_NICKNAME, true);
+
+  process.stdout.write(
+    `\n${'-'.repeat(30)}\nTHE MATERIAL KEY\n${'-'.repeat(30)}\n` +
+      '  Guess what each run was ABOUT before reading this. If you cannot tell, the\n' +
+      '  material did not reach the voice -- and the fix is describeMaterial\'s note table\n' +
+      '  or F3\'s prompt, NEVER the code.\n',
+  );
+  for (const k of materialKey) process.stdout.write(`${k}\n`);
+
+  if (problems.length > 0) process.exitCode = 1;
+}
+
 
 main().catch((err) => {
   console.error('\nsmoke failed:', err);

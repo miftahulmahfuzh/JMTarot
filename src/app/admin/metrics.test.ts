@@ -206,7 +206,14 @@ describe('foldedOps -- top-3 + Other (R11), never "4 + Other"', () => {
      * The categorical palette is four wide and **slot 4 IS Other**, so the roadmap's *"folded
      * to 4 + Other"* needed five slots and there are four.
      */
-    const rows = OP_ORDER.map((op, i) => ({ op, value: (9 - i) * 10 }));
+    /*
+     * `OP_ORDER.length - i`, NOT a literal `9`. The literal was the array's length when
+     * this was written and stopped being it on 2026-07-31; at thirteen ops it produces
+     * NEGATIVE values for the last four rows, which is a fixture that no longer describes
+     * anything the fold will ever see. Same class as the four stale prose counts F7 fixed
+     * in the same commit -- a number transcribed from a length is a number that goes stale.
+     */
+    const rows = OP_ORDER.map((op, i) => ({ op, value: (OP_ORDER.length - i) * 10 }));
     const folded = foldedOps(rows);
     expect(folded).toHaveLength(4);
     expect(folded[3].op).toBe(OTHER);

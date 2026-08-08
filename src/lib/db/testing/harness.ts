@@ -93,6 +93,12 @@ export async function withRollback(fn: (tx: Tx) => Promise<void>): Promise<void>
  * `CASCADE` would handle the two blog tables from `blog_posts` alone, and both are
  * named anyway so that a table added to the schema and forgotten here shows up as
  * leaked state rather than as a silent survivor.
+ *
+ * **SEVENTEEN BECAME TWENTY WITH F1's `0014` (v0.7.0), IN THAT MIGRATION'S OWN
+ * COMMIT**, following the procedure the two paragraphs above established rather
+ * than a reconciliation. `CASCADE` would reach `chat_messages` and `chat_runs` from
+ * `chat_threads`, and all three are named anyway for the same reason the blog pair
+ * is. The list stays exhaustive by intent.
  */
 export async function resetDb(): Promise<void> {
   await testDb.execute(sql`
@@ -100,7 +106,8 @@ export async function resetDb(): Promise<void> {
                    readings, reading_cards, events, daily_summaries,
                    moderation_flags, frequency_verdicts, translations,
                    share_links, personas, admin_access_log, llm_calls,
-                   blog_posts, blog_post_locales
+                   blog_posts, blog_post_locales,
+                   chat_threads, chat_messages, chat_runs
     RESTART IDENTITY CASCADE`);
 }
 

@@ -28,22 +28,33 @@
 import type { LLMOp } from '@/lib/llm/types';
 
 /**
- * The ten, in the order a chart or a legend renders them. **Not by rank** -- an order
+ * **THE THIRTEEN**, in the order a chart or a legend renders them. (This line said
+ * *"The ten"* over an eleven-member array from 2026-07-31 until v0.7.0 — one of the
+ * three stale op counts reconciliation `[R13]` found in prose. **The count is written
+ * out rather than deleted because the boundary below is what a reader needs, and a
+ * number that is checkable is what makes the boundary checkable.**) **Not by rank** -- an order
  * that changes with the data reads as the data changing, which is the same reason M4's
  * SQL breaks its `calls desc` tie on `op` and `topCardAllTime` breaks its on `card_id`.
  *
  * The order is the request's own shape: what a reading costs, in the order a reading
  * incurs it, then the two background generators, then the two translation passes.
  *
- * **THE LAST TWO HAVE NO QUERENT BEHIND THEM, AND THAT IS WHY THEY ARE LAST.**
+ * **THE LAST FOUR HAVE NO QUERENT BEHIND THEM, AND THAT IS WHY THEY ARE LAST.**
  * `insight` arrived with A7 on 2026-07-31 and `blog_format` the same day with the markdown
- * editor. Every value above them is incurred by somebody taking a reading, directly or in
- * its wake; these two are incurred by the operator — one reading the dashboard, one
- * pressing Auto Format. Keeping them at the end leaves the nine querent-side rows in the
+ * editor; `chat_plan` and `chat_turn` arrived with v0.7.0's group chat on 2026-08-07.
+ * Every value above them is incurred by somebody taking a reading, directly or in
+ * its wake; these are incurred by the operator or by a room that keeps going when nobody
+ * is looking at it. Keeping them at the end leaves the nine querent-side rows in the
  * shape they have always had, so a table that grew a row does not also look reordered.
  *
- * **A COST-PER-READING DENOMINATOR MUST EXCLUDE BOTH**, which is the reason the boundary
- * is visible in the order rather than only in a comment.
+ * **A COST-PER-READING DENOMINATOR MUST EXCLUDE ALL FOUR**, which is the reason the
+ * boundary is visible in the order rather than only in a comment.
+ *
+ * **THE TWO CHAT OPS SIT AFTER THE TWO ADMIN ONES AND THE DISTINCTION IS WORTH A LINE**:
+ * `insight` and `blog_format` measure the DASHBOARD and the CMS, and the chat pair
+ * measures a product feature that simply is not a reading. All four are excluded from a
+ * per-reading denominator for the same arithmetic reason and for two different product
+ * ones. `chat_plan` before `chat_turn`, because a run plans before it speaks.
  */
 export const OP_ORDER = [
   'moderation',
@@ -57,6 +68,8 @@ export const OP_ORDER = [
   'translation_repair',
   'insight',
   'blog_format',
+  'chat_plan',
+  'chat_turn',
 ] as const satisfies readonly LLMOp[];
 
 /**

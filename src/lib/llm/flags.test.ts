@@ -113,14 +113,25 @@ describe('the module', () => {
     expect(code).not.toContain('SPREAD_ENABLED');
   });
 
-  /** The register is what `.env.example` and DEPLOY-VERCEL are checked against. */
-  it('registers exactly the five deferrable features', () => {
+  /**
+   * The register is what `.env.example` and DEPLOY-VERCEL are checked against.
+   *
+   * **FIVE BECAME SEVEN ON 2026-08-07** (`C-D15`). The two chat flags go at the END,
+   * for `OP_ORDER`'s reason: the five above are in the order §2d of DEPLOY-VERCEL
+   * teaches an operator to reach for them, and a reordering here would read as a
+   * change of priority. **`CHAT_PROACTIVE_ENABLED` is nonetheless the first one to
+   * reach for in an outage** — that is said in its own comment rather than by moving
+   * it up the list.
+   */
+  it('registers exactly the seven deferrable features', () => {
     expect(DEFERRABLE_FLAGS.map((f) => f.env)).toEqual([
       'DAILY_SUMMARY_ENABLED',
       'FREQUENCY_VERDICT_ENABLED',
       'PERSONA_GENERATION_ENABLED',
       'LOTUS_GENERATION_ENABLED',
       'GIST_ENABLED',
+      'CHAT_ENABLED',
+      'CHAT_PROACTIVE_ENABLED',
     ]);
   });
 

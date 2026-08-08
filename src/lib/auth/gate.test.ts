@@ -476,3 +476,83 @@ describe('v0.5.0 / A1 -- /admin is an ORDINARY GATED PATH, and isPublic() knows 
     expect(at('/api/admin/users', settled)).toEqual({ kind: 'next' });
   });
 });
+
+/**
+ * ── v0.7.0's `/chat`, AND `gate.ts` GETS ZERO LINES (`F1-D11`, `C-D12`) ────
+ *
+ * `isPublic()` is an allowlist of exact strings and narrow prefixes plus one content
+ * clause; **`/chat` is simply not in it**, so no code change is required and none may
+ * be made. That is A1's ruling about `/admin` in the same words — *"`src/middleware.ts`
+ * and `src/lib/auth/gate.ts` need NO code change"* — and **the deliverable is these
+ * negative controls rather than an edit.**
+ *
+ * The reason `/chat` gets the same sentence `/history` gets, only stronger: **this room
+ * contains a person's six onboarding answers spoken aloud** (`C-D8`).
+ */
+describe('/chat is gated, and the gate learns nothing to make it so', () => {
+  it('is NEVER public', () => {
+    expect(isPublic('/chat')).toBe(false);
+    expect(isPublic('/api/chat/message')).toBe(false);
+    expect(isPublic('/api/chat/advance')).toBe(false);
+    expect(isPublic('/api/chat/state')).toBe(false);
+  });
+
+  it('MUST 404 UNDER /en/ -- THE WORST OUTCOME IN THIS RELEASE, FENCED (G2)', () => {
+    /*
+     * **THE ASSERTION NAMED FOR THE WORST OUTCOME**, following the v0.4.0 precedent
+     * directly above.
+     *
+     * `isPublicContentPath` returns false for `/chat` (it is not a content path), so
+     * the content clause's `/en/` strip never runs for it, so the path stays gated —
+     * and having fallen through the gate it matches nothing in the route tree, which
+     * is a real 404. **`G2` is the rule that makes this hold: the content clause
+     * strips `/en/`, and the other clauses must not.** Unconditional stripping would
+     * make `/en/api/chat/message` public.
+     *
+     * A prefix-stripping bug here would not merely expose a page: it would expose a
+     * room where three characters quote a stranger's onboarding answers back at them.
+     */
+    expect(isPublic('/en/chat')).toBe(false);
+    expect(isPublic('/en/api/chat/message')).toBe(false);
+    expect(isPublic('/en/api/chat/state')).toBe(false);
+  });
+
+  it('sends a signed-out visitor to /login, and an API caller a 401', () => {
+    expect(at('/chat', signedOut)).toEqual({ kind: 'redirect', to: '/login' });
+    expect(at('/en/chat', signedOut)).toEqual({ kind: 'redirect', to: '/login' });
+    expect(at('/api/chat/state', signedOut)).toEqual({
+      kind: 'json',
+      status: 401,
+      error: 'Unauthorized',
+    });
+  });
+
+  it('sends a signed-in, UN-ONBOARDED querent to /onboarding', () => {
+    /*
+     * Not a special case — the ordinary arm. And it is the right one for this route
+     * specifically: **the readers' context IS the six answers and the Lotus**, so a
+     * half-onboarded querent has nothing for the room to be built from.
+     * `requireUser()` requires completed onboarding by default and answers 403 on the
+     * API side, which is the same decision one layer down.
+     */
+    expect(at('/chat', halfway)).toEqual({ kind: 'redirect', to: '/onboarding' });
+    expect(at('/api/chat/message', halfway)).toEqual({
+      kind: 'json',
+      status: 403,
+      error: 'Onboarding required',
+    });
+  });
+
+  it('lets a settled querent through', () => {
+    expect(at('/chat', settled)).toEqual({ kind: 'next' });
+    expect(at('/api/chat/advance', settled)).toEqual({ kind: 'next' });
+  });
+
+  it('does not open a path that merely LOOKS like the chat', () => {
+    // `isPublic()` is exact strings and narrow prefixes for this reason -- the same
+    // property `/arcanax` and `/arcana-foo` are the negative controls for.
+    expect(isPublic('/chatter')).toBe(false);
+    expect(isPublic('/chat/anything')).toBe(false);
+    expect(at('/chatter', signedOut)).toEqual({ kind: 'redirect', to: '/login' });
+  });
+});

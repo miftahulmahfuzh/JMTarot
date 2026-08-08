@@ -500,6 +500,62 @@ describe('M5 -- peakWindow5h', () => {
       const peak = await peakWindow5h(tx, { from: '2026-07-20', to: '2026-07-20' });
       expect(peak?.calls).toBe(1);
     }));
+
+  /*
+   * ── THE `ops` FILTER (F7, v0.7.0, F7-Q3) ──────────────────────────────────
+   *
+   * `/admin/chat` renders two meters from this one function: the chat's calls against
+   * `LLM_WINDOW_CHAT_CEILING` and the fleet's against `LLM_WINDOW_CALL_CEILING`. The
+   * alternative was a second copy of the window frame in `chat.ts`, and two spellings of
+   * the query that reconstructs what Redis holds would put a divergence on one card and
+   * make it read as a finding.
+   */
+  it('filters INSIDE the frame, so a chat window is chat calls only', () =>
+    withRollback(async (tx) => {
+      /*
+       * Six calls inside four hours: two `chat_turn`, one `chat_plan`, three `reading`.
+       * The fleet window holds all six; the chat window holds three. **Filtering after
+       * the frame would count six and then throw three away**, which answers a different
+       * question -- the chat's own sub-budget is charged by chat calls alone.
+       */
+      const at5h = (hhmm: string, op: 'reading' | 'chat_plan' | 'chat_turn') =>
+        row({ op, localDate: '2026-07-20', createdAt: at(`2026-07-20T${hhmm}:00Z`) });
+      await tx.insert(llmCalls).values([
+        at5h('08:00', 'reading'),
+        at5h('08:30', 'chat_plan'),
+        at5h('09:00', 'chat_turn'),
+        at5h('10:00', 'reading'),
+        at5h('11:00', 'chat_turn'),
+        at5h('11:59', 'reading'),
+      ]);
+
+      const range = { from: '2026-07-20', to: '2026-07-20' };
+      expect((await peakWindow5h(tx, range))?.calls).toBe(6);
+      const chat = await peakWindow5h(tx, range, ['chat_plan', 'chat_turn']);
+      expect(chat?.calls).toBe(3);
+      expect(typeof chat?.calls).toBe('number');
+    }));
+
+  it('treats an empty ops array as NO filter, because `op in ()` is a syntax error', () =>
+    withRollback(async (tx) => {
+      await tx.insert(llmCalls).values([
+        row({ op: 'reading', localDate: '2026-07-20', createdAt: at('2026-07-20T08:00:00Z') }),
+      ]);
+      const range = { from: '2026-07-20', to: '2026-07-20' };
+      expect((await peakWindow5h(tx, range, []))?.calls).toBe(1);
+    }));
+
+  it('is NULL when the filter matches nothing, never 0', () =>
+    withRollback(async (tx) => {
+      // Same rule as the empty range: "no chat calls" and "no data" are the same answer
+      // here, and both are honestly `null` rather than a meter reading empty.
+      await tx.insert(llmCalls).values([
+        row({ op: 'reading', localDate: '2026-07-20', createdAt: at('2026-07-20T08:00:00Z') }),
+      ]);
+      expect(
+        await peakWindow5h(tx, { from: '2026-07-20', to: '2026-07-20' }, ['chat_turn']),
+      ).toBeNull();
+    }));
 });
 
 describe('M8 -- the two latencies never merge', () => {

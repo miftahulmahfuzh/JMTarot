@@ -29,6 +29,26 @@ import type { MessageKey } from './locales/id';
  *                     per-value ceiling alone would let 44 documents of 320
  *                     characters in and quadruple the payload.
  *
+ * ── RE-MEASURED 2026-08-08, AND `MAX_BYTES` MOVED 20,000 -> 23,000 ─────────
+ *
+ * **THE ONLY WIDENING THIS CEILING HAS HAD, AND HERE IS THE WRITTEN REASON THE
+ * PARAGRAPH BELOW DEMANDS.** v0.7.0 adds a whole SCREEN — `/chat` — and with it 39
+ * `chat.*` keys across three workstreams: F1's first-open notice, F6's attachment
+ * copy and F4's room. `id` measures 21,161 bytes over 376 keys and `en` 20,788;
+ * the chat block is **1,848 bytes of the total**, or 8.7%.
+ *
+ * **THE RULE IS UNCHANGED AND NOTHING WAS RELAXED TO FIT.** Every one of those 39 is
+ * chrome — a button, a placeholder, an empty state, a day separator — the longest is
+ * 84 characters, and `MAX_VALUE` did not move. The check that S-D6 actually cares
+ * about is *"is this content in the wrong place"*, and the answer is still no:
+ * `/chat` renders no authored document, and the one long sentence on the screen
+ * (`chat.first_open.notice`) is a consent disclosure that has to be in the catalog
+ * because it is chrome in two languages.
+ *
+ * 23,000 is ~8.7% headroom over `id`, which is deliberately TIGHTER than the 21%
+ * this started with: the next workstream to add a screen's worth of keys should meet
+ * this test, and answer it in writing, exactly as this paragraph does.
+ *
  * **S-D6's real cost is the PAYLOAD, not the line count** -- the roadmap argues
  * from `id.ts` being 843 lines, and CLAUDE.md's `## Localization` still claims 118
  * keys, which has been wrong for two releases. The bytes are the number that
@@ -41,7 +61,7 @@ import type { MessageKey } from './locales/id';
  */
 
 const MAX_VALUE = 320;
-const MAX_BYTES = 20_000;
+const MAX_BYTES = 23_000;
 
 describe('the catalog holds chrome, not prose (S-D6)', () => {
   it('has no value longer than the ceiling', () => {

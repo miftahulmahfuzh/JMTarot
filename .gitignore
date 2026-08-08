@@ -55,6 +55,9 @@ tools/_contactsheet.jpg
 # Same, for tools/make_wallpapers.py. public/wallpapers/ IS committed, for the
 # same reason public/cards/ is; only the eyeballing sheet is scratch.
 tools/_wallpapersheet.jpg
+# Same, for tools/make_avatars.py. public/readers/ IS committed; the 4x contact
+# strip only exists so the three crop boxes can be reviewed by eye.
+tools/_avatarsheet.jpg
 
 # git worktrees
 .worktrees/

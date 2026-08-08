@@ -1,0 +1,169 @@
+/*
+ * The composer, and the only place on this screen the app speaks in its own voice.
+ *
+ * NO NEW HEX, NO NEW SIZE. The box is `--fs-hint` like the bubbles it produces, and
+ * the button is the `--gold-wash` / `--gold-border` pair every primary control in
+ * this app already uses.
+ */
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--gold-hairline);
+  background: var(--canvas);
+}
+
+.row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.box {
+  flex: 1;
+  /* min-width: 0 keeps a long unbroken draft from pushing Kirim off a 320px row --
+     the flex default is `min-width: auto`, which refuses to shrink below content. */
+  min-width: 0;
+  /* 44px is the tap-target floor and one row of Cormorant fits inside it; the
+     component grows this to at most four rows and then lets the box scroll. */
+  min-height: 44px;
+  max-height: 112px;
+  padding: 10px;
+  resize: none;
+  overflow-y: auto;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--gold-hairline);
+  background: var(--gold-wash);
+  color: var(--text-warm);
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-hint);
+  line-height: var(--lh-reading);
+}
+
+.box::placeholder {
+  color: var(--label);
+}
+
+.box:focus-visible {
+  border-color: var(--gold-border);
+  outline: none;
+}
+
+.box:disabled {
+  cursor: not-allowed;
+  /* CHAT_ENABLED=0 -- the room is still readable, and the placeholder carries the
+     one line of copy the flag gets. */
+  opacity: 0.7;
+}
+
+.send {
+  flex: none;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--gold-border);
+  background: var(--gold-wash-strong);
+  color: var(--gold-text);
+  font-family: var(--font-display), Georgia, serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.send:disabled {
+  border-color: var(--gold-hairline);
+  background: var(--gold-wash);
+  color: var(--label);
+  cursor: default;
+}
+
+/*
+ * The reply stub, above the box while a reply is being composed. The same 2px gold
+ * rule the in-bubble quote uses, so the two read as one mechanic.
+ */
+.replyStub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 0 4px 8px;
+  border-left: 2px solid var(--gold-border);
+}
+
+.replyAuthor {
+  flex: none;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.replyText {
+  flex: 1;
+  min-width: 0;
+  /* One line, ellipsised. The stub is a reminder of what is being answered, not a
+     second copy of it. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-hint);
+  color: var(--muted);
+}
+
+.replyCancel {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.replyCancel:hover,
+.replyCancel:focus-visible {
+  color: var(--gold-text);
+  outline: none;
+}
+
+/*
+ * The failure line. **OUTSIDE THE MESSAGE LIST BY CONSTRUCTION** (`F4-13`): it lives
+ * in the composer, so nothing the app says about a failure can ever be mistaken for
+ * something a reader said. There is no error bubble in this release.
+ */
+.failure {
+  margin: 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-hint);
+  line-height: var(--lh-reading);
+  color: var(--muted);
+}
+
+.retry {
+  margin-left: 8px;
+  min-height: 44px;
+  padding: 0 10px;
+  background: none;
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-card);
+  color: var(--gold-text);
+  font-family: var(--font-display), Georgia, serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.retry:hover,
+.retry:focus-visible {
+  background: var(--gold-wash-strong);
+  border-color: var(--gold-border);
+  outline: none;
+}

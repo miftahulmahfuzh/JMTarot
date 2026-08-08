@@ -35,6 +35,16 @@ const FLAGGED: Array<{
   marker: string;
   /** What the querent sees with it off. Prose, so the trade is legible here. */
   off: string;
+  /**
+   * **WHERE THE GUARD LIVES, WHEN IT IS NOT IN THE CALL SITE'S OWN FILE.** v0.7.0.
+   *
+   * The two chat sites are guarded in `direct/plan.ts` and `voices/turn.ts`
+   * themselves, so neither uses this — but `EXEMPT`'s `ownSwitch` already asserts a
+   * pair across two files (`classify.ts` does the call, `gate.ts` holds the switch),
+   * so **the pattern is established rather than invented** and the field is declared
+   * for the next site whose guard sits one file up in `run.ts`.
+   */
+  guardedIn?: string;
 }> = [
   {
     file: 'src/app/api/memory/summary/route.ts',
@@ -65,6 +75,52 @@ const FLAGGED: Array<{
     env: 'GIST_ENABLED',
     marker: 'if (!gistEnabled())',
     off: 'readings.gist stays null and those readings are excluded from recall, permanently',
+  },
+  {
+    /*
+     * **v0.7.0's DIRECTOR. TWO ROWS SHARE `CHAT_ENABLED`, WHICH NO PRIOR FLAG DID**,
+     * and that is what forced the register assertion below from a sorted-array equality
+     * to a SET comparison. One flag, two call sites, because a chat run that could plan
+     * and not speak — or speak and not plan — is not a state worth being able to reach.
+     */
+    file: 'src/lib/chat/direct/plan.ts',
+    env: 'CHAT_ENABLED',
+    marker: 'if (!chatEnabled())',
+    off: 'the room still opens and every past message renders; the composer is disabled with one line of copy, and a pending run is picked up the moment the flag returns to 1',
+  },
+  {
+    file: 'src/lib/chat/voices/turn.ts',
+    env: 'CHAT_ENABLED',
+    marker: 'if (!chatEnabled())',
+    off: 'as above -- and a shed turn is not an error: the run keeps its beats and the next visit delivers them',
+  },
+];
+
+/**
+ * **THE THIRD TABLE, v0.7.0 (`[R13]`): A `DEFERRABLE_FLAGS` MEMBER THAT GATES A MINT
+ * RATHER THAN A CALL.**
+ *
+ * `CHAT_PROACTIVE_ENABLED` makes no model call directly — **it stops a `chat_runs` row
+ * being written** — so it has no entry in `callSites()` and would otherwise fail *"no
+ * flag is declared and left unwired"*, which is the assertion that exists to catch a
+ * variable documented in `.env.example` that governs nothing.
+ *
+ * `C-D15` binds it into `DEFERRABLE_FLAGS`, so **the test grows rather than the
+ * decision changing.** The assertion `C-D15` names — *"the set of model call sites is
+ * exactly its two tables"* — is untouched, because this table holds no call site.
+ */
+const GATES: Array<{
+  file: string;
+  env: (typeof DEFERRABLE_FLAGS)[number]['env'];
+  marker: string;
+  /** What stops happening. A mint, never a call. */
+  off: string;
+}> = [
+  {
+    file: 'src/lib/chat/run.ts',
+    env: 'CHAT_PROACTIVE_ENABLED',
+    marker: "args.trigger !== 'user_message' && !chatProactiveEnabled()",
+    off: 'unprompted runs stop being minted; a posted message still gets answered. THE FIRST FLAG AN OPERATOR SHOULD REACH FOR -- nobody is waiting on a proactive run.',
   },
 ];
 
@@ -231,11 +287,39 @@ describe.each(EXEMPT)('$file is exempt', ({ file, why, ownSwitch }) => {
   }
 });
 
+describe.each(GATES)('$file gates a mint on $env', ({ file, env, marker, off }) => {
+  it(`checks ${env} before writing a chat_runs row`, () => {
+    /*
+     * **A MINT, NOT A CALL.** `mintRun()` declines and nothing is written — which is
+     * `[F1-20]`'s self-healing property: a run that was never minted costs nothing to
+     * un-mint, unlike the persona's stored fallback whose hash would freeze.
+     */
+    expect(read(file)).toContain(marker);
+    expect(read(file)).toMatch(/from '@\/lib\/llm\/flags'/);
+    expect(off.length).toBeGreaterThan(40);
+  });
+
+  it('is NOT a model call site, which is why it needs its own table', () => {
+    // If `run.ts` ever reaches `getProvider()` directly, the "set of call sites is
+    // exactly these two tables" assertion above goes red — correctly, because the
+    // guard would then have to be a FLAGGED row instead.
+    expect(callSites()).not.toContain(file);
+  });
+});
+
 describe('the register and the wiring agree', () => {
-  it('every registered flag has exactly one call site wired to it', () => {
-    expect(FLAGGED.map((f) => f.env).sort()).toEqual(
-      DEFERRABLE_FLAGS.map((f) => f.env).sort(),
-    );
+  it('every registered flag is wired somewhere', () => {
+    /*
+     * **A SET COMPARISON AND NOT A SORTED-ARRAY EQUALITY, SINCE v0.7.0.** Two `FLAGGED`
+     * rows share `CHAT_ENABLED` — the director and the voice are one feature and one
+     * switch — and the old `map(env).sort()` equality would fail on the duplicate. The
+     * property being asserted was always *"these are the same SET"*; the array
+     * spelling was an accident of every flag having had exactly one call site.
+     *
+     * `GATES` joins the union, because a flag that gates a mint is still wired.
+     */
+    const wired = new Set([...FLAGGED.map((f) => f.env), ...GATES.map((g) => g.env)]);
+    expect([...wired].sort()).toEqual([...new Set(DEFERRABLE_FLAGS.map((f) => f.env))].sort());
   });
 
   it('no flag is declared and left unwired', () => {
@@ -245,9 +329,9 @@ describe('the register and the wiring agree', () => {
      * kill switch to whoever sets it at 2am, and it will be believed.
      */
     for (const flag of DEFERRABLE_FLAGS) {
-      const wired = FLAGGED.find((f) => f.env === flag.env);
-      expect(wired, `${flag.env} is registered but no call site checks it`).toBeDefined();
-      expect(read(wired!.file)).toContain(wired!.marker);
+      const wired = [...FLAGGED, ...GATES].filter((f) => f.env === flag.env);
+      expect(wired.length, `${flag.env} is registered but nothing checks it`).toBeGreaterThan(0);
+      for (const w of wired) expect(read(w.file)).toContain(w.marker);
     }
   });
 });

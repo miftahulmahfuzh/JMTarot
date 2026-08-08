@@ -1,0 +1,177 @@
+/*
+ * The attachment card, inside a chat bubble.
+ *
+ * NO NEW HEX, NO NEW FONT SIZE, NO NEW CURVE. Every value below is a token from
+ * `src/theme/tokens.css` or a length already used by `HistoryItemRow.module.css`,
+ * which draws the same 44x66 thumbnail row.
+ *
+ * ── NO BACKGROUND FILL, AND THAT IS A DECISION RATHER THAN AN OMISSION ──────────
+ *
+ * F4 owns the bubble this sits in and paints it. A second fill here would be a card
+ * inside a card, and the only fills available are the golds — where gold means "a
+ * card goes here" on the draw screen and carries no other meaning anywhere in this
+ * app. The chart palette is explicitly licensed for marks on a chart surface and for
+ * nothing else, so `--chart-surface` is not available either. A hairline border is
+ * what separates the card from the bubble, which is all it has to do.
+ *
+ * ── WIDTH IS NOT MEASURED HERE AND CANNOT BE ────────────────────────────────────
+ *
+ * Loop 4 (`_chatfit.html`, F4's file, F6's fixtures) is the only loop that answers
+ * width: a fixed container plus `getBoundingClientRect`, at 320 / 360 / 375 / 390, in
+ * both locales. **Loop 5 gives a ~500px layout cropped to look narrow** whatever
+ * `--width` says. Nothing in this file may be adjusted on the strength of a
+ * screenshot.
+ *
+ * The fixtures that break it, so they are written down before anybody measures: the
+ * longest service name in each locale beside `Thessaly` beside a long date; a
+ * `spread3` (three thumbs) and a `daily` (one, which must not leave the card looking
+ * empty); a question at `MAX_QUESTION_LENGTH`; the chip AND the question together,
+ * which is the widest meta stack; and the querent's own text under the card at one
+ * word and at 200 characters.
+ */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-card);
+  /*
+   * The card is the width of its bubble. `min-width: 0` because it is a flex item in
+   * whatever column F4 puts it in, and without it the clamped question refuses to
+   * shrink and pushes the card past the bubble -- exactly the failure
+   * `HistoryItemRow`'s `.text` records on its own `min-width: 0`.
+   */
+  min-width: 0;
+}
+
+/*
+ * The link variant. The whole card is one target, so there is nothing to underline
+ * and no colour to change: `aria-label` carries the accessible name and the card
+ * carries the affordance.
+ */
+.link {
+  display: flex;
+  color: inherit;
+  text-decoration: none;
+}
+
+.link:hover {
+  border-color: var(--gold-border);
+}
+
+/* Never `outline: none`. This is the only visible focus target in the bubble. */
+.link:focus-visible {
+  outline: 2px solid var(--gold-border);
+  outline-offset: 2px;
+}
+
+/* --- The cards row ------------------------------------------------------- */
+
+.cards {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+/*
+ * `CardFace` is `position: absolute; inset: 0`, so it needs a sized, positioned
+ * parent. **44x66 IS `HistoryItemRow`'s THUMBNAIL, TAKEN ON PURPOSE** -- exact 2:3,
+ * and three of them plus two 6px gaps is 144px, which fits inside the 254px bubble a
+ * 320px viewport gives.
+ */
+.thumb {
+  position: relative;
+  width: 44px;
+  height: 66px;
+}
+
+/*
+ * 48x72 above 359px. The step is `min-width: 360px` rather than 375 because 360 is
+ * the width the fixed-container loop measures and the commonest Android width; three
+ * 48s plus two gaps is 156px against a 295px bubble at 375.
+ */
+@media (min-width: 360px) {
+  .thumb {
+    width: 48px;
+    height: 72px;
+  }
+}
+
+/* --- The meta stack ----------------------------------------------------- */
+
+/*
+ * `--fs-card-name` is 12px and is the smallest size in the token set that is not an
+ * uppercase eyebrow. It WRAPS: the widest case is the longest service name beside
+ * `Thessaly` beside a spelled-out date with its year, and a `nowrap` there would
+ * either overflow the bubble or need an abbreviated month table that does not exist
+ * in `format.ts`. Two lines of muted 12px is the cheaper answer.
+ */
+.meta {
+  margin: 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-card-name);
+  color: var(--muted);
+}
+
+/*
+ * The language chip. `align-self: flex-start` so it is as wide as its two words
+ * rather than as wide as the card -- a full-width chip reads as a banner, and this is
+ * a label on the prose below it.
+ */
+.chip {
+  align-self: flex-start;
+  padding: 3px 7px;
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-chip);
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--label);
+}
+
+/*
+ * The question. `ReadingView`'s `.question` declarations, one step recessive:
+ * italic body serif, but `--text-warm` rather than `--text` and clamped to two lines,
+ * because in a bubble the question is context for the prose rather than the subject
+ * of the screen.
+ *
+ * The clamp is `HistoryItemRow`'s, at two lines instead of one, and it carries both
+ * the prefixed and unprefixed properties for the same reason that file does.
+ */
+.question {
+  margin: 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: var(--fs-hint);
+  color: var(--text-warm);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  /* Or a pasted URL or a 200-character single token pushes the bubble wide. */
+  overflow-wrap: anywhere;
+}
+
+/* Decorative, so it is a div with `aria-hidden` rather than an `<hr>` -- there is no
+   thematic break between a question and the answer to it. */
+.rule {
+  height: 1px;
+  background: var(--gold-hairline);
+}
+
+.snippet {
+  margin: 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-hint);
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}

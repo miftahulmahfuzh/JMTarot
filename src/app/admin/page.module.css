@@ -250,3 +250,51 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/*
+ * ── A KPI ROW SITTING UNDER A PANEL'S MARK, AND THE 1440px SHOT ASKED FOR IT ──
+ *
+ * F7, v0.7.0. `/admin/chat` puts one or two `StatTile`s directly beneath a panel's bars
+ * rather than in a card of their own -- the silence rate under the beat histogram, the ask
+ * share under the intents, the top reader's share under the cast. `ChartFrame` gives its
+ * children no separation, which is correct after a `PlotFrame` (an axis brings its own
+ * padding) and wrong after `.inlineRows` or a `StackedBar`: measured at 1440, `KESENYAPAN`
+ * sat flush against the last bar and `PORSI PEMBACA TERBANYAK` overlapped the row above it.
+ *
+ * **A CLASS RATHER THAN A MARGIN ON `KpiRow` ITSELF**, because `KpiRow` is a chart primitive
+ * used in three other places where the spacing above it is already right, and I-16's
+ * neighbouring rule applies to layout as much as to strings: a primitive that carries an
+ * opinion about its surroundings is a primitive whose next caller has to undo it.
+ */
+.panelTiles {
+  margin-top: 16px;
+}
+
+/*
+ * ── TWO METERS, EQUAL WIDTHS, AND THE EQUALITY IS THE WHOLE POINT ────────────
+ *
+ * F7, v0.7.0. `/admin/chat`'s quota panel puts the chat's rolling-5h window beside the
+ * fleet's. **Two meters are not a dual-axis chart** -- they are two marks against two
+ * limits, each in its own frame, and what A-D11 forbids is two SCALES in ONE frame.
+ *
+ * The first draft reused `.lead`, whose `max-content 1fr` is right for a hero beside a
+ * meter and **wrong for a meter beside a meter**: measured at 1440 the two tracks came
+ * out visibly different widths, which on a panel built for comparison reads as two
+ * different scales. `1fr 1fr` is the fix, and it is why this is its own class rather
+ * than a second caller of `.lead`.
+ *
+ * The container query rather than a media query, for `.lead`'s reason: this sits inside a
+ * grid cell whose width is not the viewport's.
+ */
+.meterPair {
+  container-type: inline-size;
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+@container (min-width: 520px) {
+  .meterPair {
+    grid-template-columns: 1fr 1fr;
+  }
+}

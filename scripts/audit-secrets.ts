@@ -187,9 +187,31 @@ async function derivedNeedles(): Promise<{ needle: string; origin: string }[]> {
    */
   const CLIENT_BY_DESIGN = ['moderation/resources.ts', 'moderation/types.ts'];
 
+  /*
+   * ── `src/lib/chat/**` JOINED THE LIST IN v0.7.0, AND IT WAS THE MOST IMPORTANT
+   *    OF THE RECONCILIATION'S NINE UNOWNED FILES (§4, F3's finding) ────────
+   *
+   * **THIS SCRIPT DERIVED ITS NEEDLES FROM TWO DIRECTORIES ONLY, SO NON-NEGOTIABLE 2
+   * WAS UNENFORCED FOR EVERY STRING THE CHAT PROMPT LAYER WRITES** — and the
+   * `derived ZERO needles` guard below could not fire, because the two old
+   * directories keep it comfortably non-zero. The audit would have gone on passing
+   * while the surface it most needed to cover shipped unwatched.
+   *
+   * **THE CHAT IS THE SURFACE WHERE THIS IS EASIEST TO BREAK, BECAUSE THE PROMPT IS
+   * THE PRODUCT** (§0.3): three persona blocks, a director prompt, an address-form
+   * list and — under `C-D8` — a block built from six raw onboarding answers. A voice
+   * prompt leaking into a client bundle would put the querent's own `worst_thing`
+   * answer in a file a browser caches.
+   *
+   * F1 owns the edit; F3 supplied the path. `src/lib/chat/types.ts` is deliberately
+   * NOT excluded the way `moderation/types.ts` is — a client component names its
+   * types, but the file carries no prose (its contract test asserts exactly that), so
+   * it contributes no needles and needs no exception.
+   */
   const modules = [
     ...walk(join(ROOT, 'src', 'lib', 'prompt')),
     ...walk(join(ROOT, 'src', 'lib', 'moderation')),
+    ...walk(join(ROOT, 'src', 'lib', 'chat')),
   ].filter(
     (f) =>
       /\.ts$/.test(f) &&
@@ -500,6 +522,44 @@ const FORBIDDEN: { prefix: string; allow: string[] }[] = [
    * is harmless. Same split as `moderation/types.ts` against `blocklist.ts`.
    */
   { prefix: 'lib/seo/origin.ts', allow: [] },
+  /*
+   * **v0.7.0 / `[F3-19]`. THE OTHER HALF OF THE CHAT FENCE.**
+   *
+   * F1 taught the needle derivation about `src/lib/chat/**` (see `deriveNeedles`), which
+   * is what makes a leaked chat prompt DETECTABLE in a built bundle. This is what makes
+   * it detectable in the SOURCE, transitively, in one second, with the whole chain
+   * named — and it is the half that catches the mistake before the bundle exists.
+   *
+   * **THE PROMPT IS THE PRODUCT ON THIS SURFACE, AND UNDER `C-D8` IT CARRIES THE SIX
+   * RAW ONBOARDING ANSWERS.** A client component that reached `@/lib/chat/context` or
+   * `@/lib/chat/prompt/**` — even through two harmless-looking hops — would put a
+   * querent's own `worst_thing` answer in a file a browser caches. That is the one
+   * failure non-negotiable 2 exists for.
+   *
+   * FIVE EXCEPTIONS, AND EVERY ONE OF THEM IS A FILE F4 HAS TO NAME:
+   *
+   *   types.ts          the DTOs and `AdvanceReply`. A leaf by contract, no prose.
+   *   attachmentView.ts F6's projection for the bubble. `'use client'` names it.
+   *   machine.ts        F1's pure state decision, no clock and no handle.
+   *   address.ts        PURE, a LEAF, zero imports.
+   *   voices/pace.ts    the pace. F4 honours `delayMs`, so it may want the function.
+   *
+   * **`validate.ts` IS NOT ON THE LIST, AND THAT IS DELIBERATE.** It reaches
+   * `@/lib/prompt/lotus` for `properNames` and `sharesNgram`, so it carries the reading
+   * prompt layer behind it; the smoke script imports it under
+   * `--conditions=react-server` and a client component has no business checking a
+   * bubble it did not generate.
+   */
+  {
+    prefix: 'lib/chat/',
+    allow: [
+      'lib/chat/types.ts',
+      'lib/chat/attachmentView.ts',
+      'lib/chat/machine.ts',
+      'lib/chat/address.ts',
+      'lib/chat/voices/pace.ts',
+    ],
+  },
 ];
 
 /** Resolve an import specifier to a file under src/, or null if it leaves the tree. */

@@ -5,7 +5,7 @@ export const MAX_QUESTION_LENGTH = 200;
  * EVERY DELIMITER THE PROMPT LAYER WRITES, in any casing, with whitespace
  * anywhere inside the tag and with attributes.
  *
- * Six tags, because six different blocks fence off user-derived text:
+ * Eight tags, because eight different blocks fence off user-derived text:
  *
  *   <pertanyaan>          the querent's question, in a reading's user turn
  *   <penanya>             the Lotus block, in a reading's user turn (W3 §9)
@@ -19,6 +19,12 @@ export const MAX_QUESTION_LENGTH = 200;
  *   <sosok>               V8's persona block: the engine facts, the closed
  *                         values and the Lotus summary, in `/account`'s
  *                         persona prompt
+ *   <obrolan>             v0.7.0's chat transcript, in a chat turn's user
+ *                         turn: every message in the room, the querent's own
+ *                         sentences included
+ *   <lampiran>            v0.7.0's attached reading, rendered INLINE inside
+ *                         `<obrolan>` at its own message -- so it nests, and
+ *                         it needs its own alternative anyway
  *
  * THE COUNT ABOVE AND THE ALTERNATION BELOW MUST AGREE, and `sanitize.test.ts`'s
  * `the delimiter set` block is what makes them. They had already drifted once --
@@ -33,7 +39,7 @@ export const MAX_QUESTION_LENGTH = 200;
  * THIS DOES NOT CONTRADICT RECONCILIATION R17. That resolution says the ENGLISH
  * prompt keeps `<pertanyaan>` rather than gaining an English-language tag -- one
  * token per purpose, across both locales, so there is one thing to strip and one
- * thing to test. These six serve six purposes and fence six different
+ * thing to test. These eight serve eight purposes and fence eight different
  * blocks. What R17 warns against is doubling the surface for the SAME purpose,
  * and adding a locale variant of any of these would still be wrong.
  *
@@ -73,10 +79,39 @@ export const MAX_QUESTION_LENGTH = 200;
  * the surface argument: an English querent will never type "sosok" and would
  * absolutely type "self" or "person".
  *
+ * `<obrolan>` IS A SEVENTH PURPOSE, NOT A LOCALE VARIANT, AND IT IS THE SHARPEST
+ * OF THE SEVEN (v0.7.0, `[F3-18]`). What it fences is the group chat's own
+ * transcript: every message in the room, the querent's typed sentences included,
+ * handed to a model whose next output goes straight onto a screen. Unlike
+ * `<terjemahan>` and `<sosok>` it carries raw user text at zero remove, and unlike
+ * `<pertanyaan>` it carries a great deal of it -- forty messages, not one line.
+ *
+ * ONE TOKEN IN BOTH LOCALES, per R17, and the Indonesian-looking word again for
+ * the surface argument: an English querent will never type "obrolan" and would
+ * absolutely type "chat" or "conversation" -- so `<chat>` is the one tag in this
+ * app every querent in the room could type by accident. Same reasoning that kept
+ * `<riwayat>` out of `<history>`.
+ *
+ * `<lampiran>` IS AN EIGHTH PURPOSE AND IT GETS ITS OWN ALTERNATIVE EVEN THOUGH IT
+ * NESTS INSIDE `<obrolan>` (v0.7.0, F6, reconciliation `[R12]`). The reason is the
+ * fixpoint loop: the stripper works on the alternation, so **a nested tag the
+ * alternation cannot name is a hole in exactly the block that carries a querent's
+ * own text.** F6's `attachmentBlock.ts` renders an attached reading -- its cards,
+ * its verdict, its question and its stripped body -- inline at its own message
+ * inside the transcript, and every field of it passes through `stripUntrusted`.
+ *
+ * This is not two copies of one fence: `<obrolan>` fences the conversation and
+ * `<lampiran>` fences one artefact the querent pointed at, which is why F6's own
+ * header calls the second *"a reading the querent POINTED AT"* against the first's
+ * background. `attachmentBlock.ts` carried a private copy of this loop for its own
+ * tag until this commit, and that copy is deleted rather than left as a no-op --
+ * two implementations of one rule is how the two drift.
+ *
  * `[^>]*` covers the attribute on `<jawaban kunci="...">`. It cannot run past a
  * `>` and so cannot swallow arbitrary text between two unrelated tags.
  */
-const DELIMITER = /<\s*\/?\s*(?:pertanyaan|penanya|jawaban|riwayat|terjemahan|sosok)(?:[^>]*)>/gi;
+const DELIMITER =
+  /<\s*\/?\s*(?:pertanyaan|penanya|jawaban|riwayat|terjemahan|sosok|obrolan|lampiran)(?:[^>]*)>/gi;
 
 /*
  * C0 and C1 control characters, minus the whitespace handled separately below.

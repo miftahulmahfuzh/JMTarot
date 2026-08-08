@@ -1,0 +1,36 @@
+/*
+ * 28px in a bubble gutter, 36px in the room's header. The source is 112px, which
+ * is 36 x the iPhone's device pixel ratio of 3 -- `tools/make_avatars.py` §7.3
+ * carries that argument and it is why the file is not `C-D16`'s 72.
+ *
+ * NO NEW HEX. `--gold-hairline` is the same ring every card, chip and circle in
+ * this app already wears.
+ */
+.avatar {
+  flex: none;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--gold-hairline);
+  /* A face crop is opaque edge to edge, but the lotus variant is not, and one
+     background keeps the two the same object at a glance. */
+  background: var(--gold-wash);
+}
+
+.bubble {
+  width: 28px;
+  height: 28px;
+}
+
+.header {
+  width: 36px;
+  height: 36px;
+}
+
+/* The querent's. A glyph, centred, inheriting the stroke colour from here --
+   which is why `LotusMark` carries no colour of its own. */
+.lotus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--gold-pale);
+}

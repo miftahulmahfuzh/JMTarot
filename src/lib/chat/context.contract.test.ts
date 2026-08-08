@@ -1,0 +1,176 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { describe, expect, it } from 'vitest';
+
+/**
+ * `C-D8`'s five conditions, as source-level assertions.
+ *
+ * **THIS FILE IS THE AUDIT.** The question the release has to keep answerable is *"does
+ * anything else open the `answer_text` column?"*, and the only way it stays answerable by
+ * reading one file is if a test says so. `persona/prompt.test.ts`'s canary asserts the
+ * answers are ABSENT from that prompt; this asserts they enter the chat in exactly one
+ * place and leave it in none.
+ */
+
+const CHAT_DIR = join(process.cwd(), 'src/lib/chat');
+
+function sourcesUnder(dir: string): Array<{ path: string; text: string }> {
+  const out: Array<{ path: string; text: string }> = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...sourcesUnder(full));
+      continue;
+    }
+    if (!entry.name.endsWith('.ts') && !entry.name.endsWith('.tsx')) continue;
+    if (entry.name.includes('.test.')) continue;
+    out.push({ path: full.slice(process.cwd().length + 1), text: readFileSync(full, 'utf8') });
+  }
+  return out;
+}
+
+const SOURCES = sourcesUnder(CHAT_DIR);
+
+/** A mention in prose is not a call. Only a call site counts. */
+function calls(text: string, fn: string): boolean {
+  return new RegExp(`(?<![\\w.\`])${fn}\\s*\\(`).test(
+    text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, ''),
+  );
+}
+
+describe('the one decrypt (C-D8 condition 1)', () => {
+  /**
+   * `[F3-4]`. **`getAnswers` IS CALLED FROM EXACTLY ONE FILE UNDER `src/lib/chat/`**, and
+   * that file is the assembler. A second call site *"appears for a good-looking reason"*
+   * and then the audit question needs a grep instead of a read.
+   */
+  it('calls getAnswers from exactly one file, and that file is context.ts', () => {
+    const callers = SOURCES.filter((s) => calls(s.text, 'getAnswers')).map((s) => s.path);
+    expect(callers).toEqual(['src/lib/chat/context.ts']);
+  });
+
+  /**
+   * `queries/onboarding.ts` stays *"the only module that encrypts or decrypts that
+   * column"*. A second decrypt path here would be invisible to the first assertion,
+   * because it would not need `getAnswers` at all.
+   */
+  it('names neither decryptField nor answerAad anywhere', () => {
+    for (const source of SOURCES) {
+      expect({ path: source.path, decrypt: source.text.includes('decryptField') }).toEqual({
+        path: source.path,
+        decrypt: false,
+      });
+      expect({ path: source.path, aad: source.text.includes('answerAad') }).toEqual({
+        path: source.path,
+        aad: false,
+      });
+    }
+  });
+
+  /** No `getAnswersForChat`, no widened parameter — `C-D8` condition 1's other half. */
+  it('adds no new export to the onboarding query module', () => {
+    const onboarding = readFileSync(
+      join(process.cwd(), 'src/lib/db/queries/onboarding.ts'),
+      'utf8',
+    );
+    expect(onboarding).not.toContain('ForChat');
+    expect(onboarding).not.toContain('forChat');
+  });
+});
+
+describe('not one decrypted byte reaches the browser (C-D8 condition 2)', () => {
+  const read = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
+
+  /** Fence 1. The other three are `clientBoundary.test.ts`, `audit-secrets.ts` and the shape. */
+  it('marks the assembler and the whole prompt layer server-only', () => {
+    for (const path of [
+      'src/lib/chat/context.ts',
+      'src/lib/chat/prompt/build.ts',
+      'src/lib/chat/prompt/base.ts',
+      'src/lib/chat/prompt/base.id.ts',
+      'src/lib/chat/prompt/base.en.ts',
+      'src/lib/chat/prompt/readers.ts',
+      'src/lib/chat/prompt/readers.id.ts',
+      'src/lib/chat/prompt/readers.en.ts',
+      'src/lib/chat/voices/prompt.ts',
+    ]) {
+      expect({ path, fenced: read(path).includes("import 'server-only'") }).toEqual({
+        path,
+        fenced: true,
+      });
+    }
+  });
+
+  /**
+   * `[F3-1]` and the `clientBoundary.test.ts` exemption F3 asked F1 for: **the two leaves
+   * carry no marker and must not acquire one**, because they hold no prose and F4 may
+   * legitimately want the pace.
+   */
+  it('leaves address.ts and pace.ts unmarked, and prose-free', () => {
+    for (const path of ['src/lib/chat/address.ts', 'src/lib/chat/voices/pace.ts']) {
+      expect({ path, fenced: read(path).includes("import 'server-only'") }).toEqual({
+        path,
+        fenced: false,
+      });
+    }
+  });
+
+  /**
+   * **FENCE 4, THE STRUCTURAL ONE (`[F3-5]`).** `turn.ts` returns four fields of prose. If
+   * its return type ever named a context or a prompt turn, a debugging session could ship
+   * `worst_thing` to a browser through the one route that is allowed to answer with a
+   * bubble.
+   */
+  it('keeps the context and the prompt turns out of turn.ts’s surface', () => {
+    const turn = read('src/lib/chat/voices/turn.ts');
+    expect(turn).not.toContain('ChatContext');
+    expect(turn).not.toMatch(/\bsystem:/);
+    expect(turn).not.toMatch(/\buser:/);
+  });
+
+  /**
+   * The same rule one layer out: no route may serialise a context. Asserted over the whole
+   * API tree rather than over the chat routes alone, because the mistake would be made by
+   * whoever is debugging, not by whoever owns the file.
+   */
+  it('names ChatContext in no route handler', () => {
+    const routes = sourcesUnder(join(process.cwd(), 'src/app/api'));
+    for (const route of routes) {
+      expect({ path: route.path, names: route.text.includes('ChatContext') }).toEqual({
+        path: route.path,
+        names: false,
+      });
+    }
+  });
+});
+
+describe('the assembler’s reads (F3-23)', () => {
+  /**
+   * **NO NEW QUERY MODULE.** A `queries/chatContext.ts` would duplicate five reads and
+   * drift from all five; the assembler composes what exists.
+   */
+  it('adds no query module of its own', () => {
+    const queries = readdirSync(join(process.cwd(), 'src/lib/db/queries'));
+    expect(queries).not.toContain('chatContext.ts');
+  });
+
+  /** Every read takes its handle first, so the assembler is drivable with a stub. */
+  it('takes the handle first, like every query it calls', () => {
+    const context = readFileSync(join(CHAT_DIR, 'context.ts'), 'utf8');
+    expect(context).toMatch(/assembleChatContext\(\s*db: DbOrTx,/);
+  });
+
+  /**
+   * `[F3-17]`. The gist is what W5 built for this; `readings.body` would put five readings
+   * in a prompt whose output is 22 words, and `readings.question` is raw user text that the
+   * gist deliberately is not.
+   */
+  it('reads recallableReadings and never a reading body or question for the window', () => {
+    const context = readFileSync(join(CHAT_DIR, 'context.ts'), 'utf8');
+    expect(calls(context, 'recallableReadings')).toBe(true);
+    /* `readingWithCards` IS called — for an ATTACHMENT, which the querent pointed at. */
+    expect(calls(context, 'readingWithCards')).toBe(true);
+    expect(context).not.toContain('readingsForDay');
+  });
+});

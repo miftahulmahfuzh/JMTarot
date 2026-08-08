@@ -26,6 +26,7 @@
 import Link from 'next/link';
 
 import { AccountButton } from '@/components/AccountButton';
+import { ChatButton } from '@/components/ChatButton';
 import { localeSwitcherEnabled } from '@/lib/i18n/resolve';
 import { getT } from '@/lib/i18n/t';
 import { HistoryBrowser } from './HistoryBrowser';
@@ -47,6 +48,11 @@ export default async function HistoryPage() {
         component.
       */}
       <AccountButton surface="history" showLanguage={localeSwitcherEnabled()} />
+      {/* v0.7.0 / `C-D17`. `/history` is where a querent goes to look at their own
+          past, which is exactly where a reader having said something is worth
+          knowing about. F6's attachment control lives on `/history/[id]`, one level
+          down; this is the room itself. */}
+      <ChatButton />
 
       {/*
         THE WAY OUT. Until now this page had none: the account circle above opens a

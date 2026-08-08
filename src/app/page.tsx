@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Image from 'next/image';
 import { AccountButton } from '@/components/AccountButton';
+import { ChatButton } from '@/components/ChatButton';
 import { Eyebrow } from '@/components/Eyebrow';
 import { FrequencyLine } from '@/components/FrequencyLine';
 import { TrackLink } from '@/components/TrackLink';
@@ -116,6 +117,13 @@ async function ReaderPicker() {
           resolved HERE because LOCALE_SWITCHER has no NEXT_PUBLIC_ prefix and
           would inline as `undefined` inside a client component. */}
       <AccountButton surface="reader_picker" showLanguage={localeSwitcherEnabled()} />
+      {/* v0.7.0 / `C-D17`. A DIRECT CHILD OF THE SHELL, immediately left of the
+          account circle: `position: fixed` resolves against the nearest transformed
+          ancestor, so this may never move inside `.bleed` or the fan. It takes no
+          layout from this file and reads no session -- mounting it here IS the
+          session check, because `/` renders this branch only for a signed-in
+          querent. */}
+      <ChatButton />
 
       <Eyebrow>{t('common.majorArcana')}</Eyebrow>
       <h1 className={styles.title}>{t('app.title')}</h1>

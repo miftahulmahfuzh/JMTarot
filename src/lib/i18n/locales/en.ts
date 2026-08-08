@@ -222,17 +222,29 @@ const en: Catalog = {
   'onboarding.q.worst_thing.title': 'The heaviest thing you have watched happen',
   'onboarding.q.worst_thing.framing':
     'The dark shapes a person too. But you do not have to tell it here.',
+  /*
+   * **AMENDED 2026-08-07 FOR v0.7.0's GROUP CHAT** (`C-D8`, `[R14]`). The Indonesian
+   * catalog carries the full account; the short version is that this string promised
+   * the opposite of what the chat does, **while the querent was typing the answer**,
+   * and nobody re-reads `/privacy` but everybody reads this.
+   *
+   * REWRITTEN, NOT TRANSLATED, per this project's rule for the English half — but the
+   * three facts it must carry are the same three: locked at rest, abstracted in a
+   * reading, verbatim in the room.
+   */
   'onboarding.q.worst_thing.hint':
-    'As little or as much as you want. This answer is kept locked, is never ' +
-    'shown again, and is never quoted inside your reading. Leaving it takes ' +
-    'nothing away.',
+    'As little or as much as you want. This answer is kept locked and is never shown ' +
+    'back to you. A reading uses only an abstract summary of it; in the group chat, ' +
+    'the readers see it as you wrote it. Leaving it takes nothing away.',
 
   'onboarding.q.most_loved.title': 'The person you love most in this life',
   'onboarding.q.most_loved.framing':
     'Every reading has one person standing behind it, even when their name is ' +
     'never said.',
+  /** **AMENDED 2026-08-07** (`C-D8`, `[R14]`). See the Indonesian catalog. */
   'onboarding.q.most_loved.hint':
-    'Just say who they are to you. Their name will never appear in a reading.',
+    'Just say who they are to you. Their name will never appear in a reading, and ' +
+    'the readers will not use it in the chat.',
 
   'onboarding.q.introversion.title': 'Where do you stand?',
   'onboarding.q.introversion.framing':
@@ -322,6 +334,92 @@ const en: Catalog = {
   'account.menu.gallery': 'Card gallery',
   'account.menu.blog': 'Writing',
   'account.menu.signOut': 'Sign out',
+
+  /*
+   * v0.7.0. **F1 OWNS THIS COPY; F4 OWNS THE SURFACE** (`[R14]`). The Indonesian
+   * catalog carries the full account of why the room says this rather than a modal
+   * asking you to agree to it. REWRITTEN, not translated.
+   */
+  'chat.first_open.notice':
+    'In this room the three readers can see your opening answers, your readings, and ' +
+    'this conversation — so they answer you rather than anybody.',
+  'chat.first_open.link': 'What that means',
+
+  /*
+   * v0.7.0 / F6 — the attachment. WRITTEN, not translated; `id.ts` carries the full
+   * account of each choice.
+   *
+   * `Discuss in the group` and not `Ask the group`, for `Bahas`'s reason: an
+   * attachment with no text is a normal move, and `Ask` would make it read as a slip.
+   *
+   * `In Indonesian` / `In English` rather than the bare language name: the chip sits
+   * inside an English card describing two foreign lines, and the preposition is what
+   * makes it a label rather than a heading.
+   */
+  'chat.attach.action': 'Discuss in the group',
+  'chat.attach.hint': 'Send this reading to Thessaly, Margaret and Adrian.',
+  'chat.attach.staged': 'Reading attached',
+  'chat.attach.remove': 'Remove attachment',
+  'chat.attachment.open': 'Open the reading',
+  'chat.attachment.language.id': 'In Indonesian',
+  'chat.attachment.language.en': 'In English',
+  'chat.attachment.gone': 'That reading is gone.',
+
+  /*
+   * v0.7.0 / F4 — the room. **REWRITTEN, NOT TRANSLATED**, and `id.ts` carries the
+   * argument for every one of these.
+   *
+   * The register question is the same one and the answer is different: Indonesian
+   * says `Grup` because that is what people call the thing, and English says
+   * `The group` for the same reason — `Chat` names a medium, `The group` names the
+   * people in it, and this room is three people.
+   *
+   * `typing…` rather than `is writing a message`: the first is what every messenger
+   * on the platform says and is therefore invisible; the aria string spells it out
+   * because a screen reader reads it once, out of context.
+   *
+   * The English tic list binds this block. No `let me know if…`, no `dear one`, no
+   * `your journey` — and note that the empty state deliberately does not offer help:
+   * *"Say hi"* is an instruction, not a closing offer.
+   */
+  'chat.title': 'The group',
+  'chat.hint': 'Thessaly, Margaret and Adrian. All three, with you.',
+  'chat.back': '← Home',
+  'chat.list.aria': 'Group conversation',
+
+  'chat.button.aria': 'Open the group',
+  'chat.button.aria.unread.one': 'Open the group, {count} new message',
+  'chat.button.aria.unread.other': 'Open the group, {count} new messages',
+
+  'chat.composer.label': 'Write a message',
+  'chat.composer.placeholder': 'Say something…',
+  'chat.composer.send': 'Send',
+  'chat.composer.sending': 'Sending…',
+  'chat.composer.closed': 'The group is closed for a moment. Everything already said is still here.',
+
+  'chat.reply.action': 'Reply',
+  'chat.reply.cancel': 'Cancel reply',
+  'chat.reply.you': 'you',
+
+  'chat.typing.reader': '{name} is typing…',
+  'chat.typing.aria': '{name} is writing a message',
+
+  'chat.newMessages': 'New messages ↓',
+
+  'chat.older': 'Load older',
+  'chat.older.loading': 'Loading…',
+
+  'chat.error.load': 'The conversation will not open right now. Try again in a moment.',
+  'chat.error.send': 'That message has not been sent.',
+  'chat.error.rateLimit': 'Too many messages at once. Give it a moment.',
+  'chat.error.retry': 'Send again',
+  'chat.offline': 'You are offline. That message has not been sent.',
+
+  'chat.empty.title': 'Nobody has said anything here yet.',
+  'chat.empty.body': 'Say hi. All three of them will answer.',
+
+  'chat.day.today': 'Today',
+  'chat.day.yesterday': 'Yesterday',
 
   'locale.code.id': 'ID',
   'locale.code.en': 'EN',

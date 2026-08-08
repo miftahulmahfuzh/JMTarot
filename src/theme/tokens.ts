@@ -128,3 +128,29 @@ export const CARD_RATIO = 2 / 3;
 export const radius = { card: 10, chip: 2 } as const;
 
 export const space = (n: number) => n * 4;
+
+/**
+ * The corner chrome rail, top right (v0.7.0 / F4, seam S9).
+ *
+ * `AccountButton.module.css` still carries these three numbers as literals and F4
+ * may not edit that file, so this is a ONE-WAY coupling: `ChatButton` computes its
+ * offset from here, and `src/components/chatSurface.test.ts` asserts
+ * AccountButton's literals still match these values. If the account circle ever
+ * moves, that test goes red and names this table.
+ *
+ * A RAIL RATHER THAN THREE AD-HOC OFFSETS, because the next thing anybody adds to
+ * this corner is a third circle -- and the failure of getting it wrong is a button
+ * overlapping another one on one screen, which no test in this repo can see.
+ *
+ * `## Styling`: no new hex, no new font size, no new curve. These are geometry, and
+ * `inset` and `size` are not new values at all -- they are the two numbers
+ * AccountButton already ships, named.
+ */
+export const corner = {
+  /** Distance from the viewport edge, BEFORE the safe-area inset is added. */
+  inset: 10,
+  /** The tap-target floor exactly. Both circles. */
+  size: 44,
+  /** Between two circles. Smaller than `inset`, so the pair reads as one group. */
+  gap: 8,
+} as const;

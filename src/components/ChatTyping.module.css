@@ -1,0 +1,78 @@
+/*
+ * The typing row. Same gutter and gap as a bubble row, so the indicator sits under
+ * the previous message on exactly the line the next bubble will occupy -- a shifting
+ * left edge as the bubble replaces it reads as a layout bug.
+ *
+ * NO NEW CURVE AND NO NEW OPACITY RANGE. `breathe` is the keyframe
+ * ReadingView.module.css and ReadingPanel.module.css already use for "something is
+ * coming"; the only thing added here is the per-dot delay, which is a stagger rather
+ * than a second animation.
+ */
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 0 0 10px;
+}
+
+.body {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--gold);
+  opacity: 0.45;
+}
+
+.label {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-hint);
+  line-height: var(--lh-reading);
+  color: var(--muted);
+  /* The longest reader name plus the longest verb, at 320px, is what loop 4
+     measures here; wrapping is a NOTE and overflowing is a failure. */
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .dot {
+    animation: breathe 1.2s ease-in-out infinite;
+  }
+  .dot:nth-child(2) {
+    animation-delay: 0.18s;
+  }
+  .dot:nth-child(3) {
+    animation-delay: 0.36s;
+  }
+}
+
+/*
+ * The same keyframe, redeclared because CSS Modules scope `@keyframes` per file and
+ * an `animation` name from another module does not resolve. The values are
+ * ReadingView.module.css's exactly -- 0.45 to 1 -- so this is a copy of a token
+ * rather than a new curve.
+ */
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}

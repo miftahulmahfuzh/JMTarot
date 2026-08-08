@@ -50,6 +50,7 @@ import { recordUserDetailView } from '@/lib/admin/reveal';
 import { db } from '@/lib/db/client';
 import { accessesForSubject } from '@/lib/db/queries/admin/audit';
 import { callTotalsForUser } from '@/lib/db/queries/admin/calls';
+import { chatSummaryForAdmin } from '@/lib/db/queries/admin/chat';
 import {
   adminEmailsByIds,
   answerStatesForAdmin,
@@ -83,6 +84,7 @@ import { DETAIL, U } from '../copy';
 import { callsByOpForUser, userTokenSeries } from '../series';
 import { AccessLog } from './sections/AccessLog';
 import { Answers } from './sections/Answers';
+import { Chat } from './sections/Chat';
 import { EventStream } from './sections/EventStream';
 import { Facts } from './sections/Facts';
 import { Identity } from './sections/Identity';
@@ -109,6 +111,13 @@ const SECTIONS = [
   ['jawaban', DETAIL.answers.heading],
   ['lotus', DETAIL.lotus.heading],
   ['sosok', DETAIL.persona.heading],
+  /*
+   * **BETWEEN `sosok` AND `token`** (F7 §5.2). The four above it are who this person IS —
+   * identity, facts, their six answers, the Lotus and the persona built from them — and the
+   * room is the newest thing built out of exactly those. Below it the page turns to what
+   * the app SPENT and what it produced.
+   */
+  ['obrolan', DETAIL.chat.heading],
   ['token', DETAIL.tokens.heading],
   ['ringkasan', DETAIL.summaries.heading],
   ['verdict', DETAIL.verdicts.heading],
@@ -213,6 +222,12 @@ async function Body({
         answersLastChanged(tx, id),
         lotusForAdmin(tx, id),
         getPersona(tx, id),
+        /*
+         * **COUNTS AND NO TEXT** (`[R15]`). One composite of four statements plus the
+         * per-user reply rate, none of which selects `chat_messages.body` — so no audit
+         * row is owed and none is written.
+         */
+        chatSummaryForAdmin(tx, id),
         readingsForAdmin(tx, id, { limit: READINGS_PAGE, before: cursor }),
         callTotalsForUser(tx, id, parsed.range),
         dailySummariesForAdmin(tx, id),
@@ -240,6 +255,7 @@ async function Body({
     answersUpdatedAt,
     lotus,
     persona,
+    chatSummary,
     readingPage,
     callTotals,
     summaries,
@@ -317,6 +333,7 @@ async function Body({
       <Answers states={answerStates} userId={id} />
       <Lotus lotus={lotus} answersUpdatedAt={answersUpdatedAt} />
       <Persona persona={persona} answersUpdatedAt={answersUpdatedAt} />
+      <Chat summary={chatSummary} />
       <Tokens
         series={series}
         byOp={callsByOpForUser(callTotals)}

@@ -28,6 +28,7 @@ import { AccountButton } from '@/components/AccountButton';
 import { AccountAnswers } from '@/components/AccountAnswers';
 import { AccountCard } from '@/components/AccountCard';
 import { AccountFacts } from '@/components/AccountFacts';
+import { ChatButton } from '@/components/ChatButton';
 import { DeleteAccount } from '@/components/DeleteAccount';
 import { Eyebrow } from '@/components/Eyebrow';
 import { PersonaBlockClient } from '@/components/PersonaBlock';
@@ -131,6 +132,10 @@ export default async function AccountPage() {
         component.
       */}
       <AccountButton surface="account" showLanguage={localeSwitcherEnabled()} />
+      {/* v0.7.0 / `C-D17`, beside the account circle. This page is where the six
+          answers and the persona live, which is the material the room is made of --
+          `chat.first_open.notice` names exactly that. */}
+      <ChatButton />
 
       {/* V4 declared `account.details_viewed` and V8 fires it (reconciliation §4).
           `from` is derived in the browser, because the server never sees a Referer

@@ -1,0 +1,170 @@
+import 'server-only';
+
+import { db } from '@/lib/db/client';
+import type { CompletionPrompt } from '@/lib/llm/types';
+import { chatBudgetFor } from '@/lib/prompt/budget';
+import { addressForms } from '../address';
+import { assembleChatContext } from '../context';
+import { buildChatPrompt } from '../prompt/build';
+import type { VoiceInput } from '../types';
+import { addressFormUsed, checkTurnBodies, type TurnContext, type TurnRejectReason } from '../validate';
+
+/**
+ * THE VOICE SEAM. F1 calls these two from `./turn.ts` and F3 owns their bodies
+ * (`[R13]`, and **the filenames are binding** because `callClass.test.ts` and
+ * `flagCoverage.test.ts` name them by string).
+ *
+ * ── WHY THERE IS A MEMO IN HERE, AND WHY IT IS NOT A SHORTCUT ───────────────
+ *
+ * `speak()` in `./turn.ts` calls `buildTurnPrompt(input)` and then
+ * `validateTurn(raw, input)` — two calls, and only the first is allowed to touch the
+ * database. But `validateTurn` has to refuse **a name lifted from a stored answer** and
+ * **a six-word run quoted out of one** (`[F3-8]`), and those two checks need the very
+ * strings the prompt was built from. `VoiceInput` carries none of them: it has the beat,
+ * the run and the transcript-so-far, and F3 may not edit `turn.ts` to widen that.
+ *
+ * So the builder leaves its guards behind for the validator, keyed by
+ * `${runId}:${beatIndex}`. **THE LEASE IS WHAT MAKES THAT SAFE** (`C-R3`): a run is
+ * claimed by exactly one executor at a time, so there is at most one writer per key, and
+ * beats within a run execute serially. Two concurrent advances on two different runs
+ * cannot collide because the run id is in the key.
+ *
+ * **A MISS IS A REFUSAL, NOT A RELAXATION.** If the guards are absent — somebody called
+ * the validator without building, or a lambda recycled between the two calls — the turn
+ * is refused rather than checked with two of its fifteen rules missing. That costs a
+ * bubble, which is the cheap failure; the expensive one is a name reaching the room. The
+ * pure core lives in `../validate.ts` and takes its guards as a parameter, which is what
+ * `npm test` and the smoke script drive.
+ */
+
+/** Every guard `checkTurnBodies` needs that `VoiceInput` does not carry. */
+type TurnGuards = Pick<TurnContext, 'addressForms' | 'rawAnswers' | 'conversation' | 'budget'>;
+
+/**
+ * Bounded, because a lambda lives longer than a run. Four beats is `CHAT_MAX_BEATS`, and a
+ * handful of runs' worth is all a warm instance can be mid-flight on.
+ */
+const MAX_MEMO = 16;
+const GUARDS = new Map<string, { guards: TurnGuards; lastReason: TurnRejectReason | null }>();
+
+function keyOf(input: VoiceInput): string {
+  return `${input.runId}:${input.beatIndex}`;
+}
+
+function remember(key: string, guards: TurnGuards): void {
+  const previous = GUARDS.get(key);
+  GUARDS.delete(key);
+  GUARDS.set(key, { guards, lastReason: previous?.lastReason ?? null });
+  // Oldest first, which is insertion order in a Map.
+  while (GUARDS.size > MAX_MEMO) {
+    const oldest = GUARDS.keys().next().value;
+    if (oldest === undefined) break;
+    GUARDS.delete(oldest);
+  }
+}
+
+/**
+ * The prompt for one beat. **`async` because the context is six database reads**, and
+ * F1 declared the signature that way so F3 changes a body rather than a caller.
+ */
+export async function buildTurnPrompt(
+  input: VoiceInput & { attempt: 1 | 2 },
+): Promise<CompletionPrompt> {
+  const budget = chatBudgetFor(input.locale, input.beat.reader);
+
+  const ctx = await assembleChatContext(db, {
+    userId: input.userId,
+    locale: input.locale,
+    profile: 'voice',
+    runId: input.runId,
+    replyToMessageId: input.beat.replyTo,
+    /*
+     * **THE QUERENT'S CALENDAR DAY IS NOT ON THIS PATH, AND ITS ONE USE TOLERATES THAT.**
+     * `VoiceInput` carries no `localDate` — `advance` is driven by a client that sends
+     * none — and the only thing the assembler does with it is compute the floor of a
+     * thirty-day reading lookback. A day of error at the edge of a thirty-day window costs
+     * one reading in the `<riwayat>` block at worst. **Anything that RENDERS a date to a
+     * person must not do this** (`local_date`'s trap); nothing here does.
+     */
+    localDate: new Date().toISOString().slice(0, 10),
+  });
+
+  remember(keyOf(input), {
+    budget,
+    addressForms: ctx.addressForms,
+    rawAnswers: ctx.answers.map((a) => a.text),
+    conversation: ctx.messages.map((m) => m.body),
+  });
+
+  const previous = GUARDS.get(keyOf(input))?.lastReason ?? null;
+
+  return buildChatPrompt({
+    ctx,
+    self: input.beat.reader,
+    beat: input.beat,
+    budget,
+    /* `C-R7`'s one retry, told which rule it broke. Never on the first attempt. */
+    repairReason: input.attempt === 2 ? previous : null,
+  });
+}
+
+export type TurnCheck =
+  | { ok: true; bodies: string[]; addressForm: 'nickname' | 'clipped' | 'none' }
+  /** A CLOSED set. Never a message — this reaches `events.props`. */
+  | { ok: false; reason: TurnRejectReason | 'no_context' };
+
+/**
+ * The check. **SHAPE, NOT TRUTH, AND BIASED TOWARDS ACCEPTING** — `../validate.ts`'s
+ * header carries the argument, which is the opposite of `validateChoice`'s and is
+ * deliberately so: **a false rejection costs a bubble and makes the room quieter, which
+ * is the failure this release cannot afford.**
+ *
+ * `bodies` may hold TWO (`[R19]`, granted by Miftah as *"the largest naturalness gain
+ * left"*): a person who has more to say sends a second message rather than a longer one.
+ * **Never empty** — an empty array would arrive in the room as `C-R7`'s *"a reader never
+ * stores an empty bubble"* being false.
+ */
+export function validateTurn(raw: string, input: VoiceInput): TurnCheck {
+  const key = keyOf(input);
+  const memo = GUARDS.get(key);
+
+  if (!memo) {
+    /*
+     * The builder did not run in this process. Refusing is the honest answer: two of the
+     * fifteen refusals — the two that keep a published promise — are unavailable, and
+     * `[F3-8]`'s overrides exist precisely because their false-acceptance cost is a
+     * promise broken rather than an awkward bubble.
+     */
+    return { ok: false, reason: 'no_context' };
+  }
+
+  const checked = checkTurnBodies(raw, {
+    locale: input.locale,
+    reader: input.beat.reader,
+    ...memo.guards,
+  });
+
+  if (!checked.ok) {
+    /* Kept so attempt 2's prompt can name the rule that was broken. */
+    GUARDS.set(key, { ...memo, lastReason: checked.reason });
+    return { ok: false, reason: checked.reason };
+  }
+
+  GUARDS.delete(key);
+  return {
+    ok: true,
+    bodies: checked.bodies,
+    addressForm: addressFormUsed(checked.bodies, memo.guards.addressForms),
+  };
+}
+
+/**
+ * Test-only reset. The memo is process state, and a test that could not clear it would
+ * pass or fail depending on what ran before it.
+ */
+export function __resetTurnGuards(): void {
+  GUARDS.clear();
+}
+
+/** Re-exported so nothing else has to know where the derivation lives. */
+export { addressForms };

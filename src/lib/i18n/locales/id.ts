@@ -386,10 +386,32 @@ const id = {
   'onboarding.q.worst_thing.title': 'Hal paling berat yang pernah kamu saksikan',
   'onboarding.q.worst_thing.framing':
     'Yang gelap pun ikut membentuk. Tapi kamu tidak perlu menceritakannya di sini.',
+  /*
+   * ── AMENDED 2026-08-07 FOR v0.7.0's GROUP CHAT (`C-D8`, `[R14]`) ───────────
+   *
+   * **THIS STRING PROMISED THE OPPOSITE OF WHAT THE CHAT DOES, AND IT IS READ WHILE
+   * THE QUERENT IS TYPING THE ANSWER.** It said *"tidak pernah dikutip di dalam
+   * bacaanmu"*, which survives `C-D8` on the letter — a chat is not a *bacaan* — and
+   * does not survive in spirit at all: **the whole point of the feature is Thessaly
+   * quoting it back at you.**
+   *
+   * The reconciliation calls this the most serious finding of the exercise, and the
+   * reason is placement: **nobody re-reads `/privacy`; everybody reads the hint.** So
+   * amending `/privacy` was necessary and not sufficient, and this is the load-bearing
+   * half of the pair.
+   *
+   * The new text keeps the two promises that are still true (locked at rest, never
+   * displayed back) and states the one that changed, in the same breath, with the
+   * remedy beside it. **It must not be softened into "may be used to personalise your
+   * experience"** — that is the sentence this project exists not to write, and
+   * `/privacy` clause 2.2 quotes the question itself word for word rather than calling
+   * it "certain personal reflections" for exactly this reason.
+   */
   'onboarding.q.worst_thing.hint':
-    'Sesedikit atau sebanyak yang kamu mau. Jawaban ini disimpan terkunci, tidak ' +
-    'pernah ditampilkan lagi, dan tidak pernah dikutip di dalam bacaanmu. ' +
-    'Melewatinya tidak mengurangi apa pun.',
+    'Sesedikit atau sebanyak yang kamu mau. Jawaban ini disimpan terkunci dan tidak ' +
+    'pernah ditampilkan lagi. Di dalam bacaan hanya ringkasan abstraknya yang dipakai; ' +
+    'di ruang obrolan, para pembaca membacanya apa adanya. Melewatinya tidak ' +
+    'mengurangi apa pun.',
 
   /*
    * The framing and the hint together are a promise the user can read, which is
@@ -401,8 +423,16 @@ const id = {
   'onboarding.q.most_loved.framing':
     'Setiap bacaan punya satu orang yang berdiri di belakangnya, walau namanya ' +
     'tidak pernah disebut.',
+  /*
+   * **AMENDED 2026-08-07** (`C-D8`, `[R14]`), and this one survived `C-D8` in spirit
+   * as well as on the letter — F3's `validateTurn` mechanically refuses a proper name
+   * lifted from an answer. It is amended anyway, because a promise that holds only
+   * because of a validator somebody could relax is a promise worth restating in terms
+   * of what actually happens.
+   */
   'onboarding.q.most_loved.hint':
-    'Cukup sebut siapa dia bagimu. Namanya tidak akan pernah muncul di dalam bacaan.',
+    'Cukup sebut siapa dia bagimu. Namanya tidak akan pernah muncul di dalam bacaan, ' +
+    'dan para pembaca tidak akan menyebutnya di ruang obrolan.',
 
   'onboarding.q.introversion.title': 'Di mana kamu berdiri?',
   'onboarding.q.introversion.framing':
@@ -539,6 +569,217 @@ const id = {
   'account.menu.gallery': 'Galeri kartu',
   'account.menu.blog': 'Tulisan',
   'account.menu.signOut': 'Keluar',
+
+  /*
+   * ==========================================================================
+   * v0.7.0 — THE ONE CHAT KEY F1 OWNS. F4 owns every other `chat.*` string, and
+   * `[R14]` splits this one deliberately: **F4 owns the surface; F1 owns the copy.**
+   *
+   * ── WHY THIS SENTENCE EXISTS AT ALL ───────────────────────────────────────
+   *
+   * `C-D8` lets the three readers see the six raw onboarding answers, and `Q-F1-1`
+   * asked whether that should bump `TERMS_VERSION` and force re-acceptance. Miftah
+   * ruled **no**: a forced re-accept is a modal people dismiss, which buys **the
+   * appearance of consent and not the thing.**
+   *
+   * **SO THE ROOM SAYS SO ITSELF, ONCE, ON FIRST OPEN.** One line above the first
+   * bubble, with a link to `/privacy`, dismissed forever on any interaction. Shown to
+   * the person, **at the moment it becomes true, on the screen where it happens** —
+   * which is the only version of this worth anything, and the answer to the objection
+   * that `/privacy` is read by nobody.
+   *
+   * It is deliberately NOT an apology and NOT a consent gate. It states a fact and
+   * points at the document. **If it ever grows an "I agree" button it has become the
+   * modal this ruling refused.**
+   */
+  'chat.first_open.notice':
+    'Di ruang ini ketiga pembaca bisa melihat jawaban awalmu, bacaanmu, dan obrolan ' +
+    'ini sendiri — supaya mereka menjawab kamu, bukan orang umum.',
+  'chat.first_open.link': 'Selengkapnya',
+
+  /*
+   * ── v0.7.0 / F6 — THE ATTACHMENT. `Bahas di grup`, and the bubble it becomes ──
+   *
+   * **AUTHORED BY F6 AND TRANSCRIBED HERE BY F6, WHICH IS A DEVIATION FROM ITS OWN
+   * PLAN'S D1** — that discrepancy hands these strings to F4 as prose, on S7's
+   * `.env.example` pattern. It cannot work in this order: `MessageKey` is a union
+   * derived from this object, so `AttachReadingLink` and `ReadingAttachment` (F6's
+   * tasks 4 and 5, which land before F3, four workstreams ahead of F4) would not
+   * typecheck against a key that does not exist yet. The strings are §2.1's table
+   * verbatim; **F4 owns every other `chat.*` key and must not re-add these.**
+   *
+   * `Bahas di grup` AND NOT `Tanya di grup`: the roadmap names it *"bahas di grup"*
+   * and *bahas* is the honest verb — requirement 7 makes the text optional, so the
+   * querent may be SHOWING the reading rather than asking about it, and `Tanya` would
+   * make the empty-text case read as a mistake.
+   *
+   * `grup` AND NOT `grup obrolan`. Indonesian, not padded: nobody says *grup
+   * obrolan* in a message, and the two-word button fits at 320px where the
+   * three-word one does not.
+   *
+   * **THE HINT NAMES THE THREE READERS, AND THAT IS THE DISCLOSURE THAT MAKES THE
+   * BUTTON HONEST.** `[F6-11]`: this control sits directly above `ShareFooter`'s, it
+   * looks like it, and the two must never converge — *attaching* shows a reading to
+   * three characters who already hold the querent's six onboarding answers (`C-D8`);
+   * *sharing* puts it on the public internet. Naming the readers is what keeps the
+   * two apart at the moment of the tap.
+   */
+  'chat.attach.action': 'Bahas di grup',
+  'chat.attach.hint': 'Kirim bacaan ini ke Thessaly, Margaret dan Adrian.',
+  // The staged card above the composer, and the control that unstages it. F4 mounts
+  // both; the copy is F6's because the card is.
+  'chat.attach.staged': 'Bacaan terlampir',
+  'chat.attach.remove': 'Lepas lampiran',
+  // The whole bubble is one link to `/history/[id]`, so it needs a label a screen
+  // reader can read instead of three card names and a date.
+  'chat.attachment.open': 'Buka bacaannya',
+  /*
+   * The language chip, and it renders ONLY when the reading's prose is not in the
+   * viewer's language (§7.1).
+   *
+   * **TWO KEYS RATHER THAN §2.1's ONE**, because the plan's table gives that single
+   * key two values per locale and only ever renders one of them: with exactly two
+   * locales the foreign language is always "the other one", so a single key would be
+   * correct today and silently wrong the day a third locale exists. Keyed by the
+   * PROSE's locale, chosen by the renderer.
+   *
+   * **NAMED IN THE VIEWER'S LANGUAGE, WHICH IS THE OPPOSITE OF `locale.name.*`.**
+   * Those are written in their own language because a switcher has to be readable by
+   * somebody who cannot read the locale they are in. This is a chip inside the
+   * viewer's own chrome describing two foreign lines, so it belongs in the language
+   * the rest of the card is in.
+   *
+   * `Bahasa Inggris` AND NOT `Inggris`: the chip names a language, and the bare
+   * demonym reads as a country.
+   */
+  'chat.attachment.language.id': 'Bahasa Indonesia',
+  'chat.attachment.language.en': 'Bahasa Inggris',
+  /*
+   * §8. **UNREACHABLE TODAY AND KEYED ANYWAY.** `readings` rows are deleted by
+   * exactly one path — the hard delete thirty days after a soft account deletion —
+   * and that path cascades `chat_messages` on `user_id` first, so
+   * `attached_reading_id IS NULL` under a stored bubble is insurance in the schema
+   * rather than a state the product produces.
+   *
+   * It is rendered by `ReadingAttachment`'s CALLER, in the querent's own bubble, and
+   * only when there is no text either — a bubble with words in it is just a text
+   * bubble, with no slot and no placeholder. **It is the app labelling an empty slot,
+   * never a reader's voice** and never a `chat_messages` row a director could point a
+   * beat at.
+   */
+  'chat.attachment.gone': 'Bacaan ini sudah tidak ada.',
+
+  /*
+   * ── v0.7.0 / F4 — THE ROOM ITSELF ─────────────────────────────────────────
+   *
+   * **THE CHROME FOLLOWS THE VIEWER; THE BUBBLES DO NOT** (`C-D9`). Every string
+   * below is chrome, rendered through `t()` in the viewer's language. A chat
+   * message is never translated, carries its own `lang`, and gets no entry in
+   * `TRANSLATABLE` — so nothing here ever describes what a reader said.
+   *
+   * **THE REGISTER IS DELIBERATELY LOWER THAN THE REST OF THE APP.** `Jejak` and
+   * `Dirimu` are titles for pages you visit; this is a room you are IN. `Grup` is
+   * what an Indonesian actually calls it, `nyaut` is what a friend does, and
+   * `ngetik` is the word on every messaging app on the phone this is built for.
+   * None of them is Malay — the eleven-word grep binds this block.
+   *
+   * `/privacy` and both onboarding hints say *ruang obrolan*, which is the formal
+   * name for the same place; `Grup` is the label on the door. They are allowed to
+   * differ because one is a legal document and one is a button.
+   */
+  'chat.title': 'Grup',
+  'chat.hint': 'Thessaly, Margaret, dan Adrian. Bertiga, bersamamu.',
+  'chat.back': '← Beranda',
+  // Names the scrolling region for a screen reader, which would otherwise meet an
+  // unlabelled scroller full of prose. `log`, not `feed`: the room is finite and
+  // ordered, and `feed` promises infinite scroll in both directions.
+  'chat.list.aria': 'Obrolan grup',
+
+  /*
+   * The button, on four other screens. **THE PLURAL PAIR IS THE `aria-label` ONLY**
+   * — the dot itself carries no number (F4 §6.3): at 8px there is no legible type
+   * size, and a number would need a pill, which changes the button's width and
+   * reflows the corner between the no-dot and dot states.
+   *
+   * The Indonesian `.one` and `.other` are IDENTICAL ON PURPOSE (I5): CLDR gives
+   * `id` only `other`, so a differing `.one` is a string somebody edited believing
+   * it renders. `catalog.test.ts` asserts the pair matches.
+   */
+  'chat.button.aria': 'Buka grup',
+  'chat.button.aria.unread.one': 'Buka grup, {count} pesan baru',
+  'chat.button.aria.unread.other': 'Buka grup, {count} pesan baru',
+
+  'chat.composer.label': 'Tulis pesan',
+  'chat.composer.placeholder': 'Tulis sesuatu…',
+  'chat.composer.send': 'Kirim',
+  'chat.composer.sending': 'Mengirim…',
+  /*
+   * `CHAT_ENABLED=0`. **THE ROOM STILL OPENS AND EVERY PAST MESSAGE STILL RENDERS**
+   * (`C-D15`); only the composer is disabled. A kill switch that blanks a screen is
+   * a worse outage than the quota it protects, and this one sentence is the whole
+   * user-visible surface of the flag.
+   */
+  'chat.composer.closed': 'Grup lagi ditutup sebentar. Obrolan lama masih bisa dibaca.',
+
+  'chat.reply.action': 'Balas',
+  'chat.reply.cancel': 'Batal balas',
+  // The author label inside a quote stub when the quoted message is the querent's
+  // own. Lowercase, because it sits inside a sentence-shaped stub, not above one.
+  'chat.reply.you': 'kamu',
+
+  /*
+   * `chat.typing.reader` AND NOT `chat.typing.one`, which is what F4's plan wrote.
+   * **A KEY ENDING IN `.one` IS A PLURAL FAMILY IN THIS CATALOG** — `PluralKey` is
+   * derived as `StripOne<MessageKey>`, so `.one` without a matching `.other` makes
+   * `t.plural('chat.typing', n)` callable against a family that does not exist, and
+   * `catalog.test.ts` fails on both halves. It was never a plural: the room shows one
+   * indicator at a time, because beats execute serially (`C-R5`).
+   */
+  'chat.typing.reader': '{name} lagi ngetik…',
+  'chat.typing.aria': '{name} lagi menulis pesan',
+
+  'chat.newMessages': 'Pesan baru ↓',
+
+  'chat.older': 'Muat yang lebih lama',
+  'chat.older.loading': 'Memuat…',
+
+  /*
+   * **THREE FAILURE STRINGS AND NO MORE** (`F4-13`). A degraded RUN shows NOTHING —
+   * `C-R7`: there is no error bubble in this release, because a stored notice
+   * becomes context for every future turn and gets quoted back at the querent as if
+   * a reader had said it. Only the failures the querent CAUSED and can act on get
+   * copy, and all three render OUTSIDE the message list, so none of them can ever be
+   * mistaken for something a reader said.
+   *
+   * `chat.error.rateLimit` NAMES NO NUMBER, and that is the 429 trap rather than
+   * laziness: the measured `retry-after` on a tripped ceiling is 291 seconds and is
+   * **not** the window length — the sliding window reports the start of the next
+   * sub-window — so a rendered figure would be honest about the header and wrong
+   * about the room. Every other surface in this app says the same thing the same
+   * way (`reading.error.rateLimit`, `share.error.rateLimit`).
+   */
+  'chat.error.load': 'Obrolan nggak bisa dibuka sekarang. Coba lagi sebentar.',
+  'chat.error.send': 'Pesanmu belum terkirim.',
+  'chat.error.rateLimit': 'Terlalu banyak pesan sekaligus. Tunggu sebentar, ya.',
+  'chat.error.retry': 'Kirim ulang',
+  'chat.offline': 'Kamu lagi offline. Pesanmu belum terkirim.',
+
+  /*
+   * **`M14` DOES NOT APPLY HERE, AND THAT IS THE DIFFERENCE BETWEEN A ROOM AND A
+   * DECORATION.** `FrequencyLine` and `DaySummary` render nothing when they have
+   * nothing, because they are ambient and an empty state would announce a feature
+   * the querent has not earned. An EMPTY ROOM is the whole screen: a blank one reads
+   * as broken, and the only useful thing to say is what to do about it.
+   */
+  'chat.empty.title': 'Belum ada yang ngobrol di sini.',
+  'chat.empty.body': 'Sapa dulu. Mereka bertiga bakal nyaut.',
+
+  // The day separators. `today` is the QUERENT's calendar day, computed in an
+  // effect and never during render — `todayKey()` reads `new Date()`, which is a
+  // different value on the server and the client (F4 §9.1). Any older day renders
+  // through `formatDate`, so there is no third key.
+  'chat.day.today': 'Hari ini',
+  'chat.day.yesterday': 'Kemarin',
 
   // The SHORT tags, for the two-item toggle inside the menu (R1/VD12). The long
   // names in `locale.name.*` stay exactly as they are and stay on /login -- see

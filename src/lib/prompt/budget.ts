@@ -240,3 +240,127 @@ export function budgetFor(locale: Locale, service: ServiceId, reader: ReaderId):
     maxTotalWords: Math.round(base.maxTotalWords * k),
   };
 }
+
+/**
+ * THE CHAT BUBBLE'S CEILING (`C-D19`, v0.7.0). A SECOND TABLE, NOT A ROW IN
+ * `LENGTH_BUDGET`, because `ServiceId` is a closed union tied to `SERVICES` — every
+ * member has a card count, a picker tile and a task prompt, and a chat bubble has
+ * none of the three. `LengthBudget.maxParagraphWords` is also meaningless for
+ * something that is one paragraph by definition.
+ *
+ * `C-D19` says *"chat budgets join that table"*; they join the FILE, and the file is
+ * what the decision is actually about. **WHAT DOES JOIN IS THE MECHANISM:** one place
+ * a ceiling is written, interpolated into the prompt, asserted by the smoke script,
+ * with `MARGARET_MULTIPLIER` applied by one resolver — so the number in the prose and
+ * the number in the check cannot drift.
+ */
+export type ChatLengthBudget = {
+  /** THE LENGTH CONTROL. The model can count it as it writes. */
+  maxWords: number;
+  /**
+   * THE FLOOR, AND IT IS ZERO IN BOTH LOCALES ON PURPOSE (`C-D19`, `[F3-10]`).
+   *
+   * **`validateTurn` HAS NO FLOOR BRANCH AT ALL.** *"wkwk"*, *"iya sih"* and *"hm"*
+   * are how a group chat actually reads, and a floor that forbids them makes three
+   * readers who each deliver a paragraph — **the single most chatbot-like failure
+   * available to this release.** The constant exists at `0` rather than being absent
+   * so that raising it is a visible edit rather than an addition nobody reviews.
+   */
+  minWords: 0;
+  /**
+   * A RUNAWAY GUARD FOR `validateTurn`, IN CHARACTERS. Not the length control — the
+   * same relationship `PERSONA_MAX_CHARS` has to `PERSONA_MAX_WORDS`.
+   *
+   * **THE TWO LOCALES DIFFER HERE AND NOT IN `maxWords`**: Indonesian affixation
+   * makes the same word count longer in characters, and the character-per-word ratio
+   * is the one thing that genuinely differs between the two languages.
+   */
+  maxChars: number;
+};
+
+/**
+ * **WHY 22.** `spread3`'s per-paragraph ceiling is 28 after the 2026-07-29 cut, and
+ * that is one of four paragraphs of a *reading* — denser than a chat message and read
+ * as prose. A 28-word bubble at 390px is four lines and reads as a paragraph, which
+ * is the tell `C-D19` names. 22 is roughly two lines. `daily`'s 39 and `yesno`'s 49
+ * are further away still.
+ *
+ * **WHY ENGLISH STARTS AT THE SAME 22.** This file's own rule, verbatim: *"ENGLISH
+ * STARTS AT THE SAME NUMBERS AND IS THEN MEASURED. It is not a translation of a
+ * calibration."*
+ *
+ * **UNCALIBRATED UNTIL `npm run smoke -- --chat` HAS RUN THREE TIMES**, and the rule
+ * above applies: if the first run fails on a band, that is data, not a bug. The
+ * number moves once, on evidence, and the evidence is written into
+ * `docs/workstream-notes.md`.
+ *
+ * ── IT RAN THREE TIMES ON 2026-08-09, AND `en` MOVED 24 → 27 ────────────────
+ *
+ * **THE EVIDENCE IS MARGARET AND ONLY MARGARET.** Her English bubbles across three
+ * runs of the release gate came in at **25, 26, 27, 29, 31, 31 words against a
+ * resolved ceiling of 31** — and **two of the three runs LOST a bubble to it**,
+ * `too_long`, refused twice and dropped. The two casualties were the
+ * reader-to-reader probe and a `push_back`: `C-N1a`'s *"they answer each other"*,
+ * which is the most distinctive mechanic this release has. The `id` half never
+ * failed once and its maximum was 21.
+ *
+ * So this is `validateTurn`'s own bias arriving as a measurement: **a false
+ * rejection costs a bubble and makes the room quieter, which is the failure this
+ * release cannot afford.** 27 resolves Margaret to 35, which clears every observed
+ * bubble including the two refused ones (~32–35).
+ *
+ * **`maxChars` DID NOT MOVE, BECAUSE IT WAS NEVER THE BINDING CONSTRAINT** — her
+ * longest stored English bubble was 164 characters against 312. The refusals were on
+ * WORDS, and moving both would have been a change with evidence for half of it.
+ *
+ * **AND `id` DID NOT MOVE EITHER.** The two locales are allowed to differ here now,
+ * which the header above said they would not — *"the two locales differ in `maxChars`
+ * and not in `maxWords`"* was a prediction about where the difference would show up,
+ * and the measurement put it in the other column. English carries the same thought in
+ * more, shorter words; the ratio the header names is real and points this way.
+ * **Nothing about the `id` band is a reason to touch it, and scaling it "to match"
+ * would be exactly the unevidenced half this note refuses.**
+ */
+export const CHAT_LENGTH_BUDGET: Record<Locale, ChatLengthBudget> = {
+  id: { maxWords: 24, minWords: 0, maxChars: 260 },
+  en: { maxWords: 27, minWords: 0, maxChars: 240 },
+};
+
+/**
+ * THE ONE FUNCTION BOTH THE CHAT PROMPT AND `validateTurn` CALL. `budgetFor`'s rule,
+ * and the reason is the same: a reader-specific ceiling cannot be in the prompt and
+ * absent from the check.
+ *
+ * **`MARGARET_MULTIPLIER` REACHES THE CEILINGS AND NOT THE FLOOR** (`[F3-11]`, VD19).
+ * Her extra length is a fact about the READER — *"long sentences that carry clauses
+ * inside them"* — and that is equally true in a group chat, so 22 becomes 29 and 260
+ * becomes 338. **It reaches the pace too**, through the resolved `maxChars`, so she is
+ * visibly slower without a second number claiming it.
+ *
+ * The non-application to `minWords` is currently vacuous because the floor is zero,
+ * **and writing the rule anyway is the point**: the day somebody raises the floor
+ * they will otherwise scale it, which `MARGARET_MULTIPLIER`'s header says would
+ * *"demand length rather than permit it"*.
+ */
+export function chatBudgetFor(locale: Locale, reader: ReaderId): ChatLengthBudget {
+  const base = CHAT_LENGTH_BUDGET[locale];
+  const k = READER_MULTIPLIER[reader];
+  if (k === undefined) return { ...base };
+  return {
+    maxWords: Math.round(base.maxWords * k),
+    minWords: 0,
+    maxChars: Math.round(base.maxChars * k),
+  };
+}
+
+/**
+ * The output ceiling for one `chat_turn` call. `MAX_TOKENS`' relationship to
+ * `LENGTH_BUDGET`, in the chat: **a runaway guard, not the length control.**
+ *
+ * Roughly double Margaret's 29 words. Deliberately generous relative to the target so
+ * a model finishes its sentence rather than being cut mid-clause — the
+ * `gpt-5.6-luna` blank-reading failure is what a tight output ceiling buys — and
+ * deliberately tiny in absolute terms, because `C-D6` makes the chat's call budget
+ * scarce and the output half is the only half this layer controls.
+ */
+export const CHAT_MAX_TOKENS = 90;

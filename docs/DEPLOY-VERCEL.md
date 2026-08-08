@@ -509,12 +509,16 @@ extra job, no extra query and no extra endpoint.
 
 ---
 
-## 2d. Shedding features to save quota — the five kill switches
+## 2d. Shedding features to save quota — the seven kill switches
 
 **THIS IS THE THING TO DO WHEN §2b's RISK ACTUALLY ARRIVES**, and it needs no
-deploy, no code change and no database work: five environment variables in the
+deploy, no code change and no database work: seven environment variables in the
 Vercel dashboard, each of which stops one feature from reaching a model. Set,
 Redeploy, done.
+
+**FIVE BECAME SEVEN IN v0.7.0** (`C-D15`): `CHAT_ENABLED` and
+`CHAT_PROACTIVE_ENABLED` joined the list, and **the second one is now the first
+thing to reach for.** See the table below.
 
 §2b's controls are all *automatic* — the limiter, the rolling ceiling, the soft
 tier. They protect the quota without anybody watching, and by the time you are
@@ -535,10 +539,11 @@ empty value all leave the feature ON.** If you mean to switch something off, typ
 a zero and nothing else.
 
 **Unset is also enabled** — the code needs no variable to run a feature. But **all
-five are nevertheless SET TO `1` in Production and Preview as of 2026-07-30**, and
+seven are nevertheless SET TO `1` in Production and Preview** (five as of
+2026-07-30, the two chat flags with v0.7.0), and
 that is deliberate: a kill switch nobody can find is not a kill switch. They are in
-the dashboard so that whoever needs one at 2am sees five named rows and changes a
-`1` to a `0`, instead of having to know from a document that five variables could
+the dashboard so that whoever needs one at 2am sees seven named rows and changes a
+`1` to a `0`, instead of having to know from a document that seven variables could
 have existed.
 
 **So the lifecycle is edit-in-place, never add-and-delete.** Change the `1` to a
@@ -560,13 +565,40 @@ not the order the features were built in and not the order they appear in
 
 | # | Variable | Volume | What a querent loses |
 |---|----------|--------|----------------------|
+| 0 | `CHAT_PROACTIVE_ENABLED=0` | **2–5 calls per unprompted run, up to twice per querent per day, with nobody waiting** | Nothing they asked for. A posted message still gets answered; the readers just stop speaking first. |
+| 0b | `CHAT_ENABLED=0` | **2–5 calls per posted message** | The room still opens and every past message still renders; the composer is disabled with one line of copy. |
 | 1 | `GIST_ENABLED=0` | **one call per reading** | Nothing they can see today. A future reading will not call back to one taken during the outage. |
 | 2 | `FREQUENCY_VERDICT_ENABLED=0` | per changed card pair, per window, cached | The line under *"Pilih pembaca yang cocok denganmu"*. Cached lines keep showing. |
 | 3 | `DAILY_SUMMARY_ENABLED=0` | per querent, per reader, per day | The second swipe panel on the reader page. Today's, if already generated, keeps showing. |
 | 4 | `PERSONA_GENERATION_ENABLED=0` | per `/account` visit past the staleness floor | Their persona paragraph stops updating. The one they have is kept, unchanged. |
 | 5 | `LOTUS_GENERATION_ENABLED=0` | per onboarding, per answer edit | **Every reading they take is less personal.** Reach for this last. |
 
-**`GIST_ENABLED` first, and it is not close.** It is the only one whose volume
+**`CHAT_PROACTIVE_ENABLED` FIRST, AND IT IS THE ONE ROW ABOVE THE FIVE FOR A
+REASON.** Proactive runs are the only model calls in this app **with no human
+waiting on them** — nobody is watching a spinner, nobody asked, and nothing on any
+screen changes when they stop. Every other switch in this table costs a querent
+something they can notice. This one costs the readers their initiative, which is
+half of what v0.7.0 was built for, so it is not free — but per call saved it is
+the cheapest harm available, and it is the switch to reach for before any of the
+five below.
+
+**`CHAT_ENABLED=0` IS A DIFFERENT ORDER OF THING and belongs second only because
+the chat is the app's most expensive surface.** A run is 2–5 model calls where a
+reading is one, so an active room outspends the reading path several times over.
+**It gates the model call and never the cached read**: the room opens, the whole
+history renders, and the composer is disabled with one line of copy — *a kill
+switch that blanks a screen is a worse outage than the quota it protects.*
+
+**AND THE CHAT IS ALREADY SHEDDING ITSELF BEFORE YOU GET HERE.** Both chat call
+sites are `callClass: 'deferred'`, so `meter.ts` drops them at the **soft** ceiling
+— 70% of `LLM_WINDOW_CALL_CEILING` — while a reading keeps going to the hard one.
+The chat also has its own sub-budget, `LLM_WINDOW_CHAT_CEILING`, defaulting to half
+the hard ceiling and checked first. **A shed chat turn is not an error**: the run
+stays open with beats remaining and the querent's next visit delivers them, which
+is why the automatic controls are usually enough and this row is for when they are
+not.
+
+**`GIST_ENABLED` first among the five, and it is not close.** It is the only one whose volume
 tracks *reading count* rather than user count or day count, so on any busy day it
 is worth more than the other four together — and it is the one nobody notices,
 because the gist is prompt material for a later reading and never appears on a
@@ -610,6 +642,43 @@ above. Nothing needs backfilling:
   needs one.
 - **Personas** and the **Lotus** regenerate on the querent's next reading, which is
   what moves the hash. A querent who never reads again keeps what they have.
+- **Chat runs do not backfill and do not need to.** A run minted while
+  `CHAT_ENABLED` was off was never minted at all; a run that was shed mid-flight is
+  still sitting there `pending` or `running` and the next visit picks it up, unless
+  the nightly nudge has aged it out at `PROACTIVE_RUN_TTL_HOURS` (48). **That TTL is
+  the thing to think about before a long outage**: a week of shedding would
+  otherwise deliver week-old greetings the moment the ceiling cleared.
+
+### The two cron jobs, and the second one is the nudge
+
+`vercel.json` schedules two, and **Vercel cron schedules are always UTC**:
+
+| Path | Schedule | WIB | What |
+|---|---|---|---|
+| `/api/cron/sweep` | `17 3 * * *` | 10:17 | The five retention deletes, plus the size probe and the ceiling report |
+| `/api/cron/nudge` | `0 12 * * *` | 19:00–19:59 | Ages out stale chat runs, then mints and warms up to `NUDGE_MAX_USERS` unprompted runs |
+
+**Both authenticate with the same `CRON_SECRET` and both 503 without it.** One
+secret, deliberately: a second is a second thing to rotate and a second thing to
+have unset.
+
+**Hobby allows 100 cron jobs per project**, verified 2026-08-07 against
+`vercel.com/docs/cron-jobs/usage-and-pricing` and the changelog entry *"Cron jobs
+now support 100 per project on every plan"* (2026-01-20) — minimum interval once
+per day, scheduling precision ±59 minutes. Older notes in this repo said the
+allowance was small and the nudge might have to fold into the sweep; **it does not,
+and the fold is not designed.**
+
+**`0 12` IS NOT NOON.** It is evening in Jakarta, which is the hour a person
+actually messages you, and it is the one line that changes if the quiet-hours
+question is ever revisited — there is no quiet-hours predicate, by ruling, because
+the other two proactive sources only fire while the querent is demonstrably in the
+app and this one's schedule *is* the mechanism.
+
+**Its log line is `[cron] nudge`** and it reports counts and never rows:
+`candidates`, `minted`, `advanced`, `abandoned`, `skipped`, `failures`. Zeroes
+forever means it has silently stopped matching anything; a non-empty `failures`
+turns the response red so the cron dashboard shows it.
 
 ### Checking it worked
 

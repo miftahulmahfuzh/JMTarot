@@ -99,9 +99,34 @@ describe('the event taxonomy', () => {
    * Three of six, and the two that landed with a `blog` prefix are A6's
    * declarations transcribed rather than narrowed (§11 seam 1).
    */
+  /*
+   * ── 70 -> 76, v0.7.0's GROUP CHAT (`C-D14`, `[R1]`), AND THE RITUAL HELD ────
+   *
+   * **TWENTY NAMES WERE DRAFTED ACROSS SIX WORKSTREAMS AND SIX LANDED.** The full
+   * ledger is in `events.ts` beside the names; the arithmetic is fourteen folded or
+   * dropped, and the two that are worth restating here because they are the ones a
+   * future session will try to re-add:
+   *
+   *   `chat.proactive_replied` was DROPPED and `chat.message_sent` was KEPT, and both
+   *   duplicate a row. The line between them is the cost of writing them:
+   *   `message_sent` is a buffered scalar push in a handler that already holds every
+   *   fact, and `proactive_replied` would need **a join at write time** to discover
+   *   which run it answers. `C-N2f`'s reply rate is a QUERY over `chat_messages` and
+   *   `chat_runs`, and F7 owns it.
+   *
+   *   `chat.message_blocked` was DROPPED in favour of `surface: 'chat'` on
+   *   `moderation.refused`. A second name would double-count the one thing W7 already
+   *   measures **and would put every chat refusal outside every existing moderation
+   *   query** — which is the opposite of what a new surface needs.
+   *
+   * **`[R1]`: THE CAP WAS ALREADY AT ITS CEILING WHEN THIS RELEASE OPENED.** The
+   * roadmap's `C-D14` said 67; A1 moved it 67 -> 70 on 2026-07-30. A session trusting
+   * the roadmap would have added a name, seen this test go red, and looked for the
+   * cause in their own diff — 67 + 1 is under the ceiling and 70 + 1 is not.
+   */
   it('stays inside the fixed name budget', () => {
     expect(EVENT_NAMES.length).toBeGreaterThanOrEqual(44);
-    expect(EVENT_NAMES.length).toBeLessThanOrEqual(70);
+    expect(EVENT_NAMES.length).toBeLessThanOrEqual(76);
   });
 
   it("admin.page_viewed's pages are route TEMPLATES, not resolved paths (A1-18, R32)", () => {

@@ -309,6 +309,29 @@ describe('the content cache rules (S1, S-D10)', () => {
     expect(keys).not.toContain('content-disposition');
   });
 
+  it('serves /readers/* for a DAY too, and for the same reason (v0.7.0 F4-18)', async () => {
+    /*
+     * The three chat avatars, `tools/make_avatars.py`'s output. **THE MISTAKE THIS
+     * ASSERTS AGAINST HAS ALREADY BEEN MADE ONCE IN THIS FILE'S NEIGHBOUR** — the
+     * wallpaper entry above shipped for one commit as a year of `immutable`,
+     * written from `/cards/*`'s reasoning rather than from a declaration.
+     *
+     * The declaration here: the crop boxes are a hand-written table of three rows
+     * that will be tuned once somebody has seen them at 28px on glass, and the
+     * filenames carry no content hash. `immutable` would mean every existing
+     * install keeps a bad crop until 2027.
+     *
+     * The MATCHER half of `F4-18` is asserted in `src/components/chatSurface.test.ts`;
+     * this header without that entry is a `Set-Cookie` on a static image, per
+     * message rendered.
+     */
+    const rule = await ruleFor('/readers/:path*');
+    expect(rule?.headers).toEqual([
+      { key: 'cache-control', value: 'public, max-age=86400, stale-while-revalidate=604800' },
+    ]);
+    expect(rule?.headers[0].value).not.toContain('immutable');
+  });
+
   it('leaves /cards/* on a year of immutable', async () => {
     // The negative control. Correcting S5's entry must not have touched the
     // neighbour whose traffic shape genuinely wants a year.

@@ -1,0 +1,63 @@
+/*
+ * The reading staged in the composer.
+ *
+ * NO NEW HEX, NO NEW FONT SIZE, NO NEW CURVE. The label is `ChatComposer`'s
+ * `.replyAuthor` declaration for declaration and the remove control is its
+ * `.replyCancel` with a word instead of a glyph — deliberately, because the two are
+ * the same kind of object: a thing attached to the message you are about to send,
+ * with a way to detach it. They stack, and they must read as one family.
+ */
+
+.staged {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  /* The reply stub's left rule, so a staged attachment and a staged reply carry the
+     same mark. It is what says "this rides with the message" rather than "this is a
+     message". */
+  padding: 4px 0 4px 8px;
+  border-left: 2px solid var(--gold-border);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* `ChatComposer.module.css`'s `.replyAuthor`. */
+.label {
+  flex: none;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+/*
+ * `.replyCancel`'s box with a label in it. 44px tall, and it keeps its width from the
+ * word rather than from a square, because *Lepas lampiran* is two words in both
+ * locales and a 44px square would truncate it.
+ */
+.remove {
+  flex: none;
+  min-height: 44px;
+  padding: 0 4px;
+  background: none;
+  border: 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-hint);
+  font-style: italic;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.remove:hover,
+.remove:focus-visible {
+  color: var(--gold-text);
+  outline: none;
+}

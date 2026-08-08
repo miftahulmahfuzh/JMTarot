@@ -9773,3 +9773,1457 @@ cliff by parking US$20 in the account should know that this would (a) buy a warn
 (b) immediately invalidate the argument that keeps `prices.ts`'s zeros honest — at which point
 the pay-as-you-go rows become the truthful ones. **Do not do it without changing `prices.ts` in
 the same commit.**
+
+---
+
+## F1 — the chat spine (v0.7.0, 2026-08-07)
+
+**What landed:** three tables and migration `0014`; `src/lib/chat/{types,machine,model,budget,log,run}.ts`;
+the two model call sites `chat/direct/plan.ts` and `chat/voices/turn.ts` with placeholder
+prompts for F2 and F3; five API routes; two `LLMOp` values (11 → 13); two flags (5 → 7);
+six event names (70 → 76) and three widened prop shapes; `/privacy` amended in both
+locales; **both onboarding hints amended in both locales**; and `CHAT_ANSWERS_ENABLED`.
+
+`docs/plans/2026-08-07-chat-spine.md` is the plan and `CLAUDE.md` will carry only the
+rules. **What is here is what it cost to be right, and the things a future session will
+otherwise re-derive.**
+
+### The three bugs this workstream actually paid for
+
+**1. `now()` IS FROZEN INSIDE A TRANSACTION, AND `[R19]` WALKED STRAIGHT INTO IT.**
+
+`created_at` defaults to `defaultNow()`, which postgres resolves as
+`transaction_timestamp()` — **identical for every row written in one transaction.** Every
+ordering in `queries/chat.ts` breaks its tie on `id desc`, which is a random uuid.
+
+Miftah granted F3's ask that **one beat may produce two bubbles** ("a person who has more
+to say sends a second message rather than a longer one"), and `completeBeat` writes both in
+one transaction. So the room would have rendered a reader's two sentences **in either
+order, differently on each page load**, with nothing anywhere looking broken — a
+naturalness bug arriving through the mechanism added to buy naturalness.
+
+**It was found by the keyset-pagination test**, which is the only place five rows are ever
+written in one transaction, and which failed with `['m1', 'm4']` where `['m4', 'm3']` was
+expected. Fixed by stamping the bubbles of a beat one millisecond apart, explicitly, which
+is also honest: the second bubble genuinely is sent after the first.
+
+**The generalisation: any test that writes several rows through `withRollback` and asserts
+an ORDER is asserting something production does not guarantee.** It is the same family as
+`answersUpdatedAt`'s *"`sql<T>` is an assertion the driver is not obliged to honour"* —
+a default that looks like a clock and is not.
+
+**2. `greatest(col, $date)` IN A RAW `sql` TEMPLATE THROWS AT RUNTIME ON A GREEN
+TYPECHECK.**
+
+`markRead`'s monotonic cursor is `greatest(last_read_at, $2)`. Inside a raw `sql` template
+there is **no column for drizzle to hang an encoder on**, so a JS `Date` reaches
+postgres.js's serializer untouched and dies with `ERR_INVALID_ARG_TYPE: … Received an
+instance of Date` — from a statement whose parameter types drizzle had already correctly
+declared as `1184` (timestamptz).
+
+The fix is `${upTo.toISOString()}::timestamptz`. **Inside a template, do the conversion
+yourself.** Same file, same lesson as `answersUpdatedAt`, one direction along: there the
+driver returned a string where a `Date` was asserted; here it refused a `Date` where the
+template implied one.
+
+**3. `run.ts` CANNOT BE IMPORTED UNDER VITEST, AND THE FIRST VERSION OF `run.test.ts`
+DISCOVERED IT BY DYING SEVEN TIMES.**
+
+`run.ts` reaches `@/lib/db/client`, which throws `Missing required environment variable:
+DATABASE_URL` at import. **That is not a limitation to work around; it is why
+`machine.ts` exists.** The state machine's decision is `nextAction()`, pure, in its own
+file, and `run.test.ts` drives it with a table in `gate.decide()`'s idiom.
+
+Fourth member of a family this repo keeps rediscovering — `swipeDeck.ts`, `choice.ts`,
+`rollup.ts`, `history/dates.ts` — and the reason is always the same: **the pure part is
+what tests can reach.**
+
+### Two things the contract tests caught before they could ship
+
+- **`beatsRemaining()` could not live in `queries/chat.ts`.** `queries/contract.test.ts`
+  asserts *"the handle is the first parameter of every exported function"* over every file
+  matching `/queries/`, and a pure fold has no handle to take. It went into `types.ts`,
+  typed structurally so the leaf does not acquire `schema.ts`. Same wall W3, W5, V6 and A3
+  each hit.
+- **`types.contract.test.ts` failed on its own doc comment.** The header says the words
+  `process.env` out loud while forbidding them, and the assertion matched the prose. Fixed
+  by stripping comments first — `queries/contract.test.ts`'s recorded lesson, paid for
+  again: *"a rule that fires on prose describing the rule is a rule people delete."*
+
+### The lease, as shipped
+
+Two predicates in the claim statement and **neither is redundant**:
+
+```sql
+  ... where user_id = $1
+        and status in ('pending','planning','running')
+        and (lease_until is null or lease_until < now())
+      order by created_at asc limit 1
+      for update skip locked
+```
+
+`for update skip locked` skips a row another transaction currently HOLDS — two tabs in the
+same millisecond. `lease_until < now()` excludes a row whose holder has already
+**COMMITTED** — two tabs a second apart, which is far more common and **is not a locked
+row**. Delete either and the second tab executes the same beat: the same bubble in the room
+twice.
+
+`chat.integration.test.ts` proves it across **two real postgres connections** (it cannot
+use `withRollback`, which is one transaction), and **asserts the message COUNT rather than
+the run's status** — `tee.ts`'s reason: a run at `beats_done = 1` with two messages is the
+exact bug, and only the count sees it. Three sibling cases cover the expired lease, the
+live committed lease, and a stale `beats_done` rolling the insert back.
+
+### The events ledger: twenty drafted, six landed
+
+The full table is in the plan and transcribed into `events.ts` beside the names. The two
+folds worth restating, because they are the ones a future session will try to re-add:
+
+- **`chat.proactive_replied` DROPPED, `chat.message_sent` KEPT** — both duplicate a row,
+  and **the line between them is the cost of writing them.** `message_sent` is a buffered
+  scalar push in a handler that already holds every fact; `proactive_replied` would need
+  **a join at write time** to discover which run it answers. `C-N2f`'s reply rate is a
+  query, and F7 owns it.
+- **`chat.message_blocked` DROPPED in favour of `surface: 'chat'`** on
+  `moderation.refused`. A second name would double-count what W7 already measures **and
+  would put every chat refusal outside every existing moderation query.**
+
+`moderation.{refused,timeout,allowed_flagged}` gained `surface` and widened `reader_id` /
+`service_id` to `| null`. **That prop is the only instrument a blocked chat message
+leaves**: `C-D13` refuses to store the refused text, `moderation_flags` has no surface
+column, so without it a spike in false positives on the chat surface is invisible.
+`Q-F1-3` records the column as the better answer, deferred because the release spent its
+migration.
+
+### `LLM_WINDOW_CALL_CEILING`: re-derived 2026-08-07, unchanged at 280
+
+`C-D6` required the exercise and **"re-derived and unchanged" is a real outcome of it.**
+The argument that decided it is better than the roadmap's: **a bigger number does not
+create quota.** z.ai meters prompts; raising 280 raises what this app is willing to spend,
+not what the plan will serve — and `## The z.ai plan` says the far side is `1113
+Insufficient Balance` on the first call, instantly, against a balance that is zero.
+
+`LLM_WINDOW_CHAT_CEILING = 140`, **peeked before the fleet ceiling and consumed after it**,
+so a call refused by either window is charged to neither. The number is resolved in
+`meter.ts`'s `_ceilings()` and derived from the hard ceiling, so February 2027's credit
+re-derivation moves both together.
+
+### Six decisions worth finding again
+
+- **`chat_messages.model` exists and is never selected by a route.** Every other table
+  holding generated prose records its model; a chat bubble would have been the only one
+  that could not say what wrote it, on the one surface running a model nothing else runs.
+  `audit-secrets.ts` cannot see a serialised column, so **explicit projections are the
+  enforcement** and `chat.contract.test.ts` greps for a bare `db.select()`.
+- **No CHECK over a column carrying `ON DELETE SET NULL`** (`[R7]`). The obvious pairings —
+  `(author = 'user') = (run_id IS NULL)` — live in `insertMessage`. The test for a new one
+  is **whether NULL satisfies it**: `id <> reply_to_message_id` passes that test and stays.
+- **`POST /api/chat/read` exists rather than folding into `state`**, because `state` is
+  polled from four pages that show no messages — a GET that moved the cursor would
+  **extinguish the red dot with the request that renders it.**
+- **The dot is lit by a stored bubble and never by a pending run** (`[R6]`), because
+  `C-R6` makes a zero-beat plan valid and a dot leading to an empty room is the opposite of
+  what a dot is for.
+- **`audit-secrets.ts` now walks `src/lib/chat/**`.** Before this it derived needles from
+  two directories, so **non-negotiable 2 was unenforced for every string F3 will write** —
+  and the `derived ZERO needles` guard could not fire, because the old directories keep the
+  count comfortably non-zero. F3's finding, and the most important of the reconciliation's
+  nine unowned files.
+- **The placeholder director plans SILENCE and the placeholder voice REFUSES.** An
+  accepting stub would store placeholder text as a bubble, and **a stored bubble is context
+  for every future turn in the room** — `C-R7`'s reason for having no error bubble,
+  arriving through the back door.
+
+### Two corrections to prose the release inherited
+
+- **`/api/cron/sweep`'s header said Vercel's free plan allows "a small number of cron
+  invocations".** It allows **100 per project on every plan** (verified 2026-08-07;
+  changelog 2026-01-20), so F5's nudge gets its own job. The sentence is corrected rather
+  than deleted, and the conclusion survives on its other leg. **And `17 3 * * *` is 10:17
+  WIB, not 03:17** — Vercel cron is always UTC, which the roadmap built an argument on.
+- **`OP_ORDER`'s header said "The ten" over an eleven-member array.** One of `[R13]`'s
+  three stale op counts. Now thirteen, with the count written out because **the boundary
+  below it is what a reader needs, and a number that is checkable is what makes the
+  boundary checkable.**
+
+### What F1 deliberately did NOT do
+
+- **Fix the cost-per-reading denominator** anywhere it already exists. Seam S10 gives it to
+  F7, and F1 "helpfully" patching one of A3's queries is how two workstreams both half-fix
+  one thing. `[R8]`'s rule — `llm_calls.reading_id` is NULL for both chat ops — is written
+  at the call sites; F7 writes the negative control.
+- **Touch `sanitize.ts`.** `[R2]`: `<jawaban>` is the third of six fences that already
+  exist, and `C-D8`'s "a sixth fence" was a miscount. **`<obrolan>` and `<lampiran>` are
+  the genuinely new ones and F3 owns that edit** (`[R12]`); adding a seventh alternative
+  for `jawaban` breaks `sanitize.test.ts`'s fixpoint assertions for a reason that reads
+  like a real defect.
+- **Edit `gate.ts` or the middleware matcher.** `/chat` is refused by omission
+  (`F1-D11`), and the deliverable is the negative controls in `gate.test.ts` — including
+  **the one named for the worst outcome available in this release**, `/en/chat`.
+
+### Still open when F1 landed
+
+- **`Q-F1-2` — what date does `/api/cron/nudge` use for `proactive_count_date`?** It has no
+  client and therefore no `x-jm-local-date` header. **`chat_threads.utc_offset_minutes` is
+  the answer the reconciliation folded in** (`[R17]`, §2.3) — the cron can derive the
+  querent's day from the last offset their browser reported. Nothing reads it yet; F5 owns
+  the derivation.
+- **`Q-F1-4` — nothing deletes a `chat_messages` row.** No status column, no soft delete,
+  no unsend. A querent who posts something they regret into a room three characters will
+  quote back at them has no remedy short of deleting the account. **A real product gap and
+  a deliberate one**, named so the first bug report is met with a decision rather than a
+  scramble.
+- **`Q-F1-5` — `hit('chat:advance:<uid>', 400/h)` is on the default backend.** It is the
+  highest-frequency authenticated budget this app has ever had — five round trips per
+  posted message — and `events:` was moved to memory for that shape of reason. **Measure it
+  on the first preview**; `RATELIMIT_CHAT_BACKEND` is reserved and deliberately unwritten.
+- **`npm run probe:usage` has NOT been run for `CHAT_MODEL=glm-5.2`.** It is a model change
+  and `## Providers` requires it. F1 ships nothing that calls the model in earnest — both
+  prompts are placeholders — so the honest place for it is the commit that makes F2 or F3
+  real.
+- **Nothing has exercised these routes against a cold lambda.** `/api/chat/message` and
+  `/api/chat/read` both WRITE, and **a user action that writes is one of the few things
+  likely to be the request that wakes a suspended Neon compute.** 1348ms warm from WSL told
+  us nothing last time.
+
+---
+
+## F3 — the voices (v0.7.0, 2026-08-07)
+
+**What landed:** `src/lib/chat/address.ts` (PURE, a LEAF, zero imports);
+`CHAT_LENGTH_BUDGET` / `chatBudgetFor` / `CHAT_MAX_TOKENS` in `src/lib/prompt/budget.ts`;
+`<obrolan>` **and `<lampiran>`** in `sanitize.ts`'s alternation (six → eight);
+`src/lib/chat/prompt/{base,base.id,base.en,readers,readers.id,readers.en,build}.ts` with
+the canary; `src/lib/chat/validate.ts`; the real `voices/pace.ts` and `voices/prompt.ts`;
+`src/lib/chat/context.ts` — **the one decrypt**; `npm run smoke -- --chat` with the blind
+read; and `lib/chat/` in `audit-secrets.ts`'s forbidden prefixes.
+
+`docs/plans/2026-08-07-chat-voices.md` is the plan. What is here is the measurement, the
+four things the plan got wrong, and the numbers Task 11 moved.
+
+### The blind read PASSES: six of six, both locales (run 6)
+
+`id` A=margaret B=adrian C=thessaly, `en` A=adrian B=thessaly C=margaret — guessed from
+the prose before reading the key. What identified them, in case a future run stops
+working: Margaret is the only one who writes a subordinated sentence with a semicolon in
+it; Thessaly asks for a number in under eight words; Adrian is the one who says *"wkwk"*,
+*"got me there, fair enough"*, and who teases the other two by name.
+
+**Roadmap §10.2's second question — would a person send this?**
+
+- **(a) Did any reader deliver a PARAGRAPH?** No. The longest bubble in run 6 was 28 words
+  and it was one Margaret sentence.
+- **(b) Did any reader SUMMARISE the querent back at themselves?** No. The closest was
+  Thessaly's *"nggak, Mif. kami cuma baca kartu tiga hari ini, terus kamu masuk cerita
+  soal nenek"* — which is a denial rather than a paraphrase, and is a legitimate answer to
+  *"emang kalian tau apa soal gue"*.
+- **(c) Did the room ever GO QUIET?** Only where the canned sheet made it: the final `iya
+  deh` / `fair enough` gets no reply, and that reads right. **Nothing in this workstream
+  can answer whether a real director chooses silence** — `C-R6` is F2's to make reachable,
+  and the runner cans the sheets precisely so a voice failure is not confused with a
+  planning one.
+
+### The six calibration runs, and the two numbers they moved
+
+`CHAT_MODEL=glm-5.2`, `npm run smoke -- --chat`, 2026-08-07. Runs 1–3 are the plan's
+Task 11; 4–6 are after the changes below. Ten beats per locale.
+
+| | id min/mean/max words | en min/mean/max | margaret:thessaly sentence | overlap (max pair) |
+|---|---|---|---|---|
+| 1 | 4 / 13.2 / 27 | 4 / 13.9 / 31 | 3.52 / 3.33 | 0.159 / 0.059 |
+| 2 | 6 / 11.4 / 17 | 4 / 16.8 / 31 | 1.96 / 3.53 | 0.114 / 0.083 |
+| 3 | 3 / 11.2 / 18 | 4 / 14.3 / 28 | 2.57 / 4.36 | 0.100 / 0.113 |
+| 4 | 2 / 13.0 / 27 | 4 / 17.2 / 32 | 4.28 / 5.12 | 0.061 / 0.194 |
+| 5 | 4 / 12.2 / 28 | 4 / 16.8 / 32 | 4.94 / 4.70 | 0.059 / 0.152 |
+| 6 | 3 / 11.3 / 23 | 4 / 14.4 / 28 | 2.69 / 4.15 | 0.129 / 0.107 |
+
+**1. `CHAT_LENGTH_BUDGET.maxWords` 22 → 24, so Margaret resolves to 31.** At 22 her
+resolved ceiling was 29 and her English bubbles came in at 25, 28, 28, 30 and 31 —
+**`validateTurn` refused three of her six English turns**, and a refused turn is retried
+once and then silent, which is the failure `[C-N1]` cannot afford. `budget.ts`'s own record
+of `READER_MULTIPLIER` says what happens next: *a check that fails on correct behaviour is
+a check people learn to ignore.* **The base moved and the multiplier did not** (`[F3-11]`),
+and it costs the other two readers nothing measurable: across twelve locale-runs neither
+of them wrote a bubble over 20 words.
+
+**2. `CHAT_SENTENCE_RATIO` back to 1.5 from 1.25.** The plan lowered it on the reasoning
+that at a 22-word bubble everybody is short and the ratio compresses. **Measured: 1.96,
+2.57, 2.69, 3.52, 4.28, 4.94 — the compression did not happen.** Open question 3 is closed
+in the other direction: the proxy is the right instrument at this length.
+
+**Not moved:** `CHAT_BREVITY_FLOOR = 6` never fired (observed minima 2–6), and its job is
+to catch a run where nobody is ever brief. `CHAT_MAX_TOKENS = 90` is unchanged.
+
+### The reader overlap band, which is NOT `--all`'s
+
+**0.021–0.194 across six runs, and the highest pair moves.** `--all`'s reference is
+~0.086 for a reading; a chat's vocabulary is bounded by the conversation, so all three
+readers share the querent's words by construction. **These numbers are the reference now,
+and a JUMP is the signal** — a run where every pair lands over ~0.25 is three readers
+converging, and the fix is `CHAT_READER_PROMPTS_{ID,EN}`.
+
+### The four things live output found that no test would have
+
+**1. THE MODEL GUESSED THE QUERENT'S GENDER.** Run 1 (`en`): *"she doesn't need a timeline,
+Thess, she needs a yes or no."* **Nothing in the six answers, the profile or the numerology
+states a gender** — so that is a fabricated fact about a real person, in a room built to
+make the querent feel known. `lotus.ts` refuses exactly this in `summary_en` and its header
+explains why: *"getting a person's gender wrong is the kind of error the whole app's tone
+cannot absorb."*
+
+**Fixed in the PROMPT and deliberately not in the validator.** A reader talking about a
+third party — *"your mum … she"* — uses those pronouns legitimately, and a mechanical check
+over a 24-word bubble would refuse correct output, which is `[F3-12]`'s named failure. Both
+contracts now forbid guessing gender, age, job and location by name. **It is not fully
+fixed:** run 6 still produced *"she just said work's been a lot, Thess"*. Recorded as open.
+
+**2. A SOURCE-TELL LIST MATCHED INSIDE A LONGER WORD, AND REFUSED A DENIAL.** Run 3:
+Thessaly wrote *"Kita cuma baca kartunya, Mif, bukan biodatamu"* — a reader saying it does
+**not** hold a file on you — and `datamu` is a substring of `biodatamu`, so the highest-value
+FAIL in the release fired on the best sentence in the run. The tells are now **bounded at
+the head and open at the tail**: closed at the head because a prefix is where the accidents
+are, open at the tail because Indonesian is agglutinative and run 1 produced *"yang kamu
+pernah ceritain sendiri"*, which a `\b`-terminated pattern would miss. `BANNED_ROOTS_ID`'s
+reasoning, arrived at from the opposite direction.
+
+**3. THE SMOKE RUNNER NEEDED PRODUCTION'S RETRY, OR IT OVERSTATED THE COST OF A CEILING.**
+`speak()` retries once inside the same request with the refused reason named in the prompt
+(`C-R7`, `F1-D2`). A runner that made one call reported every refusal as a lost bubble —
+which is exactly the number Task 11 was calibrating from. With the retry in, **the repair
+line works**: runs 5 and 6 each recovered two turns (`too_long` and `source_tell`), and run
+6 lost none. A turn refused twice is now printed and **kept out of the transcript**, because
+production stores nothing and counting it put an over-ceiling bubble into the distribution
+the ceiling is calibrated from.
+
+**4. `usianya` CONTAINS `ianya`.** The Malay grep in `prompt.test.ts` is a substring match,
+so a perfectly ordinary Indonesian word in a new contract line failed it. Reworded to
+`umurnya`. Recorded because the next person to add an Indonesian sentence to a prompt will
+hit it, and the failure names a Malay word that is not there.
+
+### `probe:usage` on `glm-5.2`, and what it says about `C-D6`
+
+Run 2026-08-07, four calls, `## Providers`' requirement and F1's open item:
+
+```
+1. buffered                input=  2027  cached=     0  output=  22
+2. streamed, cold          input=  1967  cached=     0  output=  24
+3. streamed, warm (repeat) input=  1967  cached=  1920  output=  20
+4. streamed, short prompt  input=    84  cached=     0  output=  24
+```
+
+**Input tokens ARE reported and prompt caching IS honoured — 1920 of 1967 served from cache
+on the repeat, with the totals agreeing across the hit.** That is a fact about the chat's
+economics that the roadmap could not know: **every beat of a run shares its whole prefix
+with the previous beat** — the same contract, the same person, the same six answers, the
+same transcript minus one bubble — so a three-beat run is nowhere near three cold prompts.
+`C-D6`'s constraint is the PROMPT COUNT and not the token count, so this changes no ceiling;
+what it changes is any future argument that trims the context to save tokens.
+
+### What is still open
+
+- **The address rate in `id` is 40–90% and the band says over ~40% is a tic.** Six runs:
+  60, 50, 90, 40, 70, 70. A line capping it at one message in three was added to both
+  contracts after run 3 and **did not bind** (70% in runs 5 and 6). English sits at 20–40%
+  and is fine. The instrument is right and the prompt is not; the next attempt should
+  probably make the rule concrete in the persona blocks rather than the base contract.
+- **The gender guess survives its own prohibition** (finding 1). The next thing to try is
+  the same move `readers.en.ts` uses for everything else: put it in the worked example
+  rather than in a rule.
+- **A reader invents a clipping of ANOTHER READER's name** — `Thess`, in four of six runs.
+  `validateTurn` checks the querent's forms and the speaker's own name, not the other two,
+  and it reads as natural rather than wrong, so nothing was changed. Named so a future
+  session decides rather than discovers.
+- **`<=3` word bubbles are rare: 0, 0, 1, 1, 0, 2 of ten.** The contract licenses *"wkwk"*
+  twice and Adrian's example ends on a short bubble, and the readers still average 11–17
+  words. `CHAT_BREVITY_FLOOR` catches the pathological case and nothing pushes toward the
+  common one.
+- **A reply target that has scrolled out of the 40-message window resolves to `null`.** The
+  director picks its id from the same window and a run is at most four beats, so it is
+  unreachable in practice; the fix is a `messageById` read in `queries/chat.ts`, which is
+  F1's file.
+- **`localDate` is not on the advance path.** `VoiceInput` carries none, so the assembler
+  gets a UTC day. Its only use is the floor of a thirty-day reading lookback, so the error
+  is at most one row in `<riwayat>` — but **nothing here may ever render a date to a
+  person** on that basis.
+- **`CHAT_ATTACHMENT_BODY_CHARS` was not introduced.** F6 shipped
+  `ATTACHMENT_BODY_MAX_CHARS = 1600` with a measurement behind it, and a second cap on one
+  string is two numbers that must agree. §17 item 7's other two variables
+  (`CHAT_READING_LOOKBACK_DAYS`, `CHAT_ANSWERS_ENABLED`) are both live.
+- **Nobody has read a chat bubble on a phone.** Loop 4 and loop 6 are F4's, and a 31-word
+  Margaret bubble at 320px is the geometry nothing in this workstream can answer.
+
+---
+
+## F2 — the director (v0.7.0, 2026-08-07)
+
+**What landed:** `src/lib/chat/direct/{caps,affinity,window,validate,fallback,assemble,system,
+system.id,system.en}.ts`, and `direct/prompt.ts` — F1's placeholder, replaced. Six test files
+beside them, and `npm run smoke -- --chat --director` in `scripts/smoke-llm.ts`.
+
+`docs/plans/2026-08-07-chat-director.md` is the plan. What is here is the measurement, the
+five places the plan could not be built as written, and the one lever that did not land.
+
+### The filenames are not the plan's, and `[R13]` is why
+
+The plan's §6 names `direct/plan.ts` for the locale facade. **`direct/plan.ts` is F1's file** —
+the `chat_plan` call site, named *by string* in `callClass.test.ts` and `flagCoverage.test.ts`,
+and the reconciliation ratified that boundary after the plan was written. So:
+
+| The plan says | What was built | Why |
+|---|---|---|
+| `plan.ts` (facade), `plan.{id,en}.ts` | `system.ts`, `system.{id,en}.ts` | `plan.ts` is F1's. The exported function names are still the plan's (`planSystemPrompt`, `planPromptId`) so the prose stays greppable against the document that specifies it |
+| `prompt.ts` (PURE) | `assemble.ts` (pure user turn) **plus** `prompt.ts` (the server-only seam) | F1's seam requires `buildPlanPrompt(input: DirectorInput)` to be `async` and to read the database. The pure half had to move to its own module or `npm test` could not reach the prompt at all |
+| `direct.ts` (`directRun`) | — | F1's `plan.ts` already is that function: the op, the tier, the model, the flag guard, the budget, the fallback wrapper and the event |
+| `index.ts` (the import surface) | — | `plan.ts` is the only importer and it names files directly. An index would be a second surface with one consumer |
+
+### The memo, and why a miss degrades here where it refuses for a voice
+
+`plan()` calls `buildPlanPrompt`, then `validatePlan(raw, input)`, then `planFallback(input)`.
+**Only the first may touch the database, and the other two need what it read** — `checkPlan`
+resolves `#n` against the window, and the fallback's table needs the affinity lead, the awaiting
+reader and the reader of the last reading. `DirectorInput` carries none of it and `plan.ts` is
+F1's file.
+
+So `direct/prompt.ts` keeps a bounded `Map` keyed by `runId`, exactly as `voices/prompt.ts` does
+one keyed by `${runId}:${beatIndex}` — **the lease is what makes it safe** (`C-R3`: one executor
+per run, planning happens once). **One deliberate difference from F3:** `validateTurn` *refuses*
+on a memo miss, because two of its checks keep a published promise. Nothing here has that shape:
+a missing window costs the quote stubs and nothing else, so the beats survive with
+`replyTo: null` — `P3`'s bias applied to the process rather than to the model. Refusing would
+turn a warm-lambda accident into a one-beat fallback, which is quieter *and* less honest.
+
+### Five things the plan could not be built as written
+
+1. **`to` had to enter the JSON contract, and §6.1's prompt predates it.** `[R9]` admitted F1's
+   `to` field after F2's plan was written, on the ground that *"a beat may address Margaret
+   without quoting her, and may quote a message while addressing the querent about it"*. So the
+   contract carries one more key than §6.1 shows and **the director decides it**; an absent or
+   self-naming `to` is derived from the quoted message's author (accept bias — a dropped beat
+   over a missing key would be a refusal for a habit).
+2. **A beat cannot quote the beat before it in its own run.** The first beat has no
+   `chat_messages` row when the sheet is written, so **within a run, answering another reader is
+   `to`; across runs it is `replyTo`.** §11's lever — *"beats whose `replyTo` names a reader
+   message"* — can therefore only ever see the across-run half, and the smoke script measures
+   both separately. This was found by the measurement reading 0% on a room that was doing it.
+3. **An absent `beats` key is `shape`, not silence.** The plan's `R2` refuses only *"`beats`
+   present and not an array"*, which would admit `{}` as a deliberate silence — precisely the
+   confusion `[F2-7]` exists to forbid. `[F2-7]` is the load-bearing rule and wins: only an
+   explicit `[]` is a decision.
+4. **The `unanswered` predicate lost one clause and gained one exclusion.** *"No later message
+   has `reply_to_message_id = m.id`"* is unbuildable — `ChatTranscriptEntry` (F3's type, seam
+   S2) carries `replyToAuthor` and not the quoted id, and widening it is an edit to F3's file.
+   And **the trigger message is excluded from "later"**, or the flag could never fire on a
+   `user_message` run at all: the run's own trigger is by definition a later message from the
+   other side. The plan's own §6.3 example marks Thessaly's question `[belum dijawab]` beside the
+   querent's brand-new reply, which is only consistent with this reading.
+5. **`hasMaterial` is derived until F5 lands.** `C-N2e` says a trigger with no material does not
+   fire and F5's predicate is what guarantees it; F5 does not exist, so the proactive fallback
+   arms read a reading behind the trigger or a hanging reader question. `idle_nudge` and `cron`
+   fall to zero beats **on the fallback path only**. `PlanInput.material` is the field F5 fills.
+
+### The four calibration runs, and the three levers that moved
+
+`CHAT_MODEL=glm-5.2`, `npm run smoke -- --chat --director`, 2026-08-07, eight or nine probes per
+locale against a canned transcript. **Temperature is unset by design (`[F2-18]`), so identical
+input gives different sheets — the variance below is the mechanism working, not noise to
+suppress.**
+
+| run | change under test | silence | cast 1 / 2 | ask | reader-directed |
+|---|---|---|---|---|---|
+| 1 (id) | as designed | 13% | 7 / 0 | 38% | 0% |
+| 2 (id) | rule 1 rewritten, rule 6 names the strings | 13% | 6 / 1 | 25% | 0% |
+| 3 (id+en) | worked example explains the second beat | 22% / 22% | 4/3 / 4/3 | 33% / 56% | 0% |
+| 4 (id) | rule 4 gains an explicit `to` sentence — **reverted** | 22% | 7 / 0 | 33% | 0% |
+| 5 (id) | after the revert | 11% | 6 / 2 | 22% | 0% |
+
+**1. Rule 1 was biased hard toward one beat and the model obeyed it exactly.** *"Kebanyakan run
+cukup SATU. Dua sudah ramai"* plus *"kalau ragu, artinya tidak perlu"* produced **1:7 2:0** —
+§11's named failure in as many words: *"all 1s is three readers taking turns being the only
+reader, the app it already is with extra machinery."* The rewrite names the case for a second
+beat (*a different thing: answering the first reader, disagreeing, needling, adding one thing
+that is not a repeat*) and **scopes "if in doubt, no" to the THIRD beat.** The `YANG BUKAN
+ALASAN` block is untouched — it enumerates the *bad* reasons and is what keeps the false positive
+refused.
+
+**2. Rule 6 needed the actual strings.** *"wkwk iya sih"* was answered with `answer` quoting a
+four-minute-old message in runs 1 and 2. Naming the shapes — *tawa ("wkwk", "haha"), tanda
+setuju pendek ("iya sih", "oke")* — plus *"never an `answer` that restates what was already
+being discussed"* moved it to `beats: []` in every run since. **A description of brevity does not
+produce brevity; a list of the words does.** `readers.id.ts`'s worked-example rule, one layer up.
+
+**3. Rule 10 held from the first run.** A message about a grandmother who died got one beat and
+never a `tease`, in all four runs and both locales. It is the rule whose failure would have been
+the worst thing in the release, and it is the one that needed no calibration.
+
+**4. THE REVERT IS THE FINDING.** Run 4 added a sentence to rule 4 telling the model to put a
+reader's name in `to` when the beat is aimed at one. **It bought no change in the lever it
+targeted (0%) and coincided with the cast mix collapsing back to 1:7.** One run cannot prove the
+regression is causal — but a prompt clause that demonstrably buys nothing is dead weight
+competing for attention in a prompt whose length is the thing being calibrated, so it was
+removed. `## Localization`'s standing instruction against *"chasing variance"*, applied to a
+director instead of a word budget.
+
+### The lever that read 0% — CLOSED, and it was the METRIC that was broken
+
+**Recorded first as *"the one lever that did not land"*: reader-directed beats were 0% across
+five director-only runs and ~40 beats.** §11 calls 0% *"three parallel help desks in one
+window"*, and the obvious next move was another prompt push. **Both halves of that reading were
+wrong, and `--chat --director --voices` is what showed it.**
+
+**1. It is not 0%.** Joined runs measure **5–13%** — `adrian -> thessaly` fired in the first
+Indonesian joined run and in the English one. The earlier zero was **an artefact of the
+fixture**: with no voices attached, the room never accumulates generated bubbles, so the director
+had four hand-written reader lines to point at instead of a thread that was actually growing
+under it. **A director-only run is the wrong instrument for a lever about the room answering
+itself**, and nothing about that was visible until the two halves were joined.
+
+**2. And the prose does it far more often than `to` says.** Three lines from one run, all with
+`to: user`:
+
+```
+adrian   (tease):  so is this actually happening or is it just your monthly move-out rehearsal
+thessaly (ask):    he's right though. you need somewhere to go first.
+adrian   (answer): yeah i do. but she said it like a checklist and that's not what's stopping
+                   you. your dad is.
+```
+
+*"he's right though"* and *"she said it like a checklist"* **are** the room talking to itself, and
+the metric scores all three as help-desk beats. The one that did set `to` is the one that reads
+most like a group:
+
+```
+thessaly (answer):      that's my point. start looking today, give notice once you find something.
+adrian -> thessaly:     she knows that, Thess. she's stalling because the whole thing feels
+                        heavy, not because she forgot how apartments work.
+```
+
+**RULING: `to` IS A PROMPT FACT, NOT A NATURALNESS METRIC, AND §11's LEVER IS RETIRED AS A
+NUMBER.** It exists so `build.ts` can write `Bicara kepada:` and so `validateTurn` knows whether a
+nickname may appear; it was never a count of anything. **The instrument for *"does this room talk
+to itself"* is the joined blind read and nothing else** — which is also the answer §15.4 gives to
+its own question 3. The runner still prints the two counts, now labelled as what they are.
+
+**Nothing in the prompt was changed for this**, and that is the point: **two prompt pushes were
+spent on a lever that was measuring the wrong thing**, and the second one (`[F2-19]`'s reverted
+rule-4 clause) cost the cast mix. `CLAUDE.md`'s standing rule survives intact — the fix is the
+prompt and never the validator, and **`checkPlan` must still never derive `to` from the angle.**
+
+### `--chat --director --voices`, the join, and why it is the release's real gate
+
+The third mode: the real director plans, and the real voices execute its beats into a room that
+grows under them — `C-R5` exactly as `run.ts` does it, including `C-R7`'s one retry. Fixture
+context, no database, no browser, and `chatFixtureContext` is **one builder shared with
+`--chat`** so the only difference between the two runs is the sheet.
+
+**`--chat` cans the sheets and `--chat --director` cans the voices, each so a failure in one is
+not read as a failure in the other. Neither can see `[F2-2]`** — a sheet that reads well and
+produces three paragraphs that sound alike — because that failure only exists where they meet.
+
+**The canned reader lines are context and are excluded from the blind read.** They are written by
+hand in the readers' voices to set the probes up, so putting them in front of somebody guessing
+who is who would be marking my own homework. The querent's lines stay, as scaffolding.
+
+Measured over a joined run of both locales, 17 beats: **every voice turn passed on attempt 1**,
+`fallback rate 0%`, one `self_reply` repair and one `angle` repair. The `self_reply` is `P4`
+working in the wild — Thessaly quoted her own message, the pointer was nulled, the beat survived,
+and it produced *"he's right though"*, the best line in the run. **A repair that dropped the beat
+would have deleted it.**
+
+Two numbers that are out of band and are recorded rather than chased: **the English ask rate is
+56%** in two separate runs against a 25–35% target (rule 7 already says *not every run*), and the
+**Indonesian silence rate swings 11–33%** across runs. The fixture is nine probes chosen to test
+RULES rather than to be representative traffic, so neither number is traffic-shaped — and
+temperature is unset by design. **Measure on real traffic before moving rule 6 or rule 7.**
+
+### What is measured and cheap
+
+- **A plan is 2,000–3,000 input tokens and 10–100 output tokens**, 0.9–2.9s, one call per run.
+  The director is the cheap half of a run by an order of magnitude, which is what makes
+  `C-D6`'s *"sixty chat runs exhaust the fleet quota"* a statement about the voices.
+- **`fallback rate 0%` and two `angle` repairs across ~40 beats.** `glm-5.2` returns bare JSON
+  with no fence every time. **The accommodations in `parseObject` — a stripped fence, a sentence
+  before the object — have never yet been needed**, and they are kept because the day they are
+  needed is a day a run would otherwise be silent.
+- **The affinity hint is followed 50–100% of the runs that have a lead** (n=3 per run). It was
+  overruled once, by Thessaly answering a message about a partner — which §4 licenses in as many
+  words, and which is the behaviour that separates a room from a switchboard.
+- **The lexicon's one known false positive is Indonesian reduplication.** `hati-hati` ("be
+  careful") matches the `inner` term `hati`, because a hyphen counts as a word boundary — and it
+  counts as one so that `deadline-nya` matches `deadline`, which is what people actually type
+  and which appears in this workstream's own worked example. `affinity.test.ts` pins both halves
+  so the false positive cannot be "fixed" without seeing what it would break.
+
+### Still open when F2 landed
+
+- **CLOSED by `--chat --director --voices`** (and independently by F4's first joined run through
+  `/chat`). The bubbles that came out of real beat sheets have been read, in both locales; the
+  section above is what they showed.
+- **THE LOCAL `llm:window` COUNTER IS SHARED BY EVERY SMOKE RUN AND EVERY DEV PAGE LOAD, AND IT
+  SHEDS CALIBRATION RUNS SILENTLY-ISH.** The first joined run died on
+  `ModelCeilingError (soft)` — `C-D6` working perfectly, on a counter that four calibration runs
+  plus F3's and F4's had already filled, and F4's own joined run lost its third beat to the same
+  thing. It is a **local** SRH on `127.0.0.1:8079` (`.env.local`'s own header records the day it
+  pointed at production instead), so the honest reset before a calibration session is
+  `DEL jmt:rl:280:18000:llm:window:<bucket>` and its `llm:chat:window` sibling over SRH's HTTP
+  API. **Raising `LLM_WINDOW_CALL_CEILING` for the run would work too and is worse** — it changes
+  the thing being measured.
+- **`direct/prompt.ts` has no test at all.** It imports `@/lib/db/client`, so Vitest cannot load
+  it; `contract.test.ts` asserts its fences on the source and every decision it makes lives in a
+  pure module. The memo's behaviour under a real run is unverified — same standing as
+  `voices/prompt.ts`'s.
+- **`chat.run_planned` carries neither `affinity_followed` nor `dropped`.** F2's plan declared
+  them; F1 owns `events.ts` and folded a narrower set, and `replies_to_old` in `run.ts` in fact
+  counts *every* beat with a `replyTo` rather than an old one. **F7 reads that prop**, so it
+  should either be renamed or re-derived when F7 lands — the numerator it names and the number it
+  holds are different things.
+- **`OLD_REPLY_MIN_AGE_MINUTES = 30` is still a guess** (`F2-Q5`), and across five runs exactly
+  one beat quoted an old message. If `C-D11` never fires in production, that number is the first
+  thing to move — and rule 8 is the second.
+
+---
+
+## F4 — the surface (v0.7.0, 2026-08-08)
+
+**What landed:** `src/app/chat/{page.tsx,ChatRoom.tsx}` and their two stylesheets;
+`src/components/{ChatButton,ChatAvatar,ChatBubble,ChatTyping,ChatComposer,LotusMark}.tsx` with
+their stylesheets; `src/lib/chatSurface.ts` (the pure part) and its 33 unit tests;
+`src/components/chatSurface.test.ts` (the deny-shaped guard, 20 assertions); `tools/make_avatars.py`
+plus `npm run avatars` and three committed 112px WebP; the `corner` rail in `tokens.ts` mirrored
+into `tokens.css`; the `/readers/*` matcher entry and cache header; 26 `chat.*` keys in both
+catalogs; a seeded chat thread in `npm run db:seed`; and `public/cards/_chatfit.html`.
+
+`docs/plans/2026-08-07-chat-surface.md` is the plan. What follows is what the plan could not
+know, the two things it got wrong, and the measurements.
+
+### The first joined run — F2's last open item, closed
+
+F2's notes end with *"nobody has read the BUBBLES that came out of a real beat sheet … it needs
+F4's `/chat`"*. It does now. One message typed into the composer on `localhost:3001`, against
+the real director and the real voices:
+
+```
+me        halo semuanya. aku lagi mikirin soal kerjaan lagi
+ADRIAN    > kamu: halo semuanya…
+          eh, nggak usah pura-pura lupa. kemaren kan kita udah bahas kerjaan
+          kecuali ini kerjaan beda lagi
+THESSALY  > kamu: halo semuanya…
+          ini beda sama kemarin? atau itu masalah yang sama?
+```
+
+Two readers, two intents (`tease` then `ask`), both quoting the querent, neither summarising.
+**And the third beat was SHED by `LLM_WINDOW_CHAT_CEILING`** — `[chat] voice failed …
+ModelCeilingError` in the log, and **the room showed nothing at all**, which is exactly
+`C-D6` plus `C-R7` working: no error bubble, no spinner, no notice. The querent cannot tell that
+outcome from `C-R6`'s *"nobody replies"*, and that is the design rather than a gap in it.
+
+**THE ADVANCE COUNT IS `beats + 2`, NOT the plan's `n + 1`.** Measured: 2 bubbles, 4 calls —
+one plan, one per beat, one that returns `done`. §10.3's arithmetic is off by one and this is
+the corrected identity, which matters because it is the number loop 5 checks to catch `F4-8`'s
+dependency-array bug. Latencies: `message` 1481ms (the classifier), the plan 1790ms, each beat
+~1000ms, the closing call 72ms.
+
+### `chat.opened` has ONE fire site, and the button therefore tracks nothing
+
+F1 folded F4's four declared events into one and narrowed `from` to
+`'button' | 'direct' | 'attach'` — so the four-value `ChatSurface` union the plan gave
+`ChatButton` had no consumer left. **The prop is gone**; the entry point travels as
+`?from=button` on the link, and `ChatRoom` fires the event once, after its `state` call settles.
+
+The alternative — the button firing on click and the room firing on mount — double-counts every
+open that came from the button, which is the exact objection F1 used to fold
+`chat.button_clicked` away (*"the click IS the open"*). The type-level fence the plan wanted is
+replaced by `chatSurface.test.ts`'s denylist, which names `app/chat/` and the draw screen.
+
+`window.location.search` and not `useSearchParams()`: read once, in an effect, on the client —
+and `useSearchParams` would put the room under a Suspense requirement for a value nothing
+renders.
+
+### `chat.typing.one` could not exist, and the catalog said so at the last moment
+
+The plan's key ends in `.one`. **`PluralKey` is DERIVED as `StripOne<MessageKey>`**, so a key
+ending in `.one` declares a plural family — `catalog.test.ts` then requires a matching `.other`
+and requires the Indonesian pair to be identical, and both failed. It was never a plural: the
+room shows one indicator at a time because beats execute serially (`C-R5`). It is
+`chat.typing.reader`.
+
+**Generalisation worth keeping: in this catalog a suffix is a TYPE, not a name.** `.one` means
+plural, and the next collision will be somebody writing `foo.other` for "the other thing".
+
+### `prose.test.ts`'s payload ceiling had to move, and it is the first time
+
+`MAX_BYTES` was 20,000 and `id` measured 21,161 across 376 keys. **v0.7.0 adds a whole screen**
+and 39 `chat.*` keys across three workstreams (F1's notice, F6's attachment copy, F4's room) —
+1,848 bytes, 8.7% of the catalog. Raised to 23,000 with the written reason that file demands,
+`MAX_VALUE` untouched, and the new headroom deliberately TIGHTER (8.7%) than the 21% it started
+with, so the next screen meets the same test and has to answer it in writing.
+
+### Five bounded fetches, one helper, and why the shape differs from the blog editor
+
+`MarkdownEditor` uses `signal: AbortSignal.timeout(X)` inline and `admin.blog.contract.test.ts`
+counts those. **These five must ALSO abort on unmount**, so they go through one `openRequest(ms)`
+that opens a controller, sets the timer, registers it for the unmount sweep and reports whether
+the abort was a TIMEOUT or a teardown — which `F4-12` needs, because a timeout is retried once
+and a teardown must never be. `chatSurface.test.ts` therefore counts `await fetch(` (5),
+`openRequest(` (5), `signal: req.signal` (5) and `new AbortController()` (**1**), plus the five
+bound constants by name.
+
+### `_chatfit.html`, and two things that cost an hour each
+
+**`/cards/*` CARRIES A YEAR OF `immutable`, AND THE HARNESSES LIVE THERE.** An edited harness
+reloads as the OLD harness, silently, with plausible numbers: the first run reported the widest
+bubble as exactly the container width at all four widths, because it was still executing the
+previous version. Load it as `/cards/_chatfit.html?v=$(date +%s)`. Every `public/cards/_*.html`
+in this repo is exposed to this and none of them says so.
+
+**THE WINDOWS-CHROME `--virtual-time-budget` PATH DOES NOT FINISH THIS HARNESS.** It is fine for
+`_slotfit.html`, whose page is server-rendered; `/chat` fetches its own messages, and eight
+iframes each doing two fetches under virtual time produced a partial table and no error.
+`tools/e2e/run.sh` — the real Chrome in WSL, over CDP — runs it in ~40 seconds. **That is loop
+5's browser doing loop 4's job and it is legitimate here**, because the measurement is an iframe
+of a known width and does not depend on the outer viewport, which is the one thing loop 5 cannot
+give you.
+
+**`_chatfit.html` IS GITIGNORED, and the plan's task table lists it as a committed file.** The
+repo convention wins: `.gitignore` carries `public/cards/_*.html` and **not one of the fourteen
+harnesses in that directory is tracked.** The plan's sentence is about the MATCHER — the path is
+excluded there, which is the only reason a harness loads at all — and it was read as being about
+git. Recording the divergence because the file will not be in a fresh checkout, and this section
+is where the next session will look for it.
+
+**Measured 2026-08-08, eight green.** Nothing overflows at 320/360/375/390 in either locale;
+every tap target is at or above 44 (Kirim 44, composer 48, `Balas` 44, the quote stub 50); the
+widest bubble is 238 at 320 (78% of the content box) and stops at 259.48 from 360 up, which is
+`34ch` binding. The quote stub holds one line at every width, including a stub of the
+400-character seeded bubble.
+
+### The reply-to chip, verified the only way it can be
+
+Loop 5, the *"does the UI agree with what it sends"* check that this repo's two worst bugs
+needed: the page's `fetch` patched from the harness, a bubble tapped, `Balas` tapped, a reply
+sent — and `reply_to_message_id` in the POST body is byte-identical to the `data-message-id` of
+the bubble whose text is rendered in the stub, with a `client_key` beside it. The chip measured
+44px in its shown state.
+
+**Whether tap-to-select reads as selecting TEXT under a thumb is loop 6 and nothing else can
+answer it.** If it reads wrong, the repair is to ADD swipe as an accelerator, never to replace
+the chip: the chip is the accessible path and the only one any loop here can see.
+
+### Two shapes that will look wrong and are not
+
+- **The `Balas` chip is always in the DOM and clipped until its bubble is selected**
+  (`clip-path: inset(50%)`, plus `:focus-visible`). Rendering it conditionally would make the
+  app's only reply affordance unreachable by keyboard and invisible to a screen reader. The
+  clipped state takes no space, so nothing reflows when it appears — and a document-wide
+  `querySelector` for it finds the FIRST bubble's clipped chip and reports a 2px tap target,
+  which is what the harness did before it learned to look inside the selected row.
+- **The bubble is a `<div role="button">`, not a `<button>`.** A `<button>` may not contain the
+  quote stub's `<button>` — nested interactive content is invalid HTML and Safari renders it
+  unpredictably. The keyboard path is the chip.
+
+### Still open when F4 landed
+
+- **Nothing on this surface has been seen on a phone.** The whole loop-6 list is in the plan's
+  §10.4: the reply gesture under a thumb, the composer with the keyboard up, `100dvh` against
+  Safari's collapsing toolbar, the safe-area insets in standalone, the badge in the second cookie
+  jar, whether `delayMs` reads as a person pausing, whether the avatar crops read as portraits at
+  28px on a 3× screen, and whether `overscroll-behavior: contain` actually holds on iOS.
+- **The room never renders the querent's nickname**, so the plan's *"24-character nickname"*
+  width case has nothing to measure. It is exercised as text inside a seeded bubble instead. If
+  F5 or F6 ever puts the nickname in the chrome, that case becomes real.
+- **`chat.error.rateLimit` names no number**, diverging from the plan's *"render the header's own
+  `retry-after`"*: the measured value on a tripped ceiling is 291 seconds and is **not** the
+  window length, so a rendered figure is honest about the header and wrong about the room. Every
+  other surface in this app says it the same way.
+- **The pill, the older-page button and the offline path are unexercised.** The seeded thread is
+  six messages, so `hasMore` is false and nothing paginates; `receive`'s not-at-the-bottom branch
+  needs a room taller than a screen.
+- **The badge and the rail ARE verified in a browser, and this is the one thing on the corner
+  that could not be checked any other way.** On `/history` after a re-mint: `aria-label` reads
+  *"Buka grup, 1 pesan baru"*, the dot renders, and the box measures **44×44 at top 10, right 62**
+  — which is `corner.inset + corner.size + corner.gap` resolved through `--corner-slot-1`, so the
+  one-way coupling in `tokens.ts` is not merely asserted in a test, it is the number on screen.
+  **`npm run db:seed` deletes and recreates the dev users**, so an existing session cookie names
+  a user id that no longer exists and every chat route answers as if the room were empty; re-mint
+  through `POST /api/auth/dev-session` after seeding or the badge reads zero for the wrong reason.
+
+---
+
+## F6 — attachments, the UI half (v0.7.0, 2026-08-08)
+
+**What landed:** the two `<AttachReadingLink>` mounts (`Draw.tsx`, `HistoryDetail.tsx`);
+`src/components/StagedAttachment.tsx` + stylesheet; `?attach=` resolution in
+`src/app/chat/page.tsx`; the staging, the posting and the log mount in `ChatRoom.tsx`;
+`attachments` on `GET /api/chat/messages`; `ChatAttachments` / `StagedReading` /
+`attachedIdsIn` / `attachmentsFrom` in `attachmentView.ts`; the `attachablePosted` half of
+the guard in `POST /api/chat/message`; two seeded fixtures in `npm run db:seed`;
+`src/components/attachSurface.test.ts` (18 assertions) and
+`src/lib/chat/attachment.integration.test.ts` (3); and the attachment half of
+`public/cards/_chatfit.html`.
+
+`b4e7acf` was the first half (tasks 1–5, the prompt block and the two renderers). The plan is
+`docs/plans/2026-08-07-chat-attachments.md`; its §16 records the divergences. What follows is
+what the plan could not know.
+
+### F4 LEFT THE SLOTS AND NOT THE WIRING, AND THAT IS THE ONE THING TO KNOW BEFORE READING THIS DIFF
+
+F6's plan §3.2 assigns the `/chat` half to **F4** — read `?attach=`, resolve it, stage it,
+post it, resolve every rendered bubble's attachment — and lists it again under *"Interfaces I
+need — From F4"*. **F4 shipped the two SLOTS and none of the wiring**: `ChatComposer`'s
+`staged?: ReactNode` and `ChatBubble`'s `attachment?: ReactNode`, both commented *"F6's"*, with
+`attachedReadingId: null` hardcoded in `submit`.
+
+So tasks 6–8 as written would have shipped **two buttons that navigate to a room which discards
+the attachment** — a feature that looks complete and does nothing. The scope was put to Miftah
+and the ruling was end to end, so this commit crosses into F4's `ChatRoom.tsx`,
+`ChatComposer.tsx` and `page.tsx` and F1's two chat routes. **The generalisation is worth more
+than the incident: a seam declared in two plans is owned by neither unless one of them names the
+file.** F4's plan named the slot; nobody's task list named the line that fills it.
+
+### Five decisions that are not the plan's
+
+- **`from` IS `'draw'`, NOT THE PLAN's `'reading'`.** F1 owns `events.ts`, folded
+  `chat.attachment_added` into `chat.message_sent.attached_from`, and spelled the union
+  `'history' | 'draw' | null` — with `POST /api/chat/message`'s zod enum matching. The plan's
+  word would have ridden the URL, failed the parse and **400'd every draw-screen attach**: wrong
+  on exactly one of the two surfaces, and the one a querent reaches most often. `attachSurface`
+  asserts the four spellings against each other.
+- **`chat.opened.from = 'attach'` IS THE PRESENCE OF `?attach=`, NOT A LITERAL `?from=attach`.**
+  One URL key, two features: `ChatButton` sends `from=button`, F6 sends `from=history|draw`
+  because that value is *also* `attached_from`. F4's client read `from` as a literal and would
+  have reported `'direct'` for every attach-initiated open — **the one entry point that prop
+  exists to distinguish, silently collapsed into the default.** Decided on the server now
+  (`entryOf`), and read from a REF in the room, because `chat.opened` fires after two awaited
+  fetches and by then the effect that tidies the URL has run.
+- **`attachments` IS A MAP ON THE REPLY, NOT A FIELD ON `ChatMessageDto`.**
+  `types.contract.test.ts` asserts `chat/types.ts` imports **exactly** `['@/data/types']`
+  (`[F1-14]`), so a preview field would have dragged `@/lib/history/types` into a leaf six
+  workstreams depend on. The map also stores one copy where a per-message field stores as many
+  as there are bubbles, which O3 (*the same reading may be attached twice*) makes real.
+- **THE ROUTE GUARD GAINED `ATTACHABLE_STATUSES`.** F1's existence check was ownership only;
+  D2 asked for `[F6-12]`'s server column. `status` and a SQL `hasBody` are now selected and the
+  predicate applied — `Boolean()` on the way out, `readingsForDay`'s rule, because `sql<boolean>`
+  is an assertion the driver is not obliged to honour. `body` itself is still not selected: this
+  handler refuses to log a driver error for the same reason a reading body must not be bound into
+  one.
+- **THE STAGED PROP IS READ ONCE AND NEVER SYNCED, WHICH IS THE v0.6.0 TRAP FROM THE OTHER
+  SIDE.** `router.replace('/chat')` re-renders the server component and hands `staged` back as
+  **null**; an effect syncing prop into state would therefore unstage the reading a moment after
+  staging it, with nothing on screen explaining why. Re-staging is not a case that exists —
+  every route into `?attach=` comes from another page, which unmounts the room.
+
+### The measurements
+
+**Loop 4 — `_chatfit.html`, ten green (2026-08-08).** Eight in the log plus two staged. The
+attachment card never overflows at 320/360/375/390 in either locale; the two-line clamp holds on
+both the question (at `MAX_QUESTION_LENGTH`) and the snippet (cut at 140). The card is 185.91 at
+320 and 233.39 at 390 in the log, and **295.13 staged**, which is the binding case because the
+composer is not bubble-capped. The language chip renders in exactly the runs where the reading's
+locale is not the viewer's and nowhere else — §7.1 measured rather than asserted. **`Kirim` is
+ENABLED with `draft 0`**, which is §3.3 in a browser: an attachment with no text is a legal move
+and a disabled button would be the release quietly refusing it.
+
+**The harness's own bug, worth recording:** `line-height` is `normal` on the clamped elements, so
+`parseFloat` gave `NaN` and the first run reported `qLines NaN` — **a value that fails every
+comparison silently, so the clamp check passed by never being true.** A note-shaped assertion
+that can never fire is worse than no assertion.
+
+**Loop 5 — real Chrome over CDP, and it answered the question it exists for.** On
+`/history/<id>` the control's href reads
+`/chat?attach=18d3d4a1-…&from=history` — the id from the page's own address bar. Clicking it
+lands on `/chat` with **the URL already tidied**, the card staged, and its three rendered card
+`alt`s (`The Tower, terbalik` / `The Hermit` / `The Lovers`) equal to the reading's own
+`reading_cards`. Then, with `window.fetch` patched to record and block so no run was minted:
+
+```json
+{"body":"","reply_to_message_id":null,
+ "attached_reading_id":"18d3d4a1-3e34-49ce-baf1-45b6882a8759",
+ "attached_from":"history","client_key":"d6251fac-…"}
+```
+
+**The id the page rendered is the id the request carried.** That is the shape of the two worst
+bugs in this repo — *the page looked correct and the outgoing request was wrong* — and it is the
+only loop that can see it. `events` then held
+`chat.opened {"from":"attach","unread":0,"had_pending_run":false}`.
+
+**Task 9 — `ATTACHMENT_BODY_MAX_CHARS`, measured against the dev database only.** 18 seeded
+bodies max at 103 characters (three canned one-liners; they bound nothing), and the corpus holds
+**one genuine model output**: a real `glm-4.6` English `spread3`, `en-v1.a1ad1a72`, four
+paragraphs, **1044 characters — 65% of the 1600 cap**, and exactly the case §5.5 worries about.
+A sample of one CONFIRMS the arithmetic rather than replacing it. The number and its date are in
+the constant's header; re-run against the DIRECT Neon string when a session has it.
+
+### The event fold, checked rather than assumed (task 11)
+
+F1 transcribed `attached_from` and kept `reading_id` on F6's stated condition. Three declared
+props did not survive as props and **none of them lost information**: `has_text` is
+`length > 0`, already on the same event; `reading_age_hours` and `locale_match` are a join from
+`reading_id` to `readings`, which is possible only because that id survived. **The attachment
+rate's denominator is still readings finished, not messages sent**, which was the whole condition.
+
+### Still open when F6 landed
+
+- **Nothing here has been seen on a phone (loop 6).** The bubble's legibility at 375 with three
+  44×66 thumbs, whether the whole-card tap target reads as tappable next to a text row that is
+  not, and the staged card above the composer **with the keyboard up** — the geometry WSL cannot
+  answer, now in its third instance alongside `/account`'s answer sheet and the composer itself.
+- **The draw-screen control is unexercised end to end**, because reaching it costs a live
+  reading. Its condition is asserted at source and it is the same component `/history/[id]`
+  mounts; what is unmeasured is how it reads under a finished spread on a real screen.
+- **`GET /api/chat/messages` resolves one reading per distinct attachment, in parallel**, bounded
+  only by the page limit (50). Nearly every page makes zero such queries. **If it ever becomes
+  the slow part of that route the repair is a BATCHED read in `queries/history.ts` — never a cap
+  on how many attachments a page will resolve**, because a cap renders `chat.attachment.gone`
+  under a reading that is right there in the table.
+- **`src/lib/admin/userList.integration.test.ts` fails on `main` as well as here** — *"expected
+  null to be 1"* on `adminUserListPage`'s `calls`. Verified pre-existing by stashing this branch's
+  changes and re-running. It is A5's, not F6's, and it is the only red in 558 integration tests.
+
+---
+
+## F5 — proactivity (v0.7.0, 2026-08-08)
+
+**Three sources, one pure predicate, six materials, and no second pipeline.** `C-D7` is the
+design and F5 built triggers rather than a delivery path: a proactive run is a `chat_runs` row
+nobody posted a message for, and the badge, the lease, the validation and the erasure cascade
+were all already there.
+
+`src/lib/chat/proactive/{eligibility,material,notes.{ts,id.ts,en.ts},detect,mint,brief,supersede,
+onReading,onTick,fixtures}.ts`, `src/app/api/cron/nudge/route.ts`, `vercel.json`, and four edits
+in other workstreams' files (below).
+
+### What was built, in one paragraph each
+
+**`eligibility.ts` — PURE, a LEAF, injected clock.** Eight gates in a fixed order, `no_material`
+last. `tally.ts`'s ruling is the whole justification — *a heuristic may fail a build; it may not
+fail a person* — and a false positive here is a reader messaging somebody at a moment that reads
+as tone-deaf, with no undo. Every branch is enumerated in `npm test` at its boundary: the run at
+exactly `minGap`, the run on the day the counter rolls over, the run inside an erasure grace.
+
+**`material.ts` + the two note tables.** Six kinds, closed, `AssertNever` at the switch. One
+material per run, never a bundle — *a friend messages you about one thing.* The note **names a
+subject and is never a sentence for a reader to say**, and `material.test.ts` greps both tables
+for imperative openers as the cheap tell.
+
+**`detect.ts` — six detectors, handle first, first hit wins.** `firstPassingWindow`'s laziness
+argument, applied one workstream over: the common case is M1 or nothing, so the common cost is one
+indexed query.
+
+**`mint.ts` — the probe, the counter and the transaction.** The predicate runs twice on purpose
+(§4.6) and the day's slot is claimed by one conditional upsert.
+
+**`brief.ts` — the seam with F2.** `chat_runs.material_key` is rehydrated at plan time into the one
+`BAHAN:` line `assemble.ts` renders.
+
+**`/api/cron/nudge` — reap, mint, warm, in that order.**
+
+### The five decisions worth the ink
+
+**1. The counter and the insert are ONE TRANSACTION, and the rollback is the refund `[F5-13]`
+refuses to write by hand.** *"A limiter that refunds is a limiter with a race."* So there is no
+refund path; there is a transaction. The conditional `UPDATE … WHERE proactive_count_today < :cap`
+claims the day's slot, the insert either succeeds or loses to `chat_runs_user_material_uq`, and a
+loss rolls the whole thing back. **The alternative — insert first, then bump — leaves a run minted
+over the cap under the same race**, and the cap is the only thing between the querent and twelve
+unprompted bubbles. The counter is never spent on a run that does not exist and nothing anywhere
+decrements.
+
+**2. The bump is an UPSERT, not an UPDATE, and that is not hygiene.** The first proactive run of a
+querent's life is usually the one minted by their first reading — **before they have ever opened
+the room**, so there is no `chat_threads` row. A bare `UPDATE` matches zero rows there and is
+indistinguishable from a spent cap: **the feature would never start for anybody**, and the symptom
+would be "proactivity doesn't work" with nothing in any log. `mint.integration.test.ts` names the
+case.
+
+**3. A USED MATERIAL KEY FALLS THROUGH TO THE NEXT DETECTOR RATHER THAN ENDING THE RUN.** §4.5
+specifies the unique index as the arbiter and calls a violation *"a normal outcome logged as
+`skipped/duplicate`"* — true at the insert, and **wrong as the only mechanism**, because
+`firstPassingWindow` returns the same recurring pair for days. A run refused as a duplicate would
+have silenced M3 and M6 for the whole of that period. So `detect.ts` probes the key per candidate
+(one index lookup on `chat_runs_user_material_uq`) and continues down the ladder; the constraint
+still settles the race. The integration test is named for the behaviour, not the mechanism.
+
+**4. `occasion:return` is keyed by the DAY where the other two occasions are keyed by the YEAR.**
+§4.5 wrote `occasion:<occasion>:<YYYY>` for all three. A birthday happens once a year and a
+greeting for it should too; *coming back* happens whenever somebody comes back, and a once-a-year
+key **silently swallows the second return** — which is the material with the strongest claim to
+existing at all, since it is the only one that fires for a querent with no readings, no messages
+and no recent activity. The gap gate and the daily cap are what bound it.
+
+**5. M6's deletion guard is stronger than §4.1's sketch and cheaper.** The plan proposed comparing
+`answerPresence` against what the Lotus's traits imply. What shipped asks whether **the most
+recently touched onboarding answer is still present** — exact for the case that matters (the edit
+that rebuilt the Lotus was an addition, not a clear), one indexed read, and **it decrypts nothing**,
+which is what keeps `C-D8` condition 1 true. `C-D8` condition 5's failure — *a reader who asks
+about the thing you refused to answer* — arrives through the back door otherwise.
+
+### The four edits outside `proactive/**`, each at a seam somebody left open
+
+| File | Owner | Why it was not a violation |
+|---|---|---|
+| `src/lib/chat/run.ts` (`proactiveTick`) | F1 | F1 shipped it returning `null` *"so the route is complete and inert until F5 lands"*, in those words. **The import is dynamic**, and not for bundling: `proactive/**` imports `run.ts` back for `mintRun` and `advance`, and a static pair is a cycle whose failure mode is one module evaluating with half its exports undefined, at runtime, in an `after()`, on the app's most-called endpoint. |
+| `src/lib/chat/direct/prompt.ts` (`material:`) | F2 | F2 wrote *"When F5 lands, `PlanInput.material` is the input and this derivation goes"*. One line. **`planFallback`'s `hasMaterial` derivation was LEFT IN PLACE** against that sentence: it now only fires when the material line could not be rebuilt, and deleting it would turn a cold Neon compute into a silent room. |
+| `src/app/api/reading/route.ts` | W4 | One import, one awaited call, **last** inside the existing `defer()`. §8.3's three reasons, in order of how hard they bind. |
+| `src/app/api/chat/message/route.ts` | F1 | Seam S5's mechanism B. See below — it is bigger than the duplicate it was written for. |
+
+### The supersede is not really about the duplicate
+
+§9's rule is *"if the querent attaches reading X themselves, the `reading_completed` run for X does
+not fire"*, and the stated cost of getting it wrong is two readers talking over each other about
+one object. **The real cost is silence**, and it was found by reading `mintRun`: it refuses while a
+live run exists — *one room, one conversation at a time*. So without `supersedeReadingRun` the
+attach would store the querent's bubble and mint **nothing**: they post a reading into the room and
+three readers say nothing about it. The call therefore has to be **inside the attach transaction and
+before the mint**, which is where §9.4 put it for the smaller reason.
+
+### The cold open, and how S-new-2 was closed
+
+`[F5-6]`: the dot is lit by a stored bubble and never by a `pending` run. A run minted by a reading
+or a tick has no bubbles, so **something has to advance it or sources 1 and 2 are invisible to
+anyone who does not open `/chat` voluntarily** — the whole population this feature exists for.
+
+§12 offered two resolutions and **neither had been taken when F5 arrived**: F4's `ChatButton` reads
+only `unread` off the state response and fires nothing. So the tick took it — at most **one step of
+one open run, per tick** — and §12's stated blocker for that option was already gone: it objected
+that `/api/chat/state` had `maxDuration: default`, *"ten seconds on Hobby"*, and **F1 declared 30**
+under `[R5]`. The work runs after the response has flushed, so a ~6s beat has the budget; the cost
+is bounded exactly as §12 enumerates (only while a run is open, one step per tick, `deferred` so the
+soft ceiling sheds it before any reading).
+
+**The warm fires on `minted || reason === 'open_run'`**, which reads the *pendingness* off a refusal
+we already have rather than paying for a second query. Every other refusal means there is no run at
+all, and advancing would be one `claimRun` round trip to be told `idle` on every page view in the
+app.
+
+### `chat.proactive_skipped` does not fire on every evaluation
+
+F1's closed prop union has six reasons and F5 maps eight refusals onto it. `erased` and
+`never_opened` have no member and are not emitted — they are states rather than events. `open_run`
+and `gap` **are** emitted, but **only from the cron**: they refuse the overwhelming majority of
+ticks, and firing on them from a per-page-view source would put an `events` row on every page view
+in the app against a 180-day TTL on Neon free's 0.5 GB. That is v0.4.0's fold-by-dropping argument,
+and routing them through the once-a-day job is what keeps `too_soon` and `run_in_flight` from
+shipping as two dead literals of somebody else's union.
+
+**And it is written with `flushEvents` directly, never `track()`.** Two of the three entry points
+have no request scope at all — the cron has no request, and an `after()` callback is outside the
+ALS store `withAnalytics` created — so `track()` would take its fallback path and call `after()`
+from inside an `after()`. **That is exactly how every streamed translation lost its event, silently,
+for as long as V2 had shipped.** One writer, one path, no scope to be inside of.
+
+### Measured: the first two live proactive runs
+
+`npm run smoke -- --chat --proactive --locale id`, glm-4.6, 2026-08-08. **Six runs, one per
+material, director and voices both live.**
+
+**Run 1 (first pass, before the note table was calibrated): three of six runs ignored the material
+entirely** and wrote from the transcript instead — `reading`, `recurring` and `lotus`. `occasion`
+and `unanswered` landed cleanly (*"nah iya, tapi hari ini spesial kan siap rayakan nggak"*).
+
+**Run 2, after one change to the note table:** every Indonesian note that names something NEW now
+opens `hal baru sejak ruangan ini terakhir bicara: …`, which is a fact rather than an instruction
+and positions the material against the transcript — the exact confusion. **The `reading` run's
+angle then named the cards** (*"Moon dan Tower artinya dia tahu tapi tetap menghindar"*). `occasion`
+produced *"selamat ulang tahun Mif, untuk hari ini urusan kerjaan dilarang masuk yaa"*.
+
+**Shortness across both runs was healthy**: 10–11 bubbles, min 2 words, mean 9.7–10.5, max 24
+against a 24 ceiling (Margaret 31). No tally, no empty opener, no bare greeting.
+
+### Still open when F5 landed
+
+- **THE MATERIAL REACHES THE VOICE ONLY THROUGH THE DIRECTOR'S `angle`, AND THE DIRECTOR'S SYSTEM
+  PROMPT DID NOT MENTION `BAHAN:`.** Recorded here as F5 left it, and **CLOSED the same day** by
+  the F2 amendment in the section below. F5 could not close it: roadmap §7 forbids this workstream
+  from touching the director's prompt, so what F5 shipped was the measurement and the diagnosis.
+- **One plan in twelve came back `unparseable`** — glm-4.6 emitted a duplicate `angle` key in one
+  beat. `checkPlan` refused it and production would have fallen back to one beat; the smoke run
+  fails loudly on it, which is F2's own rule (*any fallback rate is a prompt problem, not a
+  validator problem*). One sample; not re-run.
+- **Nothing here has been seen over days.** `[F5-Q2]`'s cap of 2 and `[F5-Q1]`'s gap of 3 hours are
+  guesses with arguments, labelled as such, and the only instrument that can move either is
+  `C-N2f`'s proactive reply rate over weeks on a real phone. The cron's 19:00 WIB is the same shape.
+- **`NUDGE_MAX_USERS = 8` has a scale ceiling of roughly eight querents a night**, and it becomes a
+  problem silently. The successor is named rather than invented: the cron mints only and a queue
+  drains it, v0.8.0.
+- **`--chat --proactive` runs one locale by default and the English six have not been read.** The
+  reason differs from `--all`'s: the risk here is the material rather than the second locale, and
+  twelve unprompted runs is more prose than anybody finishes in one sitting — **a gate nobody
+  finishes reading is a gate nobody passes.**
+- **The blind read prints all six runs as one stream.** Guessing who is who works; guessing which
+  run was which material is easier than it should be from the ordering. A per-run separator inside
+  the blind block would fix it and would also make the material key readable against it.
+
+---
+
+## The `BAHAN` rule — an F2 amendment from F5's measurement (v0.7.0, 2026-08-08)
+
+**A line nothing in the rules referred to.** `assemble.ts` has rendered `BAHAN:` / `MATERIAL:`
+above the window since F2, and `system.{id,en}.ts`'s ten rules named `KECOCOKAN`,
+`MENUNGGU JAWABAN`, `[belum dijawab]` and `BAHASA TERAKHIR` — **and never `PEMICU` or `BAHAN`.**
+For a `user_message` run that costs nothing: the newest line in the window obviously *is* the
+trigger. For a proactive run it is the whole feature, because the newest line in the window is
+hours or days old and **the reason the room was woken is not in the window at all.**
+
+### What was measured, and why it needed three runs to see
+
+Six live proactive fixtures per run, glm-4.6, `npm run smoke -- --chat --proactive --locale id`.
+
+| Run | Change under test | Runs visibly about their own material |
+|---|---|---|
+| 1 | F5 as first written | **3 of 6** — `reading`, `recurring` and `lotus` planned from the transcript |
+| 2 | the note table calibrated (`hal baru sejak ruangan ini terakhir bicara: …`) | **4 of 6** — the `reading` run's ANGLE named the cards; its prose still did not |
+| 3 | + rule 11 and a third worked example | **5 of 6**, and the material now reaches the BUBBLES |
+
+**Run 3's evidence, in the prose rather than in the angles**, which is the only place it counts:
+`occasion` had **both** beats greet the birthday where run 2 had one; `reading` produced *"The
+Star-nya muncul berarti dia tahu kok kalau ditunda malah gak sehat"*; `lotus` produced *"karena
+akhirnya kamu berhenti diam"*, which is the Lotus summary said back in Margaret's voice; `orphan`
+correctly stayed about the transcript, **because for that material the transcript IS the
+material.** `recurring` improved to using the dominance word in its angle and still named no card
+in the prose — the one of six that did not fully land.
+
+### The three parts of the repair, and why each is shaped as it is
+
+**1. A THIRD WORKED EXAMPLE, not a longer rule.** This file's own header already carries the
+lesson twice — *"THE INDEX RULE NEEDS A WORKED EXAMPLE, NOT A DEFINITION"*, from the blog editor's
+`at:` bug, where an accurate description read backwards and three live runs after `[0] → at:0`
+produced zero rejections. So the proactive shape is **shown**: a header with `PEMICU` and `BAHAN`,
+a window whose newest line is a day old, and a plan in which **no beat replies to it and both
+`reply` fields are null.** `system.test.ts` asserts that third example parses, survives `checkPlan`
+against its own printed window with zero repairs, and **quotes nothing** — a `reply` pointing into
+that stale window would teach the exact behaviour rule 11 exists to stop, with a worked example's
+authority.
+
+**2. Rule 11, in four bullets**, each of which fails differently if deleted: the material is what
+the run is about; **do not answer the stale line as though it had just arrived** (the behaviour
+that was actually wrong); `reply` is null unless the material names a message; and `beats: []` is
+**not** the answer here, which is `[F5-7]` — nobody spoke, so there is nothing to decline to
+answer, and `[F5-13]`'s counter already spent the querent's day at the mint.
+
+**3. RULES ARE REFERRED TO BY NAME, NEVER BY NUMBER.** The first draft said *"aturan 1–10 berlaku
+seperti biasa"* and *"Aturan 6 soal diam"*, and `[F2-9]`'s digit test caught both — every digit in
+the system half must be an address, an interpolated cap or a rule number at the start of its own
+line. **The right fix was the prose, not the fence**: the existing rules already say *"Baris
+KECOCOKAN"* and *"Baris MENUNGGU JAWABAN"* rather than citing numbers, so rule 11 now says
+`Aturan DIAM ITU BOLEH` and `seluruh aturan di atas`. Widening the stripper would have bought one
+sentence at the cost of the guarantee.
+
+### What it cost, stated because the director runs on every run
+
+**The plan prompt went from ~2,700 to ~3,500 input tokens, about +30%.** `[F2-10]` refuses to
+import the persona blocks partly because *"doubling the plan prompt for a routing decision spends
+the one thing this release is actually short of"* — +30% is well inside that and was spent on the
+one thing the director could not otherwise know, but it is the number to watch if a fourth example
+is ever proposed.
+
+**And bubbles got longer.** Mean words per bubble moved 9.7 → 14.8 across the same eleven-bubble
+run, with one Margaret bubble at 26 against the base ceiling of 24 (legal — her multiplier allows
+31). Nothing failed and the direction is explicable: a run with real material has more to be about
+than a run improvising off an old transcript. **If the mean keeps climbing, the instrument is
+`CHAT_LENGTH_BUDGET` and not this prompt.**
+
+### Closing the four open items, and the one nobody had noticed (2026-08-08, same day)
+
+**THE FIRST THING FOUND WAS THAT EVERY MEASUREMENT ABOVE WAS ON THE WRONG MODEL.** `C-D4` puts
+the chat — director *and* voices — on `CHAT_MODEL`, `glm-5.2`, *"the best model we have"*, and
+unset **silently falls back to `LLM_MODEL`.** `.env.example` sets it; a `.env.local` written before
+v0.7.0 does not. The runner printed `chat model=glm-4.6 (CHAT_MODEL=unset)` at the top of all three
+runs and it was read past all three times.
+
+On glm-4.6, with everything else identical, **three defects appeared that do not exist on
+glm-5.2**:
+
+- a voice emitted **a whole transcript inside one bubble** — *"Mifta: jujur aja, aku cuma takut
+  ditilang mobilnya [REDACTED]: wkwk"* — a fake querent line and another reader's name, in a room
+  where every stored bubble becomes context for the next turn;
+- **two readers produced the same sentence verbatim** in one blind read;
+- and it invented nouns (*"soal ambulans"*) more often.
+
+**So `runProactive` now WARNS when `CHAT_MODEL` is unset, and the warning names those three
+defects.** The header line was faithful and useless; a warning that states the consequence is the
+only kind anybody reads. It is not fatal, because comparing the two models on this instrument is a
+legitimate thing to want.
+
+**`[F5-7]` / seam S-new-3 is BUILT, and it fired on its first live run.** `PlanCheckContext` gains
+a **required** `trigger` — required rather than defaulted to `'user_message'`, because a default
+makes the lax reading the one a caller gets by forgetting, and the thing forgotten is a rule about
+a run with nobody watching. `PlanRefusal` gains `silence_on_proactive`, checked **after**
+`no_usable_beat` so the sharper reason wins. Four call sites now each say what kind of run they
+hold.
+
+Measured immediately: on glm-5.2 the `unanswered` fixture answered `{"beats":[]}` — **and that
+reading was coherent.** The last thing said in the room was a reader's question, the querent had
+not replied, so there was nothing to reply to. The refusal caught it and `planFallback` would have
+covered it in production, but **a run that needs the fallback every time is a prompt that is not
+landing.** The cause was F5's own note, which stated a state and not a move.
+
+**So the `unanswered` note gained its direction, which is what the `orphan` note already had and
+for the same reason.** `C-N1d` says *a reader who asks and then never refers to the answer is worse
+than one who never asked*, and §7.3's inverse says *a reader who chases is worse than both* — so
+the note now says *"bahannya untuk mendekati pertanyaan itu dari sisi lain, bukan untuk menagih
+jawabannya"*. On the next run that fixture produced *"apa yang bikin susah, takut salah kata atau
+cuma gak enak udah lama balesnya?"* — the question approached from another side, which is exactly
+the move. **Six of six clean, both locales.**
+
+**The English six have now been read**, for the first time. Rule 11 and the third example land:
+`occasion` produced *"Mif is today actually your birthday or am I making that up"* and Margaret
+braided the birthday to the deposit the room had been discussing; `unanswered` came at the refused
+freelance job from the other side. All clean.
+
+### Still open
+
+- **`recurring` IS STILL THE ONE OF SIX THAT DOES NOT LAND, AND IT HAS NOW BEEN CHASED TWICE.**
+  The note names the top card (and `top` was dropped from `facts` so the noun appears exactly
+  once, which is the `reading` note's own reasoning inverted for a material whose subject *is* the
+  card). It worked on some runs — *"The Moon terus datang, ketakutan yang bersembunyi di balik
+  kelegaan"* — and on others the director's angle came back empty and the prose went back to the
+  transcript. **Four measured runs across two locales, no stable answer.** F2's own notes record
+  the rule for exactly this: *"Two prompt pushes were spent chasing it before the join was built;
+  the second cost the cast mix and was reverted. The instrument is the blind read."* A third push
+  would be chasing variance, so it stops here and the number to move — if anything — is the
+  fixture's top pair, to find out whether the subject is simply weaker than a boss conversation.
+- **THE VOICES STILL INVENT AN OCCASIONAL SPECIFIC, AND THE CONTRACT ALREADY FORBIDS IT.**
+  `base.{id,en}.ts` says in as many words: *"If something is not written in `<penanya>`,
+  `<jawaban>`, `<riwayat>` or `<obrolan>`, you do not know it. Do not guess, do not invent."* On
+  glm-5.2 the rate fell but did not reach zero: *"How many days since you last talked to your
+  mum"* and *"that first year on your own"* both name a fact no fixture supplied. **This is not
+  shape-testable and must not be faked with a test that pretends to be** — `validateTurn` refuses
+  shape, not truth, which is `validateInsight`'s ruling and `F5-Q4`'s. Lowering a rate needs many
+  runs and a corpus, not an edit. **A reader who invents your mother is worse than one who says
+  nothing**, so this is the release's sharpest remaining naturalness risk and it is loop 6's to
+  judge.
+- **Margaret runs long on glm-5.2**: two English bubbles at 29 words against a base ceiling of 24
+  and her own of 31. Legal, unfailed, and the same direction the material change caused. If the
+  mean keeps climbing the lever is `CHAT_LENGTH_BUDGET`.
+- **One plan in eighteen came back `unparseable`** (a duplicate `angle` key), on glm-4.6 only.
+
+---
+
+## F7 — the operator's view (v0.7.0, 2026-08-08)
+
+**What landed:** `/admin/chat` with nine panels and its `Obrolan` tab;
+`src/lib/db/queries/admin/chat.ts` (ten query functions plus `chatRollup`);
+`src/app/admin/chat/{page,series,slots}`; the nine-panel `Insight` registry (`PANEL_IDS`
+13 → 22); `src/lib/admin/ops.ts`; `peakWindow5h`'s optional `ops` filter; the `Obrolan`
+section on `/admin/users/[id]`; `[R8]`'s negative control; `docs/analytics-queries.md`
+§19; and seven prose corrections to a rule that was stale in four places at once.
+
+`docs/plans/2026-08-07-chat-admin.md` is the plan. **Three of its assertions were wrong
+and the measurements are below** — that is the part of this section worth reading.
+
+### The plan said a histogram is a `StackedBar`. It is not, and only a screenshot showed it
+
+`[F7-10]` reads, in as many words: *"a histogram is a `StackedBar` with one segment per
+row, and the identity is carried by the row label, not by colour."* It was written
+against `StackedBar`'s API and never against its behaviour.
+
+**`stackSegments` normalises every row to 100% of its OWN total.** A row with one
+segment is therefore **always full width**, whatever its value. Rendered at 1440 signed
+in as an admin:
+
+- `chat.beats` — `0 beat` at full width with `1`, beside **five empty outlines** reading
+  `0`. The distribution, which is the whole panel, encoded nothing.
+- `chat.intent` — **six identical empty outlines.** Same.
+- `chat.cast` — thessaly, margaret and adrian all full width, so the *composition* inside
+  each bar was right and their **lengths were mutually uncomparable.**
+
+**This property was already documented in this repository.** `/admin/page.tsx`'s TTFT
+card says it about durations — *"three bars of duration would all fill the width and be
+mutually uncomparable"* — and F7's plan reached the opposite conclusion about the same
+component eight days later. **The lesson is not "read `StackedBar` more carefully"; it
+is that a plan cannot verify a rendering claim and only loop 3 can.**
+
+**The fix is `InlineBars`**, the page-local table furniture `/admin/tokens` already uses
+for the thirteen ops: a length encoding against the row MAXIMUM, in one sequential hue,
+spending no categorical slot. That is a better fit than the plan's design rather than a
+concession — `[F7-16]` forbids a new chart primitive and A-D9 forbids a fifth hue, and a
+bar whose colour carries nothing is legal on a nominal category where a value-ramp is
+not. **A second local copy** rather than a promotion, because the existing copy's own
+header refuses promotion: *"a primitive would invite somebody to use it as a bar chart."*
+
+**The emphasis slots went with it.** `0 beat`, `abandoned` and `ask` were each to wear a
+second colour; the emphasis now lives in the `StatTile` beside each panel, which is a
+number rather than a hue somebody has to decode.
+
+Two more the same screenshot caught, neither visible in any test:
+
+- **The tiles sat flush against the bars.** `ChartFrame` gives its children no
+  separation — correct after a `PlotFrame`, whose axis brings its own padding, and wrong
+  after `.inlineRows`. `.panelTiles` is a class rather than a margin on `KpiRow`, because
+  `KpiRow` is used in three other places where the spacing above it is already right.
+- **The two quota meters came out different widths**, because the first draft reused
+  `.lead` — `max-content 1fr`, right for a hero beside a meter and **wrong for a meter
+  beside a meter on a panel built for comparison.** `.meterPair` is `1fr 1fr`.
+
+### Loop 4 said the page fits, and the only wide element is inside its own scroller
+
+`public/cards/_adminchatfit.html` (gitignored, `_slotfit.html`'s pattern). An iframe IS a
+fixed-width container and it is same-origin, so the parent reads the real
+`scrollWidth`/`clientWidth` of the rendered document inside it. Measured:
+
+| width | body scrollWidth | clientWidth | verdict |
+|---|---|---|---|
+| 320 | 320 | 320 | fits |
+| 360 | 360 | 360 | fits |
+| 375 | 375 | 375 | fits |
+| 390 | 385 | 385 | fits |
+
+The widest element at every width is a `TableView` `<table>` at **627px**, inside its own
+`overflow-x: auto` scroller — which is the rule, not a violation.
+
+### Seam S10 inverted: there is no cost-per-reading arithmetic to fix
+
+`C-D5` gives F7 *"fixing the cost-per-reading denominator everywhere it already exists"*.
+**A sweep of `src/app/admin/**`, `src/lib/db/queries/admin/**`, `src/lib/analytics/**`,
+`src/lib/llm/**` and `docs/analytics-queries.md` for any expression dividing a cost, a
+token count or a call count by a reading count returns NOTHING.** What exists is:
+
+1. the **rule** about such a denominator, stated in prose in four places — **three of them
+   already stale.** `OP_ORDER`'s header said *"The ten"* over an eleven-member array;
+   `docs/analytics-queries.md:566` said ten and named only `insight`, missing
+   `blog_format` which landed the same day; `copy.ts` said *"Sepuluh op"*.
+2. **fourteen aggregation sites that sum across every `LLMOp` with no predicate**, almost
+   all of them correct unfiltered — a quota series counts every call that charged the
+   window, and the per-op table exists to show every op.
+3. **exactly two sites in the repo that filter on `op` at all**, both `op = 'reading'` in
+   the A-D17 drift check, both already correct.
+
+So the honest reading is **fix the rule, not an arithmetic that was never written.**
+Inventing a cost-per-reading tile in order to have something to correct would have forced
+`op` into `PriceableRow`, into `tokensByBucketAndModel`'s SQL and into `userCostLeague`'s
+SQL — three edits to A3's files, breaking six test files — to render a number nobody asked
+for.
+
+**`src/lib/admin/ops.ts` is the rule's one machine-checked home.** `NON_READING_OPS`, a
+derived `READING_OPS`, a hand-written literal twin and an `AssertNever` that makes a
+fourteenth op a compile error until somebody decides which side it is on. `OP_ORDER`'s own
+trade — a hand-written list plus a mechanical check — because `Array.prototype.filter` has
+no type-level result.
+
+**The highest-risk site turned out to be a PROMPT, not an arithmetic.** `kpiFacts` puts
+`OVERVIEW.kpi.spend` and `OVERVIEW.kpi.readings` in ONE `headline` list, and
+`INSIGHT_SYSTEM`'s rule 1 only forbids citing a number that is **not** in the block —
+which a quotient of two numbers that are is not. Three `notes` additions close it, and
+`opFacts` names `panels.ts:653`'s **rejected** exclusion at the site so the diff does not
+read as a reversal of it.
+
+### `[R8]`'s negative control could not be written the way the plan specified
+
+The plan asked for *"a `chat_turn` row **with** a `reading_id`, asserting `cost.calls` is
+unchanged — which fails today"*. The reconciliation then ruled the other half of the
+seam: **`reading_id` is NULL at F1's call site**, and `readingCostsFor` keeps no `op`
+predicate. So that assertion is unwritable — there is nothing in the query to make it
+true.
+
+It ships as **two halves of one fact**: a chat row as F1 actually writes it is not folded,
+and the same row **with** a `reading_id` **is** — 900 + 3100 input tokens under a label
+that says *Biaya generasi*. The second half is asserted rather than left implied because a
+future session reading `[R8]` and wondering *"why not just add an `op` predicate"* needs to
+see what the predicate's absence costs: adding one changes what that label means for every
+reading in history, and `costLabel` in `users/copy.ts` stops being true.
+
+### `CHAT_ROLLUP_QUERIES` is 13, and the first guess was 11
+
+Counted by hand as *"nine functions"*, asserted by a counting `Proxy`, and wrong twice:
+`runHealth` issues two statements and `peakWindow5h` is called twice. Then `callsByOp`
+joined for the fleet-share denominator. **The count is asserted precisely because a hand
+count is what this was.**
+
+### Three panels that are not what the plan asked for, and why
+
+- **The reply rate has no per-day line.** A daily rate over a handful of runs is the *"big
+  percentage over a small base"* `INSIGHT_SYSTEM` already lists as **not** a problem; a
+  chart of it would manufacture the finding the prompt forbids.
+- **The dropped-beat tile clamps at zero.** `[R19]` grants one beat two bubbles, so
+  `beats_planned - bubbles` is a SIGNED quantity. *"Beat dijatuhkan: −3"* reads as a broken
+  dashboard rather than as a reader who had two things to say. The raw value survives into
+  the facts block, which says which side of zero it fell on. **This was not hypothetical:**
+  the documented §19b query returned `difference = -4` on its very first run against the
+  dev database.
+- **`chat.latency`'s range-wide row is Postgres's**, from a `union all`, never the mean of
+  the daily figures. `ttftOverall`'s rule in a second place: the mean of thirty p95s is not
+  a p95.
+
+### Still open when F7 landed
+
+- **`/admin/chat` has been rendered but never *used*.** Nine panels of mostly-empty dev
+  data, read once. The reply rate needs a week of production traffic before it says
+  anything, and F7's own plan names the reading of it as *"not a loop, and the one that
+  decides the release"*.
+- **The insight box on these nine panels has never been pressed against real numbers.**
+  `[F7-9]` argues that seven of the nine are structurally insulated from the press's own
+  `llm_calls` row and that only `chat.quota` moves. **That is an argument, not a
+  measurement**, and A7's equivalent claim was wrong until somebody pressed the button.
+- **`chatSummaryForAdmin` runs five statements outside `CHAT_ROLLUP_QUERIES`' assertion**,
+  on a page that already issues fourteen. Nothing measures `/admin/users/[id]`'s total
+  round-trip count.
+- **The `Obrolan` tab's position is a guess** (F7-Q7, ruled by F7 rather than by Miftah):
+  third, on the argument that `/admin`, `/admin/tokens` and `/admin/chat` are the three
+  fleet-metric pages and `/admin/users`, `/admin/blog` the two per-subject ones.
+
+### The release gate, run four times on 2026-08-09 — and what it moved
+
+`npm run smoke -- --chat` is `C-N1f`'s instrument and §10.2's gate. F3's passing blind
+read predates F2's rewrite of the director, F2's `BAHAN` amendment and the whole of F5, so
+the assembly it described no longer existed. Three fresh runs plus a confirmation:
+
+**The three readers are separable and the numbers say so.** Sentence length
+`thessaly=5.2  margaret=18.3  adrian=19.0` in `id` (the 1.5× ratio holds), pairwise
+Jaccard overlap **0.026 / 0.098 / 0.156**, `push_back` and `agree` landing between readers,
+and the ending probe correctly producing **no beats at all** (`C-R6`) in every run.
+
+**`CHAT_LENGTH_BUDGET.en.maxWords` MOVED 24 → 27, AND THAT IS THE ONE NUMBER THAT
+CHANGED.** The evidence is Margaret and only Margaret: her English bubbles came in at
+**25, 26, 27, 29, 31, 31 against a resolved ceiling of 31**, and **two of the three runs
+LOST a bubble** to `too_long` — refused twice, dropped, silence. Both casualties were
+reader-to-reader beats, which is `C-N1a`'s most distinctive mechanic. The `id` half never
+failed and topped out at 21. `maxChars` did **not** move: her longest stored English bubble
+was 164 characters against 312, so the refusals were on words and moving both would have
+been a change with evidence for half of it. **The previous section of this file predicted
+exactly this** — *"Margaret runs long on glm-5.2… if the mean keeps climbing the lever is
+`CHAT_LENGTH_BUDGET`"* — which is what a recorded prediction is for.
+
+**THE CONFIRMATION RUN IS THE MEASUREMENT THAT MATTERS: no `too_long` at all**, and
+Margaret's English came in at **31, 32 and 34 against her new 35** — three bubbles that
+would each have been refused and dropped under the old 31, delivered instead. Sentence
+length `thessaly=6.8  margaret=32.3  adrian=22.0`, overlap 0.017 / 0.029 / 0.076: **the
+readers did not converge when the ceiling moved**, which was the risk of raising it.
+
+**AND `budget.test.ts` RECORDED THAT THIS IS THE SECOND ROUND, WHICH CHANGES WHAT IT
+MEANS.** That file's own comment says the number *"shipped at 22 and the first three
+calibration runs moved it"* — for the same reader, in the same locale, refusing three of
+her six English turns. **Twice now the base ceiling has been raised to accommodate one
+reader in one locale.** What that really says is that `MARGARET_MULTIPLIER = 1.3` is too
+small for English specifically: her English sentences run 3–4× the other two readers'
+where her Indonesian runs ~3.5× at a much lower absolute. **If a third round moves it
+again the lever is wrong, and the fix is a per-(locale, reader) multiplier rather than a
+third raise** — deliberately not taken on two rounds, because VD19 makes the multiplier a
+fact about the READER and splitting it by locale is a reconciliation question.
+
+**Still open from the same runs, and deliberately NOT fixed:**
+
+- **TWO REGISTER HITS IN FOUR COMPLETED RUNS, ON TWO DIFFERENT PHRASES IN TWO DIFFERENT
+  LOCALES — AND NEITHER REPEATED.** Thessaly in English, to *"how do you even know that
+  about me"*: **"you mentioned her once, that's all. nobody's digging."** — `[F3-9]`'s
+  surveillance tell, and `C-D8`'s whole reason for existing. Then, in a later run,
+  **`"kedua,"`** in Indonesian: enumeration language, which `C-N1b` bans because nobody
+  lists in a group chat.
+  **In both cases the smoke script's `REGISTER` check flagged the bubble AFTER it was
+  stored** — so `validateTurn` does not catch these phrases and the check is a REPORT,
+  not a fence. Left alone because **no phrase repeated**: tightening a prompt on one
+  sample each is what this repository's own rule (*"never tightened on one favourable
+  run"*) refuses in the other direction. **The signal to act on is one phrase recurring,
+  not the count.**
+- **FIVE SMOKE RUNS IN TWENTY MINUTES TRIPPED THE FLEET SOFT CEILING**, and the run died
+  mid-transcript with `ModelCeilingError (soft)`. The counter read **exactly 196** — 280 ×
+  0.7 — which is `C-D6`'s arithmetic arriving in practice rather than on paper: *"sixty
+  chat runs exhaust the entire app's five-hour quota."* **It charged the LOCAL SRH and not
+  production's Upstash** (`.env.local` points at the docker instance), and the dev key was
+  deleted to continue. Two things worth keeping: **a smoke run is not free against the
+  window**, and **the smoke script calls `complete()` directly**, so it exercises the fleet
+  meter and NOT `reserveChatCall` — there was no `chat` key in Redis at all, and
+  `LLM_WINDOW_CHAT_CEILING` remains unexercised outside the route.
+- **No bubble of ≤3 words appeared in `id` at all**, and only 2 in 10 in one English run.
+  `C-D19` requires that *"wkwk"* and *"hm"* be possible and the floor is `0`, so nothing
+  forbids them — the readers simply do not write them. The band is printed rather than
+  failed, and it is the honest measure of how far the room still is from how a group chat
+  actually reads.

@@ -159,14 +159,14 @@ describe('the ceiling numbers', () => {
      */
     vi.unstubAllEnvs();
     const { _ceilings } = await import('./meter');
-    expect(_ceilings()).toEqual({ hard: 280, soft: 196 });
+    expect(_ceilings()).toEqual({ hard: 280, soft: 196, chat: 140 });
   });
 
   it('the soft tier defaults to 70% of whatever the hard ceiling is', async () => {
     vi.unstubAllEnvs();
     vi.stubEnv('LLM_WINDOW_CALL_CEILING', '1000');
     const { _ceilings } = await import('./meter');
-    expect(_ceilings()).toEqual({ hard: 1000, soft: 700 });
+    expect(_ceilings()).toEqual({ hard: 1000, soft: 700, chat: 500 });
   });
 
   it('ignores a nonsense value rather than becoming zero', async () => {

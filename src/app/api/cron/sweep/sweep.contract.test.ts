@@ -132,12 +132,32 @@ describe('vercel.json', () => {
      * because all three deletes are keyed to day-granularity windows -- running
      * it twelve times more often would do the same work twelve times.
      */
-    expect(config.crons).toEqual([{ path: '/api/cron/sweep', schedule: '17 3 * * *' }]);
+    expect(config.crons).toContainEqual({ path: '/api/cron/sweep', schedule: '17 3 * * *' });
   });
 
-  it('schedules exactly one job', () => {
-    // §7.8: one job, five deletes. Not five jobs.
-    expect(config.crons).toHaveLength(1);
+  it('schedules the sweep as ONE job, and v0.7.0 adds a SECOND job that is not it', () => {
+    /*
+     * §7.8's rule is unchanged: **one job, five deletes.** Five separate entries for the
+     * five deletes would be five things to notice have stopped working. This case used to
+     * assert `toHaveLength(1)` over the whole file, which conflated *"the sweep is one
+     * job"* with *"the project has one job"* — and only the first was ever the ruling.
+     *
+     * **v0.7.0's `[R3]` is why the second exists.** The scarcity the old assertion was
+     * written against is gone: verified 2026-08-07 against
+     * `vercel.com/docs/cron-jobs/usage-and-pricing` and the changelog entry *"Cron jobs
+     * now support 100 per project on every plan"* (2026-01-20) — **100 jobs on Hobby**,
+     * minimum interval once per day. F5's nudge therefore gets its own entry rather than
+     * folding in here, and the fold is not designed.
+     *
+     * **`0 12 * * *` IS 19:00 WIB, NOT NOON** (`[R4]`): Vercel cron schedules are always
+     * UTC, the same fact that makes the sweep's `17 3` a mid-morning job rather than the
+     * 3am the v0.7.0 roadmap built an argument on.
+     */
+    expect(config.crons.filter((c: { path: string }) => c.path === '/api/cron/sweep')).toHaveLength(1);
+    expect(config.crons).toEqual([
+      { path: '/api/cron/sweep', schedule: '17 3 * * *' },
+      { path: '/api/cron/nudge', schedule: '0 12 * * *' },
+    ]);
   });
 });
 

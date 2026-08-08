@@ -14,6 +14,7 @@ import { gateReading } from '@/lib/moderation/gate';
 import { recordModerationFlag } from '@/lib/moderation/log';
 import { persistReading, touchLastSeen } from '@/lib/analytics/flush';
 import { extractGist } from '@/lib/memory/gist.generate';
+import { mintOnReadingCompleted } from '@/lib/chat/proactive/onReading';
 import { recallChain } from '@/lib/memory/chain';
 import { detectCallback } from '@/lib/prompt/memory';
 import { splitChoiceMarker, validateChoice } from '@/lib/reading/choice';
@@ -494,6 +495,9 @@ export async function POST(request: Request) {
       track('moderation.timeout', {
         failed_open: !verdict.blocked,
         reason: 'timeout',
+        // v0.7.0: the chat is the second surface that can be refused, and these
+        // three events were written when there was only one. See `events.ts`.
+        surface: 'reading',
         reader_id: reader,
         service_id: service,
       });
@@ -502,6 +506,7 @@ export async function POST(request: Request) {
       track('moderation.allowed_flagged', {
         category: verdict.category,
         confidence_bucket: bucket(verdict.confidence),
+        surface: 'reading',
         reader_id: reader,
         service_id: service,
       });
@@ -567,6 +572,7 @@ export async function POST(request: Request) {
         source: gated.verdict.source,
         category: gated.verdict.category,
         confidence_bucket: bucket(gated.verdict.confidence),
+        surface: 'reading',
         reader_id: reader,
         service_id: service,
       });
@@ -807,6 +813,35 @@ export async function POST(request: Request) {
 
       // Fire and log, never retried: the next request writes it again anyway.
       await touchLastSeen(user.id);
+
+      /*
+       * v0.7.0 / F5, SOURCE 1. **A finished reading may mint a proactive chat run.**
+       *
+       * LAST, AND AFTER `persistReading` FOR TWO SEPARATE REASONS (F5 §8.3):
+       *
+       *   1. `chat_runs.trigger_reading_id` is an FK to `readings.id`. Minting before
+       *      the row exists is a constraint violation that presents as "the chat never
+       *      reacts to readings", with an error in a log nobody reads.
+       *   2. Deferred jobs run in registration order inside one callback, so whatever is
+       *      last is the first thing lost when the platform cuts the invocation short.
+       *      **A lost mint costs one proactive message; a lost `persistReading` costs
+       *      the querent's history and every memory feature that reads it.** And losing
+       *      it is acceptable precisely because M1's detection is "a reading since the
+       *      last proactive run" rather than "the reading in this request": the next
+       *      open tick picks it up.
+       *
+       * **NO MODEL CALL HERE** (`[F5-4]`): four to six indexed round trips and one
+       * insert. A design in which this route PLANNED the run would spend 3–8 seconds
+       * competing with `extractGist` for the tail of an invocation this header already
+       * declines to guarantee. `mintOnReadingCompleted` never throws.
+       */
+      await mintOnReadingCompleted({
+        userId: user.id,
+        readingId,
+        status: outcome.status,
+        localDate: localDate.date,
+        locale,
+      });
     });
 
     return new Response(stream, {

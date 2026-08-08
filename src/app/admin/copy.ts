@@ -1,6 +1,6 @@
 /**
- * Every user-visible string on `/admin` and `/admin/tokens`. **Indonesian, hardcoded, never
- * the i18n catalog** (A-D12).
+ * Every user-visible string on `/admin`, `/admin/tokens` and `/admin/chat`. **Indonesian,
+ * hardcoded, never the i18n catalog** (A-D12).
  *
  * ── WHY NOT THE CATALOG ─────────────────────────────────────────────────────
  *
@@ -328,8 +328,16 @@ export const TOKENS = {
    * on purpose: the sentence is an argument about why this card is a table, not a
    * readout, and a number that moved itself would stop anybody noticing that the
    * argument had been re-made.
+   *
+   * **AND IT WENT `Sepuluh` -> `Tiga belas` ON 2026-08-07** — `blog_format` had already
+   * made it eleven the same day `insight` made it ten and this sentence missed it, then
+   * v0.7.0 spent two more on the group chat. **So the argument is re-made and it is no
+   * longer a close call**: at ten it was §5.3's *"more than ~7 meaningful classes"* by a
+   * margin, at thirteen a chart of it would need thirteen distinguishable hues on a
+   * canvas §5.2 measured as unable to carry four. The word being stale for a whole
+   * release is also the case for `ops.ts` existing.
    */
-  opSubtitle: 'Sepuluh op adalah tabel, bukan grafik — lebih dari tujuh kelas tidak punya warna.',
+  opSubtitle: 'Tiga belas op adalah tabel, bukan grafik — lebih dari tujuh kelas tidak punya warna.',
   opColumns: {
     op: 'Op',
     calls: 'Panggilan',
@@ -401,4 +409,208 @@ export const TOKENS = {
   heatCell: (day: string, week: string, calls: string) => `${day}, pekan ${week} — ${calls} panggilan`,
   heatScaleMin: '1',
   heatWeekdays: ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'],
+} as const;
+
+/**
+ * `/admin/chat` -- "is the room alive". **F7, v0.7.0.**
+ *
+ * ── THIS PAGE MEASURES; IT NEVER RESTRAINS (`[F7-1]`) ───────────────────────
+ *
+ * Miftah's requirement 9 asks for the chat's token consumption to be visible and, in the
+ * same breath, forbids stinting on it. There is no cap here, no kill switch and no budget
+ * control -- v0.5.0 §1 already settled the general form (*"Not a cost cap or a kill switch.
+ * v0.5.0 **observes**"*) and F7 inherits it unchanged. The one restraint in this release is
+ * `LLM_WINDOW_CHAT_CEILING`, and its reason is `C-D6` (a chat run must never be why a
+ * reading fails), not money.
+ *
+ * ── THE `CATATAN DARI PANEL` STRINGS ARE READ TWICE, DELIBERATELY ───────────
+ *
+ * Each panel's `notes` array is the `footnote` the operator reads AND the `notes` block
+ * `insight/panels.ts` hands the model. One definition, so the chart and the box cannot
+ * disagree about a caveat -- which is the same reason every renderer there formats its
+ * numbers with `../format`, the functions the panel itself used.
+ *
+ * Terms of art stay English (A-D12): `token`, `op`, `model`, `p95`, `run`, `beat`,
+ * `trigger`, `intent`, `lease`. Nothing on this page addresses a querent, so the second
+ * person barely appears.
+ */
+export const CHAT = {
+  title: 'Obrolan',
+
+  // ── P1 · chat.reply -- THE SCORECARD ─────────────────────────────────────
+  /**
+   * `C-N2f`, and roadmap §10.3 calls this the only CONTINUOUS measurement of the release
+   * once it has shipped. The blind read (§10.2) is what gates naturalness; this is what
+   * says, a week later, whether the room is alive.
+   */
+  replyTitle: 'Balasan proaktif',
+  replySubtitle:
+    'Apakah penanya menjawab pesan yang tidak ia minta, dalam 24 jam. Papan skor rilis ini.',
+  replyHeroLabel: 'Dibalas dalam 24 jam',
+  /** `heroSub`'s shape, so **the denominator is beside the number** (`[F7-12]`). The
+   *  hero needs exactly one disclaimer and this is it -- R14 refused notional spend for
+   *  `/admin`'s hero because *"a hero figure needing two disclaimers is a KPI tile"*. */
+  replyHeroSub: (replied: string, delivered: string, pct: string) =>
+    `${replied} / ${delivered} · ${pct}`,
+  replyDelivered: 'Terkirim (jendela tutup)',
+  replyReplied: 'Dibalas',
+  replyPending: 'Menunggu jendela 24 jam',
+  replySeries: { replied: 'Dibalas', silent: 'Tidak dibalas' },
+  replyColumns: {
+    trigger: 'Trigger',
+    delivered: 'Terkirim',
+    replied: 'Dibalas',
+    pending: 'Menunggu',
+    rate: 'Porsi',
+  },
+  replyNotes: [
+    'Penyebutnya hanya run proaktif yang benar-benar menghasilkan gelembung. Run yang sengaja diam (nol beat) dan run yang kehilangan semua beatnya tidak masuk hitungan — dari dalam ruangan keduanya sama-sama sunyi.',
+    'Run yang jendela 24 jamnya belum tutup dikeluarkan dari pembilang DAN penyebut, dan dihitung terpisah sebagai "menunggu". Kalau angka menunggu besar, rentangnya terlalu baru untuk dinilai.',
+    'Balasan diukur dari pesan penanya berikutnya, bukan dari balasan ke gelembung tertentu. Penanya yang membalas hal lain tetap dihitung membalas.',
+    'Angka ini adalah papan skor rilis ini. Kalau turun, yang salah biasanya materi pemicunya, bukan penanyanya.',
+  ],
+
+  // ── P2 · chat.runs ───────────────────────────────────────────────────────
+  runsTitle: 'Run per hari',
+  runsSubtitle: 'Berapa banyak yang dikerjakan ruangan ini, dan berapa yang tanpa diminta.',
+  runsSeries: { reactive: 'Dijawab', proactive: 'Proaktif' },
+  runsColumns: { day: 'Hari', total: 'Total run' },
+  /** The five-way split lives in the TABLE, not in the chart: five entities against four
+   *  slots is `[F7-10]`'s wall, and §5.3's ruling for the nine ops is the precedent. */
+  triggerLabels: {
+    user_message: 'user_message',
+    reading_completed: 'reading_completed',
+    idle_nudge: 'idle_nudge',
+    unanswered: 'unanswered',
+    cron: 'cron',
+  },
+  runsNotes: [
+    'Dikelompokkan per hari UTC, satu kalender. Tabel chat tidak menyimpan hari kalender penanya, jadi tidak ada dua kalender yang tercampur di halaman ini.',
+    'Satu run bisa menghasilkan nol sampai empat pesan. Ini menghitung RUN, bukan gelembung.',
+    'Garis "proaktif" adalah empat trigger dijumlahkan; pecahannya ada di tabel.',
+    'Kalau proaktif nol sepanjang rentang, periksa CHAT_PROACTIVE_ENABLED sebelum menyimpulkan apa pun soal aturan kelayakan.',
+  ],
+
+  // ── P3 · chat.beats ──────────────────────────────────────────────────────
+  beatsTitle: 'Beat per run, dan kesenyapan',
+  beatsSubtitle:
+    'Sebaran, bukan rata-rata. Rata-ratanya ada di sebelah sebagai pendamping, bukan pengganti.',
+  beatsBucket: (n: number) => (n >= 4 ? '4+ beat' : `${n} beat`),
+  beatsSilence: 'Kesenyapan',
+  beatsMean: 'Rata-rata beat',
+  beatsColumns: { bucket: 'Beat', runs: 'Run', share: 'Porsi' },
+  beatsNotes: [
+    'Nol beat berarti sutradara memutuskan tidak ada yang menjawab. Itu rencana yang sah dan diinginkan — di grup sungguhan pesan memang kadang tidak dijawab.',
+    'KESENYAPAN NOL BUKAN KABAR BAIK. Kalau angkanya 0%, sutradaranya tidak benar-benar memutuskan; ia selalu menjawab.',
+    'Hanya run yang sudah selesai atau ditinggalkan yang dihitung. Run yang masih berjalan punya rencana, bukan hasil.',
+    'Beat yang dijatuhkan setelah dua kali gagal validasi TIDAK terlihat di sini — panelnya ada di "Kesehatan run", dan dari dalam ruangan beat yang jatuh dan keputusan diam tampak sama persis.',
+  ],
+
+  // ── P4 · chat.cast ───────────────────────────────────────────────────────
+  castTitle: 'Siapa bicara, dan kepada siapa',
+  /**
+   * **THE SECOND SENTENCE IS THERE BECAUSE OF WHAT A 1440px SHOT SHOWED** (2026-08-08).
+   * `StackedBar` normalises every row to 100% of its OWN total, so three readers'
+   * bars are all full width and their LENGTHS say nothing about who talks more. That is
+   * correct for this panel — the composition inside each bar is the question — but a
+   * reader comparing lengths would be reading a fact that is not there, so the total is
+   * printed at the end of each row and the card says which one to look at.
+   */
+  castSubtitle:
+    'Warna adalah lawan bicaranya, bukan pembacanya — pembacanya ada di sumbu. Tiap batang ' +
+    'dinormalkan ke totalnya sendiri, jadi bandingkan angkanya di ujung, bukan panjangnya.',
+  castSeries: { querent: 'Ke penanya', reader: 'Ke pembaca lain', none: 'Tanpa target' },
+  castTopShare: 'Porsi pembaca terbanyak',
+  castColumns: { reader: 'Pembaca', querent: 'Ke penanya', reader2: 'Ke pembaca lain', none: 'Tanpa target', total: 'Total' },
+  castNotes: [
+    '"ke pembaca lain" adalah beat yang membalas gelembung pembaca lain. Kalau angkanya nol sepanjang rentang, ruangan ini tiga monolog dan bukan satu grup.',
+    '"tanpa target" adalah beat yang tidak membalas apa pun. Itu wajar untuk beat pertama sebuah run dan untuk pesan proaktif.',
+    'Satu pembaca di atas ~60% dari seluruh gelembung berarti pengecoran timpang, bukan bahwa pembaca itu lebih baik.',
+    'Angka ini menghitung PESAN, bukan run. Satu run bisa memberi dua gelembung kepada satu pembaca yang sama.',
+  ],
+
+  // ── P5 · chat.intent ─────────────────────────────────────────────────────
+  intentTitle: 'Maksud beat',
+  intentSubtitle: 'Urutannya tetap, bukan urutan besar-kecil.',
+  intentAskShare: 'Beat bertanya',
+  /** A beat whose sheet carried no `intent`. **An empty panel and a mis-keyed query must
+   *  not look alike**, which is why this renders rather than being dropped. */
+  intentUnrecorded: '(tidak tercatat)',
+  intentColumns: { intent: 'Intent', beats: 'Beat', share: 'Porsi' },
+  intentNotes: [
+    'Ini membaca rencana sutradara, bukan teks yang benar-benar terkirim. Beat yang gagal validasi tetap terhitung di sini.',
+    'Beat "ask" adalah pembaca yang bertanya balik. Rilis ini menyebutnya bagian yang paling sulit dan paling alami; kalau porsinya nol, sutradaranya tidak pernah memakai intent itu.',
+    'Pembaca yang bertanya lalu tidak pernah menyinggung jawabannya lebih buruk daripada yang tidak pernah bertanya. Panel ini tidak bisa melihat hal itu — hanya membaca percakapannya yang bisa.',
+    'Urutannya tetap, bukan urutan besar-kecil, supaya perubahan angka tidak terbaca sebagai perubahan susunan.',
+  ],
+
+  // ── P6 · chat.tokens ─────────────────────────────────────────────────────
+  tokensTitle: 'Token obrolan: chat_plan vs chat_turn',
+  tokensSubtitle: 'Dua seri, satu sumbu — keduanya token. Biaya tidak pernah masuk grafik.',
+  tokensSeries: { chat_plan: 'chat_plan', chat_turn: 'chat_turn' },
+  tokensKpi: {
+    tokens: 'Token obrolan',
+    cost: 'Biaya notional obrolan',
+    callShare: 'Porsi panggilan armada',
+    tokenShare: 'Porsi token armada',
+  },
+  /** A-D7 / `[F7-7]`: **every cost figure renders beside the count of calls it could not
+   *  price.** `prices.ts`'s zeros are a MEASUREMENT (the plan's balance was read as zero
+   *  on 2026-08-01), so `US$0,00` would read as *we are spending nothing*. */
+  tokensUnpriced: (n: string) => `${n} panggilan belum berharga`,
+  tokensColumns: { day: 'Hari', plan: 'chat_plan', turn: 'chat_turn' },
+  tokensNotes: [
+    'chat_plan adalah satu panggilan sutradara per run; chat_turn adalah satu panggilan per beat. Bentuk tokennya berbeda jauh dan tidak boleh dirata-ratakan jadi satu angka.',
+    'Biaya di sini notional. Setiap baris harga z.ai bernilai nol dengan sengaja — itu hasil pengukuran, bukan tempat kosong — jadi angka biaya berjalan bersama jumlah panggilan yang belum bisa diberi harga.',
+    'Obrolan berjalan di CHAT_MODEL, yang bisa berbeda dari LLM_MODEL. Panel model di /admin/tokens adalah tempat memeriksa model mana yang belum punya baris harga.',
+    'Porsi armada dihitung terhadap SELURUH panggilan model, termasuk moderasi, gist dan tombol Insight di dasbor ini. Itu bukan "porsi dari bacaan".',
+    'Halaman ini mengukur, tidak membatasi. Satu-satunya rem di rilis ini ada di LLM_WINDOW_CHAT_CEILING, dan alasannya bukan biaya.',
+  ],
+
+  // ── P7 · chat.latency ────────────────────────────────────────────────────
+  latencyTitle: 'Latensi per beat',
+  latencySubtitle: 'p95 waktu panggilan model per hari UTC. Bukan waktu yang dirasakan penanya.',
+  latencyTiles: { p50: 'p50', p95: 'p95' },
+  latencyColumns: { day: 'Hari', plan: 'chat_plan', turn: 'chat_turn' },
+  latencyNotes: [
+    'Ini waktu panggilan model, bukan waktu yang dirasakan penanya. Jeda mengetik antar-beat ditentukan server lalu dijalankan di peramban, dan tidak tercatat di mana pun.',
+    'Satu run dengan tiga beat membayar satu chat_plan dan tiga chat_turn, berurutan. Waktu total run adalah jumlahnya ditambah jeda, dan tidak ada di halaman ini.',
+    'p95 dihitung Postgres atas seluruh populasi op itu. Itu bukan rata-rata dari baris harian di tabel.',
+    'Hanya panggilan yang berstatus ok yang dihitung. Panggilan yang gagal punya durasi, tapi bukan durasi menghasilkan sesuatu.',
+  ],
+
+  // ── P8 · chat.health ─────────────────────────────────────────────────────
+  healthTitle: 'Run yang tidak sampai ke layar',
+  healthSubtitle: 'Satu-satunya tempat beat yang jatuh dan keputusan diam bisa dibedakan.',
+  healthKpi: {
+    dropped: 'Beat dijatuhkan',
+    fallback: 'Rencana ditolak',
+    stuck: 'Run macet',
+  },
+  /** The denominator beside the rate: *"n dari m run selesai"*. A bare `0` under a
+   *  percentage is a number with no question attached. */
+  healthFallbackNote: (n: string, of: string) => `${n} dari ${of} run selesai`,
+  healthColumns: { status: 'Status', runs: 'Run', stuck: 'Macet' },
+  healthNotes: [
+    'Tidak ada gelembung error di rilis ini. Kegagalan adalah kesunyian — jadi beat yang jatuh dan keputusan diam terlihat sama dari dalam ruangan. Panel inilah satu-satunya tempat keduanya bisa dibedakan.',
+    'Beat yang dijatuhkan dihitung dari selisih beat yang direncanakan dan gelembung yang tersimpan, pada run yang sudah selesai saja. Beat yang dibuang karena kuota meninggalkan runnya tetap "running", jadi tidak pernah masuk hitungan ini.',
+    'Satu beat boleh menghasilkan dua gelembung, jadi selisihnya bisa negatif. Yang ditampilkan dijepit di nol — angka negatif di sini akan terbaca sebagai dasbor yang salah, bukan sebagai pembaca yang punya dua hal untuk dikatakan.',
+    '"Run macet" adalah run yang belum selesai dan leasenya sudah lama lewat. Beberapa itu wajar: penanya menutup tab, dan run diambil lagi saat ia kembali. Yang perlu dilihat adalah kalau angkanya menumpuk dari hari ke hari.',
+    '"abandoned" berarti semua beatnya gagal. Itu error, bukan penanya yang pergi — kebalikan dari arti "ditinggalkan" di panel bacaan.',
+  ],
+
+  // ── P9 · chat.quota ──────────────────────────────────────────────────────
+  quotaTitle: 'Kuota: obrolan di dalam jendela armada',
+  quotaSubtitle:
+    'Dua meter, dua batas, masing-masing dengan bingkainya sendiri. Yang terlarang adalah dua skala dalam SATU bingkai.',
+  quotaChatLabel: 'Panggilan obrolan / batas obrolan',
+  quotaFleetLabel: 'Semua panggilan / batas armada',
+  quotaShare: 'Porsi obrolan di jendela terburuk',
+  quotaColumns: { meter: 'Meter', used: 'Terpakai', ceiling: 'Batas', pct: 'Porsi' },
+  quotaNotes: [
+    'Panggilan obrolan bertingkat "deferred": mereka dibuang di garis LUNAK, bukan di garis keras. Angka yang benar-benar mengikat lebih rendah dari batas yang tertulis.',
+    'Meter armada di sebelah kanan adalah angka yang sama dengan angka utama di halaman Ringkasan, dari kueri yang sama. Kalau keduanya berbeda, salah satunya salah.',
+    'Jendela 5 jam berjalan, bukan hari kalender. Tidak ada tanggal di kunci penghitungnya.',
+    'Batas panggilan armada diturunkan ulang untuk rilis ini. Kalau meter kanan sering di atas garis lunak sementara meter kiri masih longgar, yang salah adalah batas armadanya, bukan obrolannya.',
+  ],
 } as const;

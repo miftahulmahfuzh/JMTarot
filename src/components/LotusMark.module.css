@@ -1,0 +1,22 @@
+/*
+ * Two sizes, one glyph. NO COLOUR HERE AT ALL: the mark is stroked in
+ * `currentColor` so the mounting control paints it, which is what lets one file
+ * serve `AccountButton`'s corner circle and `ChatAvatar`'s bubble gutter.
+ */
+
+/* 22 inside a 44px circle -- AccountButton's number, moved with the glyph. */
+.button {
+  width: 22px;
+  height: 22px;
+}
+
+/*
+ * 16 inside a 28px avatar: the same 50% of the circle the corner button uses, so
+ * the querent's lotus reads at the same weight in both places. `--corner-size` is
+ * NOT used here -- an avatar is not corner chrome, and borrowing the rail's token
+ * would tie a bubble gutter to a button somebody may move.
+ */
+.avatar {
+  width: 16px;
+  height: 16px;
+}

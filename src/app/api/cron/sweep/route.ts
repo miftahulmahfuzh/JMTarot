@@ -7,9 +7,23 @@ import { ERASURE_GRACE_DAYS } from '@/lib/db/queries/profile';
  * **ONE CRON JOB, FIVE DELETES** (reconciliation §7.8 and §7.9b; V2 §8 added the
  * fourth; A3, v0.5.0, added the fifth).
  *
- * Not four jobs. Vercel's free plan allows a small number of cron
- * invocations, they all want the same daily cadence, and four routes doing one
- * `DELETE` each is four things to notice have stopped working.
+ * Not four jobs — and **the reason has changed, so the sentence is corrected rather
+ * than left standing** (reconciliation `[R3]`, v0.7.0). This used to read *"Vercel's
+ * free plan allows a small number of cron invocations"*, and that scarcity no longer
+ * exists: verified 2026-08-07 against `vercel.com/docs/cron-jobs/usage-and-pricing`
+ * and the changelog entry *"Cron jobs now support 100 per project on every plan"*
+ * (2026-01-20) — **100 jobs on Hobby**, minimum interval once per day, per-hour
+ * precision. F5's `/api/cron/nudge` therefore gets its own entry rather than folding
+ * in here.
+ *
+ * **THE CONCLUSION SURVIVES ON ITS OTHER LEG:** these five want the same daily cadence
+ * and touch the same tables, and five routes doing one `DELETE` each is five things to
+ * notice have stopped working.
+ *
+ * **AND `17 3 * * *` IS 10:17 WIB, NOT 03:17** (`[R4]`). **Vercel cron schedules are
+ * always UTC.** Written down because the roadmap built an argument on the false
+ * premise that this job runs at three in the morning, and the next reader will do the
+ * same arithmetic.
  *
  *   1. **Expired soft-deleted accounts.** §7.8 promises "gone at 30 days", not
  *      "gone at 30 days if you come back". `upsertUserOnSignIn`'s lazy purge is

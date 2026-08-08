@@ -288,6 +288,56 @@ export const DETAIL = {
       'prompt bacaan berikutnya milik orang yang tidak meminta apa pun.',
   },
 
+  /**
+   * §5 of F7's plan, and roadmap Q4 answered **counts and no text** (`[R15]`).
+   *
+   * ── WHY THERE IS NO REVEAL HERE, AND WHY THAT IS NOT SYMMETRY ─────────────
+   *
+   * `A-D16`'s audited one-key-per-request reveal was designed for *a thing you read ONE
+   * of*: six onboarding answers means at most six audit rows. A conversation is hundreds
+   * of messages, so reading one exchange would be two hundred audit rows — either noise
+   * the operator scrolls past, or a lie about intent, and `audit.ts`'s own standard
+   * (*"an audit trail that over-records is honest; one that under-records is not"*) is a
+   * defence of GRANULARITY, not of volume.
+   *
+   * And the asymmetry cuts the opposite way from the obvious one:
+   * `onboarding_answers.answer_text` is AES-256-GCM encrypted at rest, while
+   * **`chat_messages.body` is plaintext** (`C-D20`). The protection there is that
+   * nothing reads it — a property of the code — and a reveal component is the code that
+   * changes it.
+   *
+   * *Option B′ — one **run** per audited reveal — is recorded in F7's plan as the honest
+   * unit if text is ever wanted. It needs a fifth `admin_access_log.resource` value in
+   * A1's closed set AND a `/privacy` amendment in the same release, and is not built.*
+   */
+  chat: {
+    heading: 'Obrolan',
+    note:
+      'Hanya angka dan waktu. Isi pesan tidak pernah ditampilkan di halaman ini dan tidak ' +
+      'ada kontrol untuk membukanya: satu percakapan akan jadi ratusan baris audit untuk ' +
+      'satu kali membaca, dan chat_messages.body tersimpan tanpa enkripsi.',
+    noRow: 'Belum ada obrolan.',
+    authorColumns: { author: 'Penulis', messages: 'Pesan', firstAt: 'Pertama', lastAt: 'Terakhir' },
+    runColumns: { key: 'Trigger / status', runs: 'Run' },
+    replyColumns: { trigger: 'Trigger', delivered: 'Terkirim', replied: 'Dibalas', pending: 'Menunggu' },
+    replyHeading: 'Balasan proaktif orang ini',
+    replyNote:
+      'Penyebutnya hanya run proaktif yang menghasilkan gelembung DAN yang jendela 24 jamnya ' +
+      'sudah tutup — kueri yang sama dengan panel armada di /admin/chat.',
+    /** The operationally useful half: it answers *"is the throttle set right for this
+     *  person"*, and it contains no text at all. */
+    threadHeading: 'Status ruangan',
+    lastReadAt: 'Terakhir dibuka',
+    lastUserMessageAt: 'Pesan penanya terakhir',
+    lastReaderMessageAt: 'Gelembung pembaca terakhir',
+    lastProactiveAt: 'Run proaktif terakhir',
+    proactiveCountToday: 'Run proaktif hari ini',
+    /** **A `'YYYY-MM-DD'` STRING, NEVER A `Date`** — the querent's own calendar day. */
+    proactiveCountDate: 'Hari hitungan itu',
+    utcOffsetMinutes: 'Offset UTC (menit)',
+    neverOpened: 'Belum pernah dibuka.',
+  },
+
   readings: {
     heading: 'Bacaan',
     count: (n: number, total: number) => `${n} dari ${total} baris terbaru`,
@@ -358,7 +408,11 @@ export const DETAIL = {
     inputLabel: 'input',
     outputLabel: 'output',
     byOpTitle: 'Panggilan per op',
-    byOpSubtitle: 'Sembilan op dilipat menjadi tiga teratas + lainnya',
+    /** `Sembilan` -> `Tiga belas` (F7, v0.7.0, seam S10): the union grew to eleven on
+     *  2026-07-31 and to thirteen with the group chat's `chat_plan` and `chat_turn`.
+     *  The fold is unchanged — three plus Other is a fact about the palette, not about
+     *  how many ops there are. */
+    byOpSubtitle: 'Tiga belas op dilipat menjadi tiga teratas + lainnya',
     tableToggle: 'Lihat tabel',
     dayColumn: 'Hari',
     opColumn: 'op',

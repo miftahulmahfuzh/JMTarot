@@ -1,0 +1,95 @@
+/*
+ * *Bahas di grup*, under a finished reading.
+ *
+ * NO NEW HEX, NO NEW FONT SIZE, NO NEW CURVE. `.action` is `ShareFooter.module.css`'s
+ * `.action` declaration for declaration, and that is the point rather than a copy:
+ * the two controls are siblings under one reading, so they have to look like siblings.
+ *
+ * ── SECONDARY, AND `ShareFooter`'s CONTROL IS TOO. NEITHER MAY BE FILLED ────────
+ *
+ * `--gold-wash` is `.primary`'s fill inside the share SHEET, where it is the one
+ * action on screen. Out here **gold means "a card goes here"** on the draw screen, and
+ * two filled gold buttons under a reading is two primaries — so both of these are an
+ * outline and a label. If a future release wants one of them emphasised, that is a
+ * decision about which, made once, in both files.
+ *
+ * ── THE HAIRLINE, AND THE SECOND ONE THAT IS NOT F6's TO REMOVE ────────────────
+ *
+ * This control sits ABOVE `ShareFooter`'s inside the same `footer` slot (§2.2: the
+ * private action above the public one, so a querent scanning downward meets "show
+ * three characters who already know me" before "put this on the internet", and the
+ * destructive-adjacent control is never the first thumb target).
+ *
+ * So THIS rule is the one that now separates the controls from the disclaimer, and
+ * `margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--gold-hairline)`
+ * is `ShareFooter`'s `.footer` verbatim — the spacing above the group is unchanged
+ * whichever control happens to be first.
+ *
+ * **`ShareFooter` THEN DRAWS ITS OWN, WHICH BECOMES A DIVIDER BETWEEN THE TWO
+ * CONTROLS RATHER THAN A HEADER FOR THE GROUP.** That reads as two rows of one group,
+ * which is what they are. It is stated rather than fixed because `ShareFooter` is not
+ * F6's file (§6): collapsing the pair to one hairline means that component learning it
+ * is not first, which is a prop and a decision about emphasis, in a commit that owns
+ * both files. **Judge it on a phone (loop 6) before changing anything** — three
+ * hairlines inside 60px is the kind of thing only hardware answers.
+ */
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--gold-hairline);
+}
+
+/* `ShareFooter.module.css`'s `.action`, declaration for declaration. The 44px
+   minimum is the iOS target floor -- `PublicShare`'s 36px is a known defect and is
+   not the thing to copy. */
+.action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 12px 28px;
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-chip);
+  background: transparent;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--muted);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.action:hover {
+  color: var(--gold-lift);
+  border-color: var(--gold-border);
+}
+
+.action:focus-visible {
+  outline: 2px solid var(--gold-border);
+  outline-offset: 2px;
+}
+
+/*
+ * The hint. `ShareFooter`'s `.toggleHint` declarations -- italic body serif at
+ * `--fs-hint` in `--label` -- because it is the same visual role: a sentence
+ * explaining what a control will do, under the control.
+ *
+ * Centred and bounded rather than full-width: at 375px the Indonesian is one line and
+ * the English wraps to two, and a hint that runs the full width of a reading column
+ * reads as prose rather than as a caption.
+ */
+.hint {
+  margin: 0;
+  max-width: 30ch;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-hint);
+  font-style: italic;
+  color: var(--label);
+  text-align: center;
+}
