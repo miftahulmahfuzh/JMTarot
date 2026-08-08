@@ -669,6 +669,118 @@ const id = {
    */
   'chat.attachment.gone': 'Bacaan ini sudah tidak ada.',
 
+  /*
+   * ── v0.7.0 / F4 — THE ROOM ITSELF ─────────────────────────────────────────
+   *
+   * **THE CHROME FOLLOWS THE VIEWER; THE BUBBLES DO NOT** (`C-D9`). Every string
+   * below is chrome, rendered through `t()` in the viewer's language. A chat
+   * message is never translated, carries its own `lang`, and gets no entry in
+   * `TRANSLATABLE` — so nothing here ever describes what a reader said.
+   *
+   * **THE REGISTER IS DELIBERATELY LOWER THAN THE REST OF THE APP.** `Jejak` and
+   * `Dirimu` are titles for pages you visit; this is a room you are IN. `Grup` is
+   * what an Indonesian actually calls it, `nyaut` is what a friend does, and
+   * `ngetik` is the word on every messaging app on the phone this is built for.
+   * None of them is Malay — the eleven-word grep binds this block.
+   *
+   * `/privacy` and both onboarding hints say *ruang obrolan*, which is the formal
+   * name for the same place; `Grup` is the label on the door. They are allowed to
+   * differ because one is a legal document and one is a button.
+   */
+  'chat.title': 'Grup',
+  'chat.hint': 'Thessaly, Margaret, dan Adrian. Bertiga, bersamamu.',
+  'chat.back': '← Beranda',
+  // Names the scrolling region for a screen reader, which would otherwise meet an
+  // unlabelled scroller full of prose. `log`, not `feed`: the room is finite and
+  // ordered, and `feed` promises infinite scroll in both directions.
+  'chat.list.aria': 'Obrolan grup',
+
+  /*
+   * The button, on four other screens. **THE PLURAL PAIR IS THE `aria-label` ONLY**
+   * — the dot itself carries no number (F4 §6.3): at 8px there is no legible type
+   * size, and a number would need a pill, which changes the button's width and
+   * reflows the corner between the no-dot and dot states.
+   *
+   * The Indonesian `.one` and `.other` are IDENTICAL ON PURPOSE (I5): CLDR gives
+   * `id` only `other`, so a differing `.one` is a string somebody edited believing
+   * it renders. `catalog.test.ts` asserts the pair matches.
+   */
+  'chat.button.aria': 'Buka grup',
+  'chat.button.aria.unread.one': 'Buka grup, {count} pesan baru',
+  'chat.button.aria.unread.other': 'Buka grup, {count} pesan baru',
+
+  'chat.composer.label': 'Tulis pesan',
+  'chat.composer.placeholder': 'Tulis sesuatu…',
+  'chat.composer.send': 'Kirim',
+  'chat.composer.sending': 'Mengirim…',
+  /*
+   * `CHAT_ENABLED=0`. **THE ROOM STILL OPENS AND EVERY PAST MESSAGE STILL RENDERS**
+   * (`C-D15`); only the composer is disabled. A kill switch that blanks a screen is
+   * a worse outage than the quota it protects, and this one sentence is the whole
+   * user-visible surface of the flag.
+   */
+  'chat.composer.closed': 'Grup lagi ditutup sebentar. Obrolan lama masih bisa dibaca.',
+
+  'chat.reply.action': 'Balas',
+  'chat.reply.cancel': 'Batal balas',
+  // The author label inside a quote stub when the quoted message is the querent's
+  // own. Lowercase, because it sits inside a sentence-shaped stub, not above one.
+  'chat.reply.you': 'kamu',
+
+  /*
+   * `chat.typing.reader` AND NOT `chat.typing.one`, which is what F4's plan wrote.
+   * **A KEY ENDING IN `.one` IS A PLURAL FAMILY IN THIS CATALOG** — `PluralKey` is
+   * derived as `StripOne<MessageKey>`, so `.one` without a matching `.other` makes
+   * `t.plural('chat.typing', n)` callable against a family that does not exist, and
+   * `catalog.test.ts` fails on both halves. It was never a plural: the room shows one
+   * indicator at a time, because beats execute serially (`C-R5`).
+   */
+  'chat.typing.reader': '{name} lagi ngetik…',
+  'chat.typing.aria': '{name} lagi menulis pesan',
+
+  'chat.newMessages': 'Pesan baru ↓',
+
+  'chat.older': 'Muat yang lebih lama',
+  'chat.older.loading': 'Memuat…',
+
+  /*
+   * **THREE FAILURE STRINGS AND NO MORE** (`F4-13`). A degraded RUN shows NOTHING —
+   * `C-R7`: there is no error bubble in this release, because a stored notice
+   * becomes context for every future turn and gets quoted back at the querent as if
+   * a reader had said it. Only the failures the querent CAUSED and can act on get
+   * copy, and all three render OUTSIDE the message list, so none of them can ever be
+   * mistaken for something a reader said.
+   *
+   * `chat.error.rateLimit` NAMES NO NUMBER, and that is the 429 trap rather than
+   * laziness: the measured `retry-after` on a tripped ceiling is 291 seconds and is
+   * **not** the window length — the sliding window reports the start of the next
+   * sub-window — so a rendered figure would be honest about the header and wrong
+   * about the room. Every other surface in this app says the same thing the same
+   * way (`reading.error.rateLimit`, `share.error.rateLimit`).
+   */
+  'chat.error.load': 'Obrolan nggak bisa dibuka sekarang. Coba lagi sebentar.',
+  'chat.error.send': 'Pesanmu belum terkirim.',
+  'chat.error.rateLimit': 'Terlalu banyak pesan sekaligus. Tunggu sebentar, ya.',
+  'chat.error.retry': 'Kirim ulang',
+  'chat.offline': 'Kamu lagi offline. Pesanmu belum terkirim.',
+
+  /*
+   * **`M14` DOES NOT APPLY HERE, AND THAT IS THE DIFFERENCE BETWEEN A ROOM AND A
+   * DECORATION.** `FrequencyLine` and `DaySummary` render nothing when they have
+   * nothing, because they are ambient and an empty state would announce a feature
+   * the querent has not earned. An EMPTY ROOM is the whole screen: a blank one reads
+   * as broken, and the only useful thing to say is what to do about it.
+   */
+  'chat.empty.title': 'Belum ada yang ngobrol di sini.',
+  'chat.empty.body': 'Sapa dulu. Mereka bertiga bakal nyaut.',
+
+  // The day separators. `today` is the QUERENT's calendar day, computed in an
+  // effect and never during render — `todayKey()` reads `new Date()`, which is a
+  // different value on the server and the client (F4 §9.1). Any older day renders
+  // through `formatDate`, so there is no third key.
+  'chat.day.today': 'Hari ini',
+  'chat.day.yesterday': 'Kemarin',
+
   // The SHORT tags, for the two-item toggle inside the menu (R1/VD12). The long
   // names in `locale.name.*` stay exactly as they are and stay on /login -- see
   // LocaleSwitch's header for why both are correct in the place each applies.

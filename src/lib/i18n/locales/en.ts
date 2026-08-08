@@ -365,6 +365,62 @@ const en: Catalog = {
   'chat.attachment.language.en': 'In English',
   'chat.attachment.gone': 'That reading is gone.',
 
+  /*
+   * v0.7.0 / F4 — the room. **REWRITTEN, NOT TRANSLATED**, and `id.ts` carries the
+   * argument for every one of these.
+   *
+   * The register question is the same one and the answer is different: Indonesian
+   * says `Grup` because that is what people call the thing, and English says
+   * `The group` for the same reason — `Chat` names a medium, `The group` names the
+   * people in it, and this room is three people.
+   *
+   * `typing…` rather than `is writing a message`: the first is what every messenger
+   * on the platform says and is therefore invisible; the aria string spells it out
+   * because a screen reader reads it once, out of context.
+   *
+   * The English tic list binds this block. No `let me know if…`, no `dear one`, no
+   * `your journey` — and note that the empty state deliberately does not offer help:
+   * *"Say hi"* is an instruction, not a closing offer.
+   */
+  'chat.title': 'The group',
+  'chat.hint': 'Thessaly, Margaret and Adrian. All three, with you.',
+  'chat.back': '← Home',
+  'chat.list.aria': 'Group conversation',
+
+  'chat.button.aria': 'Open the group',
+  'chat.button.aria.unread.one': 'Open the group, {count} new message',
+  'chat.button.aria.unread.other': 'Open the group, {count} new messages',
+
+  'chat.composer.label': 'Write a message',
+  'chat.composer.placeholder': 'Say something…',
+  'chat.composer.send': 'Send',
+  'chat.composer.sending': 'Sending…',
+  'chat.composer.closed': 'The group is closed for a moment. Everything already said is still here.',
+
+  'chat.reply.action': 'Reply',
+  'chat.reply.cancel': 'Cancel reply',
+  'chat.reply.you': 'you',
+
+  'chat.typing.reader': '{name} is typing…',
+  'chat.typing.aria': '{name} is writing a message',
+
+  'chat.newMessages': 'New messages ↓',
+
+  'chat.older': 'Load older',
+  'chat.older.loading': 'Loading…',
+
+  'chat.error.load': 'The conversation will not open right now. Try again in a moment.',
+  'chat.error.send': 'That message has not been sent.',
+  'chat.error.rateLimit': 'Too many messages at once. Give it a moment.',
+  'chat.error.retry': 'Send again',
+  'chat.offline': 'You are offline. That message has not been sent.',
+
+  'chat.empty.title': 'Nobody has said anything here yet.',
+  'chat.empty.body': 'Say hi. All three of them will answer.',
+
+  'chat.day.today': 'Today',
+  'chat.day.yesterday': 'Yesterday',
+
   'locale.code.id': 'ID',
   'locale.code.en': 'EN',
 
