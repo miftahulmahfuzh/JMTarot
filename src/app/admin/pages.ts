@@ -41,6 +41,14 @@
 export const ADMIN_PAGES = [
   { path: '/admin', label: 'Ringkasan', tab: '/admin' },
   { path: '/admin/tokens', label: 'Token', tab: '/admin/tokens' },
+  /*
+   * **THIRD, AFTER `Token` AND BEFORE `Pengguna`** (F7-Q7). `/admin`, `/admin/tokens`
+   * and `/admin/chat` are the three FLEET-metric pages; `/admin/users` and
+   * `/admin/blog` are the two per-subject ones. The nav order is the operator's mental
+   * model of the dashboard, and grouping by *what a page is about* rather than by
+   * arrival date is what keeps it one.
+   */
+  { path: '/admin/chat', label: 'Obrolan', tab: '/admin/chat' },
   { path: '/admin/users', label: 'Pengguna', tab: '/admin/users' },
   { path: '/admin/users/[id]', label: null, tab: '/admin/users' }, // reachable, not in the nav
   { path: '/admin/blog', label: 'Tulisan', tab: '/admin/blog' },

@@ -382,9 +382,43 @@ export type PeakWindow = {
  * ended inside the range. Every headroom figure derived from it is optimistic, and
  * that word has to reach the page -- it is the same word `analytics-queries.md` query
  * 9 already uses.
+ *
+ * ── `ops` IS OPTIONAL, AND ONE IMPLEMENTATION IS THE WHOLE POINT (F7-Q3) ────
+ *
+ * v0.7.0. `/admin/chat`'s quota panel renders TWO meters -- chat calls against
+ * `LLM_WINDOW_CHAT_CEILING` and all calls against `LLM_WINDOW_CALL_CEILING` -- which is
+ * this function twice, with and without a filter. The alternative was a copy of the
+ * `RANGE BETWEEN INTERVAL '5 hours' PRECEDING` frame in `chat.ts`, and **two spellings
+ * of the one query that reconstructs what Redis holds is not a trade worth making**:
+ * the two meters sit side by side on one card, so a divergence between them would read
+ * as a finding rather than as a bug.
+ *
+ * **THE FILTER IS INSIDE THE WINDOW, NOT AROUND IT, AND THAT IS THE ONLY WAY IT CAN
+ * BE.** Filtering after the frame would count every call in the window and then throw
+ * rows away; filtering before it asks the question the sub-budget actually asks --
+ * *how many CHAT calls fell inside five hours of each other.* The chat's own ceiling is
+ * charged by chat calls alone.
+ *
+ * Absent or empty means every op, which is the existing behaviour and every existing
+ * call site.
  */
-export async function peakWindow5h(db: DbOrTx, range: Range): Promise<PeakWindow | null> {
+export async function peakWindow5h(
+  db: DbOrTx,
+  range: Range,
+  ops?: readonly LLMOp[],
+): Promise<PeakWindow | null> {
   if (!usable(range)) return null;
+  /*
+   * An empty array is "no filter", not "no ops": `and op in ()` is a syntax error in
+   * Postgres, and a caller that computed an empty list wants the unfiltered answer far
+   * more often than it wants zero. Parameterised through `sql.join` rather than
+   * interpolated, so an op value is a bind and never text in the statement.
+   */
+  const opFilter =
+    ops && ops.length > 0
+      ? sql`and op in (${sql.join(ops.map((op) => sql`${op}`), sql`, `)})`
+      : sql``;
+
   const rows = await db.execute(sql`
     with w as (
       select created_at,
@@ -395,6 +429,7 @@ export async function peakWindow5h(db: DbOrTx, range: Range): Promise<PeakWindow
        where created_at >= ${range.from}::date
          and created_at <  (${range.to}::date + 1)
          and status <> 'refused'
+         ${opFilter}
     )
     select to_char(created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as window_end,
            in_window

@@ -452,13 +452,24 @@ function footnoteFor(
 }
 
 /**
- * Cost by purpose. **A TABLE with an inline bar, because nine `op` values is nine** -- §5.3's
- * own rule that more than ~7 meaningful classes is a table, and R11 resolving the roadmap's
- * disagreement with itself in the table's favour.
+ * Cost by purpose. **A TABLE with an inline bar, because thirteen `op` values is thirteen** --
+ * §5.3's own rule that more than ~7 meaningful classes is a table, and R11 resolving the
+ * roadmap's disagreement with itself in the table's favour. (Nine when this shipped; ten and
+ * eleven on 2026-07-31, thirteen with v0.7.0's `chat_plan` and `chat_turn`.)
  *
  * The bar is a LENGTH encoding in one hue (sequential), which is a different thing from a
  * value-ramp on a nominal category: `op` has no natural order, so nothing here is
  * darker-where-bigger.
+ *
+ * ── FOUR OF THE THIRTEEN HAVE NO QUERENT BEHIND THEM, AND THE TABLE STILL SHOWS THEM ──
+ *
+ * `insight`, `blog_format`, `chat_plan`, `chat_turn` -- `src/lib/admin/ops.ts` is the
+ * machine-checked list. **Deliberately unfiltered: showing what they cost is the entire
+ * argument that earned each of those four values**, and `panels.ts:653` already records
+ * excluding `insight` from the metric queries as a REJECTED fix for a different problem.
+ * What their existence forbids is a *cost per reading* computed by dividing anything on this
+ * page by `Bacaan selesai`, which is why the rule now lives in `ops.ts` rather than in four
+ * paragraphs.
  */
 function OpTable({
   ops,

@@ -40,6 +40,7 @@
  * dead code that reads as a shipped panel. Neither is visible in a diff.
  */
 import { callTotals } from '@/lib/db/queries/admin/calls';
+import { chatRollup, type ChatRollup } from '@/lib/db/queries/admin/chat';
 import {
   callsByOp,
   callsByUtcDay,
@@ -62,7 +63,7 @@ import {
   serializePanelFacts,
   type PanelFacts,
 } from '@/lib/admin/insightPrompt';
-import { COMMON, OVERVIEW, TOKENS } from '../copy';
+import { CHAT, COMMON, OVERVIEW, TOKENS } from '../copy';
 import { compact, dayWithYear, int, ms, oneDp, pct, shortId, signedPct, usd } from '../format';
 import {
   callSeries,
@@ -74,6 +75,18 @@ import {
   weekdayHeat,
 } from '../metrics';
 import { previousPeriod } from '../range';
+import {
+  beatFold,
+  castFold,
+  fleetShare,
+  healthFold,
+  intentFold,
+  latencyFold,
+  replyFold,
+  runFold,
+  tokenFold,
+} from '../chat/series';
+import { CHAT_OP_ORDER, TRIGGER_ORDER } from '../chat/slots';
 
 /** What `/admin`'s `Body` computes, recomputed here. */
 type OverviewData = {
@@ -81,6 +94,16 @@ type OverviewData = {
   prev: FleetRollup;
   cost: ReturnType<typeof priceRollup>;
 };
+
+/**
+ * What `/admin/chat`'s `Body` computes, recomputed here.
+ *
+ * **THE PAGE'S COMPOSITE IS THE TYPE**, rather than a hand-listed struct like the two
+ * above it: `/admin/chat` loads exactly one thing, so a drift between the page and this
+ * loader is impossible by construction rather than by a matching pair of literals. The
+ * two older shapes predate their pages having a single composite and are left alone.
+ */
+type ChatData = ChatRollup;
 
 /** What `/admin/tokens`' `Body` computes, recomputed here. */
 type TokensData = {
@@ -138,6 +161,19 @@ async function loadTokens(db: DbOrTx, range: Range): Promise<TokensData> {
     peakWindow5h(db, range),
   ]);
   return { tokens, utc, ops, models, leagueRows, peak };
+}
+
+/**
+ * `/admin/chat`'s composite, run again for a button press.
+ *
+ * **ONE STATEMENT SET FOR ALL NINE PANELS**, the same trade A7 already priced: a press
+ * costs one extra composite read inside `withAdminRead`'s 10s budget, for one operator,
+ * and what the model is handed is a block **the server built from the tables** rather
+ * than a string a browser posted. `POST /api/admin/insight` carries `{ panel, from, to }`
+ * and no figures — W3's completion-route rule, applied to a prompt.
+ */
+async function loadChat(db: DbOrTx, range: Range): Promise<ChatData> {
+  return chatRollup(db, range);
 }
 
 // ---------------------------------------------------------------------------
@@ -216,6 +252,17 @@ function kpiFacts({ rollup, prev, cost }: OverviewData): PanelFacts {
       `${int(tokens.nullInputCalls)} panggilan tidak melaporkan token sama sekali, jadi total token adalah batas bawah.`,
       cost.costUsd === null ? OVERVIEW.kpi.spendUnset : OVERVIEW.kpi.spendUnpriced(int(cost.unpricedCalls)),
       'p95 TTFT dan p95 panggilan bacaan mengukur dua hal berbeda dan tidak boleh disamakan.',
+      /*
+       * ── THE HIGHEST-RISK SITE OF SEAM S10 IS A PROMPT, NOT AN ARITHMETIC (F7) ──
+       *
+       * This block puts a COST and a READING COUNT in one `headline` list, and
+       * `INSIGHT_SYSTEM`'s rule 1 only forbids citing a number that is **not** in the
+       * block — which a quotient of two numbers that are is not. There is no
+       * cost-per-reading figure anywhere in this repository; the one place it could be
+       * invented is here, by a model, in prose that is then stored in
+       * `admin_insights.body`, a column with no redaction path.
+       */
+      'Biaya, panggilan dan token dihitung atas SELURUH op. Empat dari tiga belas op tidak punya penanya di belakangnya — insight, blog_format, chat_plan, chat_turn — jadi angka-angka ini tidak boleh dibagi dengan "Bacaan selesai". Hasilnya bukan biaya per bacaan.',
     ],
   };
 }
@@ -246,7 +293,7 @@ function serviceFacts({ rollup }: OverviewData): PanelFacts {
     rows: known.map((r) => [r.serviceId, int(r.readings)]),
     notes: [
       OVERVIEW.readingsSubtitle,
-      'Satu bacaan bisa memicu beberapa panggilan model, dan bacaan yang ditolak moderasi memicu nol. Jangan samakan dengan jumlah panggilan.',
+      'Satu bacaan bisa memicu beberapa panggilan model, dan bacaan yang ditolak moderasi memicu nol. Jangan samakan dengan jumlah panggilan. Sebaliknya, empat op — insight, blog_format, chat_plan, chat_turn — tidak diakibatkan bacaan sama sekali, jadi jumlah panggilan bukan jumlah bacaan dari dua arah sekaligus.',
     ],
   };
 }
@@ -432,7 +479,18 @@ function opFacts({ ops }: TokensData): PanelFacts {
     ]),
     notes: [
       'op `translation` mencampur dua ukuran yang sangat berbeda: terjemahan bacaan (~150 kata) dan terjemahan artikel blog (~3.000 token tiap arah). Yang membedakannya cuma llm_calls.user_id.',
-      'op `insight` adalah tombol Insight di dasbor ini sendiri.',
+      /*
+       * **A CLASS STATEMENT, NOT A NOTE ABOUT ONE OP** (F7, seam S10). This line used to
+       * say only *"op `insight` adalah tombol Insight di dasbor ini sendiri"*, which was
+       * true and named one of four.
+       *
+       * The last sentence also pre-empts the contradiction a reviewer would otherwise
+       * see: line 653 below records *"exclude `op: 'insight'` from the metric queries"*
+       * as a **rejected** fix for the staleness problem, and F7 does not reverse it. The
+       * table showing what these four cost is the entire argument that earned each of
+       * those four values.
+       */
+      'Empat op tidak diakibatkan penanya: insight (tombol di dasbor ini), blog_format (tombol Auto Format), chat_plan dan chat_turn (grup obrolan). Tabel ini sengaja tidak menyaringnya — justru menampilkan biayanya adalah alasan keempat op itu ada.',
     ],
   };
 }
@@ -520,6 +578,240 @@ function heatFacts({ utc }: TokensData): PanelFacts {
 }
 
 // ---------------------------------------------------------------------------
+// /admin/chat -- Obrolan
+//
+// **A `PanelFacts` BLOCK CARRIES ONLY WHAT THE PANEL ALREADY RENDERS, PLUS THE
+// CAVEATS** (`[F7-14]`), and it binds harder here than anywhere because the subject is
+// a conversation. **No message body, no nickname, no email, not even a sample bubble
+// "for context"** -- `admin_insights.body` is a column with no redaction path, and a
+// querent's words in a prompt whose output is stored there is the one leak this page
+// could produce. The `notes` below are `copy.ts`'s `CATATAN DARI PANEL` arrays
+// verbatim, which is the contract rather than a summary of it.
+// ---------------------------------------------------------------------------
+
+function replyFacts(data: ChatData): PanelFacts {
+  const fold = replyFold(data.reply);
+  return {
+    title: CHAT.replyTitle,
+    purpose:
+      'Apakah penanya menjawab pesan yang tidak ia minta, dalam 24 jam. Ini papan skor ' +
+      'rilis ini: satu-satunya pengukuran berkelanjutan atas "proaktif".',
+    headline: [
+      { label: CHAT.replyHeroLabel, value: pct(fold.rate, '(belum bisa dinilai)') },
+      { label: CHAT.replyDelivered, value: int(fold.delivered) },
+      { label: CHAT.replyReplied, value: int(fold.replied) },
+      { label: CHAT.replyPending, value: int(fold.pending) },
+    ],
+    columns: [
+      CHAT.replyColumns.trigger,
+      CHAT.replyColumns.delivered,
+      CHAT.replyColumns.replied,
+      CHAT.replyColumns.pending,
+      CHAT.replyColumns.rate,
+    ],
+    rows: fold.rows.map((r) => [
+      r.trigger,
+      int(r.delivered),
+      int(r.replied),
+      int(r.pending),
+      pct(r.rate),
+    ]),
+    notes: [...CHAT.replyNotes],
+  };
+}
+
+function runsFacts(data: ChatData): PanelFacts {
+  const fold = runFold(data.runs, data.range.from, data.range.to);
+  return {
+    title: CHAT.runsTitle,
+    purpose: 'Berapa banyak run per hari UTC, dan berapa yang tanpa diminta penanya.',
+    headline: [
+      { label: 'Total run', value: int(fold.total) },
+      { label: CHAT.runsSeries.reactive, value: int(fold.totals.user_message) },
+      {
+        label: CHAT.runsSeries.proactive,
+        value: int(fold.total - fold.totals.user_message),
+      },
+    ],
+    columns: [COMMON.dayColumn, ...TRIGGER_ORDER],
+    rows: fold.buckets.map((b, i) => [b, ...TRIGGER_ORDER.map((t) => int(fold.byTrigger[t][i]))]),
+    notes: [...CHAT.runsNotes],
+  };
+}
+
+function beatsFacts(data: ChatData): PanelFacts {
+  const fold = beatFold(data.beats);
+  return {
+    title: CHAT.beatsTitle,
+    purpose:
+      'Sebaran beat per run yang sudah selesai, dan seberapa sering sutradara memutuskan ' +
+      'tidak ada yang menjawab.',
+    headline: [
+      { label: CHAT.beatsSilence, value: pct(fold.silence, '(belum ada run selesai)') },
+      { label: CHAT.beatsMean, value: oneDp(fold.mean, '(belum ada run selesai)') },
+      { label: 'Run selesai atau ditinggalkan', value: int(fold.total) },
+    ],
+    columns: [CHAT.beatsColumns.bucket, CHAT.beatsColumns.runs],
+    rows: fold.buckets.map((b) => [CHAT.beatsBucket(b.bucket), int(b.runs)]),
+    notes: [...CHAT.beatsNotes],
+  };
+}
+
+function castFacts(data: ChatData): PanelFacts {
+  const fold = castFold(data.cast);
+  return {
+    title: CHAT.castTitle,
+    purpose:
+      'Siapa yang bicara dan kepada siapa. Kalau "ke pembaca lain" nol, ruangan ini tiga ' +
+      'monolog dan bukan satu grup.',
+    headline: [
+      { label: 'Total gelembung pembaca', value: int(fold.total) },
+      { label: CHAT.castTopShare, value: pct(fold.topShare, '(belum ada gelembung)') },
+      { label: CHAT.castSeries.reader, value: pct(fold.readerToReader, '(belum ada gelembung)') },
+    ],
+    columns: [
+      CHAT.castColumns.reader,
+      CHAT.castColumns.querent,
+      CHAT.castColumns.reader2,
+      CHAT.castColumns.none,
+      CHAT.castColumns.total,
+    ],
+    rows: fold.rows.map((r) => [r.author, int(r.querent), int(r.reader), int(r.none), int(r.total)]),
+    notes: [...CHAT.castNotes],
+  };
+}
+
+function intentFacts(data: ChatData): PanelFacts {
+  const fold = intentFold(data.intents);
+  return {
+    title: CHAT.intentTitle,
+    purpose:
+      'Untuk apa tiap beat direncanakan. Porsi "ask" adalah angka yang dipakai rilis ini ' +
+      'untuk menilai apakah pembaca benar-benar bertanya balik.',
+    headline: [
+      { label: CHAT.intentAskShare, value: pct(fold.askShare, '(belum ada beat)') },
+      { label: 'Total beat', value: int(fold.total) },
+    ],
+    columns: [CHAT.intentColumns.intent, CHAT.intentColumns.beats],
+    rows: fold.rows.map((r) => [r.intent ?? CHAT.intentUnrecorded, int(r.beats)]),
+    notes: [...CHAT.intentNotes],
+  };
+}
+
+function chatTokensFacts(data: ChatData): PanelFacts {
+  const fold = tokenFold(data.tokens, data.range.from, data.range.to);
+  const cost = priceRollup(data.callTotals, notionalLookup);
+  const share = fleetShare(fold, data.fleetByOp);
+  return {
+    title: CHAT.tokensTitle,
+    purpose:
+      'Berapa token dan berapa panggilan yang dihabiskan obrolan, dipisah antara sutradara ' +
+      'dan suara. Panel ini mengukur; ia tidak membatasi apa pun.',
+    headline: [
+      { label: CHAT.tokensKpi.tokens, value: int(fold.tokens) },
+      { label: 'Panggilan obrolan', value: int(fold.calls) },
+      { label: 'Panggilan chat_plan', value: int(fold.totals.chat_plan.calls) },
+      { label: 'Panggilan chat_turn', value: int(fold.totals.chat_turn.calls) },
+      { label: CHAT.tokensKpi.cost, value: usd(cost.costUsd, '(belum berharga)') },
+      { label: 'Panggilan belum berharga', value: int(cost.unpricedCalls) },
+      { label: CHAT.tokensKpi.callShare, value: pct(share.calls, '(tidak ada panggilan)') },
+      { label: CHAT.tokensKpi.tokenShare, value: pct(share.tokens, '(tidak ada token)') },
+    ],
+    columns: [COMMON.dayColumn, ...CHAT_OP_ORDER],
+    rows: fold.buckets.map((b, i) => [b, ...CHAT_OP_ORDER.map((op) => int(fold.byOp[op][i]))]),
+    notes: [
+      ...CHAT.tokensNotes,
+      `${int(fold.untokenized)} panggilan obrolan tidak melaporkan token sama sekali, jadi total token adalah batas bawah.`,
+    ],
+  };
+}
+
+function chatLatencyFacts(data: ChatData): PanelFacts {
+  const fold = latencyFold(data.latency, data.range.from, data.range.to);
+  return {
+    title: CHAT.latencyTitle,
+    purpose:
+      'Berapa lama panggilan model obrolan berlangsung. Ini BUKAN waktu yang dirasakan ' +
+      'penanya — jeda mengetik antar-beat tidak tercatat di mana pun.',
+    headline: CHAT_OP_ORDER.flatMap((op) => [
+      { label: `${op} p50`, value: ms(fold.overall[op].p50Ms) },
+      { label: `${op} p95`, value: ms(fold.overall[op].p95Ms) },
+      { label: `${op} panggilan`, value: int(fold.overall[op].calls) },
+    ]),
+    columns: [COMMON.dayColumn, ...CHAT_OP_ORDER.map((op) => `${op} p95`)],
+    rows: fold.buckets.map((b, i) => [b, ...CHAT_OP_ORDER.map((op) => ms(fold.p95[op][i]))]),
+    notes: [...CHAT.latencyNotes],
+  };
+}
+
+function healthFacts(data: ChatData): PanelFacts {
+  const fold = healthFold(data.health);
+  return {
+    title: CHAT.healthTitle,
+    purpose:
+      'Run yang tidak sampai ke layar. Satu-satunya tempat beat yang jatuh karena gagal ' +
+      'validasi bisa dibedakan dari sutradara yang memang memutuskan diam.',
+    headline: [
+      { label: CHAT.healthKpi.dropped, value: int(fold.dropped) },
+      { label: CHAT.healthKpi.fallback, value: pct(fold.fallbackRate, '(belum ada run selesai)') },
+      { label: 'Rencana fallback', value: int(fold.fallbackPlans) },
+      { label: CHAT.healthKpi.stuck, value: int(fold.stuck) },
+      { label: 'Beat direncanakan', value: int(data.health.beatsPlanned) },
+      { label: 'Gelembung tersimpan', value: int(data.health.bubbles) },
+    ],
+    columns: [CHAT.healthColumns.status, CHAT.healthColumns.runs, CHAT.healthColumns.stuck],
+    rows: fold.statuses.map((s) => [s.status, int(s.runs), int(s.stuck)]),
+    notes: [
+      ...CHAT.healthNotes,
+      /*
+       * `[R19]` grants one beat two bubbles, so the raw difference is signed. The TILE
+       * clamps at zero; the block says which side it fell on, because a model told only
+       * the clamped number could read "0 dropped" as "validation never fails" when the
+       * truth is "readers said more than they were asked to".
+       */
+      fold.droppedRaw < 0
+        ? `Selisih mentahnya ${int(fold.droppedRaw)}: gelembungnya LEBIH BANYAK daripada beatnya, yang sah karena satu beat boleh menghasilkan dua gelembung. Tidak ada beat yang jatuh dalam rentang ini.`
+        : `Selisih mentahnya ${int(fold.droppedRaw)} dan tidak dijepit.`,
+    ],
+  };
+}
+
+function chatQuotaFacts(data: ChatData): PanelFacts {
+  const ceilings = _ceilings();
+  const chatUsed = data.chatPeak?.calls ?? null;
+  const fleetUsed = data.fleetPeak?.calls ?? null;
+  return {
+    title: CHAT.quotaTitle,
+    purpose:
+      'Apakah obrolan pernah mendekati sub-anggarannya, dan berapa porsinya di dalam ' +
+      'jendela armada. Ini yang membuat janji "run obrolan tidak boleh membuat bacaan gagal" ' +
+      'bisa diperiksa.',
+    headline: [
+      { label: CHAT.quotaChatLabel, value: int(chatUsed, '(tidak ada data)') },
+      { label: 'Batas obrolan', value: int(ceilings.chat) },
+      { label: CHAT.quotaFleetLabel, value: int(fleetUsed, '(tidak ada data)') },
+      { label: 'Batas armada', value: int(ceilings.hard) },
+      {
+        label: CHAT.quotaShare,
+        value:
+          chatUsed === null || fleetUsed === null || fleetUsed === 0
+            ? '(tidak ada data)'
+            : pct(chatUsed / fleetUsed),
+      },
+    ],
+    columns: [],
+    rows: [],
+    notes: [
+      OVERVIEW.meterCaveat,
+      ...CHAT.quotaNotes,
+      chatUsed === null
+        ? 'Puncaknya null: itu berarti TIDAK ADA DATA, bukan nol panggilan. Jangan bilang kuota aman kalau angkanya null.'
+        : 'Jendela 5 jam berjalan, bukan hari kalender.',
+    ],
+  };
+}
+
+// ---------------------------------------------------------------------------
 // The registry
 // ---------------------------------------------------------------------------
 
@@ -550,16 +842,45 @@ const TOKEN_PANELS = {
   'tokens.heat': heatFacts,
 } as const satisfies Record<string, (data: TokensData, range: Range) => PanelFacts>;
 
+/**
+ * **A THIRD RECORD AND A THIRD LOADER, MIRRORING THE TWO ABOVE.** F7, v0.7.0.
+ *
+ * All NINE panels get a button, and the binding argument is not symmetry: `panels.test.ts`
+ * asserts an EQUALITY between the ids a page mounts and the ids the registry declares. A
+ * page with a box on six of nine forces that assertion down to a subset check, and a
+ * subset check cannot see a renderer with no button (dead code that reads as a shipped
+ * panel) or a button with no renderer (a 404 under a control that looks live).
+ * **Weakening a fence to allow a design choice is how this codebase loses fences**, and
+ * the cost of keeping it is three renderers nobody presses.
+ */
+const CHAT_PANELS = {
+  'chat.reply': replyFacts,
+  'chat.runs': runsFacts,
+  'chat.beats': beatsFacts,
+  'chat.cast': castFacts,
+  'chat.intent': intentFacts,
+  'chat.tokens': chatTokensFacts,
+  'chat.latency': chatLatencyFacts,
+  'chat.health': healthFacts,
+  'chat.quota': chatQuotaFacts,
+} as const satisfies Record<string, (data: ChatData, range: Range) => PanelFacts>;
+
 export type OverviewPanelId = keyof typeof OVERVIEW_PANELS;
 export type TokenPanelId = keyof typeof TOKEN_PANELS;
-export type PanelId = OverviewPanelId | TokenPanelId;
+export type ChatPanelId = keyof typeof CHAT_PANELS;
+export type PanelId = OverviewPanelId | TokenPanelId | ChatPanelId;
 
 /** The ids each page mounts, in render order. **The page imports these** rather than
  *  spelling its own strings, so `panels.test.ts`'s grep and the registry cannot drift
  *  in spelling — only in membership, which is what the grep is for. */
 export const OVERVIEW_PANEL_IDS = Object.keys(OVERVIEW_PANELS) as OverviewPanelId[];
 export const TOKEN_PANEL_IDS = Object.keys(TOKEN_PANELS) as TokenPanelId[];
-export const PANEL_IDS: PanelId[] = [...OVERVIEW_PANEL_IDS, ...TOKEN_PANEL_IDS];
+export const CHAT_PANEL_IDS = Object.keys(CHAT_PANELS) as ChatPanelId[];
+export const PANEL_IDS: PanelId[] = [
+  ...OVERVIEW_PANEL_IDS,
+  ...TOKEN_PANEL_IDS,
+  ...CHAT_PANEL_IDS,
+];
 
 /** Runtime narrowing for the route's body, which arrives as `unknown`. */
 export function isPanelId(value: unknown): value is PanelId {
@@ -585,6 +906,11 @@ export function tokenFacts(panel: TokenPanelId, data: TokensData, range: Range):
   return render(data, range);
 }
 
+export function chatFacts(panel: ChatPanelId, data: ChatData, range: Range): PanelFacts {
+  const render: (d: ChatData, r: Range) => PanelFacts = CHAT_PANELS[panel];
+  return render(data, range);
+}
+
 /**
  * Load and render one panel's facts.
  *
@@ -607,7 +933,10 @@ export async function panelFacts(
   if (panel in OVERVIEW_PANELS) {
     return overviewFacts(panel as OverviewPanelId, await loadOverview(db, range), range);
   }
-  return tokenFacts(panel as TokenPanelId, await loadTokens(db, range), range);
+  if (panel in TOKEN_PANELS) {
+    return tokenFacts(panel as TokenPanelId, await loadTokens(db, range), range);
+  }
+  return chatFacts(panel as ChatPanelId, await loadChat(db, range), range);
 }
 
 // ---------------------------------------------------------------------------
@@ -706,7 +1035,32 @@ export function tokenInsightStates(
   return statesFor(TOKEN_PANELS, data, range, stored, today);
 }
 
-/** The two data shapes, exported so each page can declare that what it already loaded
+export function chatInsightStates(
+  data: ChatData,
+  range: { from: string; to: string; days: number },
+  stored: Map<string, StoredInsight>,
+  today: string,
+): Record<ChatPanelId, InsightState> {
+  /*
+   * ── `[F7-9]`: A PRESS MOVES EXACTLY ONE PANEL HERE, AND `statesFor` ALREADY
+   *    HANDLES IT ──────────────────────────────────────────────────────────
+   *
+   * A7 measured that the button's own `llm_calls` row — `op: 'insight'`, today's
+   * `local_date` — lands inside any range ending today, so nine of thirteen panels
+   * described themselves changing. On this page **seven of the nine filter to
+   * `op in ('chat_plan','chat_turn')` and are structurally insulated**; only
+   * `chat.quota`'s fleet meter counts every call and therefore moves.
+   *
+   * `settled = range.to < today` is unchanged and is still the whole fix. **Re-deriving
+   * it here as "exclude `op:'insight'` from the chat queries" would be a NO-OP that
+   * reads as a fix** — and `panels.ts`'s own record of that exclusion as a REJECTED
+   * route (for a different reason) is how a second, differently-argued exclusion undoes
+   * the first.
+   */
+  return statesFor(CHAT_PANELS, data, range, stored, today);
+}
+
+/** The three data shapes, exported so each page can declare that what it already loaded
  *  IS what the renderers take — a compile error rather than a runtime surprise the day
  *  a page's composite and a loader here drift apart. */
-export type { OverviewData, TokensData };
+export type { OverviewData, TokensData, ChatData };

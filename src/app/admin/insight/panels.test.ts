@@ -19,9 +19,12 @@ import { describe, expect, it } from 'vitest';
 import type { FleetRollup } from '@/lib/db/queries/admin/rollup';
 import { insightInputHash, serializePanelFacts } from '@/lib/admin/insightPrompt';
 import {
+  CHAT_PANEL_IDS,
   OVERVIEW_PANEL_IDS,
   PANEL_IDS,
   TOKEN_PANEL_IDS,
+  chatFacts,
+  chatInsightStates,
   isPanelId,
   overviewFacts,
   overviewInsightStates,
@@ -30,6 +33,7 @@ import {
 
 const OVERVIEW_PAGE = 'src/app/admin/page.tsx';
 const TOKENS_PAGE = 'src/app/admin/tokens/page.tsx';
+const CHAT_PAGE = 'src/app/admin/chat/page.tsx';
 
 /** Comments stripped — this project's rule, paid for twice. Both pages document what
  *  they mount, and a doc comment naming a panel id would satisfy the grep on its own. */
@@ -47,17 +51,23 @@ function code(file: string): string {
  * the moment somebody inlined the element, which is a refactor rather than a defect.
  */
 function idsIn(file: string): string[] {
-  return [...code(file).matchAll(/'((?:overview|tokens)\.[a-z0-9]+)'/g)].map((m) => m[1]).sort();
+  return [...code(file).matchAll(/'((?:overview|tokens|chat)\.[a-z0-9]+)'/g)]
+    .map((m) => m[1])
+    .sort();
 }
 
 describe('the fences are not vacuous', () => {
-  it('finds thirteen panels and both pages', () => {
+  it('finds twenty-two panels and all three pages', () => {
     // A registry that went empty in a refactor would make every assertion below pass.
-    expect(PANEL_IDS).toHaveLength(13);
+    // 13 -> 22 with v0.7.0's nine chat panels ([R13]'s op set is a different count and
+    // the two are unrelated; this one is panels, that one is `LLMOp`).
+    expect(PANEL_IDS).toHaveLength(22);
     expect(OVERVIEW_PANEL_IDS).toHaveLength(6);
     expect(TOKEN_PANEL_IDS).toHaveLength(7);
+    expect(CHAT_PANEL_IDS).toHaveLength(9);
     expect(code(OVERVIEW_PAGE)).toContain('InsightBox');
     expect(code(TOKENS_PAGE)).toContain('InsightBox');
+    expect(code(CHAT_PAGE)).toContain('InsightBox');
   });
 });
 
@@ -70,12 +80,23 @@ describe('every button has a renderer and every renderer has a button', () => {
     expect(idsIn(TOKENS_PAGE)).toEqual([...TOKEN_PANEL_IDS].sort());
   });
 
-  it('keeps the two pages disjoint', () => {
+  it('/admin/chat mounts exactly the nine chat panels', () => {
+    /*
+     * **ALL NINE, AND THE EQUALITY IS WHY** (F7 §4.1). A page with a box on six of nine
+     * would force this assertion down to a subset check, and a subset check cannot see
+     * a renderer with no button or a button with no renderer. Weakening a fence to
+     * allow a design choice is how this codebase loses fences.
+     */
+    expect(idsIn(CHAT_PAGE)).toEqual([...CHAT_PANEL_IDS].sort());
+  });
+
+  it('keeps all three pages disjoint', () => {
     // A `tokens.*` id on `/admin` would resolve — `panelFacts` dispatches on the id, not
-    // on the page — and would silently run the OTHER page's six queries to answer a
-    // button under the wrong chart.
-    const overlap = idsIn(OVERVIEW_PAGE).filter((id) => idsIn(TOKENS_PAGE).includes(id));
-    expect(overlap).toEqual([]);
+    // on the page — and would silently run the OTHER page's queries to answer a button
+    // under the wrong chart.
+    const pages = [idsIn(OVERVIEW_PAGE), idsIn(TOKENS_PAGE), idsIn(CHAT_PAGE)];
+    const all = pages.flat();
+    expect(new Set(all).size).toBe(all.length);
   });
 });
 
@@ -207,6 +228,83 @@ describe('the state helpers', () => {
     const empty = { tokens: [], utc: [], ops: [], models: [], leagueRows: [], peak: null };
     const out = tokenInsightStates(empty, RANGE, new Map(), TODAY);
     for (const id of TOKEN_PANEL_IDS) expect(out[id], id).toBeNull();
+  });
+
+  it('covers every CHAT panel without throwing on an empty range', () => {
+    /*
+     * Five of the nine divide — the reply rate, the silence rate, the ask share, the
+     * top reader's share and the fleet share — and every one of them returns `null`
+     * rather than `0` when the denominator is zero. **A throw here is a 500 on the
+     * whole page**, not a missing box, because the state helper runs inside the page's
+     * own render.
+     */
+    const empty = {
+      range: { from: RANGE.from, to: RANGE.to },
+      reply: [],
+      runs: [],
+      beats: [],
+      cast: [],
+      intents: [],
+      tokens: [],
+      callTotals: [],
+      latency: [],
+      health: { statuses: [], terminalRuns: 0, fallbackPlans: 0, beatsPlanned: 0, bubbles: 0 },
+      fleetByOp: [],
+      chatPeak: null,
+      fleetPeak: null,
+    };
+    const out = chatInsightStates(empty, RANGE, new Map(), TODAY);
+    for (const id of CHAT_PANEL_IDS) expect(out[id], id).toBeNull();
+  });
+
+  it('renders every chat panel to a fact block, and none of them carries a body', () => {
+    /*
+     * `[F7-13]` and `[F7-14]` together: a `PanelFacts` block carries only what the panel
+     * already renders, plus the caveats. `admin_insights.body` has no redaction path, so
+     * a querent's words reaching a prompt whose output is stored there is the one leak
+     * this page could produce. The fact blocks are built from counts, so the fence is
+     * that the QUERIES never select `body` — this asserts the blocks are non-empty, which
+     * is what makes the negative meaningful.
+     */
+    const data = {
+      range: { from: RANGE.from, to: RANGE.to },
+      reply: [{ trigger: 'idle_nudge' as const, delivered: 4, replied: 1, pending: 2 }],
+      runs: [{ bucket: RANGE.from, trigger: 'cron' as const, runs: 2 }],
+      beats: [{ bucket: 0, runs: 1 }],
+      cast: [{ author: 'thessaly' as const, target: 'querent' as const, messages: 3 }],
+      intents: [{ intent: 'ask' as const, beats: 2 }],
+      tokens: [
+        {
+          bucket: RANGE.from,
+          op: 'chat_turn' as const,
+          calls: 2,
+          inputTokens: 100,
+          outputTokens: 20,
+          untokenized: 0,
+        },
+      ],
+      callTotals: [
+        {
+          model: 'glm-5.2',
+          localDate: RANGE.from,
+          calls: 2,
+          inputTokens: 100,
+          outputTokens: 20,
+          untokenized: 0,
+        },
+      ],
+      latency: [
+        { bucket: null, op: 'chat_turn' as const, calls: 2, p50Ms: 1200, p95Ms: 2400 },
+      ],
+      health: { statuses: [], terminalRuns: 2, fallbackPlans: 1, beatsPlanned: 5, bubbles: 4 },
+      fleetByOp: [],
+      chatPeak: null,
+      fleetPeak: null,
+    };
+    for (const id of CHAT_PANEL_IDS) {
+      const block = serializePanelFacts(chatFacts(id, data, RANGE), RANGE);
+      expect(block.length, id).toBeGreaterThan(40);
+    }
   });
 });
 

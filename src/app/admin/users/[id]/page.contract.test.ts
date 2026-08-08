@@ -348,9 +348,9 @@ describe('the positives, so nothing above passes vacuously', () => {
     }
   });
 
-  it('the detail page renders all fourteen sections', () => {
-    // A section that exists as a file and is never mounted is a panel nobody sees. Fourteen
-    // imports, fourteen elements.
+  it('the detail page renders all fifteen sections', () => {
+    // A section that exists as a file and is never mounted is a panel nobody sees. Fifteen
+    // imports, fifteen elements. (Fourteen until v0.7.0 added `Chat`.)
     const src = code('src/app/admin/users/[id]/page.tsx');
     for (const name of [
       'Identity',
@@ -358,6 +358,7 @@ describe('the positives, so nothing above passes vacuously', () => {
       'Answers',
       'Lotus',
       'Persona',
+      'Chat',
       'Readings',
       'Tokens',
       'Summaries',

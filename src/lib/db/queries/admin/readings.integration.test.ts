@@ -260,6 +260,131 @@ describe('readingCostsFor -- the ledger fold (R51)', () => {
       expect(costs.get(reading)!.totalMs).toBeNull();
       expect(costs.get(reading)!.calls).toBe(1);
     }));
+
+  /*
+   * ── `[R8]`'s NEGATIVE CONTROL: A CHAT RUN MUST NOT INFLATE A READING'S COST ──
+   *
+   * F7, v0.7.0. `readingCostsFor` and `callsForReading` fold **every** `llm_calls` row
+   * carrying a `reading_id` into one figure labelled *Biaya generasi*, with no `op`
+   * predicate. That is R51's deliberate rule — *generation cost, not this reading's
+   * cost* — and it is exactly why v0.7.0's chat is dangerous here: a chat run has TWO
+   * plausible reading pointers (`chat_runs.trigger_reading_id`, and an attachment's
+   * `chat_messages.attached_reading_id`), so the temptation to attribute the ledger row
+   * to one of them is real and the consequence would be invisible. **A reading's cost
+   * card would silently grow every chat message anybody ever sent about that reading.**
+   *
+   * **THE RULE IS ENFORCED AT F1's CALL SITE, NOT BY A PREDICATE HERE** (reconciliation
+   * `[R8]`: *"F7 writes the negative control; F1 writes the rule at the call site"*), so
+   * these two cases are the two halves of one fact:
+   *
+   *   1. a chat row as F1 actually writes it — `reading_id: null` — is not folded;
+   *   2. and the same row WITH a `reading_id` **would** be, which is what makes the null
+   *      load-bearing rather than incidental.
+   *
+   * The second half is asserted rather than left implied on purpose: a future session
+   * looking at `[R8]` and wondering *"why not just add an `op` predicate"* deserves to
+   * see what the predicate's absence costs. The answer is that adding one changes what
+   * *Biaya generasi* means for every reading in history, and `costLabel` in
+   * `src/app/admin/users/copy.ts` would stop being true.
+   */
+  it('[R8] does NOT fold a chat_turn row, because F1 writes reading_id as null', () =>
+    withRollback(async (tx) => {
+      const user = await seedUser(tx);
+      const reading = await seedReading(tx, user);
+      await tx.insert(llmCalls).values([
+        {
+          userId: user,
+          readingId: reading,
+          op: 'reading',
+          model: 'glm-4.6',
+          callClass: 'interactive',
+          streamed: true,
+          inputTokens: 900,
+          outputTokens: 350,
+          totalMs: 6100,
+          status: 'ok',
+          localDate: '2026-07-20',
+        },
+        {
+          // The chat run that reading triggered, and the chat message somebody attached
+          // it to. **Both carry `reading_id: null`** — `direct/plan.ts` and
+          // `voices/turn.ts` pass no `readingId` to the ledger decorator, and their
+          // headers name this test's rule.
+          userId: user,
+          readingId: null,
+          op: 'chat_plan',
+          model: 'glm-5.2',
+          callClass: 'deferred',
+          streamed: false,
+          inputTokens: 2400,
+          outputTokens: 90,
+          totalMs: 1800,
+          status: 'ok',
+          localDate: '2026-07-20',
+        },
+        {
+          userId: user,
+          readingId: null,
+          op: 'chat_turn',
+          model: 'glm-5.2',
+          callClass: 'deferred',
+          streamed: false,
+          inputTokens: 3100,
+          outputTokens: 140,
+          totalMs: 2600,
+          status: 'ok',
+          localDate: '2026-07-20',
+        },
+      ]);
+
+      const cost = (await readingCostsFor(tx, [reading])).get(reading)!;
+      expect(cost.calls).toBe(1);
+      expect(cost.inputTokens).toBe(900);
+      expect(cost.outputTokens).toBe(350);
+      expect(cost.totalMs).toBe(6100);
+    }));
+
+  it('[R8] and WOULD fold one that carried a reading_id — which is why the null matters', () =>
+    withRollback(async (tx) => {
+      const user = await seedUser(tx);
+      const reading = await seedReading(tx, user);
+      await tx.insert(llmCalls).values([
+        {
+          userId: user,
+          readingId: reading,
+          op: 'reading',
+          model: 'glm-4.6',
+          callClass: 'interactive',
+          streamed: true,
+          inputTokens: 900,
+          outputTokens: 350,
+          totalMs: 6100,
+          status: 'ok',
+          localDate: '2026-07-20',
+        },
+        {
+          // NOT how F1 writes it. Seeded by hand to show the consequence: this query has
+          // no `op` predicate and never will, so the discipline has to live upstream.
+          userId: user,
+          readingId: reading,
+          op: 'chat_turn',
+          model: 'glm-5.2',
+          callClass: 'deferred',
+          streamed: false,
+          inputTokens: 3100,
+          outputTokens: 140,
+          totalMs: 2600,
+          status: 'ok',
+          localDate: '2026-07-20',
+        },
+      ]);
+
+      const cost = (await readingCostsFor(tx, [reading])).get(reading)!;
+      expect(cost.calls).toBe(2);
+      // 900 + 3100. Four times the reading's real prompt, under a label that says
+      // "generation cost", growing every time somebody mentions it in the room.
+      expect(cost.inputTokens).toBe(4000);
+    }));
 });
 
 describe('ownership is a predicate (A5-16)', () => {

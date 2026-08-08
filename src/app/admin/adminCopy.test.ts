@@ -256,6 +256,7 @@ describe('I-16 -- the chart primitives hardcode no user-visible string', () => {
     expect(copy).toContain('export const COMMON');
     expect(copy).toContain('export const OVERVIEW');
     expect(copy).toContain('export const TOKENS');
+    expect(copy).toContain('export const CHAT');
     // A rough floor on the amount of prose, so an emptied `copy.ts` fails here rather than
     // silently making every card blank.
     expect(copy.length).toBeGreaterThan(4000);
@@ -302,13 +303,26 @@ describe('the admin pages honour §4.2 and A-D2', () => {
     }
   });
 
-  it('exports exactly one Hero across both pages, on /admin', () => {
-    // `Hero` is *exactly one per view*, and `/admin/tokens` deliberately has none because the
-    // trajectory is its lead. Two heroes on two pages of one dashboard is neither.
-    const overview = code('src/app/admin/page.tsx');
-    const tokens = code('src/app/admin/tokens/page.tsx');
-    expect(overview).toMatch(/<Hero\b/);
-    expect(tokens).not.toMatch(/<Hero\b/);
+  it('renders AT MOST ONE Hero per page, and names which pages have one', () => {
+    /*
+     * `Hero` is **exactly one per view**. This assertion used to be spelled *"exactly one
+     * across both pages"* and named the two files, which is a form that goes quietly
+     * wrong the moment a THIRD page arrives: `/admin/chat` with a hero passes a test whose
+     * own name says there is one hero in the dashboard. Rewritten by F7 (`[F7-12]`) to
+     * assert the property per page and to enumerate the pages that have one, so a fourth
+     * page with a hero is a failure here rather than a second lead nobody decided on.
+     *
+     *   - `/admin` — the peak 5-hour window over the ceiling (R14).
+     *   - `/admin/tokens` — NONE, deliberately: the trajectory is its lead.
+     *   - `/admin/chat` — the proactive reply rate, which roadmap §10.3 calls the only
+     *     continuous measurement of v0.7.0 once it has shipped.
+     */
+    const WITH_HERO = new Set(['src/app/admin/page.tsx', 'src/app/admin/chat/page.tsx']);
+    for (const f of globSync('src/app/admin/**/page.tsx')) {
+      const heroes = [...code(f).matchAll(/<Hero\b/g)].length;
+      expect(heroes, `${f} renders ${heroes} heroes`).toBeLessThanOrEqual(1);
+      expect(heroes === 1, `${f}: hero presence`).toBe(WITH_HERO.has(f));
+    }
   });
 
   it('reads the ceiling from meter.ts rather than duplicating 280', () => {
@@ -320,6 +334,10 @@ describe('the admin pages honour §4.2 and A-D2', () => {
      */
     const overview = code('src/app/admin/page.tsx');
     expect(overview).toMatch(/_ceilings\(\)/);
+    // v0.7.0: `/admin/chat`'s quota panel renders TWO meters and reads BOTH ceilings from
+    // the same accessor (`[F7-15]`, F7-Q5 — `_ceilings()` grew a `chat` field rather than
+    // F1 exporting a second function).
+    expect(code('src/app/admin/chat/page.tsx')).toMatch(/_ceilings\(\)/);
     for (const f of ADMIN) {
       expect(code(f), `${f} hardcodes the ceiling`).not.toMatch(/\b280\b/);
       /*
@@ -327,9 +345,14 @@ describe('the admin pages honour §4.2 and A-D2', () => {
        * *"Dibandingkan langsung dengan LLM_WINDOW_CALL_CEILING"* -- which is the copy telling an
        * operator what the number is compared against, and comment-stripping does not remove a
        * STRING. What is forbidden is READING it here, and that is what the fence now says.
+       *
+       * **BOTH CEILINGS, SINCE v0.7.0.** `LLM_WINDOW_CHAT_CEILING` defaults to half of the
+       * fleet ceiling and is DERIVED in `meter.ts` rather than written as a literal, so a
+       * copy of either number here would be stale the day the plan tier changes -- and
+       * `C-D6` consequence 1 has the fleet ceiling re-derived in this very release.
        */
-      expect(code(f), `${f} reads the ceiling env var directly`).not.toMatch(
-        /process\.env\.LLM_WINDOW_CALL_CEILING/,
+      expect(code(f), `${f} reads a ceiling env var directly`).not.toMatch(
+        /process\.env\.LLM_WINDOW_(CALL|CHAT)_CEILING/,
       );
     }
   });

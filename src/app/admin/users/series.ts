@@ -73,8 +73,15 @@ export function userTokenSeries(
  * `(op, calls)` folded across models and days, biggest first. The stacked bar's input, and the
  * table's.
  *
- * **Nine `op` values, closed** (roadmap seam 3): A5 invents no tenth and no alias, and the
- * caller folds to three + Other rather than growing a fifth hue (R11).
+ * **Thirteen `op` values, closed** (roadmap seam 3): A5 invents no fourteenth and no alias,
+ * and the caller folds to three + Other rather than growing a fifth hue (R11).
+ *
+ * *(Nine when A5 shipped; ten and eleven on 2026-07-31 with `insight` and `blog_format`,
+ * twelve and thirteen with v0.7.0's `chat_plan` and `chat_turn`. **Four of the thirteen have
+ * no querent behind them** — `src/lib/admin/ops.ts` is the machine-checked copy — and this
+ * fold deliberately does not filter them out: on a PER-USER page an `insight` row is the
+ * operator's own press and a chat row is that person's own room, and hiding either would
+ * make this card disagree with the `Panggilan` total beside it.)*
  *
  * **THE `op` TYPE IS DERIVED FROM `CallTotals` RATHER THAN IMPORTED FROM `@/lib/llm/types`,
  * AND THE FENCE IS WHY.** `page.contract.test.ts` allows exactly one `@/lib/llm/**` specifier

@@ -563,13 +563,34 @@ reporting layer over that, and the production read is owed the same way query 12
 
 Three things to have in mind, all of which change how these read:
 
-- **THERE ARE TEN `op` VALUES SINCE 2026-07-31, NOT NINE.** The paragraph above is the
-  provenance of a run made on 2026-07-30 and is left as it was — it describes what was
-  seeded that day. A7 added `insight`: the `Insight` button on each subpanel of `/admin`
-  and `/admin/tokens`, `deferred`, one call per press. **It is the only `op` with no
-  querent behind it**, so it is the one row in every per-`op` breakdown that measures the
-  dashboard rather than the app, and a "cost per reading" denominator must exclude it.
-  Expect its `user_id` to be the operator's on every row.
+- **THERE ARE THIRTEEN `op` VALUES SINCE 2026-08-07, NOT NINE.** The paragraph above is
+  the provenance of a run made on 2026-07-30 and is left as it was — it describes what was
+  seeded that day. **This bullet, however, was wrong twice**: it said ten when there were
+  already eleven, because A7's `insight` and the markdown editor's `blog_format` landed on
+  the same day and only the first was written down here. Corrected 2026-08-07, when
+  v0.7.0's group chat added `chat_plan` (one director call per run) and `chat_turn` (one
+  voice call per beat).
+
+  **FOUR OF THE THIRTEEN HAVE NO QUERENT BEHIND THEM**, and a "cost per reading"
+  denominator must exclude **all four**:
+
+  | op | what causes it | whose `user_id` |
+  |---|---|---|
+  | `insight` | the `Insight` button on each subpanel of `/admin`, `/admin/tokens` and `/admin/chat` | the operator's |
+  | `blog_format` | `Auto Format` and `Terjemahkan otomatis` on `/admin/blog` | the operator's |
+  | `chat_plan` | the director, once per chat run | the querent's |
+  | `chat_turn` | one reader speaking, once per beat | the querent's |
+
+  **The last two DO have a querent's `user_id` and still are not a reading**, which is why
+  the rule is about the op and not about attribution. `src/lib/admin/ops.ts` is the
+  machine-checked copy of this list — `NON_READING_OPS` — with a compile guard that makes a
+  fourteenth op an error until somebody decides which side it is on. **This bullet having
+  been stale for a whole release is the argument for that file existing.**
+
+  **AND `llm_calls.reading_id` IS NULL FOR `chat_plan` AND `chat_turn`** (reconciliation
+  `[R8]`), enforced at the call site rather than by a predicate: `readingCostsFor` and
+  `callsForReading` fold *every* `reading_id`-bearing row into a reading's *Biaya generasi*,
+  and a chat run has two plausible reading pointers.
 
 - **`null_input_calls` was very nearly every row until 2026-07-30**, for the
   reason at the top of this document — a bug in this repository, not a provider
@@ -638,6 +659,11 @@ select op,
   `reading.completed.total_ms` and do not reconcile the two** (R5).
 - **A `reading` row and a `moderation` row and a `gist` row are ONE reading.** Three
   ops per reading is the expected shape; `calls` is not a reading count.
+- **AND FOUR OF THE THIRTEEN OPS HAVE NO READING AT ALL**, which makes `calls` not a
+  reading count in a second and stronger way: `insight` and `blog_format` are the
+  operator pressing a button, `chat_plan` and `chat_turn` are the group chat. The first
+  point says one reading spends several rows; this one says several rows belong to no
+  reading whatsoever. `src/lib/admin/ops.ts` is the list.
 
 ## 14. The worst rolling five-hour window, and how close it came to 280
 
@@ -892,3 +918,176 @@ select count(*)                                            as rows,
 - **`admin_access_log` HAS NO EQUIVALENT AND MUST NOT ACQUIRE ONE.** An audit trail
   with a delete path is the audit trail's absence, and a retention policy is a delete
   path with a timer on it. `/privacy` clause 6's row for it reads *kept indefinitely*.
+
+---
+
+## 19. The group chat (F7, v0.7.0)
+
+**Hand-runnable twins of the three numbers `/admin/chat` exists for.** The dashboard
+composes these through `src/lib/db/queries/admin/chat.ts`; the copies below are what
+you run in psql when the panel says something surprising and the first question is
+whether the panel or the room is wrong.
+
+**PROVENANCE, per this file's opening rule.** All three were executed against the local
+Postgres 16 on **2026-08-08** and every one returned. **The ROWS are the dev
+database's** — the seeded thread `npm run db:seed` creates for loop 4, plus whatever a
+local session has produced — so the SQL, the shapes and the types are measured and
+**no rate below is a fact about traffic.** 19a returned zero rows (nothing proactive
+has settled locally) and **19b returned `difference = -4`**, which is the signed-
+difference caveat below arriving on the first run: the seeded run is `done` with a NULL
+beat sheet and four bubbles, so it reads as four beats' worth of prose nobody planned.
+A production `done` run always has a sheet; a fixture need not, and the tile clamps at
+zero for exactly this reason.
+
+**Every one of them buckets by UTC day, on `created_at`.** `chat_runs` and
+`chat_messages` carry **no `local_date`, deliberately** — so R25's *"a fleet-wide
+`group by local_date` sums two calendar systems"* cannot arise here, and the chat's
+quota figure stays comparable to query 14's. The one exception is the cost fold, which
+reads `llm_calls` and must use that table's own `local_date` to be priceable at all.
+
+**Two of the thirteen `op` values belong to this feature** — `chat_plan` (one director
+call per run) and `chat_turn` (one voice call per beat) — and **`llm_calls.reading_id`
+is NULL for both** (`[R8]`). A chat run has two plausible reading pointers, and
+`readingCostsFor` folds every `reading_id`-bearing row into a reading's *Biaya
+generasi* with no `op` predicate, so a non-null there would silently inflate the cost
+of the reading that triggered the conversation.
+
+### 19a. The proactive reply rate — the release's own scorecard
+
+*Did the querent answer a message they did not ask for, within 24 hours?* Roadmap
+§10.3 calls this the only **continuous** measurement of v0.7.0 once it has shipped:
+the blind read of `npm run smoke -- --chat` gates naturalness once, and this says a
+week later whether the room is alive.
+
+```sql
+with delivered as (
+  select r.id, r.trigger, r.user_id, max(m.created_at) as last_bubble_at
+    from chat_runs r
+    join chat_messages m on m.run_id = r.id and m.author <> 'user'
+   where r.trigger <> 'user_message'
+     and r.created_at >= now() - interval '30 days'
+   group by r.id, r.trigger, r.user_id
+),
+judged as (
+  select d.trigger,
+         (d.last_bubble_at + interval '24 hours') <= now() as settled,
+         exists (
+           select 1 from chat_messages u
+            where u.user_id = d.user_id
+              and u.author  = 'user'
+              and u.created_at >  d.last_bubble_at
+              and u.created_at <= d.last_bubble_at + interval '24 hours'
+         ) as replied
+    from delivered d
+)
+select trigger,
+       count(*) filter (where settled)             as delivered,
+       count(*) filter (where settled and replied) as replied,
+       round(100.0 * count(*) filter (where settled and replied)
+             / nullif(count(*) filter (where settled), 0), 1) as pct,
+       count(*) filter (where not settled)         as pending
+  from judged
+ group by trigger
+ order by trigger;
+```
+
+Four things about it, none incidental:
+
+- **THE DENOMINATOR IS RUNS WHOSE 24-HOUR WINDOW HAS CLOSED.** A run that spoke four
+  hours ago has not failed to get a reply; **it has not finished being asked.** Those
+  are excluded from the numerator AND the denominator and counted as `pending`.
+  Including them makes the rate fall every time somebody picks a range ending today —
+  which is the dashboard's default — so the scorecard would read as declining on every
+  page load. That is `periodDelta`'s `null`-never-`Infinity` rule applied to a
+  population instead of to a ratio. **`nullif` above is the same rule in SQL: a rate
+  over zero settled runs is NULL, never 0%.**
+- **THE JOIN TO `chat_messages` IS WHAT MAKES THE DENOMINATOR HONEST.** A run that
+  planned zero beats (a valid and desirable outcome) or lost every beat to validation
+  produced no bubble and is not in `delivered` — correctly, because nothing was said
+  for the querent to answer. **From inside the room those two are indistinguishable
+  from silence**; 19b is where they are told apart.
+- **`u.user_id = d.user_id`, NOT a `run_id` join.** The querent's reply is the trigger
+  message of a NEW run and has no relationship to the proactive one except in time.
+  Somebody who came back and said something else entirely still came back.
+- **`author <> 'user'` rather than a list of reader slugs**, so a fourth reader is
+  counted without an edit here.
+
+### 19b. Dropped beats — the failure that looks exactly like a decision
+
+There is no error bubble in v0.7.0: **a failure is silence.** So a beat that failed
+validation twice and a director that decided nobody should answer look **identical**
+from inside the room. This is the only place they can be separated.
+
+```sql
+select count(*)                                                          as terminal_runs,
+       count(*) filter (where r.plan_source = 'fallback')                 as fallback_plans,
+       coalesce(sum(coalesce(jsonb_array_length(r.beats -> 'beats'), 0)), 0) as beats_planned,
+       coalesce(sum(m.bubbles), 0)                                        as bubbles,
+       coalesce(sum(coalesce(jsonb_array_length(r.beats -> 'beats'), 0)), 0)
+         - coalesce(sum(m.bubbles), 0)                                    as difference
+  from chat_runs r
+  left join lateral (
+    select count(*) as bubbles from chat_messages x
+     where x.run_id = r.id and x.author <> 'user'
+  ) m on true
+ where r.status = 'done'
+   and r.created_at >= now() - interval '30 days';
+```
+
+- **`status = 'done'` IS WHAT MAKES THE SUBTRACTION EXACT.** A beat shed at
+  `LLM_WINDOW_CHAT_CEILING` is not dropped, it is **postponed**: the run stays
+  `running` with beats remaining and the querent's next visit picks it up. Counting
+  those would report the sub-budget working as validation failing.
+- **`difference` IS SIGNED AND MAY BE NEGATIVE.** One beat may produce **two** bubbles
+  — granted as *"the largest naturalness gain left"*, because a person with more to say
+  sends a second message rather than a longer one. The dashboard clamps the tile at
+  zero, since *"beat dijatuhkan: −3"* reads as a broken dashboard rather than as a
+  reader who had two things to say. **Here it is printed raw**, because in psql the sign
+  is the information.
+- **`plan_source` IS THE ONLY WAY TO SEE `validatePlan`'s REFUSAL RATE.** The
+  director's deterministic fallback is never zero-beat and is otherwise
+  **indistinguishable from a real plan**, so without this column the number that says
+  whether the director is working does not exist.
+- The companion figure is the silence rate:
+  `jsonb_array_length(beats -> 'beats') = 0` over terminal runs. **A silence rate of
+  zero is not good news** — it means the director always answers, which is not what a
+  group chat does.
+
+### 19c. The chat's share of the five-hour window
+
+Query 14, filtered. `C-D6`'s promise — *a chat run must never be the reason a reading
+fails* — made checkable.
+
+```sql
+with w as (
+  select created_at,
+         count(*) over (order by created_at
+                        range between interval '5 hours' preceding and current row)
+           as in_window
+    from llm_calls
+   where created_at >= now() - interval '30 days'
+     and status <> 'refused'
+     and op in ('chat_plan', 'chat_turn')
+)
+select to_char(created_at at time zone 'UTC', 'YYYY-MM-DD HH24:MI') as window_end,
+       in_window
+  from w
+ order by in_window desc, created_at
+ limit 5;
+```
+
+- **RUN QUERY 14 BESIDE IT.** That one is the same statement without the `op`
+  predicate, and its top row is the number `/admin`'s hero prints. **If the dashboard's
+  two meters disagree with these two figures, one of them is wrong** — which is the
+  whole reason `/admin/chat` calls one function twice rather than keeping a second copy
+  of this frame.
+- **THE FILTER IS INSIDE THE FRAME, NOT AROUND IT.** Filtering after the window counts
+  every call and then discards rows; filtering before it asks what the sub-budget
+  actually meters — *how many CHAT calls fell inside five hours of each other.*
+- **CHAT CALLS ARE `deferred`, so they are shed at the SOFT line, not the hard one.**
+  The number that really binds is lower than the ceiling this is compared against, and
+  `LLM_WINDOW_CHAT_CEILING` (half of `LLM_WINDOW_CALL_CEILING` by default) is peeked
+  before the fleet ceiling and consumed after it.
+- **AND THIS IS A LOWER BOUND**, for query 14's three reasons: the ledger write is
+  inside `after()`, `reserveModelCall` charges the window before the call, and only
+  windows ending inside the range are visible.
