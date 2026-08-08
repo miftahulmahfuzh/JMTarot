@@ -4,6 +4,7 @@ import { db } from '@/lib/db/client';
 import type { Locale, ReaderId } from '@/data/types';
 import type { CompletionPrompt } from '@/lib/llm/types';
 import { assembleChatContext } from '../context';
+import { materialLineForRun } from '../proactive/brief';
 import type { Beat, DirectorInput } from '../types';
 import { buildPlanPromptFrom, type PlanInput } from './assemble';
 import { affinityFor } from './affinity';
@@ -141,8 +142,22 @@ export async function buildPlanPrompt(input: DirectorInput): Promise<CompletionP
     window,
     affinity,
     awaiting: awaitingReader(window),
-    /* F5's token. Null until F5 lands — see `hasMaterial` below. */
-    material: null,
+    /*
+     * **F5's TOKEN, AND THIS IS THE SEAM THIS FILE SAID WOULD CLOSE.** `materialLineForRun`
+     * reads `chat_runs.material_key` and rebuilds the one line `assemble.ts` renders after
+     * `BAHAN:` / `MATERIAL:` — a closed kind token, a neutral per-locale note and scalars,
+     * never free text (§6.3, seam with F5).
+     *
+     * `null` on every `user_message` run, which is one indexed read and the common path,
+     * and `null` again when the subject could not be rebuilt. **A null costs the header
+     * line and nothing else**, which is this file's own rule for a missing memo: *a miss
+     * is a degradation here, where it is a refusal for a voice.*
+     */
+    material: await materialLineForRun(db, {
+      runId: input.runId,
+      userId: input.userId,
+      locale: input.fallbackLocale,
+    }),
     caps,
   };
 

@@ -10677,3 +10677,182 @@ rate's denominator is still readings finished, not messages sent**, which was th
 - **`src/lib/admin/userList.integration.test.ts` fails on `main` as well as here** — *"expected
   null to be 1"* on `adminUserListPage`'s `calls`. Verified pre-existing by stashing this branch's
   changes and re-running. It is A5's, not F6's, and it is the only red in 558 integration tests.
+
+---
+
+## F5 — proactivity (v0.7.0, 2026-08-08)
+
+**Three sources, one pure predicate, six materials, and no second pipeline.** `C-D7` is the
+design and F5 built triggers rather than a delivery path: a proactive run is a `chat_runs` row
+nobody posted a message for, and the badge, the lease, the validation and the erasure cascade
+were all already there.
+
+`src/lib/chat/proactive/{eligibility,material,notes.{ts,id.ts,en.ts},detect,mint,brief,supersede,
+onReading,onTick,fixtures}.ts`, `src/app/api/cron/nudge/route.ts`, `vercel.json`, and four edits
+in other workstreams' files (below).
+
+### What was built, in one paragraph each
+
+**`eligibility.ts` — PURE, a LEAF, injected clock.** Eight gates in a fixed order, `no_material`
+last. `tally.ts`'s ruling is the whole justification — *a heuristic may fail a build; it may not
+fail a person* — and a false positive here is a reader messaging somebody at a moment that reads
+as tone-deaf, with no undo. Every branch is enumerated in `npm test` at its boundary: the run at
+exactly `minGap`, the run on the day the counter rolls over, the run inside an erasure grace.
+
+**`material.ts` + the two note tables.** Six kinds, closed, `AssertNever` at the switch. One
+material per run, never a bundle — *a friend messages you about one thing.* The note **names a
+subject and is never a sentence for a reader to say**, and `material.test.ts` greps both tables
+for imperative openers as the cheap tell.
+
+**`detect.ts` — six detectors, handle first, first hit wins.** `firstPassingWindow`'s laziness
+argument, applied one workstream over: the common case is M1 or nothing, so the common cost is one
+indexed query.
+
+**`mint.ts` — the probe, the counter and the transaction.** The predicate runs twice on purpose
+(§4.6) and the day's slot is claimed by one conditional upsert.
+
+**`brief.ts` — the seam with F2.** `chat_runs.material_key` is rehydrated at plan time into the one
+`BAHAN:` line `assemble.ts` renders.
+
+**`/api/cron/nudge` — reap, mint, warm, in that order.**
+
+### The five decisions worth the ink
+
+**1. The counter and the insert are ONE TRANSACTION, and the rollback is the refund `[F5-13]`
+refuses to write by hand.** *"A limiter that refunds is a limiter with a race."* So there is no
+refund path; there is a transaction. The conditional `UPDATE … WHERE proactive_count_today < :cap`
+claims the day's slot, the insert either succeeds or loses to `chat_runs_user_material_uq`, and a
+loss rolls the whole thing back. **The alternative — insert first, then bump — leaves a run minted
+over the cap under the same race**, and the cap is the only thing between the querent and twelve
+unprompted bubbles. The counter is never spent on a run that does not exist and nothing anywhere
+decrements.
+
+**2. The bump is an UPSERT, not an UPDATE, and that is not hygiene.** The first proactive run of a
+querent's life is usually the one minted by their first reading — **before they have ever opened
+the room**, so there is no `chat_threads` row. A bare `UPDATE` matches zero rows there and is
+indistinguishable from a spent cap: **the feature would never start for anybody**, and the symptom
+would be "proactivity doesn't work" with nothing in any log. `mint.integration.test.ts` names the
+case.
+
+**3. A USED MATERIAL KEY FALLS THROUGH TO THE NEXT DETECTOR RATHER THAN ENDING THE RUN.** §4.5
+specifies the unique index as the arbiter and calls a violation *"a normal outcome logged as
+`skipped/duplicate`"* — true at the insert, and **wrong as the only mechanism**, because
+`firstPassingWindow` returns the same recurring pair for days. A run refused as a duplicate would
+have silenced M3 and M6 for the whole of that period. So `detect.ts` probes the key per candidate
+(one index lookup on `chat_runs_user_material_uq`) and continues down the ladder; the constraint
+still settles the race. The integration test is named for the behaviour, not the mechanism.
+
+**4. `occasion:return` is keyed by the DAY where the other two occasions are keyed by the YEAR.**
+§4.5 wrote `occasion:<occasion>:<YYYY>` for all three. A birthday happens once a year and a
+greeting for it should too; *coming back* happens whenever somebody comes back, and a once-a-year
+key **silently swallows the second return** — which is the material with the strongest claim to
+existing at all, since it is the only one that fires for a querent with no readings, no messages
+and no recent activity. The gap gate and the daily cap are what bound it.
+
+**5. M6's deletion guard is stronger than §4.1's sketch and cheaper.** The plan proposed comparing
+`answerPresence` against what the Lotus's traits imply. What shipped asks whether **the most
+recently touched onboarding answer is still present** — exact for the case that matters (the edit
+that rebuilt the Lotus was an addition, not a clear), one indexed read, and **it decrypts nothing**,
+which is what keeps `C-D8` condition 1 true. `C-D8` condition 5's failure — *a reader who asks
+about the thing you refused to answer* — arrives through the back door otherwise.
+
+### The four edits outside `proactive/**`, each at a seam somebody left open
+
+| File | Owner | Why it was not a violation |
+|---|---|---|
+| `src/lib/chat/run.ts` (`proactiveTick`) | F1 | F1 shipped it returning `null` *"so the route is complete and inert until F5 lands"*, in those words. **The import is dynamic**, and not for bundling: `proactive/**` imports `run.ts` back for `mintRun` and `advance`, and a static pair is a cycle whose failure mode is one module evaluating with half its exports undefined, at runtime, in an `after()`, on the app's most-called endpoint. |
+| `src/lib/chat/direct/prompt.ts` (`material:`) | F2 | F2 wrote *"When F5 lands, `PlanInput.material` is the input and this derivation goes"*. One line. **`planFallback`'s `hasMaterial` derivation was LEFT IN PLACE** against that sentence: it now only fires when the material line could not be rebuilt, and deleting it would turn a cold Neon compute into a silent room. |
+| `src/app/api/reading/route.ts` | W4 | One import, one awaited call, **last** inside the existing `defer()`. §8.3's three reasons, in order of how hard they bind. |
+| `src/app/api/chat/message/route.ts` | F1 | Seam S5's mechanism B. See below — it is bigger than the duplicate it was written for. |
+
+### The supersede is not really about the duplicate
+
+§9's rule is *"if the querent attaches reading X themselves, the `reading_completed` run for X does
+not fire"*, and the stated cost of getting it wrong is two readers talking over each other about
+one object. **The real cost is silence**, and it was found by reading `mintRun`: it refuses while a
+live run exists — *one room, one conversation at a time*. So without `supersedeReadingRun` the
+attach would store the querent's bubble and mint **nothing**: they post a reading into the room and
+three readers say nothing about it. The call therefore has to be **inside the attach transaction and
+before the mint**, which is where §9.4 put it for the smaller reason.
+
+### The cold open, and how S-new-2 was closed
+
+`[F5-6]`: the dot is lit by a stored bubble and never by a `pending` run. A run minted by a reading
+or a tick has no bubbles, so **something has to advance it or sources 1 and 2 are invisible to
+anyone who does not open `/chat` voluntarily** — the whole population this feature exists for.
+
+§12 offered two resolutions and **neither had been taken when F5 arrived**: F4's `ChatButton` reads
+only `unread` off the state response and fires nothing. So the tick took it — at most **one step of
+one open run, per tick** — and §12's stated blocker for that option was already gone: it objected
+that `/api/chat/state` had `maxDuration: default`, *"ten seconds on Hobby"*, and **F1 declared 30**
+under `[R5]`. The work runs after the response has flushed, so a ~6s beat has the budget; the cost
+is bounded exactly as §12 enumerates (only while a run is open, one step per tick, `deferred` so the
+soft ceiling sheds it before any reading).
+
+**The warm fires on `minted || reason === 'open_run'`**, which reads the *pendingness* off a refusal
+we already have rather than paying for a second query. Every other refusal means there is no run at
+all, and advancing would be one `claimRun` round trip to be told `idle` on every page view in the
+app.
+
+### `chat.proactive_skipped` does not fire on every evaluation
+
+F1's closed prop union has six reasons and F5 maps eight refusals onto it. `erased` and
+`never_opened` have no member and are not emitted — they are states rather than events. `open_run`
+and `gap` **are** emitted, but **only from the cron**: they refuse the overwhelming majority of
+ticks, and firing on them from a per-page-view source would put an `events` row on every page view
+in the app against a 180-day TTL on Neon free's 0.5 GB. That is v0.4.0's fold-by-dropping argument,
+and routing them through the once-a-day job is what keeps `too_soon` and `run_in_flight` from
+shipping as two dead literals of somebody else's union.
+
+**And it is written with `flushEvents` directly, never `track()`.** Two of the three entry points
+have no request scope at all — the cron has no request, and an `after()` callback is outside the
+ALS store `withAnalytics` created — so `track()` would take its fallback path and call `after()`
+from inside an `after()`. **That is exactly how every streamed translation lost its event, silently,
+for as long as V2 had shipped.** One writer, one path, no scope to be inside of.
+
+### Measured: the first two live proactive runs
+
+`npm run smoke -- --chat --proactive --locale id`, glm-4.6, 2026-08-08. **Six runs, one per
+material, director and voices both live.**
+
+**Run 1 (first pass, before the note table was calibrated): three of six runs ignored the material
+entirely** and wrote from the transcript instead — `reading`, `recurring` and `lotus`. `occasion`
+and `unanswered` landed cleanly (*"nah iya, tapi hari ini spesial kan siap rayakan nggak"*).
+
+**Run 2, after one change to the note table:** every Indonesian note that names something NEW now
+opens `hal baru sejak ruangan ini terakhir bicara: …`, which is a fact rather than an instruction
+and positions the material against the transcript — the exact confusion. **The `reading` run's
+angle then named the cards** (*"Moon dan Tower artinya dia tahu tapi tetap menghindar"*). `occasion`
+produced *"selamat ulang tahun Mif, untuk hari ini urusan kerjaan dilarang masuk yaa"*.
+
+**Shortness across both runs was healthy**: 10–11 bubbles, min 2 words, mean 9.7–10.5, max 24
+against a 24 ceiling (Margaret 31). No tally, no empty opener, no bare greeting.
+
+### Still open when F5 landed
+
+- **THE MATERIAL REACHES THE VOICE ONLY THROUGH THE DIRECTOR'S `angle`, AND THE DIRECTOR'S SYSTEM
+  PROMPT NEVER MENTIONS `BAHAN:`.** `assemble.ts` renders the line and `system.{id,en}.ts`'s rules
+  do not refer to it, so the model treats it as an unexplained header and often plans from the
+  newest transcript message instead. Measured: after the note calibration, `recurring` and `lotus`
+  still produced prose about the room rather than about the material. **This is F2's file and F5 may
+  not edit it** (roadmap §7: *must not touch the director's prompt*), so it is recorded rather than
+  fixed. The repair is one rule in the director's contract naming `BAHAN` as the reason the room is
+  being woken, plus a worked example — `insightPrompt.ts`'s finding-not-summary lesson, and the blog
+  editor's *"the index rule needs a worked example, not a definition"*, in a third place.
+- **One plan in twelve came back `unparseable`** — glm-4.6 emitted a duplicate `angle` key in one
+  beat. `checkPlan` refused it and production would have fallen back to one beat; the smoke run
+  fails loudly on it, which is F2's own rule (*any fallback rate is a prompt problem, not a
+  validator problem*). One sample; not re-run.
+- **Nothing here has been seen over days.** `[F5-Q2]`'s cap of 2 and `[F5-Q1]`'s gap of 3 hours are
+  guesses with arguments, labelled as such, and the only instrument that can move either is
+  `C-N2f`'s proactive reply rate over weeks on a real phone. The cron's 19:00 WIB is the same shape.
+- **`NUDGE_MAX_USERS = 8` has a scale ceiling of roughly eight querents a night**, and it becomes a
+  problem silently. The successor is named rather than invented: the cron mints only and a queue
+  drains it, v0.8.0.
+- **`--chat --proactive` runs one locale by default and the English six have not been read.** The
+  reason differs from `--all`'s: the risk here is the material rather than the second locale, and
+  twelve unprompted runs is more prose than anybody finishes in one sitting — **a gate nobody
+  finishes reading is a gate nobody passes.**
+- **The blind read prints all six runs as one stream.** Guessing who is who works; guessing which
+  run was which material is easier than it should be from the ordering. A per-run separator inside
+  the blind block would fix it and would also make the material key readable against it.

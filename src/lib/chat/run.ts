@@ -552,23 +552,34 @@ async function finish(run: ClaimedRun, owner: string, status: 'done'): Promise<A
 /**
  * F5's proactive tick, called from `GET /api/chat/state`'s `after()`.
  *
- * **F1 SHIPS IT RETURNING `null` UNCONDITIONALLY**, so the route is complete and inert
- * until F5 lands. That is deliberate rather than a stub left lying: the alternative is
- * F5 editing a route file F1 owns, which is exactly the seam §6 exists to prevent.
+ * **F1 SHIPPED IT RETURNING `null` UNCONDITIONALLY** so the route was complete and inert
+ * until F5 landed; that was deliberate rather than a stub left lying, because the
+ * alternative is F5 editing a route file F1 owns. **F5 has landed and this is now the
+ * one line of that seam** — the whole of source 2 lives in
+ * `@/lib/chat/proactive/onTick`, which mints and then warms at most one step of one open
+ * run (§12, seam S-new-2).
+ *
+ * **THE IMPORT IS DYNAMIC**, and not for bundling: it keeps `run.ts`'s module graph free
+ * of `proactive/**`, which imports `run.ts` back for `mintRun` and `advance`. A static
+ * pair would be a cycle, and the failure mode of a cycle here is one of the two modules
+ * evaluating with half its exports undefined — at runtime, in an `after()`, on the
+ * app's most-called endpoint.
  *
  * **`state`'s `after()` MAY WRITE BOOKKEEPING THE QUERENT DID NOT CAUSE; IT MAY NOT
  * WRITE A FACT THAT CLAIMS THE QUERENT LOOKED** (`F1-D3`). That asymmetry is why
  * `POST /api/chat/read` exists as a separate route: `state` is polled from four pages
  * that show no messages, and a GET that moved `last_read_at` would clear the badge from
  * a page where the querent never saw the message — extinguishing `C-N2b`'s red dot with
- * the very request that renders it.
+ * the very request that renders it. **A mint and a warm write no such fact**: the dot is
+ * lit by a stored bubble (`[R6]`), which is what this call exists to produce.
  */
-export async function proactiveTick(_args: {
+export async function proactiveTick(args: {
   userId: string;
   locale: Locale;
   localDate: string;
 }): Promise<{ runId: string } | null> {
-  return null;
+  const { tickProactive } = await import('./proactive/onTick');
+  return tickProactive(args);
 }
 
 /** Re-exported so routes have one import for the reply type they serialise. */

@@ -364,8 +364,24 @@ async function main() {
        */
       await runDirector(sideLocales, process.argv.includes('--voices'));
       if (!all) return;
+    } else if (process.argv.includes('--proactive')) {
+      /*
+       * `--chat --proactive` IS F5's HALF OF §10.2's GATE, AND IT IS ITS OWN RUNNER.
+       *
+       * `--chat` scripts a querent and cans the sheets; this one has **no querent at
+       * all.** Six unprompted runs, one per material kind, each starting from a room that
+       * went quiet hours ago — the director and the voices both live, because the whole
+       * question is whether the material reached the prose, and a canned sheet would
+       * answer it for the director instead of asking it.
+       *
+       * The two questions it ends on are the release's own: *does the opening message
+       * have something to be about, and does it sound like somebody thought of you or
+       * like a cron job?*
+       */
+      await runProactive(sideLocales);
+      if (!all) return;
     } else {
-      await runChat(sideLocales, process.argv.includes('--proactive'));
+      await runChat(sideLocales, false);
       if (!all) return;
     }
   }
@@ -3091,6 +3107,351 @@ async function runDirector(locales: Locale[], withVoices = false) {
    */
   if (withVoices) chatBlindPrint(conversations, locales, CHAT_NICKNAME, false);
 }
+
+
+// ---------------------------------------------------------------------------
+// `--chat --proactive` (F5). THE OTHER HALF OF §10.2's GATE.
+// ---------------------------------------------------------------------------
+
+/**
+ * `[F5-10]`'s failure, as a grep. **THE EXACT STRING THE ROADMAP NAMES.**
+ *
+ * `C-N2e`: *a proactive run with nothing to be about produces "hai, apa kabar?", which
+ * is the emptiest thing this feature could ship.* A run that HAD material and opened
+ * with it anyway means the brief did not reach the voice — which is a prompt problem,
+ * not a material problem, and it is invisible in every unit test because the material
+ * object was perfectly correct on its way in.
+ */
+const PROACTIVE_EMPTY_OPENER = /\b(apa kabar|gimana kabar|how are you|what'?s up|how's it going)\b/i;
+
+/**
+ * WARN, not FAIL. `tally.ts`'s two-tier argument verbatim: *"a scanner that flags
+ * legitimate output is a scanner somebody switches off within a week."* **"Selamat pagi"
+ * from a morning nudge is legitimate**; a bare *"hai"* opening an unprompted run usually
+ * is not, and the difference is a judgement a person makes while reading.
+ */
+const PROACTIVE_BARE_GREETING = /^\s*(hai|halo|hi|hey)\b/i;
+
+/**
+ * `npm run smoke -- --chat --proactive`. **Six real runs, one per material kind, with no
+ * querent and no database.**
+ *
+ * ── WHY BOTH HALVES ARE LIVE HERE, WHERE `--chat` CANS ONE ────────────────
+ *
+ * `--chat` cans the sheets and `--chat --director` cans the voices, each so that a
+ * failure in one is not read as a failure in the other. **Neither split works for this
+ * question.** What F5 ships is a *brief*, and the only way to find out whether a brief
+ * reached the prose is to let it travel the whole way: material -> director -> voice. A
+ * canned sheet would answer the question for the director; canned prose would answer it
+ * for the voices.
+ *
+ * ── ONE LOCALE BY DEFAULT, AND THE REASON DIFFERS FROM `--all`'s ──────────
+ *
+ * `--all` defaults to both because W6's whole risk *is* the second locale. Here the risk
+ * is the **material**, and twelve unprompted runs is more prose than anybody reads in one
+ * sitting — **and the blind read is the gate, so a run nobody finishes reading is a gate
+ * nobody passes.** `--locale en` switches.
+ */
+async function runProactive(locales: Locale[]) {
+  const { buildPlanPromptFrom } = await import('@/lib/chat/direct/assemble');
+  const { affinityFor } = await import('@/lib/chat/direct/affinity');
+  const { planCaps } = await import('@/lib/chat/direct/caps');
+  const { checkPlan } = await import('@/lib/chat/direct/validate');
+  const { awaitingReader, buildWindow, recentlySpoke, renderBeatSheet } = await import(
+    '@/lib/chat/direct/window'
+  );
+  const { chatModel, chatModelName } = await import('@/lib/chat/model');
+  const { buildChatPrompt } = await import('@/lib/chat/prompt/build');
+  const { CHAT_LENGTH_BUDGET, chatBudgetFor } = await import('@/lib/prompt/budget');
+  const { addressForms } = await import('@/lib/chat/address');
+  const { checkTurnBodies } = await import('@/lib/chat/validate');
+  const { pace } = await import('@/lib/chat/voices/pace');
+  const { describeMaterial, materialLine } = await import('@/lib/chat/proactive/material');
+  const { PROACTIVE_ROOMS, proactiveFixtures } = await import('@/lib/chat/proactive/fixtures');
+  const { tallyFailures } = await import('@/lib/memory/tally');
+
+  const caps = planCaps();
+  const FORMS = addressForms(CHAT_NICKNAME);
+  const ANSWERS = chatFixtureAnswers();
+  const RAW_ANSWERS = ANSWERS.map((a) => a.text);
+
+  process.stdout.write(
+    `\nproactive model=${chatModelName()} (CHAT_MODEL=${process.env.CHAT_MODEL ?? 'unset'})\n` +
+      `caps: maxBeats=${caps.maxBeats} perReader=${caps.maxBeatsPerReader}\n`,
+  );
+
+  const problems: string[] = [];
+  const conversations: Record<string, Array<{ author: string; body: string }>> = {};
+  /** The key the blind read prints: which run was about what. */
+  const materialKey: string[] = [];
+
+  for (const locale of locales) {
+    process.stdout.write(`\n${'#'.repeat(70)}\nPROACTIVE -- ${locale}\n${'#'.repeat(70)}\n`);
+    const spoken: Array<{ author: string; body: string; words: number }> = [];
+    const transcript: Array<{ author: string; body: string }> = [];
+    let runNo = 0;
+
+    for (const fixture of proactiveFixtures(locale)) {
+      runNo += 1;
+      /*
+       * A FIXED CLOCK PER RUN, so two runs of this script produce the same ages and can
+       * be diffed. `[F5-2]`'s injected clock, extended to the instrument.
+       */
+      let clock = Date.parse('2026-08-07T12:00:00.000Z');
+      const messages = PROACTIVE_ROOMS[locale][fixture.room].map((m) => ({
+        id: m.id,
+        author: m.author,
+        body: m.body,
+        createdAt: new Date(clock - m.minutesAgo * 60_000).toISOString(),
+        replyToAuthor: null as 'user' | ReaderId | null,
+        attachment: null as string | null,
+      }));
+
+      const brief = describeMaterial(fixture.material, locale);
+      const line = materialLine(brief);
+
+      process.stdout.write(
+        `\n--- run ${runNo}: ${fixture.kind} (trigger ${fixture.trigger}, room "${fixture.room}")\n` +
+          `    BAHAN: ${line}\n` +
+          `    replyTo: ${brief.replyTo ?? 'none'}\n`,
+      );
+      /* The room the run starts from, printed once so the bubbles have something to sit
+       * against. It is context, not part of the blind read's answer. */
+      for (const m of messages) {
+        process.stdout.write(`      ${m.author === 'user' ? CHAT_NICKNAME : m.author}: ${m.body}\n`);
+      }
+
+      const window = buildWindow({
+        messages,
+        locale,
+        caps,
+        /*
+         * **A PROACTIVE RUN HAS NO TRIGGER MESSAGE**, which is exactly the shape
+         * `[F2-5]` describes: the affinity is scored on the trigger message alone, so it
+         * scores `''` and no hint line is emitted at all. The material is what the
+         * director decides on instead, which is the whole point of this run.
+         */
+        triggerMessageId: brief.replyTo,
+        now: clock,
+      });
+      const cast = recentlySpoke(window);
+      const affinity = affinityFor('', locale, { recentlySpoke: cast });
+
+      const prompt = buildPlanPromptFrom(
+        {
+          trigger: fixture.trigger,
+          fallbackLocale: locale,
+          window,
+          affinity,
+          awaiting: awaitingReader(window),
+          material: line,
+          caps,
+        },
+        cast,
+      );
+
+      const started = Date.now();
+      const reply = await getProvider().complete(prompt, {
+        op: 'chat_plan',
+        callClass: 'deferred',
+        model: chatModel(),
+      });
+      const planMs = Date.now() - started;
+      const checked = checkPlan(reply.text, { window, fallbackLocale: locale, caps });
+
+      if (!checked.ok) {
+        process.stdout.write(
+          `    [PLAN REFUSED -- ${checked.reason}] ${JSON.stringify(reply.text.slice(0, 200))}\n`,
+        );
+        problems.push(`[${locale}] ${fixture.kind}: the plan was refused -- ${checked.reason}`);
+        continue;
+      }
+
+      process.stdout.write(
+        `${renderBeatSheet({
+          label: `    plan`,
+          trigger: fixture.trigger,
+          locale,
+          source: 'model',
+          beats: checked.beats,
+          affinity,
+          window,
+        })}\n    ${planMs}ms, tokens in=${reply.usage.inputTokens ?? 'null'} out=${reply.usage.outputTokens ?? 'null'}\n`,
+      );
+
+      if (checked.beats.length === 0) {
+        /*
+         * **`[F5-7]`: A PROACTIVE RUN'S BEAT SHEET IS NEVER EMPTY.** `C-R6`'s *"the
+         * director may say nobody replies"* is an affordance for a POSTED MESSAGE, where
+         * declining to answer is a naturalness signal. Applied to a proactive trigger it
+         * is a contradiction — nobody spoke, so there is nothing to decline to answer —
+         * and `[F5-13]`'s non-refunding counter means the querent's day was spent on
+         * silence.
+         */
+        problems.push(
+          `[${locale}] ${fixture.kind}: ZERO BEATS on a proactive trigger ([F5-7]). The day's ` +
+            'budget was spent on silence; F2 owns the enforcement.',
+        );
+        continue;
+      }
+
+      const runBubbles: string[] = [];
+      for (const [beatIndex, beat] of checked.beats.entries()) {
+        const budget = chatBudgetFor(locale, beat.reader);
+        const previous = messages[messages.length - 1];
+        const delay = pace({
+          next: beat,
+          previousChars: beatIndex === 0 ? null : previous.body.length,
+        });
+        const guards = {
+          locale,
+          reader: beat.reader,
+          budget,
+          addressForms: FORMS,
+          rawAnswers: RAW_ANSWERS,
+          conversation: messages.map((m) => m.body),
+        };
+
+        let text = '';
+        let turnMs = 0;
+        let turn = checkTurnBodies('', guards);
+        let repairReason: string | null = null;
+        let attempts = 0;
+
+        /* The retry is here because production has one (`C-R7`, `F1-D2`): a runner that
+         * made one call would report every refusal as a lost bubble. */
+        for (const attempt of [1, 2] as const) {
+          attempts = attempt;
+          const turnPrompt = buildChatPrompt({
+            ctx: chatFixtureContext({
+              locale,
+              nickname: CHAT_NICKNAME,
+              forms: FORMS,
+              answers: ANSWERS,
+              messages,
+              replyToId: beat.replyTo,
+            }),
+            self: beat.reader,
+            beat,
+            budget,
+            now: clock,
+            repairReason: attempt === 2 ? repairReason : null,
+          });
+          const startedTurn = Date.now();
+          const turnReply = await getProvider().complete(turnPrompt, {
+            op: 'chat_turn',
+            callClass: 'deferred',
+            model: chatModel(),
+          });
+          turnMs = Date.now() - startedTurn;
+          text = turnReply.text;
+          turn = checkTurnBodies(text, guards);
+          if (turn.ok) break;
+          repairReason = turn.reason;
+        }
+
+        if (!turn.ok) {
+          /* `C-R7`: refused twice stores nothing and the room is simply quieter. */
+          process.stdout.write(
+            `    [${beat.reader} refused twice -- ${turn.reason}, nothing stored] ${text.trim().slice(0, 120)}\n`,
+          );
+          problems.push(
+            `[${locale}] ${fixture.kind} beat ${beatIndex}: refused TWICE -- ${turn.reason}`,
+          );
+          continue;
+        }
+
+        for (const body of turn.bodies) {
+          clock += Math.max(delay, 1000);
+          const words = body.split(/\s+/).filter(Boolean).length;
+          messages.push({
+            id: `g${messages.length + 1}`,
+            author: beat.reader,
+            body,
+            createdAt: new Date(clock).toISOString(),
+            replyToAuthor: null,
+            attachment: null,
+          });
+          spoken.push({ author: beat.reader, body, words });
+          transcript.push({ author: beat.reader, body });
+          runBubbles.push(body);
+          process.stdout.write(
+            `    [${delay}ms] ${beat.reader}${beat.to === 'user' ? '' : ` -> ${beat.to}`} ` +
+              `(${beat.intent}): ${body}\n        ${words}w ${body.length}c, ${turnMs}ms, attempt ${attempts}\n`,
+          );
+        }
+      }
+
+      // ---- §11.2's THREE CHECKS, PER RUN ------------------------------------
+      const opener = runBubbles[0] ?? '';
+      if (opener !== '' && PROACTIVE_EMPTY_OPENER.test(opener)) {
+        problems.push(
+          `[${locale}] ${fixture.kind}: THE EMPTY OPENER. The run had material and opened with ` +
+            `${JSON.stringify(opener.slice(0, 80))} -- C-N2e's named worst outcome, and it means ` +
+            'the brief did not reach the voice.',
+        );
+      }
+      for (const body of runBubbles) {
+        /*
+         * **A DIGIT IN THE OUTPUT WAS INVENTED.** M4 hands over a Shadow Arcana, a pulse
+         * word and a dominance bucket and **never a count** (`[F5-9]`); `material.test.ts`
+         * asserts the brief carries no digit, and this asserts the prose did not grow one.
+         * V3's entire finding, in a new place.
+         */
+        for (const hit of tallyFailures(body, { locale })) {
+          problems.push(`[${locale}] ${fixture.kind}: A TALLY -- ${hit.pattern}: ${JSON.stringify(body.slice(0, 100))}`);
+        }
+      }
+      if (opener !== '' && PROACTIVE_BARE_GREETING.test(opener)) {
+        process.stdout.write(
+          `    WARN  a bare greeting opens this run: ${JSON.stringify(opener.slice(0, 60))}\n` +
+            '          "Selamat pagi" from a morning nudge is legitimate; a bare "hai" usually is not.\n',
+        );
+      }
+
+      materialKey.push(`${locale}  run ${runNo} = ${fixture.kind} (${fixture.trigger})`);
+      /* The room's own lines are context and are NOT part of the blind read: they are
+       * hand-written in the readers' voices to set the run up, so showing them to
+       * somebody guessing who is who would be marking my own homework. */
+    }
+
+    conversations[locale] = transcript;
+
+    // ---- THE BUDGET, ASSERTED SO THE PROMPT AND THE TABLE CANNOT DRIFT ------
+    const budget = CHAT_LENGTH_BUDGET[locale];
+    const counts = spoken.map((s) => s.words).sort((a, b) => a - b);
+    if (counts.length > 0) {
+      const mean = counts.reduce((a, b) => a + b, 0) / counts.length;
+      process.stdout.write(
+        `\n[shortness ${locale}] ${counts.length} bubbles, words ${counts.join(' ')}\n` +
+          `    min=${counts[0]} mean=${mean.toFixed(1)} max=${counts[counts.length - 1]} ` +
+          `ceiling=${budget.maxWords} (margaret ${chatBudgetFor(locale, 'margaret').maxWords})\n`,
+      );
+      if (mean > budget.maxWords) {
+        problems.push(
+          `[${locale}] SHORTNESS: mean ${mean.toFixed(1)} words is over the ${budget.maxWords} ceiling`,
+        );
+      }
+    }
+  }
+
+  process.stdout.write(`\n${'-'.repeat(70)}\nPROACTIVE CHECKS\n${'-'.repeat(70)}\n`);
+  if (problems.length === 0) process.stdout.write('all clean\n');
+  else for (const pr of problems) process.stdout.write(`FAIL  ${pr}\n`);
+
+  chatBlindPrint(conversations, locales, CHAT_NICKNAME, true);
+
+  process.stdout.write(
+    `\n${'-'.repeat(30)}\nTHE MATERIAL KEY\n${'-'.repeat(30)}\n` +
+      '  Guess what each run was ABOUT before reading this. If you cannot tell, the\n' +
+      '  material did not reach the voice -- and the fix is describeMaterial\'s note table\n' +
+      '  or F3\'s prompt, NEVER the code.\n',
+  );
+  for (const k of materialKey) process.stdout.write(`${k}\n`);
+
+  if (problems.length > 0) process.exitCode = 1;
+}
+
 
 main().catch((err) => {
   console.error('\nsmoke failed:', err);

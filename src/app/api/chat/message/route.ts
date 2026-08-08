@@ -48,6 +48,7 @@ import { track, withAnalytics, type AnalyticsContext } from '@/lib/analytics/tra
 import { requireUser } from '@/lib/auth/server';
 import { ATTACHABLE_STATUSES } from '@/lib/chat/attachmentView';
 import { logChatFailure } from '@/lib/chat/log';
+import { supersedeReadingRun } from '@/lib/chat/proactive/supersede';
 import { mintRun } from '@/lib/chat/run';
 import { MAX_CHAT_MESSAGE_LENGTH } from '@/lib/chat/types';
 import { db } from '@/lib/db/client';
@@ -312,6 +313,29 @@ export async function POST(request: Request) {
         });
 
         await upsertThread(tx, user.id, { lastUserMessageAt: new Date() });
+
+        /*
+         * **SEAM `S5`, AND F5 OWNS THE RULE** (`[F5-14]`, F5 §9.4). If the querent has
+         * just brought reading X into the room themselves, the `reading_completed` run
+         * for X — minted seconds after the stream ended, still `pending` — is abandoned
+         * **before** this message's own run is minted.
+         *
+         * Two things this prevents, and the second is the bigger one:
+         *
+         *   1. The duplicate. A reader saying *"eh, aku lihat bacaanmu barusan"* three
+         *      seconds after the querent said *"nih bacaanku barusan"* is two people
+         *      talking over each other about the same object.
+         *   2. **THE SILENCE.** `mintRun` refuses while a live run exists — one room,
+         *      one conversation at a time — so without this the attach would store the
+         *      bubble and mint nothing: the querent posts a reading into the room and
+         *      three readers say nothing about it.
+         *
+         * Inside the transaction and before the mint, so a failure aborts the whole
+         * attach rather than leaving both runs alive. It never throws.
+         */
+        if (input.attached_reading_id) {
+          await supersedeReadingRun(tx, user.id, input.attached_reading_id);
+        }
 
         const minted = chatEnabled()
           ? await mintRun(

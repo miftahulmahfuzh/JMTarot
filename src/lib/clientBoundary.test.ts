@@ -255,6 +255,67 @@ describe('the client boundary', () => {
     }
   });
 
+  /*
+   * v0.7.0 / F5's task 10. **`@/lib/chat/proactive/**` DECIDES WHETHER A READER SPEAKS
+   * TO SOMEBODY WHO DID NOT ASK**, which is the half of this release with no human in
+   * the loop — so the browser has no business naming any of it, and the three pure
+   * modules are declared exceptions rather than an accident of what happened to compile.
+   *
+   * `eligibility.ts`, `material.ts` and `notes.*` are pure and unit-tested with no
+   * database (`[F5-2]`, and `tally.ts`'s rule that the smoke script must be able to
+   * import them). Everything else in there — `detect.ts`, `mint.ts`, `brief.ts`,
+   * `onReading.ts`, `onTick.ts`, `supersede.ts` — carries `server-only` and would fail
+   * the build rather than this test. **The fence is what makes that a rule instead of a
+   * coincidence**, and it is a glob here where the attachment's is narrow, because
+   * nothing in this directory is a shape a client component should ever need.
+   */
+  it('lets no client component import anything under `@/lib/chat/proactive/`', () => {
+    for (const file of CLIENT) {
+      const offending = importsOf(file.source).filter((spec) =>
+        spec.startsWith('@/lib/chat/proactive/'),
+      );
+      expect({ [file.path]: offending }).toEqual({ [file.path]: [] });
+    }
+  });
+
+  it('keeps the three pure proactive modules pure, so the exceptions stay earned', () => {
+    /*
+     * Asserted on the SOURCE with comments stripped — the same shape the `sanitize`,
+     * `persona/lines` and `attachmentView` exceptions use, and for the reason
+     * `queries/contract.test.ts` records: **a rule that fires on the prose describing the
+     * rule is a rule people delete.**
+     *
+     * `new Date()` is the one that is specific to this workstream. `[F5-2]`'s failure
+     * mode is a predicate that is untestable **at the boundaries** — the run at exactly
+     * `minGap`, the run on the day the counter rolls over — and the boundaries are the
+     * whole feature. The clock is injected, and this is what keeps it injected.
+     */
+    for (const rel of [
+      'lib/chat/proactive/eligibility.ts',
+      'lib/chat/proactive/material.ts',
+      'lib/chat/proactive/notes.ts',
+      'lib/chat/proactive/notes.id.ts',
+      'lib/chat/proactive/notes.en.ts',
+    ]) {
+      const raw = readFileSync(join(ROOT, rel), 'utf8');
+      const code = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+      for (const sentinel of ["import 'server-only'", 'process.env', '@/lib/db/']) {
+        expect({ rel, sentinel, present: code.includes(sentinel) }).toEqual({
+          rel,
+          sentinel,
+          present: false,
+        });
+      }
+    }
+
+    const predicate = readFileSync(join(ROOT, 'lib/chat/proactive/eligibility.ts'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+    expect(predicate).not.toContain('new Date(');
+    // The stripper must not have eaten the code it is checking.
+    expect(predicate).toContain('checkEligibility');
+  });
+
   it('keeps `@/lib/chat/attachmentView` free of prompt prose, so the exception stays earned', () => {
     /*
      * The other half, asserted on the SOURCE with comments stripped -- the same shape
