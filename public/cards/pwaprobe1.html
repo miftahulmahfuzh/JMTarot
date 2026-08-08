@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>JMT PWA jar probe</title>
+
+    <link rel="manifest" href="/cards/pwaprobe1.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-icon.png" />
+    <meta name="theme-color" content="#0a0812" />
+
+    <!-- Both names, exactly as src/app/layout.tsx does: Safari only started
+         honouring the modern one in iOS 17.4, and on anything older the legacy
+         name is what makes Add to Home Screen produce a standalone app rather
+         than a Safari bookmark. -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="JMTProbe" />
+
+    <style>
+      :root {
+        color-scheme: dark;
+        --canvas: #0a0812;
+        --panel: #16112a;
+        --line: #2c2447;
+        --text: #ece7f5;
+        --dim: #9a92b4;
+        --gold: #c9a961;
+        --yes: #6fcf97;
+        --no: #eb7f7f;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: calc(16px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));
+        background: var(--canvas);
+        color: var(--text);
+        font: 16px/1.5 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      }
+      h1 { font-size: 19px; margin: 0 0 4px; color: var(--gold); }
+      p.sub { margin: 0 0 20px; color: var(--dim); font-size: 14px; }
+      h2 {
+        font-size: 12px; letter-spacing: 0.09em; text-transform: uppercase;
+        color: var(--dim); margin: 22px 0 8px; font-weight: 600;
+      }
+      .panel {
+        background: var(--panel); border: 1px solid var(--line);
+        border-radius: 10px; padding: 12px 14px;
+      }
+      dl { margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 7px 12px; }
+      dt { color: var(--dim); font-size: 14px; }
+      dd {
+        margin: 0; text-align: right; font-weight: 600; font-size: 14px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        overflow-wrap: anywhere; min-width: 0;
+      }
+      .yes { color: var(--yes); }
+      .no { color: var(--no); }
+      button {
+        display: block; width: 100%; min-height: 46px; margin-top: 8px;
+        background: #241c42; color: var(--text);
+        border: 1px solid var(--line); border-radius: 10px;
+        font: inherit; font-weight: 600; cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+      }
+      button:active { background: #2f2554; }
+      button.go { border-color: var(--gold); color: var(--gold); }
+      pre {
+        margin: 0; padding: 12px 14px; background: var(--panel);
+        border: 1px solid var(--line); border-radius: 10px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px; line-height: 1.55;
+        white-space: pre-wrap; overflow-wrap: anywhere;
+        max-height: 260px; overflow-y: auto;
+      }
+      ol { margin: 0; padding-left: 20px; color: var(--dim); font-size: 14px; }
+      ol li { margin-bottom: 9px; }
+      ol b { color: var(--text); font-weight: 600; }
+    </style>
+  </head>
+
+  <body>
+    <h1>PWA cookie-jar probe</h1>
+    <p class="sub">
+      Answers four questions the standalone sign-in fix depends on. Nothing here touches
+      JMTarot's own cookies &mdash; this page uses its own name, its own scope
+      (<code>/cards/</code>) and its own manifest.
+    </p>
+
+    <h2>Right now</h2>
+    <div class="panel">
+      <dl>
+        <dt>Standalone (iOS)</dt><dd id="s-legacy">&mdash;</dd>
+        <dt>display-mode</dt><dd id="s-dm">&mdash;</dd>
+        <dt>URL query</dt><dd id="s-q">&mdash;</dd>
+        <dt>Probe cookie</dt><dd id="s-cookie">&mdash;</dd>
+        <dt>localStorage</dt><dd id="s-ls">&mdash;</dd>
+        <dt>Launches seen</dt><dd id="s-launch">&mdash;</dd>
+      </dl>
+    </div>
+
+    <h2>Actions</h2>
+    <button id="b-set">Set a fresh probe value</button>
+    <button id="b-go" class="go">Leave to Google &rarr; then press Done</button>
+    <button id="b-copy">Copy report</button>
+    <button id="b-reset">Reset everything</button>
+
+    <h2>Event log</h2>
+    <pre id="log"></pre>
+
+    <h2>What to do</h2>
+    <ol>
+      <li>Open this page in <b>Safari</b>. Tap <b>Set a fresh probe value</b>. Note the value.</li>
+      <li>Share &rarr; <b>Add to Home Screen</b>. Do this from the plain URL, with no
+        <code>?src=pwa</code> in the address bar &mdash; that is the point of test&nbsp;1.</li>
+      <li>Launch it from the <b>home screen icon</b>. Read <i>URL query</i> and
+        <i>Probe cookie</i>.</li>
+      <li>In the installed app, tap <b>Set a fresh probe value</b> again. Close the app
+        fully (swipe it away) and relaunch it. Did the value survive?</li>
+      <li>In the installed app, tap <b>Leave to Google</b>. When Safari's overlay opens,
+        press <b>Done</b>. Read the event log and the cookie.</li>
+      <li>Tap <b>Copy report</b> and paste it back to me.</li>
+    </ol>
+
+    <script>
+      var COOKIE = 'jmt_probe';
+      var LS_VALUE = 'jmt_probe_ls';
+      var LS_LOG = 'jmt_probe_log';
+      var LS_LAUNCH = 'jmt_probe_launches';
+
+      function readCookie(name) {
+        var parts = document.cookie ? document.cookie.split('; ') : [];
+        for (var i = 0; i < parts.length; i++) {
+          var eq = parts[i].indexOf('=');
+          if (parts[i].slice(0, eq) === name) return parts[i].slice(eq + 1);
+        }
+        return null;
+      }
+
+      /* Not httpOnly, because JavaScript has to be able to read it back here. The
+         storage partition is what is under test and that is identical either way:
+         a jar that hides a readable cookie hides an httpOnly one too. */
+      function writeCookie(name, value) {
+        document.cookie =
+          name + '=' + value + '; path=/; max-age=34560000; SameSite=Lax' +
+          (location.protocol === 'https:' ? '; Secure' : '');
+      }
+
+      function clock() {
+        var d = new Date();
+        return ('0' + d.getHours()).slice(-2) + ':' +
+               ('0' + d.getMinutes()).slice(-2) + ':' +
+               ('0' + d.getSeconds()).slice(-2);
+      }
+
+      function standalone() {
+        // navigator.standalone is the iOS-specific one and is the only reliable
+        // signal on older iOS; display-mode is the standard.
+        return navigator.standalone === true ||
+               (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+      }
+
+      var log = [];
+      try { log = JSON.parse(localStorage.getItem(LS_LOG) || '[]'); } catch (e) { log = []; }
+
+      function note(line) {
+        log.push(clock() + '  ' + line);
+        if (log.length > 60) log = log.slice(-60);
+        try { localStorage.setItem(LS_LOG, JSON.stringify(log)); } catch (e) {}
+        render();
+      }
+
+      function set(id, text, verdict) {
+        var el = document.getElementById(id);
+        el.textContent = text;
+        el.className = verdict === true ? 'yes' : verdict === false ? 'no' : '';
+      }
+
+      function render() {
+        var cookie = readCookie(COOKIE);
+        var ls = null;
+        try { ls = localStorage.getItem(LS_VALUE); } catch (e) {}
+        var launches = 0;
+        try { launches = Number(localStorage.getItem(LS_LAUNCH) || 0); } catch (e) {}
+        var query = location.search || '(none)';
+
+        set('s-legacy', navigator.standalone === true ? 'yes' : 'no', navigator.standalone === true);
+        set('s-dm', standalone() ? 'standalone' : 'browser', standalone());
+        set('s-q', query, query.indexOf('src=pwa') !== -1);
+        set('s-cookie', cookie || '(absent)', cookie ? true : false);
+        set('s-ls', ls || '(absent)', ls ? true : false);
+        set('s-launch', String(launches));
+
+        document.getElementById('log').textContent =
+          log.length ? log.join('\n') : '(nothing yet)';
+      }
+
+      function report() {
+        var cookie = readCookie(COOKIE);
+        var ls = null;
+        try { ls = localStorage.getItem(LS_VALUE); } catch (e) {}
+        var launches = 0;
+        try { launches = Number(localStorage.getItem(LS_LAUNCH) || 0); } catch (e) {}
+        return [
+          '--- JMT PWA jar probe ---',
+          'url            : ' + location.href,
+          'query          : ' + (location.search || '(none)'),
+          'nav.standalone : ' + navigator.standalone,
+          'display-mode   : ' + (standalone() ? 'standalone' : 'browser'),
+          'cookie         : ' + (cookie || '(absent)'),
+          'localStorage   : ' + (ls || '(absent)'),
+          'launches       : ' + launches,
+          'ua             : ' + navigator.userAgent,
+          '',
+          'log:',
+          log.join('\n')
+        ].join('\n');
+      }
+
+      document.getElementById('b-set').onclick = function () {
+        var v = Math.random().toString(16).slice(2, 10);
+        writeCookie(COOKIE, v);
+        try { localStorage.setItem(LS_VALUE, v); } catch (e) {}
+        note('SET value=' + v + ' in ' + (standalone() ? 'standalone' : 'browser'));
+      };
+
+      document.getElementById('b-go').onclick = function () {
+        note('LEAVING to accounts.google.com (' + (standalone() ? 'standalone' : 'browser') + ')');
+        location.href = 'https://accounts.google.com/';
+      };
+
+      document.getElementById('b-copy').onclick = function () {
+        var text = report();
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(text).then(
+            function () { note('report copied'); },
+            function () { window.prompt('Copy this:', text); }
+          );
+        } else {
+          window.prompt('Copy this:', text);
+        }
+      };
+
+      document.getElementById('b-reset').onclick = function () {
+        document.cookie = COOKIE + '=; path=/; max-age=0';
+        try {
+          localStorage.removeItem(LS_VALUE);
+          localStorage.removeItem(LS_LOG);
+          localStorage.removeItem(LS_LAUNCH);
+        } catch (e) {}
+        log = [];
+        render();
+      };
+
+      document.addEventListener('visibilitychange', function () {
+        note('visibilitychange -> ' + document.visibilityState +
+             ' | cookie=' + (readCookie(COOKIE) || '(absent)'));
+      });
+
+      window.addEventListener('pageshow', function (e) {
+        note('pageshow persisted=' + e.persisted +
+             ' | cookie=' + (readCookie(COOKIE) || '(absent)'));
+      });
+
+      try {
+        localStorage.setItem(LS_LAUNCH, String(Number(localStorage.getItem(LS_LAUNCH) || 0) + 1));
+      } catch (e) {}
+
+      note('LOAD ' + (standalone() ? 'standalone' : 'browser') +
+           ' query=' + (location.search || '(none)') +
+           ' cookie=' + (readCookie(COOKIE) || '(absent)'));
+      render();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "name": "JMT Probe",
+  "short_name": "JMTProbe",
+  "start_url": "/cards/pwaprobe1.html?src=pwa",
+  "scope": "/cards/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0812",
+  "theme_color": "#0a0812",
+  "icons": [
+    { "src": "/icon.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/apple-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}
