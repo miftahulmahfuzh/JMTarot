@@ -29,8 +29,48 @@
   overflow: hidden;
 }
 
+/*
+ * ── ONE ROW, AND THE MEASUREMENT IS THE ARGUMENT (2026-08-09) ──────────────
+ *
+ * This was four stacked things -- the back link on its own 44px row, then the faces
+ * beside a block holding the title, a hint and the disclaimer -- and it measured
+ * **154px at 390 and 176px at 320**. On an iPhone SE that is ~38% of the room gone
+ * before a single bubble, on the one screen in this app whose entire content is a
+ * scrolling log.
+ *
+ * One row measures **57px at every width and in both locales**, because `.back`'s
+ * 44px tap target is the tallest thing in it and nothing else reaches that -- so the
+ * height is flat where the old one grew as the hint wrapped. The ~100-119px recovered
+ * is roughly two more messages, on every visit, forever.
+ *
+ * Measured with loop 4's technique applied to height: the real declarations in a
+ * fixed-width container, `getBoundingClientRect().height` at 320/360/390, plus
+ * `scrollWidth > clientWidth` over every descendant for the horizontal fit -- both
+ * locales, no overflow. **NOT A SCREENSHOT**: neither Chrome in this image gives a
+ * real phone width. Georgia stands in for the display webfont, so treat 57 as +/- a
+ * px or two; the 44px floor is what actually sets it.
+ *
+ * **WHAT LEFT IS AS IMPORTANT AS WHAT STAYED, AND NEITHER WAS DELETED:**
+ *
+ *  - The hint (*"Thessaly, Margaret, dan Adrian. Bertiga, bersamamu."*) was set at
+ *    `--fs-hint: 17px` -- the size of the messages themselves -- and **wrapped to two
+ *    lines at 320**. It is read once, ever. The names moved into `chat.empty.body`,
+ *    which renders in the log on exactly the screen a first-timer sees; after that,
+ *    every bubble names its own author in text anyway.
+ *  - The disclaimer moved to the TOP OF THE LOG, in `ChatRoom`. Still the one owner
+ *    (`chatSurface.test.ts` accepts it in either file), still read on entry -- but in
+ *    flow, where it scrolls away, rather than in sticky chrome that charges for it on
+ *    every frame.
+ *
+ * **THE RULE THIS ENCODES: copy a person reads ONCE does not belong in sticky
+ * chrome.** Both of those lines looked individually reasonable, which is how a header
+ * gets to 176px without anybody deciding it should.
+ */
 .header {
-  padding: 10px 12px 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
   border-bottom: 1px solid var(--gold-hairline);
   /* Sticky rather than fixed, so it participates in the grid and the list needs no
      manual offset. It is one band naming who is in the room. */
@@ -38,27 +78,28 @@
   top: 0;
   z-index: 1;
   background: var(--canvas);
+  /* A grid item in an auto-sized track, as everything on this screen is: without a
+     zero minimum the intrinsic width of the row can make the header wider than the
+     shell that clips it. `.room` and the composer each carry one for the same
+     reason. */
+  min-width: 0;
 }
 
 .back {
-  display: inline-block;
-  /* The two corner circles live at 10..106px from the RIGHT edge; this sits left of
-     them with room to spare at 320px. */
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  /* 44px, the iOS minimum, and it is what SETS THE HEADER'S HEIGHT -- the faces are
+     36 and the title's line box is ~21. Shrinking it does not buy a shorter header
+     until it drops below those, and it may not: it is the only way out of the room
+     in standalone mode, where there is no browser back. */
   min-height: 44px;
-  line-height: 44px;
   font-family: var(--font-display), Georgia, serif;
   font-size: var(--fs-eyebrow);
   letter-spacing: var(--ls-button);
   text-transform: uppercase;
   color: var(--gold);
   text-decoration: none;
-}
-
-.who {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
 }
 
 /* Three faces, overlapping, so the group reads as a group rather than as a row of
@@ -72,28 +113,20 @@
   margin-left: -8px;
 }
 
-.naming {
-  min-width: 0;
-}
-
 .title {
   margin: 0;
+  min-width: 0;
   font-family: var(--font-display), Georgia, serif;
   font-size: var(--fs-card-title);
   letter-spacing: var(--ls-card-title);
   color: var(--gold-text);
-}
-
-.hint,
-.disclaimer {
-  margin: 2px 0 0;
-  font-family: var(--font-body), Georgia, serif;
-  font-size: var(--fs-hint);
-  line-height: 1.3;
-  color: var(--muted);
+  /*
+   * NOT `white-space: nowrap`, AND NOT AN ELLIPSIS. The composer's rule, one element
+   * over: `nowrap` makes an element's MIN-content width its MAX-content width, and
+   * that minimum reaches `.shell`'s auto-sized grid track, whose `overflow: hidden`
+   * then eats whatever is on the right. `anywhere` is the load-bearing declaration --
+   * `break-word` does not change min-content. One or two words never needs either,
+   * which is exactly when somebody adds the one that breaks.
+   */
   overflow-wrap: anywhere;
-}
-
-.disclaimer {
-  color: var(--faint);
 }

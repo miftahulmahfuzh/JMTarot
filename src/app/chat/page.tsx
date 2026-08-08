@@ -154,29 +154,24 @@ export default async function ChatPage({
 
   return (
     <main className={styles.shell}>
+      {/*
+        ONE ROW: the way out, who is here, and what this is. `page.module.css` carries
+        the measurement that made it one row — 154px at 390 and 176px at 320 became
+        57px — and the rule it encodes: **copy a person reads once does not belong in
+        sticky chrome.** The hint's names moved into `chat.empty.body` and the
+        disclaimer into the top of the log, in `ChatRoom`.
+      */}
       <header className={styles.header}>
         <Link href="/" className={styles.back}>
           {t('chat.back')}
         </Link>
 
-        <div className={styles.who}>
-          <div className={styles.faces} aria-hidden="true">
-            {READERS.map((reader) => (
-              <ChatAvatar key={reader.id} author={reader.id} size="header" />
-            ))}
-          </div>
-          <div className={styles.naming}>
-            <h1 className={styles.title}>{t('chat.title')}</h1>
-            <p className={styles.hint}>{t('chat.hint')}</p>
-            {/*
-              THE EXISTING DISCLAIMER, NOT A SECOND ONE. `SignInForm`'s consent-line
-              rule: one owner, because a second copy of a sentence is how two
-              surfaces end up making slightly different promises — and the room is
-              where a person is most likely to forget this is entertainment.
-            */}
-            <p className={styles.disclaimer}>{t('common.disclaimer.short')}</p>
-          </div>
+        <div className={styles.faces} aria-hidden="true">
+          {READERS.map((reader) => (
+            <ChatAvatar key={reader.id} author={reader.id} size="header" />
+          ))}
         </div>
+        <h1 className={styles.title}>{t('chat.title')}</h1>
       </header>
 
       <ChatRoom staged={staged} entry={entryOf(params)} />

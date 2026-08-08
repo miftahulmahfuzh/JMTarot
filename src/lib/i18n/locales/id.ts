@@ -688,7 +688,14 @@ const id = {
    * differ because one is a legal document and one is a button.
    */
   'chat.title': 'Grup',
-  'chat.hint': 'Thessaly, Margaret, dan Adrian. Bertiga, bersamamu.',
+  /*
+   * **`chat.hint` IS DELETED, NOT UNUSED (2026-08-09), and its names live on in
+   * `chat.empty.body`.** It read *"Thessaly, Margaret, dan Adrian. Bertiga,
+   * bersamamu."* and sat under the title at `--fs-hint: 17px` -- the size of the
+   * messages -- wrapping to two lines at 320 and taking a permanent slice of a header
+   * that measured 176px there. It is copy a person reads once, so it moved into the
+   * log, where the empty room is the only screen on which nobody has been named yet.
+   */
   'chat.back': '← Beranda',
   // Names the scrolling region for a screen reader, which would otherwise meet an
   // unlabelled scroller full of prose. `log`, not `feed`: the room is finite and
@@ -772,7 +779,14 @@ const id = {
    * as broken, and the only useful thing to say is what to do about it.
    */
   'chat.empty.title': 'Belum ada yang ngobrol di sini.',
-  'chat.empty.body': 'Sapa dulu. Mereka bertiga bakal nyaut.',
+  /*
+   * **IT NAMES THE THREE SINCE 2026-08-09, TAKING OVER FROM THE DELETED `chat.hint`.**
+   * *"Mereka bertiga"* was enough while the header introduced them by name; with the
+   * header down to one row, this is the only place a first-timer meets the names
+   * before anybody speaks — and after that every bubble names its own author. Reader
+   * names stay English in both locales, as everywhere.
+   */
+  'chat.empty.body': 'Sapa dulu. Thessaly, Margaret, dan Adrian bakal nyaut.',
 
   // The day separators. `today` is the QUERENT's calendar day, computed in an
   // effect and never during render — `todayKey()` reads `new Date()`, which is a

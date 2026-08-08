@@ -876,6 +876,29 @@ export function ChatRoom({
 
       <div className={styles.listWrap}>
       <ul className={styles.list} ref={listRef} onScroll={onScroll} aria-label={t('chat.list.aria')}>
+        {/*
+          THE EXISTING DISCLAIMER, NOT A SECOND ONE, AND IT MOVED HERE FROM THE HEADER
+          (2026-08-09). `SignInForm`'s consent-line rule still holds — one owner,
+          because a second copy of a sentence is how two surfaces end up making
+          slightly different promises — and the room is still where a person is most
+          likely to forget this is entertainment. `chatSurface.test.ts` accepts it in
+          either this file or `page.tsx`, so the move is green either way.
+
+          **WHY IN THE SCROLLING LOG RATHER THAN IN THE STICKY HEADER.** At
+          `--fs-hint: 17px` it cost a permanent line of a header that measured 176px at
+          320 — 38% of an iPhone SE's room before a single bubble. In flow it costs
+          nothing permanent, and it is read by the person who needs it: an empty room
+          does not scroll, so a first-timer meets this line and the empty state
+          together. A returning querent's list opens scrolled to the bottom and this
+          sits above the fold — which is the right economics rather than a regression,
+          the reminder being for the newcomer.
+
+          FIRST, ABOVE `chat.older`, because it is a statement about the room and not a
+          message in it. It is a `<li>` for the same reason the day separators and the
+          empty state are: it lives inside the one scroll container.
+        */}
+        <li className={styles.disclaimer}>{t('common.disclaimer.short')}</li>
+
         {hasMore ? (
           <li className={styles.older}>
             <button type="button" className={styles.olderButton} onClick={loadOlder} disabled={loadingOlder}>

@@ -383,7 +383,7 @@ const en: Catalog = {
    * *"Say hi"* is an instruction, not a closing offer.
    */
   'chat.title': 'The group',
-  'chat.hint': 'Thessaly, Margaret and Adrian. All three, with you.',
+  /* `chat.hint` is deleted — see `id.ts`, which carries the reason. */
   'chat.back': '← Home',
   'chat.list.aria': 'Group conversation',
 
@@ -416,7 +416,9 @@ const en: Catalog = {
   'chat.offline': 'You are offline. That message has not been sent.',
 
   'chat.empty.title': 'Nobody has said anything here yet.',
-  'chat.empty.body': 'Say hi. All three of them will answer.',
+  /* Names the three since 2026-08-09, taking over from the deleted `chat.hint` —
+     `id.ts` carries the reason. */
+  'chat.empty.body': 'Say hi. Thessaly, Margaret and Adrian will answer.',
 
   'chat.day.today': 'Today',
   'chat.day.yesterday': 'Yesterday',
