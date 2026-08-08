@@ -10545,3 +10545,135 @@ the chip: the chip is the accessible path and the only one any loop here can see
   **`npm run db:seed` deletes and recreates the dev users**, so an existing session cookie names
   a user id that no longer exists and every chat route answers as if the room were empty; re-mint
   through `POST /api/auth/dev-session` after seeding or the badge reads zero for the wrong reason.
+
+---
+
+## F6 — attachments, the UI half (v0.7.0, 2026-08-08)
+
+**What landed:** the two `<AttachReadingLink>` mounts (`Draw.tsx`, `HistoryDetail.tsx`);
+`src/components/StagedAttachment.tsx` + stylesheet; `?attach=` resolution in
+`src/app/chat/page.tsx`; the staging, the posting and the log mount in `ChatRoom.tsx`;
+`attachments` on `GET /api/chat/messages`; `ChatAttachments` / `StagedReading` /
+`attachedIdsIn` / `attachmentsFrom` in `attachmentView.ts`; the `attachablePosted` half of
+the guard in `POST /api/chat/message`; two seeded fixtures in `npm run db:seed`;
+`src/components/attachSurface.test.ts` (18 assertions) and
+`src/lib/chat/attachment.integration.test.ts` (3); and the attachment half of
+`public/cards/_chatfit.html`.
+
+`b4e7acf` was the first half (tasks 1–5, the prompt block and the two renderers). The plan is
+`docs/plans/2026-08-07-chat-attachments.md`; its §16 records the divergences. What follows is
+what the plan could not know.
+
+### F4 LEFT THE SLOTS AND NOT THE WIRING, AND THAT IS THE ONE THING TO KNOW BEFORE READING THIS DIFF
+
+F6's plan §3.2 assigns the `/chat` half to **F4** — read `?attach=`, resolve it, stage it,
+post it, resolve every rendered bubble's attachment — and lists it again under *"Interfaces I
+need — From F4"*. **F4 shipped the two SLOTS and none of the wiring**: `ChatComposer`'s
+`staged?: ReactNode` and `ChatBubble`'s `attachment?: ReactNode`, both commented *"F6's"*, with
+`attachedReadingId: null` hardcoded in `submit`.
+
+So tasks 6–8 as written would have shipped **two buttons that navigate to a room which discards
+the attachment** — a feature that looks complete and does nothing. The scope was put to Miftah
+and the ruling was end to end, so this commit crosses into F4's `ChatRoom.tsx`,
+`ChatComposer.tsx` and `page.tsx` and F1's two chat routes. **The generalisation is worth more
+than the incident: a seam declared in two plans is owned by neither unless one of them names the
+file.** F4's plan named the slot; nobody's task list named the line that fills it.
+
+### Five decisions that are not the plan's
+
+- **`from` IS `'draw'`, NOT THE PLAN's `'reading'`.** F1 owns `events.ts`, folded
+  `chat.attachment_added` into `chat.message_sent.attached_from`, and spelled the union
+  `'history' | 'draw' | null` — with `POST /api/chat/message`'s zod enum matching. The plan's
+  word would have ridden the URL, failed the parse and **400'd every draw-screen attach**: wrong
+  on exactly one of the two surfaces, and the one a querent reaches most often. `attachSurface`
+  asserts the four spellings against each other.
+- **`chat.opened.from = 'attach'` IS THE PRESENCE OF `?attach=`, NOT A LITERAL `?from=attach`.**
+  One URL key, two features: `ChatButton` sends `from=button`, F6 sends `from=history|draw`
+  because that value is *also* `attached_from`. F4's client read `from` as a literal and would
+  have reported `'direct'` for every attach-initiated open — **the one entry point that prop
+  exists to distinguish, silently collapsed into the default.** Decided on the server now
+  (`entryOf`), and read from a REF in the room, because `chat.opened` fires after two awaited
+  fetches and by then the effect that tidies the URL has run.
+- **`attachments` IS A MAP ON THE REPLY, NOT A FIELD ON `ChatMessageDto`.**
+  `types.contract.test.ts` asserts `chat/types.ts` imports **exactly** `['@/data/types']`
+  (`[F1-14]`), so a preview field would have dragged `@/lib/history/types` into a leaf six
+  workstreams depend on. The map also stores one copy where a per-message field stores as many
+  as there are bubbles, which O3 (*the same reading may be attached twice*) makes real.
+- **THE ROUTE GUARD GAINED `ATTACHABLE_STATUSES`.** F1's existence check was ownership only;
+  D2 asked for `[F6-12]`'s server column. `status` and a SQL `hasBody` are now selected and the
+  predicate applied — `Boolean()` on the way out, `readingsForDay`'s rule, because `sql<boolean>`
+  is an assertion the driver is not obliged to honour. `body` itself is still not selected: this
+  handler refuses to log a driver error for the same reason a reading body must not be bound into
+  one.
+- **THE STAGED PROP IS READ ONCE AND NEVER SYNCED, WHICH IS THE v0.6.0 TRAP FROM THE OTHER
+  SIDE.** `router.replace('/chat')` re-renders the server component and hands `staged` back as
+  **null**; an effect syncing prop into state would therefore unstage the reading a moment after
+  staging it, with nothing on screen explaining why. Re-staging is not a case that exists —
+  every route into `?attach=` comes from another page, which unmounts the room.
+
+### The measurements
+
+**Loop 4 — `_chatfit.html`, ten green (2026-08-08).** Eight in the log plus two staged. The
+attachment card never overflows at 320/360/375/390 in either locale; the two-line clamp holds on
+both the question (at `MAX_QUESTION_LENGTH`) and the snippet (cut at 140). The card is 185.91 at
+320 and 233.39 at 390 in the log, and **295.13 staged**, which is the binding case because the
+composer is not bubble-capped. The language chip renders in exactly the runs where the reading's
+locale is not the viewer's and nowhere else — §7.1 measured rather than asserted. **`Kirim` is
+ENABLED with `draft 0`**, which is §3.3 in a browser: an attachment with no text is a legal move
+and a disabled button would be the release quietly refusing it.
+
+**The harness's own bug, worth recording:** `line-height` is `normal` on the clamped elements, so
+`parseFloat` gave `NaN` and the first run reported `qLines NaN` — **a value that fails every
+comparison silently, so the clamp check passed by never being true.** A note-shaped assertion
+that can never fire is worse than no assertion.
+
+**Loop 5 — real Chrome over CDP, and it answered the question it exists for.** On
+`/history/<id>` the control's href reads
+`/chat?attach=18d3d4a1-…&from=history` — the id from the page's own address bar. Clicking it
+lands on `/chat` with **the URL already tidied**, the card staged, and its three rendered card
+`alt`s (`The Tower, terbalik` / `The Hermit` / `The Lovers`) equal to the reading's own
+`reading_cards`. Then, with `window.fetch` patched to record and block so no run was minted:
+
+```json
+{"body":"","reply_to_message_id":null,
+ "attached_reading_id":"18d3d4a1-3e34-49ce-baf1-45b6882a8759",
+ "attached_from":"history","client_key":"d6251fac-…"}
+```
+
+**The id the page rendered is the id the request carried.** That is the shape of the two worst
+bugs in this repo — *the page looked correct and the outgoing request was wrong* — and it is the
+only loop that can see it. `events` then held
+`chat.opened {"from":"attach","unread":0,"had_pending_run":false}`.
+
+**Task 9 — `ATTACHMENT_BODY_MAX_CHARS`, measured against the dev database only.** 18 seeded
+bodies max at 103 characters (three canned one-liners; they bound nothing), and the corpus holds
+**one genuine model output**: a real `glm-4.6` English `spread3`, `en-v1.a1ad1a72`, four
+paragraphs, **1044 characters — 65% of the 1600 cap**, and exactly the case §5.5 worries about.
+A sample of one CONFIRMS the arithmetic rather than replacing it. The number and its date are in
+the constant's header; re-run against the DIRECT Neon string when a session has it.
+
+### The event fold, checked rather than assumed (task 11)
+
+F1 transcribed `attached_from` and kept `reading_id` on F6's stated condition. Three declared
+props did not survive as props and **none of them lost information**: `has_text` is
+`length > 0`, already on the same event; `reading_age_hours` and `locale_match` are a join from
+`reading_id` to `readings`, which is possible only because that id survived. **The attachment
+rate's denominator is still readings finished, not messages sent**, which was the whole condition.
+
+### Still open when F6 landed
+
+- **Nothing here has been seen on a phone (loop 6).** The bubble's legibility at 375 with three
+  44×66 thumbs, whether the whole-card tap target reads as tappable next to a text row that is
+  not, and the staged card above the composer **with the keyboard up** — the geometry WSL cannot
+  answer, now in its third instance alongside `/account`'s answer sheet and the composer itself.
+- **The draw-screen control is unexercised end to end**, because reaching it costs a live
+  reading. Its condition is asserted at source and it is the same component `/history/[id]`
+  mounts; what is unmeasured is how it reads under a finished spread on a real screen.
+- **`GET /api/chat/messages` resolves one reading per distinct attachment, in parallel**, bounded
+  only by the page limit (50). Nearly every page makes zero such queries. **If it ever becomes
+  the slow part of that route the repair is a BATCHED read in `queries/history.ts` — never a cap
+  on how many attachments a page will resolve**, because a cap renders `chat.attachment.gone`
+  under a reading that is right there in the table.
+- **`src/lib/admin/userList.integration.test.ts` fails on `main` as well as here** — *"expected
+  null to be 1"* on `adminUserListPage`'s `calls`. Verified pre-existing by stashing this branch's
+  changes and re-running. It is A5's, not F6's, and it is the only red in 558 integration tests.

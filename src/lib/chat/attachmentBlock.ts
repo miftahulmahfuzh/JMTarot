@@ -62,12 +62,29 @@ import { splitChoiceMarker } from '@/lib/reading/choice';
  * clips the longest English Margaret `spread3` by a paragraph, and clips a runaway
  * hard.
  *
- * **UNMEASURED AGAINST THE REAL CORPUS AS AT 2026-08-07, AND THAT IS F6's TASK 9**,
- * which runs `max(length(body))` and the 99th percentile per service against the dev
- * seed and — with the direct Neon string — production, and writes the number here with
- * its date, `prices.ts`'s convention. If real bodies come in above 1600, **raise the
- * cap**; do not get clever with first-and-last paragraphs, which is a heuristic that
- * would fail on `daily`'s two.
+ * **MEASURED 2026-08-08, AGAINST THE DEV DATABASE ONLY, AND THE CORPUS IS THIN
+ * ENOUGH THAT SAYING SO IS THE MEASUREMENT** (task 9, `prices.ts`'s convention —
+ * a number with a date and the query that produced it):
+ *
+ * ```sql
+ * select service_id, max(length(body)),
+ *        percentile_cont(0.99) within group (order by length(body))
+ *   from readings where body is not null group by service_id;
+ * ```
+ *
+ * | rows | what | max | note |
+ * |---|---|---|---|
+ * | 18 | `npm run db:seed` | **103** | three canned one-liners; bounds nothing |
+ * | 1 | a real `glm-4.6` `spread3`, `en-v1.a1ad1a72`, 4 paragraphs | **1044** | the only genuine model output in the corpus |
+ *
+ * **The one real body is 65% of the cap and is the exact case §5.5 worries about** —
+ * an English `spread3`, four paragraphs, the shape whose conclusion lives in the last
+ * one. It is a sample of ONE, so it confirms the arithmetic above rather than
+ * replacing it: **1600 is not below a realistic English `spread3`, and nothing here
+ * says what the 99th percentile of production looks like.** Re-run against the DIRECT
+ * Neon string (never `-pooler`) when a session has it; if real bodies come in above
+ * 1600, **raise the cap** — do not get clever with first-and-last paragraphs, which is
+ * a heuristic that would fail on `daily`'s two.
  *
  * The cap is set to make clipping essentially unreachable rather than to make it
  * graceful, because `spread3`'s conclusion lives in paragraph four (`memory.ts` says

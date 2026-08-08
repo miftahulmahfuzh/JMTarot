@@ -169,3 +169,23 @@
   text-transform: uppercase;
   cursor: pointer;
 }
+
+/*
+ * F6. The one line an empty bubble draws when its attachment is gone (§8).
+ *
+ * NO NEW HEX AND NO NEW SIZE: `--fs-hint` in `--label`, italic, which is this app's
+ * standing shape for the app speaking quietly about its own state — `.emptyBody`
+ * above and `ShareFooter`'s hint are the siblings.
+ *
+ * **IT IS THE ONLY PLACEHOLDER IN THE ROOM, AND IT IS UNREACHABLE TODAY.** A reading
+ * row is deleted by exactly one path — the hard delete thirty days after an account
+ * deletion — and that path cascades `chat_messages` on `user_id` first. So this is
+ * insurance in the schema rather than a state the product produces; it renders anyway
+ * because the column permits it, and it must never grow into a screen.
+ */
+.gone {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-hint);
+  font-style: italic;
+  color: var(--label);
+}

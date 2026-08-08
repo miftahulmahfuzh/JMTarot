@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AttachReadingLink } from '@/components/AttachReadingLink';
 import { CardDetail } from '@/components/CardDetail';
 import { Fan } from '@/components/Fan';
 import { ReadingPanel, type ReadingState } from '@/components/ReadingPanel';
@@ -697,6 +698,42 @@ export function Draw({
         three times 250ms apart. The footer therefore renders immediately.
       */}
       {reading.status === 'done' && finished.current && finished.current.id !== 'unknown' ? (
+        <>
+        {/*
+          F6's TASK 6. *Bahas di grup*, ABOVE THE SHARE CONTROL AND INSIDE THE SAME
+          CONDITION.
+
+          **THE CONDITION IS NOT WIDENED BY ONE CHARACTER, AND ALL THREE CLAUSES ARE
+          LOAD-BEARING FOR THIS CONTROL TOO** (`[F6-3]`):
+
+            - `status === 'done'` is `AccountButton`'s reason 2, restated by `C-D17`:
+              **a one-tap exit in the corner of a STREAMING page aborts the reading.**
+              This component aborts on unmount and records
+              `reading.aborted { reason: 'user' }`, so a control that navigated to
+              `/chat` mid-stream would destroy the thing it was offering to talk about
+              AND book it as the querent's choice — a spike in `reading.aborted` that
+              reads as impatience and is one button. `error` and `blocked` are excluded
+              for `ShareFooter`'s reason plus one more: a refused question must not
+              become a chat message with a reading behind it, because the refusal is
+              `RefusalNotice`'s and it is the app speaking, never Thessaly (`C-D13`).
+            - `finished.current` is the snapshot `reset()` clears, so a reshuffle takes
+              the control with it rather than offering the PREVIOUS reading.
+            - `id !== 'unknown'` because `x-reading-id` may not have landed;
+              `/chat?attach=unknown` is a 404 the querent caused.
+
+          **ABOVE `ShareFooter`, and outlined where that one is filled.** The private
+          action goes above the public one: a thumb scanning downward meets *"show three
+          characters who already know me"* before *"put this on the internet"*, and two
+          filled gold buttons under a reading is two primaries.
+
+          **`partial` IS INVISIBLE FROM HERE AND THAT IS WHY THE ROUTE ACCEPTS IT.**
+          `ReadingState.done` means *"the stream ended normally as far as the browser is
+          concerned"*; the tee may independently have written `partial`. Refusing it
+          server-side would mean a control correctly offered and then refused — which is
+          why `attachablePosted()` is wider than `attachable()` by exactly that value
+          (§2.3, `[F6-12]`).
+        */}
+        <AttachReadingLink readingId={finished.current.id} from="draw" />
         <ShareFooter
           entity="reading"
           entityId={finished.current.id}
@@ -743,6 +780,7 @@ export function Draw({
           prose={{ kind: 'original' }}
           nickname={nickname}
         />
+        </>
       ) : null}
 
       <div className={styles.footer}>

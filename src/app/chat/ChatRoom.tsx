@@ -1,14 +1,18 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { ChatBubble } from '@/components/ChatBubble';
 import { ChatComposer } from '@/components/ChatComposer';
 import { ChatTyping } from '@/components/ChatTyping';
+import { ReadingAttachment } from '@/components/ReadingAttachment';
 import { RefusalNotice } from '@/components/RefusalNotice';
+import { StagedAttachment } from '@/components/StagedAttachment';
 import { READERS } from '@/data/readers';
 import { LOCAL_DATE_HEADER, SESSION_HEADER } from '@/lib/analytics/localdate';
 import { getSessionId, track } from '@/lib/analytics/track.client';
+import type { ChatAttachments, StagedReading } from '@/lib/chat/attachmentView';
 import type {
   AdvanceReply,
   ChatMessageDto,
@@ -72,6 +76,8 @@ type Outgoing = {
   body: string;
   replyToMessageId: string | null;
   attachedReadingId: string | null;
+  /** F6. Which control staged it; `null` when nothing was attached. */
+  attachFrom: 'history' | 'draw' | null;
 };
 
 /** One reader's display name. DATA, and English in both locales. */
@@ -120,9 +126,18 @@ async function readReply<T>(res: Response): Promise<T | null> {
  *  3. **NOTHING IS SEEDED FROM A PROP THAT CAN CHANGE.** v0.6.0's silent content
  *     loss: the admin editor's locale tabs are `<Link>`s, so a soft navigation
  *     reconciled the editor as the same element and `useState(initial)` never re-ran,
- *     storing the Indonesian document as the English one. This component takes no
- *     props at all; the message list is fetched, and the reply target is set only by
- *     a tap.
+ *     storing the Indonesian document as the English one. The message list is fetched,
+ *     and the reply target is set only by a tap.
+ *
+ *     **F6's TWO PROPS ARE THE EXCEPTION AND THEY ARE THE SAME TRAP FROM THE OTHER
+ *     SIDE.** `staged` and `entry` are read ONCE, into state and into a ref, and then
+ *     this component stops looking at them — because the one soft navigation that
+ *     happens on this route is `router.replace('/chat')` clearing `?attach=`, which
+ *     re-renders the server component and hands back `staged: null`. **An effect
+ *     syncing the prop into the state would therefore UNSTAGE the reading a moment
+ *     after staging it**, and nothing on screen would explain why. Re-staging is not a
+ *     case that exists: every route into `?attach=` comes from another page, which
+ *     unmounts this one.
  *  4. **THE DEPENDENCY LIST IS THE PRIMARY MECHANISM** (`F4-8`, V5's measured
  *     five-row table). The advance loop depends on `loop` and nothing else;
  *     `messages` is a fresh array on every render and every arriving bubble
@@ -137,10 +152,19 @@ async function readReply<T>(res: Response): Promise<T | null> {
  *     byte-identical rows, and mid-run it would race the advance loop against a held
  *     lease, where a bubble either doubles or vanishes with nothing logged.
  */
-export function ChatRoom() {
+export function ChatRoom({
+  staged: stagedProp,
+  entry,
+}: {
+  /** F6. The reading `?attach=` named, already resolved and ownership-checked. */
+  staged: StagedReading | null;
+  /** `chat.opened.from`, decided on the server. See `entryOf` in `page.tsx`. */
+  entry: 'button' | 'direct' | 'attach';
+}) {
   const t = useT();
   const locale = useLocale();
   const reduce = usePrefersReducedMotion();
+  const router = useRouter();
 
   const [messages, setMessages] = useState<ChatMessageDto[]>([]);
   const [loop, setLoop] = useState<LoopState>({ kind: 'idle' });
@@ -160,6 +184,21 @@ export function ChatRoom() {
   const [sendFailure, setSendFailure] = useState<'send' | 'rateLimit' | 'offline' | null>(null);
   const [refusal, setRefusal] = useState<RefusalPayload | null>(null);
   const [unsent, setUnsent] = useState<Outgoing | null>(null);
+  /*
+   * F6. **SEEDED ONCE, AND NEVER SYNCED** — trap 3 above. `router.replace('/chat')`
+   * hands this prop back as null a moment later, and an effect that followed it would
+   * unstage the reading the querent just picked.
+   */
+  const [staged, setStaged] = useState<StagedReading | null>(stagedProp);
+  /*
+   * Every attachment any rendered bubble needs, keyed by `readings.id`, merged as
+   * pages arrive. **A MAP RATHER THAN A FIELD PER MESSAGE**, because `chat/types.ts`
+   * is a leaf six workstreams depend on (`[F1-14]`) and because the same reading may
+   * be attached twice (O3) — one copy either way.
+   */
+  const [attachments, setAttachments] = useState<ChatAttachments>(
+    stagedProp ? { [stagedProp.preview.readingId]: stagedProp.preview } : {},
+  );
 
   const listRef = useRef<HTMLUListElement | null>(null);
   /* The current messages, reachable from an effect that must not depend on them. */
@@ -175,6 +214,18 @@ export function ChatRoom() {
   const mountedRef = useRef(true);
   const openedRef = useRef(false);
   const firstPaintRef = useRef(true);
+  /*
+   * F6. **THE ENTRY POINT AS IT WAS AT MOUNT, AND IT IS A REF BECAUSE OF A RACE.**
+   * `chat.opened` fires after two awaited fetches, and by then the effect that clears
+   * `?attach=` has very likely run — so a read of the LIVE prop (or of
+   * `window.location.search`, which is what this used to be) would report `'direct'`
+   * for exactly the opens F6 exists to distinguish. Written once, never reassigned;
+   * the mount effect must not list `entry` as a dependency, because that would re-run
+   * the whole first-page load when the URL is tidied.
+   */
+  const entryRef = useRef(entry);
+  /** F6. The `?attach=` in the address bar is consumed exactly once. */
+  const attachConsumedRef = useRef(false);
 
   const dispatch = useCallback((event: LoopEvent) => {
     // A PURE updater: `advanceStep` has no side effects and returns the SAME object
@@ -234,9 +285,22 @@ export function ChatRoom() {
           signal: req.signal,
         });
         if (!res.ok) return null;
-        const page = await readReply<ChatMessagesReply>(res);
+        const page = await readReply<ChatMessagesReply & { attachments?: ChatAttachments }>(res);
         if (!page) return null;
         setHasMore(page.hasMore);
+        /*
+         * F6. **MERGED, NEVER REPLACED**, and the staged card is what proves it
+         * matters: the querent sends an attachment, the optimistic bubble draws it
+         * from the entry this map already holds, and then `Muat yang lebih lama`
+         * arrives with a page that knows nothing about it. A `setAttachments(page…)`
+         * would blank the card under a bubble already on screen.
+         *
+         * The route omits the key entirely on a page with no attachment, which is
+         * nearly every page, so `?? {}` is the common path rather than a defence.
+         */
+        if (page.attachments) {
+          setAttachments((prev) => ({ ...prev, ...page.attachments }));
+        }
         // The route answers NEWEST FIRST; the room renders oldest first.
         return [...page.messages].reverse();
       } catch {
@@ -379,6 +443,7 @@ export function ChatRoom() {
               body: outgoing.body,
               reply_to_message_id: outgoing.replyToMessageId,
               attached_reading_id: outgoing.attachedReadingId,
+              attached_from: outgoing.attachFrom,
               client_key: outgoing.clientKey,
             }),
           });
@@ -450,13 +515,20 @@ export function ChatRoom() {
 
   const submit = useCallback(() => {
     const body = draft.trim();
-    if (body.length === 0 || !chatOpen) return;
+    /*
+     * **AN ATTACHMENT WITH NO TEXT IS A MESSAGE** (§3.3, and the brief: *"user may /
+     * may not add a text"*). Empty AND unattached is the only nothing; the route
+     * agrees, 400s that case, and skips the classifier on an empty body rather than
+     * spending a model call that can only return `allow`.
+     */
+    if ((body.length === 0 && !staged) || !chatOpen) return;
 
     const outgoing: Outgoing = {
       clientKey: crypto.randomUUID(),
       body,
       replyToMessageId: replyTo?.id ?? null,
-      attachedReadingId: null,
+      attachedReadingId: staged?.preview.readingId ?? null,
+      attachFrom: staged?.from ?? null,
     };
 
     /*
@@ -472,7 +544,7 @@ export function ChatRoom() {
           body,
           locale,
           replyTo,
-          attachedReadingId: null,
+          attachedReadingId: outgoing.attachedReadingId,
           createdAt: new Date().toISOString(),
         }),
       ],
@@ -482,8 +554,16 @@ export function ChatRoom() {
     setDraft('');
     setReplyTo(null);
     setSelectedId(null);
+    /*
+     * **THE STAGING IS CLEARED AND THE MAP KEEPS THE PREVIEW.** The card has to keep
+     * drawing under the bubble that was just sent — it is already in `attachments`,
+     * seeded at mount — while the composer goes back to empty, because the next
+     * message is a different message. This is also why a re-send after a failure
+     * carries `outgoing` rather than re-reading `staged`.
+     */
+    setStaged(null);
     void post(outgoing);
-  }, [chatOpen, draft, locale, post, receive, replyTo]);
+  }, [chatOpen, draft, locale, post, receive, replyTo, staged]);
 
   // -------------------------------------------------------------------------
   // Mount: the two fetches, in parallel, and the querent's calendar day.
@@ -518,21 +598,24 @@ export function ChatRoom() {
 
       /*
        * **ONE FIRE SITE FOR `chat.opened`** (`F4-16`: in the handler body, never
-       * inside a `setState` updater). `?from=` is set by whoever navigated here —
-       * `ChatButton` sends `button`, F6's control sends `attach`, a bare `/chat` is
-       * `direct`. A click event on the button PLUS a mount event here would count
-       * the same open twice, which is why F1 folded `chat.button_clicked` away.
+       * inside a `setState` updater). The entry point is set by whoever navigated
+       * here — `ChatButton` sends `?from=button`, F6's controls send `?attach=<id>`,
+       * a bare `/chat` is `direct`. A click event on the button PLUS a mount event
+       * here would count the same open twice, which is why F1 folded
+       * `chat.button_clicked` away.
        *
-       * `window.location` and not `useSearchParams()`, deliberately: this is read
-       * once, in an effect, on the client — and `useSearchParams` would put this
-       * component under a Suspense requirement for a value nothing renders.
+       * **DECIDED ON THE SERVER AND READ FROM A REF, WHERE IT USED TO BE PARSED OUT
+       * OF `window.location` HERE.** Two things forced the move: the `from` key now
+       * carries F6's `history|draw` (which is also `attached_from`), so a literal
+       * match on `'attach'` would never fire; and the effect that tidies the URL runs
+       * while these two fetches are still in flight, so by this line the parameter
+       * may already be gone. `entryOf` in `page.tsx` is the one place that decides.
        */
       if (!openedRef.current) {
         openedRef.current = true;
-        const from = new URLSearchParams(window.location.search).get('from');
         track('chat.opened', {
           unread: state?.unread ?? 0,
-          from: from === 'button' || from === 'attach' ? from : 'direct',
+          from: entryRef.current,
           had_pending_run: state?.pendingRun != null,
         });
       }
@@ -547,6 +630,32 @@ export function ChatRoom() {
       controllersRef.current.clear();
     };
   }, [dispatch, loadMessages, loadState, markRead]);
+
+  // -------------------------------------------------------------------------
+  // F6: the staged attachment is consumed out of the URL, ONCE.
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    /*
+     * **THE PARAMETER IS CONSUMED AND THE STAGING SURVIVES IT.** `[F6-5]` stages in
+     * the URL because a query param survives a reload and a back button where
+     * `sessionStorage` does not do so predictably on iOS — but it must not survive the
+     * SEND: a reload afterwards would re-stage a reading the querent already sent, and
+     * they would send it twice believing the first had failed.
+     *
+     * `useRef` and an empty dependency list, both load-bearing. StrictMode mounts,
+     * unmounts and remounts every effect in development, and `router.replace` is a
+     * navigation — a second one would be a second entry in the history stack, so the
+     * back button would land the querent on `/chat` instead of the reading they came
+     * from.
+     *
+     * `{ scroll: false }` because this room manages its own scroll position and a
+     * navigation that jumped to the top would fight the anchoring rule the moment the
+     * first bubbles land.
+     */
+    if (entryRef.current !== 'attach' || attachConsumedRef.current) return;
+    attachConsumedRef.current = true;
+    router.replace('/chat', { scroll: false });
+  }, [router]);
 
   // -------------------------------------------------------------------------
   // The loop. **`loop` AND NOTHING ELSE** (`F4-8`).
@@ -713,6 +822,39 @@ export function ChatRoom() {
   const typing = typingReader(loop);
   const empty = ready && messages.length === 0;
 
+  /*
+   * F6's §8 TABLE, AND IT IS A TABLE BECAUSE THE THREE CASES ARE NOT INTUITIVE.
+   *
+   *   preview resolved                   -> the card, linked to /history/[id]
+   *   no preview, the bubble has text    -> NOTHING. An ordinary text bubble, no slot,
+   *                                         no placeholder, no chrome.
+   *   no preview, the bubble is empty    -> one muted line, `chat.attachment.gone`
+   *
+   * **A MISSING ATTACHMENT IS A RENDERING STATE, NOT AN ERROR** (`[F6-7]`).
+   * `on delete set null` means the column may empty under a row that already
+   * rendered — today only via the hard delete thirty days after an account deletion,
+   * which cascades `chat_messages` first, so this is insurance in the schema rather
+   * than a state the product produces. `C-R7` forbids an error bubble, and the same
+   * argument forbids a placeholder saying a thing used to be here: **the room's
+   * version of a missing attachment is that there was never an attachment.**
+   *
+   * The gone line is authored by the app inside the QUERENT's own bubble. It is never
+   * a `chat_messages` row, so no director can point a beat at it and no reader can
+   * quote it.
+   */
+  const attachmentSlot = (message: ChatMessageDto) => {
+    if (!message.attachedReadingId) return undefined;
+    const preview = attachments[message.attachedReadingId];
+    if (preview) {
+      return (
+        <ReadingAttachment preview={preview} href={`/history/${preview.readingId}`} />
+      );
+    }
+    return message.body ? undefined : (
+      <span className={styles.gone}>{t('chat.attachment.gone')}</span>
+    );
+  };
+
   return (
     <div className={styles.room}>
       {loadFailed ? (
@@ -772,6 +914,7 @@ export function ChatRoom() {
               onQuoteTap={onQuoteTap}
               flashing={flashId === row.message.id}
               pending={pendingKeys.includes(row.message.id)}
+              attachment={attachmentSlot(row.message)}
             />
           ),
         )}
@@ -810,6 +953,12 @@ export function ChatRoom() {
         failure={sendFailure}
         onRetry={unsent ? () => void post(unsent) : undefined}
         notice={refusal ? <RefusalNotice payload={refusal} /> : null}
+        /* F6. The card the querent is about to send, with a way back out of it. */
+        staged={
+          staged ? (
+            <StagedAttachment preview={staged.preview} onRemove={() => setStaged(null)} />
+          ) : null
+        }
       />
     </div>
   );

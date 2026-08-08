@@ -6,7 +6,9 @@ import {
   ATTACHMENT_SNIPPET_MAX_CHARS,
   attachable,
   attachablePosted,
+  attachedIdsIn,
   attachmentSnippet,
+  attachmentsFrom,
   toAttachmentPreview,
 } from './attachmentView';
 
@@ -195,5 +197,48 @@ describe('attachable, and the two halves of [F6-12]', () => {
 
   it('keeps `ATTACHABLE_STATUSES` the server predicate’s own list', () => {
     expect([...ATTACHABLE_STATUSES]).toEqual(['ok', 'partial']);
+  });
+});
+
+/**
+ * The page-level pair, added with the UI half of F6 (tasks 6–8).
+ *
+ * They exist so the route's fan-out is a thing `npm test` can reach: the dedupe is
+ * what makes a querent who attached one reading to eight messages cost one lookup,
+ * and the map is what keeps `chat/types.ts` a leaf.
+ */
+describe('attachedIdsIn', () => {
+  it('is empty for a page with no attachment, which is nearly every page', () => {
+    expect(attachedIdsIn([{ attachedReadingId: null }, { attachedReadingId: null }])).toEqual([]);
+  });
+
+  it('dedupes, because the same reading may be attached twice (O3)', () => {
+    const page = [
+      { attachedReadingId: 'r1' },
+      { attachedReadingId: null },
+      { attachedReadingId: 'r2' },
+      { attachedReadingId: 'r1' },
+    ];
+    expect(attachedIdsIn(page)).toEqual(['r1', 'r2']);
+  });
+});
+
+describe('attachmentsFrom', () => {
+  it('keys by reading id and projects through toAttachmentPreview', () => {
+    const map = attachmentsFrom([reading({ id: 'r1' }), reading({ id: 'r2' })]);
+    expect(Object.keys(map).sort()).toEqual(['r1', 'r2']);
+    expect(map.r1).toEqual(toAttachmentPreview(reading({ id: 'r1' })));
+  });
+
+  it('drops a null — gone, or never this querent’s — rather than storing one', () => {
+    /*
+     * `[F6-6]` plus `[F6-7]`: `readingWithCards` answers null for a row that does not
+     * exist AND for one that is not the caller's, indistinguishably and on purpose. An
+     * absent key is what §8's table reads as "no preview", and the bubble decides from
+     * its own body what to draw. A null VALUE in the map would be a third state that
+     * every reader of it would have to know about.
+     */
+    const map = attachmentsFrom([null, reading({ id: 'r9' }), null]);
+    expect(Object.keys(map)).toEqual(['r9']);
   });
 });

@@ -46,6 +46,7 @@ import {
 } from '@/lib/analytics/localdate';
 import { track, withAnalytics, type AnalyticsContext } from '@/lib/analytics/track';
 import { requireUser } from '@/lib/auth/server';
+import { ATTACHABLE_STATUSES } from '@/lib/chat/attachmentView';
 import { logChatFailure } from '@/lib/chat/log';
 import { mintRun } from '@/lib/chat/run';
 import { MAX_CHAT_MESSAGE_LENGTH } from '@/lib/chat/types';
@@ -58,7 +59,7 @@ import { moderate, refusalPayload } from '@/lib/moderation/gate';
 import { recordModerationFlag } from '@/lib/moderation/log';
 import { sanitizeAnswer } from '@/lib/prompt/sanitize';
 import { hit, hitRefusal, refusalsExhausted } from '@/lib/ratelimit';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 
 export const runtime = 'nodejs';
 
@@ -164,12 +165,41 @@ export async function POST(request: Request) {
      *     separate read: one statement, one truth.
      */
     if (input.attached_reading_id) {
+      /*
+       * **AND IT MUST BE ATTACHABLE, WHICH IS WIDER THAN WHAT THE UI OFFERS**
+       * (`[F6-12]`, F6's D2). `ATTACHABLE_STATUSES` is imported rather than spelled,
+       * so the two halves of the predicate cannot drift: `attachable()` — `ok` only —
+       * is what `/history/[id]` offers, and this set adds `partial` because **the draw
+       * screen cannot know.** Its `done` means *"the stream ended normally as far as
+       * the browser is concerned"* and the tee may independently have written
+       * `partial`; refusing it here would mean a control correctly offered and then
+       * refused, which is a button that works on most readings and fails on the ones
+       * where the app already went wrong once.
+       *
+       * `failed` and `aborted` are refused on both sides: there is nothing for a
+       * reader to talk about except the cards, and a room discussing readings that did
+       * not happen is a room discussing the app. A hand-typed `?attach=` is the only
+       * way to reach this branch, which is exactly why it is a `where` clause and not
+       * a UI decision.
+       *
+       * **`hasBody` IN SQL AND `Boolean()` ON THE WAY OUT** — `readingsForDay`'s rule:
+       * `sql<boolean>` is an assertion the driver is not obliged to honour, and a
+       * truthy string would silently reverse a guard. `body` itself is NOT selected:
+       * this handler already refuses to log a driver error for exactly the reason a
+       * reading body should not be bound into one.
+       */
       const [owned] = await db
-        .select({ id: readings.id })
+        .select({
+          id: readings.id,
+          status: readings.status,
+          hasBody: sql<boolean>`length(btrim(coalesce(${readings.body}, ''))) > 0`,
+        })
         .from(readings)
         .where(and(eq(readings.id, input.attached_reading_id), eq(readings.userId, user.id)))
         .limit(1);
-      if (!owned) return NextResponse.json({ error: 'not found' }, { status: 404 });
+      const attachable =
+        owned && ATTACHABLE_STATUSES.includes(owned.status) && Boolean(owned.hasBody);
+      if (!attachable) return NextResponse.json({ error: 'not found' }, { status: 404 });
     }
   } catch (err) {
     logChatFailure('post.precheck', err, { user: user.id });

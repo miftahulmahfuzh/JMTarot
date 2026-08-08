@@ -85,7 +85,17 @@ export function ChatComposer({
     el.style.height = `${Math.min(el.scrollHeight, MAX_ROWS_PX)}px`;
   }, [draft]);
 
-  const canSend = draft.trim().length > 0 && !closed && !sending;
+  /*
+   * **A STAGED ATTACHMENT IS ITSELF A MESSAGE** (F6 §3.3, and the brief: *"user may /
+   * may not add a text"*). Pressing Kirim on an empty box with a reading above it is
+   * what everyone does with a screenshot; requiring a caption would make the ordinary
+   * move read as a slip, and `C-R6` even permits nobody answering it.
+   *
+   * The room refuses the same nothing this does — empty AND unattached — and so does
+   * the route, with a 400. Three agreeing guards, because the one that matters is the
+   * server's and the other two are what stop the querent meeting it.
+   */
+  const canSend = (draft.trim().length > 0 || staged != null) && !closed && !sending;
 
   return (
     <div className={styles.composer}>

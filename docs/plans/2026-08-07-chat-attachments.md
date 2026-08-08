@@ -1028,6 +1028,17 @@ and a fence.
 **Blocked on F1** for the column and the route field, and on **F4** for the staging.
 Tasks 1–5 and 9 can be built and tested with neither.
 
+> **⚠ F6 SPLITS IN TWO, AND `implement … f6` RUNS TWICE.** Reconciliation §6, on this
+> plan's own D3: F3's context assembler imports `attachmentBlock`, so the prompt block
+> and the two renderers land BEFORE F3 and the two mounts land after F4.
+>
+> ```
+> F1 → F6 (tasks 1–5) → F3 → F2 → F4 → F6 (tasks 6–8) → F5 → F7
+> ```
+>
+> **Tasks 1–5 shipped in `b4e7acf`** (2026-08-08). **Tasks 6–8, plus the `/chat` half
+> this plan assigns to F4 and F4 did not build, shipped the same day** — see §16.
+
 ### Task 1 — `src/lib/chat/attachmentView.ts`
 The types, `ATTACHMENT_SNIPPET_MAX_CHARS`, `attachmentSnippet`, `toAttachmentPreview`.
 PURE, no `server-only`, no prompt prose, imports `@/lib/history/types` and
@@ -1235,3 +1246,52 @@ it exists so the two plans do not both describe it.
 **From F7:** nothing. If `/admin/chat` wants an attachment-rate panel, `reading_id` and
 `from` are on the event and `attached_reading_id` is on the row; the denominator is
 readings finished, not messages sent (§11.2).
+
+---
+
+## 16. What shipped, and where it diverged (2026-08-08)
+
+The evidence, the measurements and the generalisations are in
+`docs/workstream-notes.md` under *F6 — attachments, the UI half*. This section is the
+short form, so a reader of the plan is not told something the code does not do.
+
+### The scope this plan got wrong
+
+**§3.2 and *"Interfaces I need — From F4"* assign the whole `/chat` half to F4, and F4
+shipped the SLOTS and none of the wiring** — `ChatComposer`'s `staged?: ReactNode` and
+`ChatBubble`'s `attachment?: ReactNode`, both commented *"F6's"*, with
+`attachedReadingId: null` hardcoded in `submit`. Tasks 6–8 alone would therefore have
+shipped two buttons that navigate to a room which discards the attachment. Miftah ruled
+end to end, so F6 crossed into `ChatRoom.tsx`, `ChatComposer.tsx`, `app/chat/page.tsx`
+and F1's two chat routes.
+
+**The generalisation: a seam declared in two plans is owned by neither unless one of
+them names the FILE.** F4's plan named the slot; no task list named the line that fills
+it.
+
+### Five decisions that are not this plan's
+
+| # | This plan said | What shipped, and why |
+|---|---|---|
+| 1 | `from: 'history' \| 'reading'` (§2.4, `[F6-5]`) | **`'draw'`.** F1 owns `events.ts`, folded the event into `chat.message_sent.attached_from` with the union `'history' \| 'draw' \| null`, and the route's zod enum matches. `'reading'` would have failed the parse and **400'd every draw-screen attach.** |
+| 2 | `?from=attach` distinguishes the entry point (F4's reading of §3.2) | **The presence of `?attach=` does.** One URL key, two features — `from` also carries `attached_from`. Decided server-side in `entryOf`, read from a ref in the room, because `chat.opened` fires after two awaited fetches and the URL is tidied before then. |
+| 3 | F4's payload builder puts a preview on each message (§8) | **A `attachments` MAP on `GET /api/chat/messages`.** `types.contract.test.ts` asserts `chat/types.ts` imports exactly `['@/data/types']` (`[F1-14]`), and O3 makes one-copy-per-reading real rather than theoretical. |
+| 4 | F1 owns the route guard and applies `attachable()`'s server half (D2) | **It does now.** F1 shipped ownership only; `ATTACHABLE_STATUSES` plus a SQL `hasBody` were added, `Boolean()`-converted per `readingsForDay`'s rule. |
+| 5 | §5.2's private copy of `stripUntrusted`'s loop is scaffolding for D4 | Unchanged and still scaffolding — F3 owns `sanitize.ts` (`[R12]`) and `lampiran` is still not in the alternation. The fence test is green because `attachmentBlock` strips its own tag. |
+
+### The open questions, resolved as ruled
+
+`O1` `partial` accepted server-side, offered nowhere — shipped, and
+`attachmentView.test.ts` asserts the two halves cannot drift. `O3` no dedupe — shipped,
+and it is why the payload is a map. `O4` no per-row control on `/history` — shipped;
+`attachSurface.test.ts` asserts the mount list is exactly two files. `O5` one attachment
+per message — unchanged. `O2` and `O6` were F3's and F7's and neither moved.
+
+### What is still open
+
+Loop 6 on all of it (the bubble at 375, the whole-card tap target, the staged card with
+the keyboard up); the draw-screen control unexercised end to end, because reaching it
+costs a live reading; and the per-attachment fan-out in `GET /api/chat/messages`, which
+is one query per DISTINCT attachment and bounded only by the page limit — **if that ever
+matters the repair is a batched read, never a cap**, because a cap draws
+`chat.attachment.gone` under a reading that is right there in the table.

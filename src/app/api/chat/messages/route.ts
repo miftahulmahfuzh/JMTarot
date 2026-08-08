@@ -1,7 +1,7 @@
 /**
  * `GET /api/chat/messages` — one page of the room, newest first.
  *
- *   -> 200 { messages, hasMore }
+ *   -> 200 { messages, hasMore, attachments }
  *   -> 400 a cursor with only half of itself
  *   -> 401 / 403 / 429
  *
@@ -20,15 +20,36 @@
  * chip-versus-picker and the server cannot. `chat.opened` is F4's, from the browser,
  * for the same reason: only the client knows whether the querent arrived by the button,
  * by a link, or from an attachment.
+ *
+ * ── `attachments` — F6, §8 ─────────────────────────────────────────────────
+ *
+ * **THE RESOLVER RUNS AT READ TIME, NOT ONCE AT WRITE TIME.** The alternative — a
+ * denormalised snapshot of the reading stored on the message row — is refused: it
+ * would be a second copy of the querent's question and prose, in a second table, with
+ * a second retention story and no way to follow `readings` if it ever changed.
+ *
+ * **OWNERSHIP IS A `where` PREDICATE, NEVER A REMEMBERED CHECK** (`[F6-6]`). Every id
+ * goes through `readingWithCards(db, user.id, id)`, which is `/history/[id]`'s own
+ * function: *a reading that is not yours and a reading that does not exist both 404,
+ * and they are indistinguishable on purpose.* It also validates the uuid shape and
+ * filters `blocked`, so three guarantees arrive in one call. **Only the querent can
+ * attach** — no beat ever writes `attached_reading_id` — so the caller's id IS the
+ * message author's id for every row on this page, which is what §8 asks for.
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { requireUser } from '@/lib/auth/server';
+import {
+  attachedIdsIn,
+  attachmentsFrom,
+  type ChatAttachments,
+} from '@/lib/chat/attachmentView';
 import { logChatFailure } from '@/lib/chat/log';
 import type { ChatMessagesReply } from '@/lib/chat/types';
 import { db } from '@/lib/db/client';
 import { listMessages } from '@/lib/db/queries/chat';
+import { readingWithCards } from '@/lib/db/queries/history';
 import { hit } from '@/lib/ratelimit';
 
 export const runtime = 'nodejs';
@@ -85,7 +106,29 @@ export async function GET(request: Request) {
       beforeId: parsed.data.beforeId ?? null,
       limit: parsed.data.limit,
     });
-    return NextResponse.json(page, { headers: { 'cache-control': 'private, no-store' } });
+
+    /*
+     * **ONE LOOKUP PER DISTINCT READING, AND USUALLY ZERO.** `attachedIdsIn` dedupes,
+     * so a querent who attached one reading to eight messages costs one call — and a
+     * page with no attachment, which is nearly every page, makes no query at all and
+     * pays for `Promise.all([])`.
+     *
+     * **THE BOUND IS THE PAGE LIMIT**, which the schema caps at 50, and there is no
+     * second cap on purpose: an artificial one would render `chat.attachment.gone`
+     * under a reading that is right there in the table, which is the one thing §8's
+     * empty state must never mean. If a real page ever makes this the slow part of the
+     * route, the repair is a BATCHED read in `queries/history.ts` — not a truncation.
+     */
+    const attachments: ChatAttachments = attachmentsFrom(
+      await Promise.all(
+        attachedIdsIn(page.messages).map((id) => readingWithCards(db, user.id, id)),
+      ),
+    );
+
+    return NextResponse.json(
+      { ...page, attachments },
+      { headers: { 'cache-control': 'private, no-store' } },
+    );
   } catch (err) {
     /*
      * **`[F1-23]`: THE ERROR IS NEVER LOGGED WHOLE.** A postgres error quotes the

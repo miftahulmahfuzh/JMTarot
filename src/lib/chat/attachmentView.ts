@@ -177,6 +177,65 @@ export function toAttachmentPreview(r: ReadingDetail): AttachmentPreview {
 }
 
 /**
+ * A reading sitting in the composer, waiting to be sent.
+ *
+ * **THE PREVIEW AND THE SOURCE CONTROL TRAVEL TOGETHER**, in one object rather than as
+ * two props, because a `from` without a preview is a state that means nothing and a
+ * preview without a `from` is a message whose `attached_from` is a guess. The type is
+ * what stops the pair drifting apart across a navigation.
+ *
+ * `from` is `null` when the URL carried no recognisable one — see `attachFromOf` in
+ * `/chat`'s page: a bad spelling costs one analytics dimension, never the message.
+ */
+export type StagedReading = {
+  preview: AttachmentPreview;
+  /** `chat.message_sent.attached_from`. F1's union, and the route's zod enum. */
+  from: 'history' | 'draw' | null;
+};
+
+/**
+ * Every attachment a page of the room needs, keyed by `readings.id`.
+ *
+ * **A MAP AND NOT A FIELD ON `ChatMessageDto`, FOR TWO REASONS AND ONE FENCE.**
+ *
+ *  1. **`src/lib/chat/types.ts` IS A LEAF AND SIX WORKSTREAMS DEPEND ON IT STAYING
+ *     ONE** (`[F1-14]`). `types.contract.test.ts` asserts its import list is EXACTLY
+ *     `['@/data/types']`, so a `ChatMessageDto.attachment` field would have dragged
+ *     `@/lib/history/types` into a file every query module and every client component
+ *     names. The fence is the ruling; this shape is what obeys it.
+ *  2. **The same reading may be attached twice** (O3: a person re-raises a thing, and
+ *     a refusal would need copy explaining a rule nobody expects). A map stores one
+ *     copy; a field per message stores as many copies as there are bubbles.
+ *
+ * An id with **no entry** is `[F6-7]`: the row is gone, or was never this querent's.
+ * That is a RENDERING STATE and not an error — §8's table decides what the bubble
+ * draws, and the assembler omits the block in silence.
+ */
+export type ChatAttachments = Record<string, AttachmentPreview>;
+
+/**
+ * The distinct reading ids a page of messages points at, in first-seen order.
+ *
+ * PURE, and it exists so the route's fan-out is a thing `npm test` can reach: the
+ * dedupe is the whole reason a querent who attached one reading to eight messages
+ * costs one lookup rather than eight.
+ */
+export function attachedIdsIn(
+  messages: readonly { attachedReadingId: string | null }[],
+): string[] {
+  const seen = new Set<string>();
+  for (const m of messages) if (m.attachedReadingId) seen.add(m.attachedReadingId);
+  return [...seen];
+}
+
+/** `ReadingDetail[]` -> the map. PURE. Nulls (gone, or not this querent's) drop out. */
+export function attachmentsFrom(rows: readonly (ReadingDetail | null)[]): ChatAttachments {
+  const out: ChatAttachments = {};
+  for (const row of rows) if (row) out[row.id] = toAttachmentPreview(row);
+  return out;
+}
+
+/**
  * May this reading be carried into the room? `[F6-12]`, the UI half.
  *
  * **`ok` ONLY, AND THE SERVER ACCEPTS `partial` TOO. THE ASYMMETRY IS DELIBERATE AND

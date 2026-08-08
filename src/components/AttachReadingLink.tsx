@@ -32,7 +32,7 @@
  *
  * ── `[F6-5]` THE ATTACHMENT IS STAGED IN THE URL ────────────────────────────────
  *
- * `/chat?attach=<readings.id>&from=history|reading`. No `sessionStorage`, no context,
+ * `/chat?attach=<readings.id>&from=history|draw`. No `sessionStorage`, no context,
  * no POST-then-redirect. The id is not a secret — it is the address bar of
  * `/history/[id]` — and ownership is re-checked server-side at post time and again at
  * assembly time, always as a `where` predicate (`[F6-6]`). A query param survives a
@@ -50,10 +50,19 @@ type Props = {
   readingId: string;
   /**
    * Which control was tapped. **A CLOSED TWO-VALUE SET, so it is not free text** —
-   * rule 2 of the taxonomy. It rides the URL and F4 posts it as `attach_from`, where
-   * F1's route puts it on `chat.message_sent`.
+   * rule 2 of the taxonomy. It rides the URL and the room posts it as `attach_from`,
+   * where F1's route puts it on `chat.message_sent`.
+   *
+   * **`'draw'` AND NOT F6's PLAN's `'reading'`.** F1 owns `events.ts` and folded
+   * `chat.attachment_added` into `chat.message_sent.attached_from`, whose union is
+   * `'history' | 'draw' | null` — and `POST /api/chat/message`'s zod enum matches it.
+   * A plan-spelled `'reading'` would have ridden the URL, failed the route's parse,
+   * and 400'd every draw-screen attach: **a value that is only wrong on one of the
+   * two surfaces, on the surface a querent reaches most often.** The catalog copy
+   * and the analytics union are what the rest of the release reads; the plan's word
+   * was the odd one out.
    */
-  from: 'history' | 'reading';
+  from: 'history' | 'draw';
 };
 
 export function AttachReadingLink({ readingId, from }: Props) {

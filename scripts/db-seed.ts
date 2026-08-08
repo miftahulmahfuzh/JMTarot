@@ -369,6 +369,88 @@ async function main() {
       }
     }
 
+    // ---- v0.7.0 / F6: two readings that exist only to be ATTACHED ---------
+    //
+    // The attachment card is the widest thing in the room and `_chatfit.html` is
+    // the only loop that answers width, so the two fixtures F6 §13 asks for are
+    // seeded rather than described:
+    //
+    //   1. **The widest meta stack.** An `en` `spread3` — three thumbnails, so the
+    //      card row is at its widest — with a question at `MAX_QUESTION_LENGTH`
+    //      and a body long enough that the snippet is CUT. Its locale is `en` on
+    //      purpose: in the harness's `id` run the language chip renders, and chip
+    //      + question + snippet together is the tallest, widest stack the card can
+    //      produce. `Thessaly` is the longest reader name and rides with it.
+    //   2. **The thinnest.** An `id` `daily` — ONE thumbnail — attached with NO
+    //      TEXT AT ALL (§3.3), which is both a legal conversational move and the
+    //      case where the card must not look like an empty box.
+    //
+    // Their `local_date` is months back, so the meta line carries a year and the
+    // date is the long form rather than "hari ini".
+    const ATTACH_QUESTION_EN = (
+      'should i take the offer in another city or stay where my family is, ' +
+      'because the money is better there but everyone i know is here and i keep ' +
+      'going back and forth about it every single night'
+    ).slice(0, 200);
+
+    const attachedSpread = await insertReading(
+      db,
+      {
+        userId: miftah.id,
+        readerId: 'thessaly',
+        serviceId: 'spread3',
+        locale: 'en',
+        question: ATTACH_QUESTION_EN,
+        status: 'ok',
+        verdict: null,
+        body:
+          'What has passed is The Tower reversed — the collapse you keep bracing for ' +
+          'already happened, quietly, and you were the only one who did not call it that.\n\n' +
+          'What moves now is The Hermit. You have been alone with this on purpose.\n\n' +
+          'What comes is The Lovers, and it is not about romance. It is about choosing ' +
+          'one thing and letting the other one go.\n\n' +
+          'So: the road is not the question. The staying is.',
+        gist: 'weighing a move against the people already here',
+        model: 'seed',
+        promptVersion: 'en-v1.5eed0000',
+        latencyMs: 4200,
+        tokenInput: 900,
+        tokenOutput: 240,
+        sessionId: `${SESSION_PREFIX}attach`,
+        localDate: '2026-06-14',
+        createdAt: new Date('2026-06-14T09:20:00Z'),
+      },
+      [
+        { cardId: 16, reversed: true, position: 0 },
+        { cardId: 9, reversed: false, position: 1 },
+        { cardId: 6, reversed: false, position: 2 },
+      ],
+    );
+
+    const attachedDaily = await insertReading(
+      db,
+      {
+        userId: miftah.id,
+        readerId: 'margaret',
+        serviceId: 'daily',
+        locale: 'id',
+        question: null,
+        status: 'ok',
+        verdict: null,
+        body: 'Hari ini tidak menuntut apa-apa darimu. Itu bukan kekosongan, itu jeda.',
+        gist: 'diminta membiarkan hari berjalan pelan',
+        model: 'seed',
+        promptVersion: 'id-v1.5eed0000',
+        latencyMs: 1800,
+        tokenInput: 700,
+        tokenOutput: 90,
+        sessionId: `${SESSION_PREFIX}attach`,
+        localDate: '2026-07-02',
+        createdAt: new Date('2026-07-02T02:10:00Z'),
+      },
+      [{ cardId: 2, reversed: false, position: 0 }],
+    );
+
     // ---- v0.7.0: one chat thread, for the width harness -------------------
     //
     // **`public/cards/_chatfit.html` DRIVES THE REAL `/chat`**, because inlining
@@ -486,6 +568,33 @@ async function main() {
         intent: 'tease',
         model: 'seed',
         createdAt: minutesAgo(20),
+      },
+      /*
+       * F6's two fixtures. A CAPTIONED attachment and a bare one, in that order,
+       * so the harness can measure both without scrolling: the card on top and
+       * the querent's text under it is ONE bubble — one `chat_messages` row with
+       * both `body` and `attached_reading_id`, exactly as WhatsApp renders a
+       * captioned image. Two bubbles would need two rows and the schema has one
+       * column.
+       */
+      {
+        userId: miftah.id,
+        author: 'user',
+        body: 'ini gimana menurut kalian? masih kepikiran sampai sekarang.',
+        locale: 'id' as Locale,
+        attachedReadingId: attachedSpread.id,
+        createdAt: minutesAgo(14),
+      },
+      {
+        userId: miftah.id,
+        author: 'user',
+        /* **EMPTY, AND `''` RATHER THAN NULL** (§3.3). The column is `text not
+           null`, and a second representation of "nothing typed" is how two code
+           paths start disagreeing about what an attachment with no words is. */
+        body: '',
+        locale: 'id' as Locale,
+        attachedReadingId: attachedDaily.id,
+        createdAt: minutesAgo(12),
       },
     ];
     await db.insert(schema.chatMessages).values(chatRows);

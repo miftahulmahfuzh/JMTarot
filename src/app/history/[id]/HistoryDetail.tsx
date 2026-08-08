@@ -10,10 +10,12 @@
  */
 import { useEffect, useRef, useState } from 'react';
 
+import { AttachReadingLink } from '@/components/AttachReadingLink';
 import { ReadingView, type ReadingProse, type ReadingViewData } from '@/components/ReadingView';
 import { ShareFooter } from '@/components/ShareFooter';
 import { LOCAL_DATE_HEADER, SESSION_HEADER } from '@/lib/analytics/localdate';
 import { getSessionId, track } from '@/lib/analytics/track.client';
+import { attachable } from '@/lib/chat/attachmentView';
 import { useT } from '@/lib/i18n/LocaleProvider';
 import { todayKey } from '@/lib/storage';
 
@@ -127,7 +129,34 @@ export function HistoryDetail({
        * the share control in every mount.
        */
       footer={
-        reading.status === 'ok' && reading.body !== null ? (
+        <>
+        {/*
+          F6's TASK 7. *Bahas di grup*, and this page's ONLY route into the room —
+          `C-D17` puts the chat button on `/history` and deliberately NOT on
+          `/history/[id]`, whose whole affordance is the back link and a reading that
+          may be mid-translation (F6's D7). Recorded so nobody "fixes" it by adding a
+          `ChatButton` here.
+
+          **`attachable()` AND NOT A SECOND COPY OF THE CONDITION BELOW**, although the
+          two happen to admit the same rows today. It is a pure predicate with a unit
+          test, it says `[F6-12]`'s UI half in one place, and it is one `trim()` wider
+          than `status === 'ok' && body !== null` — a body of whitespace is not a state
+          this app produces, and a predicate should say what it means rather than what
+          the column happens to hold. `partial` is refused HERE and accepted by the
+          route, which is the asymmetry §2.3 argues at length: this page KNOWS the
+          status, and a `partial` body is prose that stops mid-sentence — three readers
+          cannot tell "the stream died" from "this reader is incoherent" any better than
+          `ShareFooter`'s stranger could, and one of them will say so in a bubble.
+
+          **ABOVE `ShareFooter`.** The private action above the public one: attaching
+          shows a reading to three characters who already hold the querent's six
+          onboarding answers; sharing puts it on the public internet (`[F6-11]`). They
+          are adjacent on screen and must never converge.
+        */}
+        {attachable(reading) ? (
+          <AttachReadingLink readingId={reading.id} from="history" />
+        ) : null}
+        {reading.status === 'ok' && reading.body !== null ? (
           <ShareFooter
             entity="reading"
             entityId={reading.id}
@@ -145,7 +174,8 @@ export function HistoryDetail({
             prose={prose}
             nickname={nickname}
           />
-        ) : null
+        ) : null}
+        </>
       }
       onCardOpened={(c) =>
         track('draw.card_detail_opened', {
