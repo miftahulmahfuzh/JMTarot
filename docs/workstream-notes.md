@@ -10151,3 +10151,170 @@ what it changes is any future argument that trims the context to save tokens.
   (`CHAT_READING_LOOKBACK_DAYS`, `CHAT_ANSWERS_ENABLED`) are both live.
 - **Nobody has read a chat bubble on a phone.** Loop 4 and loop 6 are F4's, and a 31-word
   Margaret bubble at 320px is the geometry nothing in this workstream can answer.
+
+---
+
+## F2 — the director (v0.7.0, 2026-08-07)
+
+**What landed:** `src/lib/chat/direct/{caps,affinity,window,validate,fallback,assemble,system,
+system.id,system.en}.ts`, and `direct/prompt.ts` — F1's placeholder, replaced. Six test files
+beside them, and `npm run smoke -- --chat --director` in `scripts/smoke-llm.ts`.
+
+`docs/plans/2026-08-07-chat-director.md` is the plan. What is here is the measurement, the
+five places the plan could not be built as written, and the one lever that did not land.
+
+### The filenames are not the plan's, and `[R13]` is why
+
+The plan's §6 names `direct/plan.ts` for the locale facade. **`direct/plan.ts` is F1's file** —
+the `chat_plan` call site, named *by string* in `callClass.test.ts` and `flagCoverage.test.ts`,
+and the reconciliation ratified that boundary after the plan was written. So:
+
+| The plan says | What was built | Why |
+|---|---|---|
+| `plan.ts` (facade), `plan.{id,en}.ts` | `system.ts`, `system.{id,en}.ts` | `plan.ts` is F1's. The exported function names are still the plan's (`planSystemPrompt`, `planPromptId`) so the prose stays greppable against the document that specifies it |
+| `prompt.ts` (PURE) | `assemble.ts` (pure user turn) **plus** `prompt.ts` (the server-only seam) | F1's seam requires `buildPlanPrompt(input: DirectorInput)` to be `async` and to read the database. The pure half had to move to its own module or `npm test` could not reach the prompt at all |
+| `direct.ts` (`directRun`) | — | F1's `plan.ts` already is that function: the op, the tier, the model, the flag guard, the budget, the fallback wrapper and the event |
+| `index.ts` (the import surface) | — | `plan.ts` is the only importer and it names files directly. An index would be a second surface with one consumer |
+
+### The memo, and why a miss degrades here where it refuses for a voice
+
+`plan()` calls `buildPlanPrompt`, then `validatePlan(raw, input)`, then `planFallback(input)`.
+**Only the first may touch the database, and the other two need what it read** — `checkPlan`
+resolves `#n` against the window, and the fallback's table needs the affinity lead, the awaiting
+reader and the reader of the last reading. `DirectorInput` carries none of it and `plan.ts` is
+F1's file.
+
+So `direct/prompt.ts` keeps a bounded `Map` keyed by `runId`, exactly as `voices/prompt.ts` does
+one keyed by `${runId}:${beatIndex}` — **the lease is what makes it safe** (`C-R3`: one executor
+per run, planning happens once). **One deliberate difference from F3:** `validateTurn` *refuses*
+on a memo miss, because two of its checks keep a published promise. Nothing here has that shape:
+a missing window costs the quote stubs and nothing else, so the beats survive with
+`replyTo: null` — `P3`'s bias applied to the process rather than to the model. Refusing would
+turn a warm-lambda accident into a one-beat fallback, which is quieter *and* less honest.
+
+### Five things the plan could not be built as written
+
+1. **`to` had to enter the JSON contract, and §6.1's prompt predates it.** `[R9]` admitted F1's
+   `to` field after F2's plan was written, on the ground that *"a beat may address Margaret
+   without quoting her, and may quote a message while addressing the querent about it"*. So the
+   contract carries one more key than §6.1 shows and **the director decides it**; an absent or
+   self-naming `to` is derived from the quoted message's author (accept bias — a dropped beat
+   over a missing key would be a refusal for a habit).
+2. **A beat cannot quote the beat before it in its own run.** The first beat has no
+   `chat_messages` row when the sheet is written, so **within a run, answering another reader is
+   `to`; across runs it is `replyTo`.** §11's lever — *"beats whose `replyTo` names a reader
+   message"* — can therefore only ever see the across-run half, and the smoke script measures
+   both separately. This was found by the measurement reading 0% on a room that was doing it.
+3. **An absent `beats` key is `shape`, not silence.** The plan's `R2` refuses only *"`beats`
+   present and not an array"*, which would admit `{}` as a deliberate silence — precisely the
+   confusion `[F2-7]` exists to forbid. `[F2-7]` is the load-bearing rule and wins: only an
+   explicit `[]` is a decision.
+4. **The `unanswered` predicate lost one clause and gained one exclusion.** *"No later message
+   has `reply_to_message_id = m.id`"* is unbuildable — `ChatTranscriptEntry` (F3's type, seam
+   S2) carries `replyToAuthor` and not the quoted id, and widening it is an edit to F3's file.
+   And **the trigger message is excluded from "later"**, or the flag could never fire on a
+   `user_message` run at all: the run's own trigger is by definition a later message from the
+   other side. The plan's own §6.3 example marks Thessaly's question `[belum dijawab]` beside the
+   querent's brand-new reply, which is only consistent with this reading.
+5. **`hasMaterial` is derived until F5 lands.** `C-N2e` says a trigger with no material does not
+   fire and F5's predicate is what guarantees it; F5 does not exist, so the proactive fallback
+   arms read a reading behind the trigger or a hanging reader question. `idle_nudge` and `cron`
+   fall to zero beats **on the fallback path only**. `PlanInput.material` is the field F5 fills.
+
+### The four calibration runs, and the three levers that moved
+
+`CHAT_MODEL=glm-5.2`, `npm run smoke -- --chat --director`, 2026-08-07, eight or nine probes per
+locale against a canned transcript. **Temperature is unset by design (`[F2-18]`), so identical
+input gives different sheets — the variance below is the mechanism working, not noise to
+suppress.**
+
+| run | change under test | silence | cast 1 / 2 | ask | reader-directed |
+|---|---|---|---|---|---|
+| 1 (id) | as designed | 13% | 7 / 0 | 38% | 0% |
+| 2 (id) | rule 1 rewritten, rule 6 names the strings | 13% | 6 / 1 | 25% | 0% |
+| 3 (id+en) | worked example explains the second beat | 22% / 22% | 4/3 / 4/3 | 33% / 56% | 0% |
+| 4 (id) | rule 4 gains an explicit `to` sentence — **reverted** | 22% | 7 / 0 | 33% | 0% |
+| 5 (id) | after the revert | 11% | 6 / 2 | 22% | 0% |
+
+**1. Rule 1 was biased hard toward one beat and the model obeyed it exactly.** *"Kebanyakan run
+cukup SATU. Dua sudah ramai"* plus *"kalau ragu, artinya tidak perlu"* produced **1:7 2:0** —
+§11's named failure in as many words: *"all 1s is three readers taking turns being the only
+reader, the app it already is with extra machinery."* The rewrite names the case for a second
+beat (*a different thing: answering the first reader, disagreeing, needling, adding one thing
+that is not a repeat*) and **scopes "if in doubt, no" to the THIRD beat.** The `YANG BUKAN
+ALASAN` block is untouched — it enumerates the *bad* reasons and is what keeps the false positive
+refused.
+
+**2. Rule 6 needed the actual strings.** *"wkwk iya sih"* was answered with `answer` quoting a
+four-minute-old message in runs 1 and 2. Naming the shapes — *tawa ("wkwk", "haha"), tanda
+setuju pendek ("iya sih", "oke")* — plus *"never an `answer` that restates what was already
+being discussed"* moved it to `beats: []` in every run since. **A description of brevity does not
+produce brevity; a list of the words does.** `readers.id.ts`'s worked-example rule, one layer up.
+
+**3. Rule 10 held from the first run.** A message about a grandmother who died got one beat and
+never a `tease`, in all four runs and both locales. It is the rule whose failure would have been
+the worst thing in the release, and it is the one that needed no calibration.
+
+**4. THE REVERT IS THE FINDING.** Run 4 added a sentence to rule 4 telling the model to put a
+reader's name in `to` when the beat is aimed at one. **It bought no change in the lever it
+targeted (0%) and coincided with the cast mix collapsing back to 1:7.** One run cannot prove the
+regression is causal — but a prompt clause that demonstrably buys nothing is dead weight
+competing for attention in a prompt whose length is the thing being calibrated, so it was
+removed. `## Localization`'s standing instruction against *"chasing variance"*, applied to a
+director instead of a word budget.
+
+### The lever that did not land, recorded rather than fixed
+
+**Reader-directed beats are 0% across five runs and ~40 beats.** Not one beat set `to` to a
+reader, in either locale, including on the probe that literally asks one reader whether she
+agrees with another. The beats are *reader-aware* — their angles name Thessaly, they answer what
+she said — they simply address the querent while doing it, which is also how a real group chat
+often reads (*"nah, tapi kata Thessaly tadi…"*). §11 calls 0% *"three parallel help desks in one
+window"*, and the honest position is that the metric and the phenomenon have drifted apart:
+`to` is a prompt fact for `validateTurn`'s address check, not a measure of whether the room talks
+to itself.
+
+**Two things a future session should try before touching code**, in this order: the worked
+example is the lever that has worked twice, so give the Indonesian example a second beat whose
+`to` is a reader *and* whose angle is plainly about that reader; and if that fails, measure
+whether the ANGLES name another reader, which is the thing actually being asked for.
+**`CLAUDE.md`'s standing rule applies — the fix is the prompt and never the validator**, and
+`checkPlan` must not start deriving `to` from the angle.
+
+### What is measured and cheap
+
+- **A plan is 2,000–3,000 input tokens and 10–100 output tokens**, 0.9–2.9s, one call per run.
+  The director is the cheap half of a run by an order of magnitude, which is what makes
+  `C-D6`'s *"sixty chat runs exhaust the fleet quota"* a statement about the voices.
+- **`fallback rate 0%` and two `angle` repairs across ~40 beats.** `glm-5.2` returns bare JSON
+  with no fence every time. **The accommodations in `parseObject` — a stripped fence, a sentence
+  before the object — have never yet been needed**, and they are kept because the day they are
+  needed is a day a run would otherwise be silent.
+- **The affinity hint is followed 50–100% of the runs that have a lead** (n=3 per run). It was
+  overruled once, by Thessaly answering a message about a partner — which §4 licenses in as many
+  words, and which is the behaviour that separates a room from a switchboard.
+- **The lexicon's one known false positive is Indonesian reduplication.** `hati-hati` ("be
+  careful") matches the `inner` term `hati`, because a hyphen counts as a word boundary — and it
+  counts as one so that `deadline-nya` matches `deadline`, which is what people actually type
+  and which appears in this workstream's own worked example. `affinity.test.ts` pins both halves
+  so the false positive cannot be "fixed" without seeing what it would break.
+
+### Still open when F2 landed
+
+- **Nobody has read the BUBBLES that came out of a real beat sheet.** `--chat` cans the sheets
+  and `--chat --director` cans the voices, deliberately (a failure in either would otherwise be
+  indistinguishable). **The two have never been joined**, and `[F2-2]`'s failure mode — a sheet
+  that reads well and produces three paragraphs that sound alike — is only visible when they
+  are. That is the honest last gate on `[C-N1]` and it needs F4's `/chat` or a third smoke mode.
+- **`direct/prompt.ts` has no test at all.** It imports `@/lib/db/client`, so Vitest cannot load
+  it; `contract.test.ts` asserts its fences on the source and every decision it makes lives in a
+  pure module. The memo's behaviour under a real run is unverified — same standing as
+  `voices/prompt.ts`'s.
+- **`chat.run_planned` carries neither `affinity_followed` nor `dropped`.** F2's plan declared
+  them; F1 owns `events.ts` and folded a narrower set, and `replies_to_old` in `run.ts` in fact
+  counts *every* beat with a `replyTo` rather than an old one. **F7 reads that prop**, so it
+  should either be renamed or re-derived when F7 lands — the numerator it names and the number it
+  holds are different things.
+- **`OLD_REPLY_MIN_AGE_MINUTES = 30` is still a guess** (`F2-Q5`), and across five runs exactly
+  one beat quoted an old message. If `C-D11` never fires in production, that number is the first
+  thing to move — and rule 8 is the second.

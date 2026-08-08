@@ -337,8 +337,26 @@ async function main() {
   }
 
   if (chat) {
-    await runChat(sideLocales, process.argv.includes('--proactive'));
-    if (!all) return;
+    /*
+     * `--chat --director` IS F2's FLAG, AND F3's PLAN NAMES IT AS F2's IN THOSE WORDS.
+     *
+     * The two halves are separate instruments on purpose. `--chat` alone drives the
+     * VOICES against canned beat sheets, because *"chaining a planner call in would
+     * make a voice failure indistinguishable from a planning failure"* — `runPersona`'s
+     * reason for not chaining the Lotus, one workstream over. This drives the DIRECTOR
+     * against a canned transcript, for the mirror-image reason: a sheet judged by the
+     * prose that came out of it is a sheet nobody judged.
+     *
+     * `[F2-19]`: the beat sheet is what §15.4 asks five questions of, and no unit test
+     * can answer any of them.
+     */
+    if (process.argv.includes('--director')) {
+      await runDirector(sideLocales);
+      if (!all) return;
+    } else {
+      await runChat(sideLocales, process.argv.includes('--proactive'));
+      if (!all) return;
+    }
   }
 
   if (!reader && !service && !all) {
@@ -2611,6 +2629,272 @@ function chatBlindPrint(
   process.stdout.write('\n'.repeat(40));
   process.stdout.write(`${'-'.repeat(30)}\nTHE KEY\n${'-'.repeat(30)}\n`);
   for (const line of key) process.stdout.write(`${line}\n`);
+}
+
+// ---------------------------------------------------------------------------
+// `--chat --director` (F2). THE ONLY INSTRUMENT FOR A BEAT SHEET.
+// ---------------------------------------------------------------------------
+
+/**
+ * One line of the canned room. `after` is minutes since the previous line, so the ages the
+ * director reads are real relative durations and `[belum dijawab]` is reachable.
+ *
+ * A line with `probes` is a querent message the director is asked to plan for; every other
+ * line is scaffolding, and the reader lines are hand-written because **calling the voices
+ * here would make a bad sheet and a bad bubble indistinguishable**.
+ */
+type DirectorLine = {
+  author: 'user' | ReaderId;
+  body: string;
+  after: number;
+  probes?: string;
+};
+
+/**
+ * The eight probes, chosen to reach the four levers of the plan's §11 and the two prompt
+ * rules no unit test can see (5 and 10).
+ *
+ * **THE ENGLISH HALF IS A REWRITE, NOT A TRANSLATION** — different subjects on purpose, the
+ * same enforcement `## Localization` rule 3 applies to the worked examples. If a future
+ * version of this fixture says *atasan* and *boss* about the same week, somebody translated
+ * it.
+ */
+const DIRECTOR_SCRIPT: Record<Locale, DirectorLine[]> = {
+  id: [
+    { author: 'user', body: 'hai', after: 0, probes: 'THE EMPTY OPENER. Silence, or ONE small beat? Three beats here is the failure.' },
+    { author: 'adrian', body: 'eh, tumben. kenapa?', after: 1 },
+    { author: 'user', body: 'kerjaan gue numpuk banget, atasan minta semuanya kelar minggu ini', after: 2, probes: 'THE ORDINARY ONE. Affinity says thessaly. Does the room agree, and does anybody overrule it?' },
+    { author: 'thessaly', body: 'Berapa yang benar-benar harus minggu ini?', after: 2 },
+    { author: 'user', body: 'sori ketiduran. tiga sih sebenernya, sisanya bisa minggu depan', after: 95, probes: 'RULE 5. Thessaly asked and never heard back. Does she get the first beat?' },
+    { author: 'margaret', body: 'Tiga dan sisanya adalah dua daftar yang berbeda, dan yang kedua biasanya yang menahan orang.', after: 3 },
+    { author: 'user', body: 'wkwk iya sih', after: 1, probes: 'THE ONE-WORD PROBE. A real group lets this pass. Does this one?' },
+    { author: 'thessaly', body: 'Tulis tiga itu sekarang, sebelum lupa.', after: 2 },
+    { author: 'user', body: 'iya tapi ngga sesimpel itu, atasan gue tiap hari nambah', after: 2, probes: 'THE TWO-BEAT PROBE. A real group answers this twice: somebody pushes back on Thessaly and somebody sides with the querent.' },
+    { author: 'user', body: 'nenek gue meninggal tahun lalu dan gue masih kebayang terus', after: 40, probes: 'RULE 10. NO tease, and one beat is usually enough. A tease here is the worst outcome in the run.' },
+    { author: 'thessaly', body: 'Setahun itu belum lama.', after: 2 },
+    { author: 'user', body: 'margaret kamu setuju ngga sama thessaly?', after: 3, probes: 'DIRECTED AT A READER. Margaret should be in the cast, and to= should name somebody.' },
+    { author: 'adrian', body: 'nah itu dia. gue juga pengen tau jawabannya', after: 2 },
+    { author: 'user', body: 'pacar gue ngambek dari kemarin dan gue bingung mau ngomong apa', after: 5, probes: 'THE AFFINITY SWITCH. Adrian is the lead now. Does the cast move?' },
+    { author: 'user', body: 'oke deh, makasih ya', after: 4, probes: 'THE ENDING PROBE. `beats: []` is the correct answer (C-R6).' },
+  ],
+  en: [
+    { author: 'user', body: 'hey', after: 0, probes: 'THE EMPTY OPENER' },
+    { author: 'margaret', body: 'There you are.', after: 1 },
+    { author: 'user', body: 'my landlord wants an answer about the lease by friday', after: 2, probes: 'THE ORDINARY ONE. Affinity says thessaly.' },
+    { author: 'thessaly', body: 'What happens if you say no?', after: 2 },
+    { author: 'user', body: 'sorry, fell asleep. i think i just move out honestly', after: 100, probes: 'RULE 5. Thessaly asked and never heard back.' },
+    { author: 'adrian', body: 'you said that last month too though', after: 3 },
+    { author: 'user', body: 'lol fair', after: 1, probes: 'THE ONE-WORD PROBE' },
+    { author: 'thessaly', body: 'Then give notice this week.', after: 2 },
+    { author: 'user', body: 'thats easy for you to say, i have nowhere to go yet', after: 2, probes: 'THE TWO-BEAT PROBE. A real group answers this twice: one pushes back on Thessaly, one sides with the querent.' },
+    { author: 'user', body: 'my dad had a fall and i keep thinking about it', after: 45, probes: 'RULE 10. NO tease here.' },
+    { author: 'margaret', body: 'A fall frightens the people watching more than the person who fell.', after: 2 },
+    { author: 'user', body: 'adrian do you actually agree with her', after: 3, probes: 'DIRECTED AT A READER' },
+    { author: 'thessaly', body: 'He will say yes and then say something else.', after: 2 },
+    { author: 'user', body: 'my ex texted me and i havent replied for two days', after: 5, probes: 'THE AFFINITY SWITCH. Adrian is the lead now.' },
+    { author: 'user', body: 'ok thanks', after: 4, probes: 'THE ENDING PROBE' },
+  ],
+};
+
+/**
+ * `npm run smoke -- --chat --director`. Eight real `chat_plan` calls per locale.
+ *
+ * **THE CONTEXT IS THE FIXTURE ABOVE RATHER THAN `assembleChatContext`**, exactly as
+ * `runChat` does it and for the same reason: the assembler's reads are five real query
+ * modules building drizzle statements, and faking that chain would be testing the fake.
+ * `context.integration.test.ts` drives the assembler against a real row; **what this run is
+ * for is the DECISION.**
+ */
+async function runDirector(locales: Locale[]) {
+  const { buildPlanPromptFrom } = await import('@/lib/chat/direct/assemble');
+  const { affinityFor } = await import('@/lib/chat/direct/affinity');
+  const { planCaps } = await import('@/lib/chat/direct/caps');
+  const { checkPlan } = await import('@/lib/chat/direct/validate');
+  const { awaitingReader, buildWindow, recentlySpoke, renderBeatSheet } = await import(
+    '@/lib/chat/direct/window'
+  );
+  const { chatModel, chatModelName } = await import('@/lib/chat/model');
+
+  const caps = planCaps();
+  process.stdout.write(
+    `\ndirector model=${chatModelName()} (CHAT_MODEL=${process.env.CHAT_MODEL ?? 'unset'})\n` +
+      `caps: maxBeats=${caps.maxBeats} perReader=${caps.maxBeatsPerReader} angle=${caps.maxAngleChars} window=${caps.windowMessages} oldReply=${caps.oldReplyMinAgeMinutes}m\n`,
+  );
+
+  for (const locale of locales) {
+    process.stdout.write(`\n${'#'.repeat(70)}\nDIRECTOR -- ${locale}\n${'#'.repeat(70)}\n`);
+
+    const script = DIRECTOR_SCRIPT[locale];
+    const messages: Array<{ id: string; author: 'user' | ReaderId; body: string; createdAt: string }> = [];
+    let clock = Date.parse('2026-08-07T02:00:00.000Z');
+    let no = 0;
+
+    /** Every sheet, for the levers at the end. */
+    const sheets: Array<{
+      beats: number;
+      readers: number;
+      asks: number;
+      /**
+       * `to` NAMING A READER, AND IT IS THE HONEST MEASURE OF READER-TO-READER.
+       *
+       * §11's lever says *"beats whose `replyTo` names a reader message"*, and that half
+       * can only ever catch a quote of a PREVIOUS run: **the first beat of this run has no
+       * `chat_messages` row yet, so the second beat cannot quote it.** Within a run,
+       * answering another reader is `to`; across runs it is `replyTo`. Counting only the
+       * second would have read as 0% on a room that was doing it constantly.
+       */
+      readerDirected: number;
+      readerQuotes: number;
+      oldReplies: number;
+      source: string;
+      followedLead: boolean | null;
+    }> = [];
+
+    for (const line of script) {
+      clock += line.after * 60_000;
+      no += 1;
+      messages.push({
+        id: `m${no}`,
+        author: line.author,
+        body: line.body,
+        createdAt: new Date(clock).toISOString(),
+      });
+      if (!line.probes) continue;
+
+      const triggerId = `m${no}`;
+      const window = buildWindow({
+        messages,
+        locale,
+        caps,
+        triggerMessageId: triggerId,
+        now: clock,
+      });
+      const cast = recentlySpoke(window);
+      const affinity = affinityFor(line.body, locale, { recentlySpoke: cast });
+      const prompt = buildPlanPromptFrom(
+        {
+          trigger: 'user_message',
+          fallbackLocale: locale,
+          window,
+          affinity,
+          awaiting: awaitingReader(window),
+          material: null,
+          caps,
+        },
+        cast,
+      );
+
+      const started = Date.now();
+      const reply = await getProvider().complete(prompt, {
+        op: 'chat_plan',
+        callClass: 'deferred',
+        model: chatModel(),
+      });
+      const ms = Date.now() - started;
+
+      const checked = checkPlan(reply.text, { window, fallbackLocale: locale, caps });
+      process.stdout.write(`\n--- ${no}. ${line.body}\n    (${line.probes})\n`);
+
+      if (!checked.ok) {
+        /* **A REFUSAL IS THE FALLBACK, AND THE FALLBACK IS NOT SILENCE** (`[F2-7]`). It is
+         * printed as loudly as possible: a refusal rate above a few percent means the
+         * prompt is wrong, and `validatePlan` must be LOOSENED rather than the prompt
+         * blamed if the plans it refuses read as correct. */
+        process.stdout.write(
+          `    [REFUSED -- ${checked.reason}] raw: ${JSON.stringify(reply.text.slice(0, 200))}\n`,
+        );
+        sheets.push({
+          beats: 1,
+          readers: 1,
+          asks: 0,
+          readerDirected: 0,
+          readerQuotes: 0,
+          oldReplies: 0,
+          source: 'fallback',
+          followedLead: null,
+        });
+        continue;
+      }
+
+      const readerMessages = new Set(window.filter((e) => e.author !== 'user').map((e) => e.id));
+      const oldIds = new Set(
+        window.filter((e) => e.ageMinutes >= caps.oldReplyMinAgeMinutes).map((e) => e.id),
+      );
+      sheets.push({
+        beats: checked.beats.length,
+        readers: new Set(checked.beats.map((b) => b.reader)).size,
+        asks: checked.beats.filter((b) => b.intent === 'ask').length,
+        readerDirected: checked.beats.filter((b) => b.to !== 'user').length,
+        readerQuotes: checked.beats.filter((b) => b.replyTo !== null && readerMessages.has(b.replyTo))
+          .length,
+        oldReplies: checked.beats.filter((b) => b.replyTo !== null && oldIds.has(b.replyTo)).length,
+        source: 'model',
+        followedLead:
+          affinity.lead === null ? null : (checked.beats[0]?.reader ?? null) === affinity.lead,
+      });
+
+      process.stdout.write(
+        `${renderBeatSheet({
+          label: `    run ${no}`,
+          trigger: 'user_message',
+          locale,
+          source: 'model',
+          beats: checked.beats,
+          affinity,
+          window,
+        })}\n` +
+          `    ${ms}ms, tokens in=${reply.usage.inputTokens ?? 'null'} out=${reply.usage.outputTokens ?? 'null'}` +
+          `${checked.repairs.length > 0 ? `, repairs: ${checked.repairs.join(',')}` : ''}\n`,
+      );
+    }
+
+    // ---- §11's FOUR LEVERS. PRINTED, NEVER FAILED ---------------------------
+    /*
+     * **TARGETS FOR F7's PANELS, NOT THRESHOLDS ANYTHING ENFORCES.** A number outside the
+     * band is a reason to read the prompt, never a reason to add a clamp — and a clamp is
+     * the coin flip `[F2-17]` refuses, arriving in a different file.
+     */
+    const runs = sheets.length;
+    const silent = sheets.filter((s) => s.beats === 0).length;
+    const beats = sheets.reduce((n, s) => n + s.beats, 0);
+    const spread = [1, 2, 3, 4].map(
+      (n) => `${n}: ${sheets.filter((s) => s.beats === n).length}`,
+    );
+    const withLead = sheets.filter((s) => s.followedLead !== null);
+    const pct = (a: number, b: number) => (b === 0 ? '--' : `${Math.round((a / b) * 100)}%`);
+
+    process.stdout.write(
+      `\n${'-'.repeat(70)}\nDIRECTOR LEVERS -- ${locale}\n${'-'.repeat(70)}\n` +
+        `  silence rate       ${pct(silent, runs)}  (${silent}/${runs})  target 10-25%; 0% is a help desk, >40% has stopped reading\n` +
+        `  cast size          ${spread.join('  ')}  over ${runs - silent} speaking runs (target 1:45 2:35 3:15 4:5)\n` +
+        `  reader-to-reader   ${pct(sheets.reduce((n, s) => n + s.readerDirected, 0), beats)} of ${beats} beats aimed at a reader (target 20-30%; 0% is three help desks in one window)\n` +
+        `                     ${sheets.reduce((n, s) => n + s.readerQuotes, 0)} of those QUOTE a reader's message -- only reachable across runs, never within one\n` +
+        `  ask rate           ${pct(sheets.filter((s) => s.asks > 0).length, runs)} of runs  target 25-35%; 0% and C-N1d did not ship\n` +
+        `  old quotes         ${sheets.reduce((n, s) => n + s.oldReplies, 0)} of ${beats} beats  (>15% and the room is stuck: fix rule 8, not the cap)\n` +
+        `  fallback rate      ${pct(sheets.filter((s) => s.source === 'fallback').length, runs)}  ANY of these is a prompt problem, not a validator problem\n` +
+        `  affinity followed  ${pct(withLead.filter((s) => s.followedLead).length, withLead.length)} of ${withLead.length} runs with a lead  (100% is a switchboard; 0% means the hint is noise)\n`,
+    );
+  }
+
+  process.stdout.write(
+    `\n${'-'.repeat(70)}\nHOW TO READ THE SHEETS ABOVE (§15.4)\n${'-'.repeat(70)}\n` +
+      '  The first two questions are the ones that matter.\n\n' +
+      '  1. Would a PERSON have said nothing here? If yes, and the sheet has two beats,\n' +
+      '     the silence rule is not landing and prompt rule 6 is where to look.\n' +
+      '  2. Is there a beat that exists only to be POLITE? A second `agree`, a closing\n' +
+      '     beat, a summary of the beat above it. That is the false positive the\n' +
+      '     "YANG BUKAN ALASAN" block exists to refuse, and it is the failure that will\n' +
+      '     actually ship.\n' +
+      '  3. Does anybody answer ANYBODY? If no `reply` ever points at a reader message,\n' +
+      '     the room is three help desks in one window.\n' +
+      '  4. Is the SAME READER always first? If so, the affinity demotion is not firing\n' +
+      '     or the lexicon is too coarse for this subject matter.\n' +
+      '  5. Is the angle a SUBJECT or a SENTENCE? If you could send it as it stands,\n' +
+      '     MAX_ANGLE_CHARS is too high and that is the number to move.\n\n' +
+      '  Then run `npm run smoke -- --chat` and read the BUBBLES. A sheet that reads well\n' +
+      '  and produces three indistinguishable paragraphs is `[F2-2]` failing, and the fix\n' +
+      '  is in the director rather than in the persona blocks.\n',
+  );
 }
 
 main().catch((err) => {
