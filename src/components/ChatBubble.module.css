@@ -1,0 +1,230 @@
+/*
+ * One bubble. NO NEW HEX, NO NEW FONT SIZE, NO NEW CURVE -- every value below is a
+ * token that already exists, and the two shapes differ only in fill, radius and
+ * side.
+ *
+ * `--fs-hint` (17px) AND NOT `--fs-reading` (19px): a reading is four paragraphs you
+ * sit with; a chat message is a line you glance at, and 19px Cormorant at 78% of a
+ * 375px screen is about six words a line. `--fs-hint` is already the hint and the
+ * question-block size, so this is not a new decision.
+ */
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  /* The list is a <ul>; these are its items and carry no marker. */
+  list-style: none;
+  padding: 0;
+  margin: 0 0 10px;
+}
+
+.theirs {
+  justify-content: flex-start;
+}
+
+.mine {
+  justify-content: flex-end;
+  /* The 28px gutter + its gap, so the querent's bubbles hang under the readers'
+     rather than starting at the same x. */
+  padding-left: 36px;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  /* min-width: 0 is what lets `overflow-wrap` inside the bubble actually break a
+     400-character token: without it the flex item refuses to shrink below its
+     content and the row overflows the list. Loop 4 measures exactly this. */
+  min-width: 0;
+  max-width: min(78%, 34ch);
+}
+
+.mine .column {
+  align-items: flex-end;
+}
+
+.bubble {
+  position: relative;
+  padding: 8px 10px 6px;
+  border-radius: var(--radius-card) var(--radius-card) var(--radius-card) var(--radius-chip);
+  background: var(--gold-wash);
+  border: 1px solid var(--gold-hairline);
+  cursor: pointer;
+  /* A bubble is not a control and must not read as one; the pointer is the only
+     affordance, and the outline below is what a keyboard user sees. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mine .bubble {
+  border-radius: var(--radius-card) var(--radius-card) var(--radius-chip) var(--radius-card);
+  background: var(--gold-wash-strong);
+  border-color: var(--gold-border);
+}
+
+/* Tapped. The border lifts to the same pair every other selected surface in this
+   app uses -- CardDetail's `.close`, AccountButton's expanded state. */
+.selected {
+  border-color: var(--gold-border);
+}
+
+/* The querent's own message, posted and not yet acknowledged. **THE ONLY FAILURE
+   STATE ANY BUBBLE HAS** (`F4-13`), and it is dimming rather than a sentence. */
+.pending {
+  opacity: 0.6;
+}
+
+.name {
+  font-family: var(--font-display), Georgia, serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 4px;
+}
+
+.prose {
+  margin: 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-hint);
+  line-height: var(--lh-reading);
+  color: var(--text-warm);
+  /* The whole renderer. A message is a text node and nothing else. */
+  white-space: pre-wrap;
+  /* `anywhere` and not `break-word`: a pasted URL with no spaces is the case, and
+     `break-word` leaves the row overflowing until the first break opportunity. */
+  overflow-wrap: anywhere;
+}
+
+.time {
+  display: block;
+  margin-top: 2px;
+  text-align: right;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  color: var(--faint);
+}
+
+/*
+ * The quote stub: WhatsApp's, and `C-D11` says *nothing more*. No depth, no
+ * collapse, no "3 replies".
+ *
+ * 44px MINIMUM because it is a real control -- tapping it scrolls to the quoted
+ * bubble and flashes it.
+ */
+.quote {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  text-align: left;
+  padding: 4px 0 4px 8px;
+  margin-bottom: 6px;
+  background: none;
+  border: 0;
+  border-left: 2px solid var(--gold-border);
+  cursor: pointer;
+  color: inherit;
+}
+
+.quoteAuthor {
+  display: block;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.quoteText {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  overflow: hidden;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-hint);
+  line-height: var(--lh-reading);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* F6's box. F4 owns the inset and the border; the card inside it is F6's. */
+.attachment {
+  margin-bottom: 6px;
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+/*
+ * The `Balas` chip.
+ *
+ * ALWAYS RENDERED, CLIPPED UNTIL THE BUBBLE IS SELECTED -- and visible whenever it
+ * has keyboard focus, which is the skip-link pattern. Rendering it conditionally
+ * would make the app's only reply affordance unreachable by keyboard and invisible
+ * to a screen reader, and the clipped state takes no space, so nothing reflows when
+ * it appears.
+ */
+.chip {
+  margin-top: 4px;
+  min-height: 44px;
+  padding: 0 14px;
+  align-self: flex-start;
+  background: var(--gold-wash);
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-card);
+  color: var(--gold-text);
+  font-family: var(--font-display), Georgia, serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.mine .chip {
+  align-self: flex-end;
+}
+
+.chip:not(.chipShown):not(:focus-visible) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.chip:hover,
+.chip:focus-visible {
+  background: var(--gold-wash-strong);
+  border-color: var(--gold-border);
+  outline: none;
+}
+
+/*
+ * The flash a quote stub leaves on the bubble it points at. A border, not a fill:
+ * a filled highlight on a bubble reads as a new message arriving.
+ *
+ * `html[data-still]` already kills the animation globally (globals.css), which is
+ * what keeps `_chatfit.html` from photographing a bubble mid-fade.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .flashing .bubble {
+    animation: flash 1.2s ease-out;
+  }
+}
+
+@keyframes flash {
+  0% {
+    border-color: var(--gold-border);
+    background: var(--gold-wash-strong);
+  }
+  100% {
+    border-color: var(--gold-hairline);
+    background: var(--gold-wash);
+  }
+}

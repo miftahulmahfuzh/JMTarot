@@ -5,6 +5,7 @@ import { useCallback, useRef, useState } from 'react';
 import { track } from '@/lib/analytics/track.client';
 import { useT } from '@/lib/i18n/LocaleProvider';
 import { AccountMenu } from './AccountMenu';
+import { LotusMark } from './LotusMark';
 import styles from './AccountButton.module.css';
 
 /** Where the button was tapped from. Closed, because `account.opened.surface` is. */
@@ -131,35 +132,16 @@ export function AccountButton({
   );
 }
 
-/**
- * Three petals over a bowl. Stroked, `currentColor`, so the button's own
- * hover/expanded colours drive it and there is not a hex in this file.
+/*
+ * `LotusMark` MOVED TO `./LotusMark` IN v0.7.0 (F4's D8, ruled in by the
+ * reconciliation as the one edit seam S9 permits to this file). `C-D16` makes the
+ * querent's chat avatar the same glyph, and the alternative was a second copy of
+ * four `d` strings held in step by a byte-identity test. Nothing else here changed:
+ * the mark still strokes in `currentColor`, so this button's own hover and expanded
+ * colours still drive it.
  *
- * `aria-hidden` and `focusable="false"`: the accessible name is the button's
- * `aria-label`, and a glyph announcing itself as well would read the control
- * twice.
+ * `.mark`'s 22px went with the component, into `LotusMark.module.css`. The rule left
+ * behind in `AccountButton.module.css` is dead and stays dead: **F4 may not edit that
+ * stylesheet** (S9), and `chatSurface.test.ts` asserts its `width: 44px` and
+ * `right: calc(10px +` still match the `corner` rail in `tokens.ts`.
  */
-function LotusMark() {
-  return (
-    <svg
-      className={styles.mark}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      focusable="false"
-    >
-      {/* centre petal */}
-      <path d="M12 4.5C14.4 7.6 14.4 11.9 12 15C9.6 11.9 9.6 7.6 12 4.5Z" />
-      {/* left petal */}
-      <path d="M12 15C8.6 14.5 5.7 12 4.6 8.8C8.2 9.2 11.2 11.5 12 15Z" />
-      {/* right petal */}
-      <path d="M12 15C15.4 14.5 18.3 12 19.4 8.8C15.8 9.2 12.8 11.5 12 15Z" />
-      {/* the bowl the flower sits in */}
-      <path d="M4.2 13.6C6.1 17.9 8.9 20 12 20C15.1 20 17.9 17.9 19.8 13.6" />
-    </svg>
-  );
-}
