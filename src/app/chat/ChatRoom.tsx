@@ -39,6 +39,7 @@ import type { RefusalPayload } from '@/lib/moderation/types';
 import { todayKey } from '@/lib/storage';
 import { usePrefersReducedMotion } from '@/lib/usePrefersReducedMotion';
 import styles from './ChatRoom.module.css';
+import { useKeyboardInset } from './keyboardInset';
 
 /*
  * ── THE FIVE BOUNDS (`F4-11`) ───────────────────────────────────────────────
@@ -200,6 +201,9 @@ export function ChatRoom({
     stagedProp ? { [stagedProp.preview.readingId]: stagedProp.preview } : {},
   );
 
+  /* The room's own box, measured against the visual viewport so the composer stays
+     above the software keyboard. See `keyboardInset.ts`. */
+  const roomRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLUListElement | null>(null);
   /* The current messages, reachable from an effect that must not depend on them. */
   const messagesRef = useRef(messages);
@@ -226,6 +230,13 @@ export function ChatRoom({
   const entryRef = useRef(entry);
   /** F6. The `?attach=` in the address bar is consumed exactly once. */
   const attachConsumedRef = useRef(false);
+
+  /*
+   * **THE COMPOSER STAYS ABOVE THE SOFTWARE KEYBOARD** — the one piece of geometry
+   * `100dvh` cannot express, because the keyboard moves the visual viewport and leaves
+   * the layout viewport alone. Everything it knows is in `keyboardInset.ts`.
+   */
+  useKeyboardInset(roomRef);
 
   const dispatch = useCallback((event: LoopEvent) => {
     // A PURE updater: `advanceStep` has no side effects and returns the SAME object
@@ -856,7 +867,7 @@ export function ChatRoom({
   };
 
   return (
-    <div className={styles.room}>
+    <div className={styles.room} ref={roomRef}>
       {loadFailed ? (
         <p className={styles.loadError} role="status">
           {t('chat.error.load')}

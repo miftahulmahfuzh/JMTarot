@@ -1066,6 +1066,16 @@ infrastructure.
   CLOSED** — including the open ones makes the release's own scorecard fall every time somebody
   picks a range ending today. `/admin/users/[id]` shows **counts and no text** (`[R15]`),
   because `A-D16`'s audited reveal was built for a thing you read one of.
+- **`100dvh` CANNOT SEE THE SOFTWARE KEYBOARD, AND THE ROOM IS SHORTENED BY A MARGIN ON `.room`,
+  NEVER BY THE SHELL'S HEIGHT** (2026-08-09, the first loop-6 finding against this surface). iOS
+  shrinks the VISUAL viewport and leaves the layout viewport alone, so the composer — and
+  therefore `Kirim` — sits under the keyboard; what hid that was Safari's own scroll-into-view,
+  which fires on focus and never re-runs when `Balas` grows the composer, **because Safari does
+  not focus a button when it is tapped.** `keyboardInset.ts` measures the room's own rect against
+  `visualViewport` and derives nothing from `innerHeight`. **A stretched grid item is sized minus
+  its margins, so the margin can only ever SHORTEN the room and `0px` is the layout that shipped**
+  — a computed height would grow it past the shell, where `overflow: hidden` clips the composer it
+  was trying to save.
 - **A HISTOGRAM ON THAT PAGE IS `InlineBars`, NOT `StackedBar`.** `stackSegments` normalises
   every row to 100% of its own total, so a one-segment row is always full width and the
   distribution encodes nothing. Measured at 1440 on 2026-08-08, after a plan asserted the

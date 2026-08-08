@@ -10546,6 +10546,73 @@ the chip: the chip is the accessible path and the only one any loop here can see
   a user id that no longer exists and every chat route answers as if the room were empty; re-mint
   through `POST /api/auth/dev-session` after seeding or the badge reads zero for the wrong reason.
 
+### The keyboard, answered by a phone (2026-08-09)
+
+**The first loop-6 finding against this surface, and it is the one the list above named second:
+*the composer with the keyboard up*.** Reported from an iPhone in Safari — tap `Balas` on a
+reader's bubble, type, and the field is cropped with `Kirim` under the glass.
+
+- **`dvh` TRACKS THE BROWSER'S CHROME AND NOT THE SOFTWARE KEYBOARD.** `page.module.css`'s header
+  is right about the toolbar, the notch and the home indicator and silent about the one piece of
+  furniture that is not chrome: on iOS the keyboard shrinks the VISUAL viewport and leaves the
+  layout viewport exactly where it was. So `height: calc(100dvh - …)` is unchanged with the
+  keyboard up, and the bottom of the shell — which is the composer — is underneath it. **Every
+  static reading of this layout says it is correct, because it is: the defect is in a viewport
+  the stylesheet cannot name.**
+- **WHAT WAS HOLDING IT UP WAS SAFARI'S OWN SCROLL-INTO-VIEW, AND THAT IS A HEURISTIC.** It aims
+  at the caret, it fires on focus, and it is never re-run for a layout change while focus stays
+  put. **A tap on `Balas` does not move focus** — this repo's own Safari trap, paid for by
+  `AccountMenu` — so ~60px of reply stub arrives in a composer whose position the browser has
+  already decided about and will not revisit. `StagedAttachment` is the same shape and was on
+  the same path.
+- **THE FIX MEASURES TWO EDGES AND DERIVES NOTHING** (`src/app/chat/keyboardInset.ts`). The
+  obvious formula is `innerHeight - visualViewport.height - offsetTop`, and it rests on a
+  recalled claim about which viewport `window.innerHeight` reports on iOS when the toolbar is
+  half-collapsed. Subtracting the room's `getBoundingClientRect().bottom` from
+  `offsetTop + height` — one coordinate system — makes the toolbar, both insets, the pan and
+  `dvh` itself cancel, because each of them moves both numbers together. *Framework behaviour is
+  measured here, never recalled.*
+- **IT IS A MARGIN ON `.room`, NOT A HEIGHT, AND NOT ON THE SHELL.** A stretched grid item is
+  sized to its area minus its margins, so `margin-bottom: var(--kb-inset, 0px)` can only ever
+  make the room SHORTER; the list gives up the space exactly as it does when the composer grows,
+  and an unset variable — the server's render, and every loop-5 browser — is byte-identical to
+  the layout that shipped. A computed `height` would have to know the natural one to avoid
+  GROWING the room past the shell, where `overflow: hidden` would clip the composer it was
+  trying to save.
+- **THE FEEDBACK LOOP HAS A GAIN OF EXACTLY 1, WHICH IS WHY IT IS SAFE ON A `scroll` HANDLER.**
+  Adding the overhang to the margin moves the room's bottom up by precisely the overhang, so the
+  next reading confirms rather than corrects. It stays a loop rather than a one-shot because the
+  keyboard CLOSING is the same arithmetic on a negative overhang — there is no second branch for
+  giving the margin back, and there must not be one.
+- **A PINCHED PAGE RETURNS TO ZERO RATHER THAN HOLDING ITS VALUE.** `layout.tsx` refused
+  `maximumScale: 1` on WCAG 1.4.4 grounds, so a zoomed room is a reachable state; under zoom the
+  two rects are in different scales and the subtraction is meaningless. Zero is the pre-fix
+  layout, which is wrong about the keyboard and right about everything else.
+- **THE BELT AIMS AT THE BUTTON, NOT THE BOX** (`ChatComposer`). `Kirim` is the lowest thing in
+  the row (`align-items: flex-end`), so it is what goes missing first; `nearest`/`nearest` makes
+  a composer already in view a no-op rather than a jump; and it fires **only while the box has
+  focus**, or a refusal notice arriving while the querent reads three bubbles up would drag them
+  back down. Its dependency list is four BOOLEANS: `replyTo` is rebuilt by the room on every
+  render and `staged`/`notice` are elements, so listing any of them is a `scrollIntoView` per
+  keystroke.
+- **AND A SECOND CROP, FOUND WHILE READING FOR THE FIRST, WITH NO KEYBOARD IN IT.** `.room` was
+  `grid-template-rows: minmax(0, 1fr) auto` — exactly right for the two children it was written
+  for, and wrong the moment there is a third. `chat.error.load` renders ABOVE the list (`F4-13`),
+  so on a failed load the error line took the `1fr` row, the list took `auto` and grew to every
+  bubble it had, the composer landed in an implicit row, and the lot overflowed into `.shell`'s
+  `overflow: hidden`. It is now a column flex container, which has **no fixed number of rows to
+  disagree with** — the class, rather than that one instance, since F5, F6 and F7 each added
+  something above the list and the next one is free to. **`flex: 1 1 0` on `.listWrap` is the
+  `minmax(0, 1fr)` it replaces and the `0` is the load-bearing part**: with an `auto` basis the
+  list contributes its whole content height, free space goes negative on a long thread, and every
+  shrinkable sibling — the composer — is squeezed to pay for it.
+- **STILL LOOP 6's.** `npm test` holds the arithmetic (`keyboardInset.test.ts`, one 390×844 phone
+  with a 336px keyboard) and `chatSurface.test.ts` holds the wiring; **neither can see whether
+  the room now behaves**, because loop 5's Chrome has no software keyboard and reports
+  `visualViewport.height` equal to the layout viewport in every state. The check is a preview URL
+  on the phone: reply, four lines of draft, then the same with a staged reading — in Safari and
+  in the standalone instance, whose bottom inset differs.
+
 ---
 
 ## F6 — attachments, the UI half (v0.7.0, 2026-08-08)

@@ -5,10 +5,43 @@
  * absolute keeps it inside the grid row and out of the fixed-position trap
  * entirely -- the two corner circles are the only fixed elements on this screen.
  */
+/*
+ * ── A COLUMN, NOT TWO GRID ROWS, AND THE CHANGE IS A BUG FIX ───────────────
+ *
+ * This was `grid-template-rows: minmax(0, 1fr) auto` — which is exactly right for the
+ * two children it was written for, and wrong the moment there is a third. `ChatRoom`
+ * renders `chat.error.load` ABOVE the list (`F4-13`), so on a failed load the error
+ * line took the `1fr` row, the list took `auto` and grew to every bubble it had, the
+ * composer landed in an implicit row, and the whole thing overflowed into
+ * `.shell`'s `overflow: hidden` — **the composer cropped, with no keyboard involved.**
+ *
+ * A column flex container has no fixed number of rows to disagree with, which is the
+ * class of the bug rather than that one instance: F5, F6 and F7 each added something
+ * above the list, and the next one is free to.
+ *
+ * **`flex: 1 1 0` ON `.listWrap` IS THE `minmax(0, 1fr)` IT REPLACES, AND THE `0` IS
+ * THE LOAD-BEARING PART.** With a basis of `auto` the list would contribute its whole
+ * content height, free space would go negative on a long thread, and every shrinkable
+ * sibling — the composer — would be squeezed to pay for it.
+ */
 .room {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
+  /*
+   * HOW MUCH OF THE ROOM THE SOFTWARE KEYBOARD IS SITTING ON, written inline on this
+   * element by `useKeyboardInset` — read its header before touching this line.
+   *
+   * `100dvh` cannot see the keyboard, so with it up the composer is below the fold and
+   * the send button is under the glass. A stretched grid item is sized to its area
+   * minus its margins, so this can only ever make the room SHORTER; the list gives up
+   * the space exactly as it does when the composer grows a reply stub, and `0px` — the
+   * value with no JavaScript, on the server, and in every loop-5 browser — is the
+   * layout this screen has always had.
+   *
+   * It is a measurement, not a design token: nothing about it belongs in `tokens.ts`.
+   */
+  margin-bottom: var(--kb-inset, 0px);
 }
 
 /*
@@ -20,6 +53,8 @@
 .listWrap {
   position: relative;
   display: grid;
+  /* The room's only elastic child. See the header on `.room` for why the basis is 0. */
+  flex: 1 1 0;
   min-height: 0;
 }
 
@@ -136,6 +171,9 @@
  * (`F4-13`).
  */
 .loadError {
+  /* Never squeezed, and never elastic: it is one line and it is the reason `.room`
+     stopped being a two-row grid. */
+  flex: none;
   margin: 0;
   padding: 12px;
   font-family: var(--font-body), Georgia, serif;

@@ -348,6 +348,122 @@ describe('the room’s React traps, asserted at source level', () => {
   });
 });
 
+describe('the software keyboard (reported from a phone, 2026-08-09)', () => {
+  /*
+   * `100dvh` tracks the browser's own UI and NOT the software keyboard, so with the
+   * keyboard up the bottom of the shell — the composer, and therefore `Kirim` — is
+   * underneath it. The room got away with that because Safari scrolls a focused field
+   * into view by itself; tapping `Balas` grows the composer by ~60px WITHOUT moving
+   * focus, so that reveal never re-runs and the send button goes under the glass.
+   *
+   * Source-level for the reason this whole file is: the behaviour is loop 6's. What a
+   * regex can hold is that the mechanism is wired up and takes itself back down.
+   */
+  const HOOK = 'app/chat/keyboardInset.ts';
+
+  it('shortens the ROOM with a margin, defaulting to the layout that shipped', () => {
+    /*
+     * A stretched grid item is sized to its area minus its margins, so this can only
+     * ever make the room shorter — and `0px` is byte-identical to the pre-fix screen,
+     * which is what the server renders and what every loop-5 browser gets. A computed
+     * `height` would have to know the natural one to avoid growing the room past the
+     * shell, where `overflow: hidden` would clip the composer it was trying to save.
+     */
+    expect(css('app/chat/ChatRoom.module.css')).toContain('margin-bottom: var(--kb-inset, 0px);');
+    /* The shell keeps its own geometry: one owner, and the room is the element whose
+       bottom edge IS the composer. */
+    expect(css('app/chat/page.module.css')).toContain('100dvh');
+    expect(css('app/chat/page.module.css')).not.toContain('--kb-inset');
+  });
+
+  it('measures a rect against the visual viewport and derives nothing', () => {
+    /*
+     * The obvious formula is `innerHeight - visualViewport.height - offsetTop`, and it
+     * rests on a recalled claim about which viewport `innerHeight` reports on iOS with
+     * a half-collapsed toolbar. Subtracting two edges in one coordinate system makes
+     * the toolbar, the insets, the pan and `dvh` cancel. *Framework behaviour is
+     * measured here, never recalled.*
+     */
+    const src = stripComments(file(HOOK));
+    expect(src).toContain('getBoundingClientRect().bottom');
+    expect(src).toContain('viewport.offsetTop + viewport.height');
+    expect(src).not.toContain('window.innerHeight');
+  });
+
+  it('listens on both visual-viewport events and removes both', () => {
+    /*
+     * `scroll` as well as `resize`: iOS pans the visual viewport to reveal the caret
+     * WITHOUT resizing it, so a resize-only listener misses half the states. And a
+     * room that leaves its listeners behind leaves them on a page it no longer
+     * renders — StrictMode mounts, unmounts and remounts every effect.
+     */
+    const src = stripComments(file(HOOK));
+    expect(count(src, /viewport\.addEventListener\(/g)).toBe(2);
+    expect(count(src, /viewport\.removeEventListener\(/g)).toBe(2);
+    expect(src).toContain('cancelAnimationFrame(frame)');
+    expect(src).toContain('removeProperty(KEYBOARD_INSET_VAR)');
+  });
+
+  it('is mounted by the room, on the element it measures', () => {
+    const src = stripComments(file('app/chat/ChatRoom.tsx'));
+    expect(src).toContain('useKeyboardInset(roomRef)');
+    expect(src).toContain('<div className={styles.room} ref={roomRef}>');
+  });
+
+  it('re-reveals the SEND BUTTON when the composer grows under a focused box', () => {
+    /*
+     * The belt to the hook, and three things about it are load-bearing: it aims at the
+     * button, which is the lowest thing in the row (`align-items: flex-end`) and the
+     * first to go missing; it uses `nearest`, so a composer already in view is a no-op
+     * rather than a jump; and it fires only while the box has focus, or a refusal
+     * arriving while the querent reads three bubbles up would drag them back down.
+     */
+    const src = stripComments(file('components/ChatComposer.tsx'));
+    expect(src).toContain('document.activeElement !== box.current');
+    expect(src).toMatch(/send\.current\?\.scrollIntoView\(\{ block: 'nearest'/);
+  });
+
+  it('depends on booleans, never on the props themselves', () => {
+    /*
+     * `replyTo` is rebuilt by the room on every render (`replyTo ? { author, text } :
+     * null`) and `staged`/`notice` are elements, so listing any of them would run this
+     * effect on EVERY render — a `scrollIntoView` per keystroke, since typing
+     * re-renders the room. The booleans change once per chrome change.
+     */
+    expect(stripComments(file('components/ChatComposer.tsx'))).toContain(
+      '}, [hasReply, hasStaged, hasNotice, failure]);',
+    );
+  });
+});
+
+describe('the room survives a third child (2026-08-09)', () => {
+  it('is a column, not a two-row grid, because the error line is a third child', () => {
+    /*
+     * `chat.error.load` renders ABOVE the list (`F4-13`), so on a failed load `.room`
+     * has THREE children against a two-row template: the error took the `1fr` row, the
+     * list took `auto` and grew to every bubble it had, the composer landed in an
+     * implicit row, and the lot overflowed into `.shell`'s `overflow: hidden` — the
+     * composer cropped, with no keyboard involved. A column has no fixed number of
+     * rows to disagree with, which is the class rather than that one instance.
+     */
+    /* Comments only, stripped: the header on `.room` quotes the rule it replaced, and
+       an assertion that cannot tell a declaration from a sentence about one is the
+       assertion this file's `stripComments` exists for. */
+    const sheet = stripComments(css('app/chat/ChatRoom.module.css'));
+    expect(sheet).not.toContain('grid-template-rows: minmax(0, 1fr) auto');
+    expect(sheet).toContain('flex-direction: column;');
+    /* The `0` basis is the load-bearing part: with `auto` the list would contribute
+       its whole content height and the composer would be squeezed to pay for it. */
+    expect(sheet).toContain('flex: 1 1 0;');
+    expect(sheet).toContain('flex: none;');
+
+    /* And the third child is still where `F4-13` puts it: outside the list, above it. */
+    const room = stripComments(file('app/chat/ChatRoom.tsx'));
+    expect(room.indexOf('styles.loadError')).toBeGreaterThan(-1);
+    expect(room.indexOf('styles.loadError')).toBeLessThan(room.indexOf('styles.listWrap'));
+  });
+});
+
 describe('the copy', () => {
   it('asks the catalog for keys that exist (I3)', () => {
     /*

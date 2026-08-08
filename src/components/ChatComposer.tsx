@@ -71,6 +71,7 @@ export function ChatComposer({
 }: ChatComposerProps) {
   const t = useT();
   const box = useRef<HTMLTextAreaElement | null>(null);
+  const send = useRef<HTMLButtonElement | null>(null);
 
   /*
    * Grow to fit, up to four rows. The reset to `auto` first is not optional: without
@@ -84,6 +85,35 @@ export function ChatComposer({
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, MAX_ROWS_PX)}px`;
   }, [draft]);
+
+  /*
+   * ── THE BROWSER'S REVEAL IS STALE THE MOMENT THIS BOX GROWS ────────────────
+   *
+   * Everything above the box — the reply stub, the staged card, a refusal, a failure
+   * line — makes the composer taller, and every one of them arrives from a tap on a
+   * `<button>`. **Safari does not focus a button when it is tapped** (this repo's own
+   * trap, paid for by `AccountMenu`), so the textarea keeps focus, no focus event
+   * fires, and the browser never re-runs the scroll-into-view that is the only reason
+   * the composer was visible over the keyboard in the first place. The reported bug is
+   * exactly that: tap `Balas`, and `Kirim` is under the glass.
+   *
+   * `useKeyboardInset` is the fix and this is the belt — it costs one call on a
+   * discrete chrome change and answers for whatever the visual viewport reports late.
+   * It aims at the SEND BUTTON rather than the box, because the button is the lowest
+   * thing in the row (`align-items: flex-end`) and is what goes missing first; and at
+   * `nearest`/`nearest`, so a composer already in view is a no-op rather than a jump.
+   *
+   * **Only when the box has focus.** Without that guard, a refusal notice arriving
+   * while the querent is reading three bubbles up would drag them back down.
+   */
+  const hasReply = replyTo != null;
+  const hasStaged = staged != null;
+  const hasNotice = notice != null;
+  useEffect(() => {
+    if (document.activeElement !== box.current) return;
+    // The behaviour is passed explicitly, never defaulted from a stylesheet (`F4-10`).
+    send.current?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'auto' });
+  }, [hasReply, hasStaged, hasNotice, failure]);
 
   /*
    * **A STAGED ATTACHMENT IS ITSELF A MESSAGE** (F6 §3.3, and the brief: *"user may /
@@ -154,6 +184,7 @@ export function ChatComposer({
           }}
         />
         <button
+          ref={send}
           type="button"
           className={styles.send}
           disabled={!canSend}
