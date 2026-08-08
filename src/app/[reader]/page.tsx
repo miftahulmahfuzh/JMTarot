@@ -2,6 +2,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { AccountButton } from '@/components/AccountButton';
+import { ChatButton } from '@/components/ChatButton';
 import { Eyebrow } from '@/components/Eyebrow';
 import { ReaderDeck } from '@/components/ReaderDeck';
 import { ReaderViewed } from '@/components/ReaderViewed';
@@ -40,6 +41,9 @@ export default async function ServicePicker({
           THIS FILE IS V5's under roadmap §8. The line is additive and trivially
           mergeable; if V5's swipe deck lands on top of it, keep both. */}
       <AccountButton surface="service_picker" showLanguage={localeSwitcherEnabled()} />
+      {/* v0.7.0 / `C-D17`, beside the account circle. See `ChatButton`'s header for
+          the mount rule and for why it is absent from the draw screen. */}
+      <ChatButton />
 
       {/* Renders nothing. Kept out of the server component so this page stays
           static; `from` is derived in the browser because the server cannot

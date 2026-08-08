@@ -1,0 +1,99 @@
+/*
+ * The room's shell. TWO GRID ROWS -- the sticky header, and everything else -- and
+ * `ChatRoom` splits its own row into the list and the composer.
+ *
+ * ── `100dvh` MINUS BOTH INSETS, AND THAT SUBTRACTION IS NOT DECORATION ─────
+ *
+ * `globals.css` already pads <body> with `env(safe-area-inset-top)` AND
+ * `env(safe-area-inset-bottom)`, so a child at plain `height: 100dvh` overflows the
+ * body by the SUM of both -- on a notched iPhone in standalone that is ~59px of the
+ * room hanging below the fold, with the composer inside it.
+ *
+ * `100dvh` and not `100vh`, for the reason globals.css already records: Safari's
+ * toolbar collapses on scroll, so `vh` is measured against a viewport that does not
+ * exist yet.
+ *
+ * **ONLY LOOP 6 CAN CONFIRM ANY OF THIS.** Loop 5's Chrome has no software keyboard,
+ * no home indicator, no notch and no collapsing toolbar, and `env(safe-area-inset-*)`
+ * resolves to `0px` there -- so this shell measures identically correct and
+ * identically wrong.
+ */
+.shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  /* The app's shell width, as everywhere else. */
+  max-width: 520px;
+  margin: 0 auto;
+  /* THE LIST SCROLLS; THE SHELL NEVER DOES. */
+  overflow: hidden;
+}
+
+.header {
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--gold-hairline);
+  /* Sticky rather than fixed, so it participates in the grid and the list needs no
+     manual offset. It is one band naming who is in the room. */
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--canvas);
+}
+
+.back {
+  display: inline-block;
+  /* The two corner circles live at 10..106px from the RIGHT edge; this sits left of
+     them with room to spare at 320px. */
+  min-height: 44px;
+  line-height: 44px;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--gold);
+  text-decoration: none;
+}
+
+.who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* Three faces, overlapping, so the group reads as a group rather than as a row of
+   three separate people. */
+.faces {
+  display: flex;
+  flex: none;
+}
+
+.faces > * + * {
+  margin-left: -8px;
+}
+
+.naming {
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: var(--fs-card-title);
+  letter-spacing: var(--ls-card-title);
+  color: var(--gold-text);
+}
+
+.hint,
+.disclaimer {
+  margin: 2px 0 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-hint);
+  line-height: 1.3;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.disclaimer {
+  color: var(--faint);
+}

@@ -1,0 +1,171 @@
+/*
+ * The list and the composer, inside the shell's second grid row.
+ *
+ * `position: relative` so the `Pesan baru` pill can be ABSOLUTE rather than FIXED:
+ * absolute keeps it inside the grid row and out of the fixed-position trap
+ * entirely -- the two corner circles are the only fixed elements on this screen.
+ */
+.room {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+}
+
+/*
+ * The list's own row, and the pill's containing block. **THE PILL IS ABSOLUTE
+ * INSIDE THIS AND NEVER FIXED**: anchored to the room's grid row it sits just above
+ * the composer whatever height the composer has grown to, and `position: fixed`
+ * would put it a fixed distance from a viewport the software keyboard moves.
+ */
+.listWrap {
+  position: relative;
+  display: grid;
+  min-height: 0;
+}
+
+/*
+ * THE ONLY SCROLLER ON THE SCREEN.
+ *
+ * `min-height: 0` is not optional: a grid item's default `min-height: auto` refuses
+ * to shrink below its content, so without it the list grows to fit every bubble and
+ * pushes the composer off the bottom -- with no scrollbar, because the shell is
+ * `overflow: hidden`.
+ *
+ * `overscroll-behavior: contain` stops a flick at the end of the room from dragging
+ * the page under it. Whether it actually does that on iOS is a loop-6 question.
+ *
+ * **NO `scroll-behavior: smooth` HERE** (`F4-10`): it would govern only the scrolls
+ * we are NOT making -- a keyboard or scrollbar drag -- while reading as if it
+ * governed the ones we are, which are JS `scrollTo({ behavior })` calls that
+ * override it. Every one of those reads `data-still` itself.
+ *
+ * `overflow-anchor: none` so a browser that implements CSS scroll anchoring cannot
+ * compensate for a prepended page that `ChatRoom` has already compensated for by
+ * hand. Double-counting would jump the list by the height of the page just loaded.
+ */
+.list {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  overflow-anchor: none;
+  margin: 0;
+  padding: 12px;
+  list-style: none;
+}
+
+/* The day separator: a hairline with a word on it. */
+.day {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0 12px;
+  list-style: none;
+}
+
+.day::before,
+.day::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--gold-hairline);
+}
+
+.dayLabel {
+  flex: none;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.older {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 12px;
+  list-style: none;
+}
+
+.olderButton {
+  min-height: 44px;
+  padding: 0 14px;
+  background: none;
+  border: 1px solid var(--gold-hairline);
+  border-radius: var(--radius-card);
+  color: var(--gold-text);
+  font-family: var(--font-display), Georgia, serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.olderButton:hover,
+.olderButton:focus-visible {
+  background: var(--gold-wash-strong);
+  border-color: var(--gold-border);
+  outline: none;
+}
+
+/*
+ * The empty room. **THE ONE PLACE ON THIS SURFACE `M14` DOES NOT APPLY**: an ambient
+ * component renders nothing when it has nothing, and an empty room is the whole
+ * screen -- a blank one reads as broken rather than as new.
+ */
+.empty {
+  list-style: none;
+  padding: 32px 8px;
+  text-align: center;
+}
+
+.emptyTitle,
+.emptyBody {
+  margin: 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-hint);
+  line-height: var(--lh-reading);
+  color: var(--muted);
+}
+
+.emptyBody {
+  color: var(--faint);
+}
+
+/*
+ * *"Obrolan nggak bisa dibuka sekarang."* ABOVE the list, never inside it -- the
+ * failure the querent can act on, in a place no reader could have said it
+ * (`F4-13`).
+ */
+.loadError {
+  margin: 0;
+  padding: 12px;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-hint);
+  line-height: var(--lh-reading);
+  color: var(--muted);
+  border-bottom: 1px solid var(--gold-hairline);
+}
+
+/*
+ * `Pesan baru`. Only while the querent is scrolled away from the bottom -- which is
+ * the whole anchoring rule made visible: the list did not move, and going down is
+ * their decision.
+ */
+.pill {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  /* Just above the composer, which is the row below this one. */
+  bottom: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--gold-border);
+  background: var(--gold-wash-strong);
+  backdrop-filter: blur(6px);
+  color: var(--gold-text);
+  font-family: var(--font-display), Georgia, serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  cursor: pointer;
+}

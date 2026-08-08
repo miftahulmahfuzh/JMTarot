@@ -1,0 +1,86 @@
+/*
+ * The chat circle, immediately left of the account circle (seam S9, `F4-3`).
+ *
+ * NO NEW HEX, NO NEW FONT SIZE, NO NEW CURVE. Every colour here is the pair
+ * `AccountButton` and `CardDetail`'s `.close` already use: `--gold-wash` /
+ * `--gold-hairline` at rest, `--gold-wash-strong` / `--gold-border` lifted.
+ *
+ * THE GEOMETRY COMES FROM `--corner-*`, WHICH MIRRORS `corner` IN tokens.ts.
+ * `AccountButton.module.css` still carries `10px` and `44px` as literals and F4 may
+ * not edit it, so the coupling is one-way and `chatSurface.test.ts` asserts the two
+ * still agree. 10 + 44 + 8 = 62: the account circle occupies 10..54 from the right
+ * edge, this one 62..106.
+ */
+.button {
+  position: fixed;
+  /*
+   * AGAINST THE VIEWPORT, NOT THE PADDED BODY -- `AccountButton.module.css` says
+   * this at length and the failure is invisible from WSL. globals.css pads <body>
+   * with env(safe-area-inset-top), and that padding does nothing for a fixed
+   * element: without adding the inset back the circle sits under the clock and the
+   * notch in standalone mode.
+   */
+  top: calc(var(--corner-inset) + env(safe-area-inset-top));
+  right: calc(var(--corner-slot-1) + env(safe-area-inset-right));
+  /* The same rung as the account circle: chrome, under any content overlay. */
+  z-index: 800;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--corner-size);
+  height: var(--corner-size);
+  border-radius: 50%;
+  color: var(--gold-pale);
+  background: var(--gold-wash);
+  border: 1px solid var(--gold-hairline);
+  /* It floats over a scrolling page, including reader portraits. Without the blur
+     the mark competes with whatever art happens to be under it. */
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+}
+
+.button:hover,
+.button:focus-visible {
+  color: var(--gold-text);
+  background: var(--gold-wash-strong);
+  border-color: var(--gold-border);
+  outline: none;
+}
+
+.mark {
+  width: 22px;
+  height: 22px;
+}
+
+/*
+ * The unread dot. **IT IS NOT RED, AND THAT IS A DECISION WITH A REASON.**
+ *
+ * The obvious colour is `--danger` (#a3423a). `tokens.ts` says in its own words that
+ * `--danger` is THE ONE DESTRUCTIVE COLOUR IN THE APP, that /account's deletion
+ * sheet is its only consumer, and that it is used AS A BORDER AND A LABEL, NEVER AS
+ * A FILL -- because *a filled red button is the one a thumb goes to.* A filled red
+ * dot is exactly that fill, on the busiest screen in the app, meaning "Margaret said
+ * something". Spending the app's only stop signal on a friendly notification
+ * devalues it in the one place it has to work.
+ *
+ * `--gold-pale` is already the brightest ink in the palette and is what the mark
+ * itself uses; against `--gold-wash` at 8% it is the brightest thing in the corner.
+ * NO NEW HEX.
+ *
+ * NO NUMBER IN IT. At 8px there is no legible type size, and a number would need a
+ * pill -- which changes the button's width and reflows the corner between the no-dot
+ * and dot states. The count goes where it costs nothing: the `aria-label`.
+ */
+.dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--gold-pale);
+  /* The ring separates it from the circle's own border. `--canvas` and not a
+     shadow: a shadow over a blurred backdrop reads as a smudge. */
+  box-shadow: 0 0 0 2px var(--canvas);
+}
