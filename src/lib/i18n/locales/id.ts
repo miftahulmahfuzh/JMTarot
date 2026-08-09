@@ -247,6 +247,13 @@ const id = {
     'Kami tidak membuka kartu untuk pertanyaan ini. Bukan karena pertanyaanmu salah, tapi karena jawaban yang kamu butuhkan tidak boleh datang dari tebakan. Alasannya ada di',
 
   /*
+   * The label on the × , and it is an `aria-label` only -- the glyph is the
+   * whole control, as in `chat.reply.cancel`. Not `Tutup`: a bare verb read out
+   * of context by a screen reader does not say what closes.
+   */
+  'moderation.blocked.dismiss': 'Tutup pemberitahuan ini',
+
+  /*
    * --- The legal documents (W7) --------------------------------------------
    *
    * ONLY THE CHROME IS KEYED (I15). The seventeen clauses themselves live in

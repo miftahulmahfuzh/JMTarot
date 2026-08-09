@@ -986,7 +986,19 @@ export function ChatRoom({
         onCancelReply={() => setReplyTo(null)}
         failure={sendFailure}
         onRetry={unsent ? () => void post(unsent) : undefined}
-        notice={refusal ? <RefusalNotice payload={refusal} /> : null}
+        /*
+         * **THE REFUSAL IS DISMISSIBLE HERE AND NOWHERE ELSE** (2026-08-09, the
+         * querent's report: *"it just wont disappear"*). On the draw screen it
+         * REPLACES the reading panel; here it sits over a room still in use, so it
+         * outlived the message that caused it. Closing it writes the same state
+         * `post()` already clears before every send and sets on a 403 — nothing is
+         * remembered, so the next refused message pops it straight back up, which is
+         * both what was asked for and the only safe answer: a message that vanishes
+         * from the room unexplained is the worse bug.
+         */
+        notice={
+          refusal ? <RefusalNotice payload={refusal} onDismiss={() => setRefusal(null)} /> : null
+        }
         /* F6. The card the querent is about to send, with a way back out of it. */
         staged={
           staged ? (

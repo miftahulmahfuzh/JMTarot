@@ -133,6 +133,8 @@ const en: Catalog = {
   'moderation.blocked.selfHarm.closing':
     'We will not turn cards on this question. Not because the question is wrong, but because the answer you need must not come from a guess. Our terms explain why:',
 
+  'moderation.blocked.dismiss': 'Dismiss this notice',
+
   // --- The legal documents (W7). Chrome only; see `id.ts` and I15. ----------
   'legal.back': 'Back',
   'legal.effective': 'In effect from version {version}.',

@@ -118,3 +118,51 @@
   display: inline-block;
   padding: 6px 0;
 }
+
+/*
+ * ── THE DISMISS CONTROL, WHICH ONLY THE CHAT ROOM ASKS FOR ──────────────────
+ *
+ * The button is the LAST child of the section in the DOM (W7-D10: the lead is
+ * what a person in crisis must meet first), and CSS is what puts it in the
+ * corner. `.dismissible` is a modifier rather than a `:has()` so the mount that
+ * passes no `onDismiss` -- `ReadingPanel`, on the draw screen -- keeps exactly
+ * the box it shipped with, padding included.
+ */
+.dismissible {
+  position: relative;
+}
+
+/*
+ * The two first lines are the only ones the glyph can collide with, and they
+ * yield 32px rather than the section growing a permanent gutter. `.body`,
+ * `.closing` and the resource list sit below it and are untouched.
+ */
+.dismissible .title,
+.dismissible .lead {
+  padding-right: 32px;
+}
+
+/*
+ * 44px, `chat.reply.cancel`'s size and the iOS minimum. Pulled out to the box's
+ * own edge with a negative inset so the tap target reaches the corner while the
+ * glyph still lands inside the 18px padding.
+ */
+.dismiss {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 44px;
+  height: 44px;
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.dismiss:hover,
+.dismiss:focus-visible {
+  color: var(--gold-text);
+  outline: none;
+}

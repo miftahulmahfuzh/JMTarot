@@ -505,6 +505,35 @@ describe('the room survives a third child (2026-08-09)', () => {
   });
 });
 
+describe('the refusal can be closed, and closing it forgets nothing (2026-08-09)', () => {
+  const ROOM = 'app/chat/ChatRoom.tsx';
+
+  it('hands `RefusalNotice` an `onDismiss` that clears the room’s state', () => {
+    /*
+     * Reported by the querent: *"it just wont disappear"*. `F4-13` puts the refusal
+     * in the composer, ABOVE a room that is still in use — unlike the draw screen,
+     * where it replaces the panel — so it outlived the message that caused it and
+     * every later look at the screen carried it. `RefusalNotice`'s `onDismiss` is
+     * OPTIONAL exactly so this is the only mount that grows a button.
+     */
+    const src = stripComments(file(ROOM));
+    expect(src).toMatch(/<RefusalNotice payload=\{refusal\} onDismiss=\{[^}]*setRefusal\(null\)/);
+  });
+
+  it('stores nothing, so the next refused message renders it again', () => {
+    /*
+     * The brief's second half: *"if then user input weird message again, then pop
+     * the warning up again"*. `post()` already clears `refusal` before every send
+     * and sets it on a 403, so dismissal is one more writer of the SAME state and
+     * needs no flag, no ref and nothing persisted. **A remembered dismissal would be
+     * the worse bug**: a message vanishing from the room with no explanation at all.
+     */
+    const src = stripComments(file(ROOM));
+    expect(count(src, /setRefusal\(/g)).toBe(3); // the clear before a send, the 403, the dismiss
+    expect(src).not.toMatch(/dismissed|refusalSeen|hideRefusal/i);
+  });
+});
+
 describe('the copy', () => {
   it('asks the catalog for keys that exist (I3)', () => {
     /*
