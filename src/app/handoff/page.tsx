@@ -43,11 +43,25 @@ import styles from './handoff.module.css';
  *    remedy is identical and the distinctions would only be useful to somebody
  *    probing the table.
  *
- * 4. **THE `Or continue here` LINK IS FOR THE VISITOR THIS PAGE WAS NOT WRITTEN
- *    FOR.** In an overlay it is unused. In an ordinary Safari tab that somehow
- *    carries the marker cookie -- a `?src=pwa` URL somebody shared -- there is no
- *    `Done` button to press, and without this link the page is a dead end for a
- *    person who is, in fact, signed in.
+ * 4. **`Kembali ke JMTarot` IS THE PRIMARY CONTROL, AND IT WAS WRITTEN AS A
+ *    FOOTNOTE.** This page originally said *"press Done at the top left"* with a
+ *    muted `Atau lanjutkan di sini` link underneath, written for "the visitor this
+ *    page was not written for". **Measured on a real iPhone twice, the second time
+ *    after signing out INSIDE the installed app so nothing was inherited: there is
+ *    no Done button, and the footnote is what completes the flow.** So the link is
+ *    the control now and the OS button is a hedged hint.
+ *
+ *    **A FALLBACK YOU WROTE FOR THE CASE YOU DID NOT DESIGN FOR CAN BE THE PRIMARY
+ *    PATH. Never delete one on the grounds that it is unused** -- you do not yet
+ *    know that it is.
+ *
+ *    It is a link to `/` and there is no way to do better: a page cannot dismiss an
+ *    `SFSafariViewController` it did not open, and `window.close()` does nothing
+ *    here. Navigating to the app's own root is what empirically hands control back,
+ *    and `HandoffClaim` -- which is mounted on `/` for a signed-out installed app --
+ *    collects the session the moment the app becomes visible again. **So the flow is
+ *    self-healing whatever dismisses the sheet**, including nothing at all: the next
+ *    time the querent opens the app, the claim fires on mount.
  */
 
 /**
@@ -98,24 +112,22 @@ export default async function Handoff({
         <span className={styles.eyebrow}>{t('common.majorArcana')}</span>
         <h1 className={styles.title}>{t('app.title')}</h1>
 
-        {bound ? (
-          <>
-            <p className={styles.instruction}>{t('handoff.ready.title')}</p>
-            {/* The word `Done` is iOS's own and is rendered by iOS in the DEVICE's
-                language, which is usually but not always this one. So the copy
-                names the button AND says where it is: a querent who cannot match
-                the word can still find the corner. */}
-            <p className={styles.instruction}>
-              <strong>{t('handoff.ready.action')}</strong>
-            </p>
-          </>
-        ) : (
-          <p className={styles.instruction}>{t('handoff.stale.body')}</p>
-        )}
-
-        <p className={styles.fallback}>
-          <a href="/">{t('handoff.continue')}</a>
+        <p className={styles.instruction}>
+          {bound ? t('handoff.ready.title') : t('handoff.stale.body')}
         </p>
+
+        {/* THE PRIMARY CONTROL, IN BOTH BRANCHES. Bound, it hands the querent back
+            to the app to collect the session; stale, it hands them back to try
+            again — and in neither case may the page tell somebody to "close this
+            page", which was advice about a button that is not there. */}
+        <a className={styles.primary} href="/">
+          {t('handoff.return')}
+        </a>
+
+        {/* Only where it could be true. `Selesai` is iOS's own word, rendered in
+            the DEVICE's language and, on the hardware that confirmed this fix, not
+            rendered at all — hence "kalau ada". A hint, never the instruction. */}
+        {bound ? <p className={styles.hint}>{t('handoff.ready.hint')}</p> : null}
       </div>
     </main>
   );

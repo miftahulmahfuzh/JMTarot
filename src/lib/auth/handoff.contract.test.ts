@@ -272,21 +272,55 @@ describe('the overlay page', () => {
 
   it('says a DIFFERENT sentence when nothing was bound', () => {
     /*
-     * Telling somebody they are signed in and to press `Done` when no row was
-     * bound sends them back to an app that is still signed out, with nothing to do
-     * about it.
+     * Telling somebody they are signed in when no row was bound sends them back to
+     * an app that is still signed out, with nothing to do about it.
      */
     const code = strip(PAGE);
-    expect(code).toContain('handoff.ready.action');
+    expect(code).toContain('handoff.ready.title');
     expect(code).toContain('handoff.stale.body');
     expect(code).toContain('bound ?');
   });
 
-  it('offers the escape hatch for the visitor who has no Done button', () => {
-    // An ordinary Safari tab carrying the marker cookie — a shared `?src=pwa` URL
-    // — has no sheet to dismiss, and without this the page is a dead end for
-    // somebody who is in fact signed in.
-    expect(strip(PAGE)).toContain('handoff.continue');
+  it('offers a way out in BOTH branches, and it is the primary control', () => {
+    /**
+     * **THIS ASSERTION IS THE MEASUREMENT.** The page shipped saying *"press Done
+     * at the top left"* with this link as a muted footnote. On a real iPhone,
+     * twice — the second time after signing out INSIDE the installed app, so
+     * nothing was inherited — **there is no Done button, and the footnote is what
+     * completes the flow.** A future edit that demotes it back to a fallback puts
+     * the querent in a sheet with no way out.
+     */
+    const code = strip(PAGE);
+    expect(code).toContain('handoff.return');
+    expect(code).toContain('<a className={styles.primary} href="/">');
+
+    /*
+     * OUTSIDE any `bound ?` ternary: a stale handoff is still a page somebody has
+     * to leave, and "close this page" is advice about a button that is not there.
+     *
+     * Every conditional on this page is spelled `{bound ? … : …}`, so the check is
+     * to extract those expressions (one level of brace nesting, which is all this
+     * page has) and assert none of them contains the control. A whole-file
+     * `[\s\S]*` was tried first and matches the UNRELATED ternary above the
+     * anchor — it failed on a correct page, which is the shape of assertion people
+     * delete.
+     */
+    const conditionals = [...code.matchAll(/\{bound \?[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g)].map(
+      (m) => m[0],
+    );
+    expect(conditionals.length).toBeGreaterThan(0);
+    for (const expr of conditionals) expect(expr).not.toContain('handoff.return');
+  });
+
+  it('hedges the OS button rather than instructing it', () => {
+    /*
+     * `Selesai`/`Done` is rendered by iOS, in the DEVICE's language, in a position
+     * iOS chooses, and on the hardware that confirmed this fix it is not rendered
+     * at all. **Copy that names a control belonging to the operating system is a
+     * claim this codebase cannot verify.**
+     */
+    expect(strip(PAGE)).toContain('handoff.ready.hint');
+    expect(strip(PAGE)).not.toContain('handoff.ready.action');
   });
 
   it('uses only keys that exist in the source catalog', () => {

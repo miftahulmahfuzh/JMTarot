@@ -11500,3 +11500,56 @@ fully quit, relaunch, and still be signed in.
 - **`SESSION_TTL_HOURS` is unset in Vercel**, so production runs the 168-hour default. This
   design does not change it, but a handoff is now how a lapsed standalone session gets
   renewed, so the two are related in a way they were not before.
+
+### The copy was wrong on the device, and the fallback was the primary path (2026-08-09, same day)
+
+**The design named this page's copy as the only new user-visible surface it added, and the
+copy instructed a button that is not there.** It said *"Tekan Selesai di pojok kiri atas"*
+with `Atau lanjutkan di sini` under it as a 13px muted link, written for *"the visitor this
+page was not written for"*.
+
+**Measured on iOS 18.7 twice. There is no `Selesai` button, and the footnote is what
+completes the flow.**
+
+The first run was confounded and it is worth recording why, because the mistake is easy:
+the app had been reinstalled while Safari held a session, so its jar inherited one at
+install time — and **signing out in Safari does not touch the installed app's jar.** The
+second run signed out INSIDE the app first, leaving that jar demonstrably empty, and got the
+same result.
+
+**That second run also settles the mechanism, and the GATE is what proves it.** `/handoff`
+requires a session; the app's jar had none; the querent saw `/handoff` anyway. So the request
+that rendered it carried a session that was not in the app's jar — the overlay's. Therefore
+an overlay DID render the return leg, the link is what handed control back, and the app got
+its session by claiming the handoff. **The design works for the reason it was designed.**
+What is still unexplained is only why iOS presents no visible dismiss affordance on that
+sheet, which is a fact about the OS's UI and not about this code.
+
+**What changed:** `handoff.return` is the primary control — a full-width bordered anchor with
+16px of padding, clearing the 44px iOS minimum the old 13px link did not — rendered in BOTH
+branches. `handoff.ready.hint` is the hedged OS-button line, rendered only where it could be
+true. `handoff.ready.action` and `handoff.continue` are gone, and `handoff.stale.body` no
+longer says *"tutup halaman ini"*.
+
+**Three rules, and none of them is about iOS:**
+
+1. **A FALLBACK YOU WROTE FOR THE CASE YOU DID NOT DESIGN FOR CAN BE THE PRIMARY PATH.** Ship
+   it, never delete it for being unused, and **give it a real tap target** — this one was
+   doing the most important job on the screen at 13px.
+2. **COPY THAT NAMES A CONTROL BELONGING TO THE OPERATING SYSTEM IS A CLAIM THIS CODEBASE
+   CANNOT VERIFY.** The word is rendered by the OS, in the DEVICE's language, in a position
+   the OS chooses, and it may not be rendered at all. Name the control you own; mention
+   theirs as *"kalau ada"*.
+3. **NEVER TELL SOMEBODY TO CLOSE A PAGE YOU CANNOT CLOSE FOR THEM.** A page cannot dismiss
+   an `SFSafariViewController` it did not open and `window.close()` does nothing, so *"tutup
+   halaman ini"* was advice about a button that does not exist.
+
+`handoff.contract.test.ts` asserts the control is outside every `bound ?` conditional, and
+the case is named for the measurement rather than for the mechanism. **The first version of
+that assertion used a whole-file `[\s\S]*` and matched the unrelated ternary above the anchor
+— it failed on a correct page**, which is the shape of assertion people delete; it extracts
+the conditional expressions and checks those instead.
+
+**The flow is self-healing whatever dismisses the sheet, including nothing:** `HandoffClaim`
+is mounted on `/` for a signed-out installed app and fires on mount as well as on return, so
+the next launch collects the session.

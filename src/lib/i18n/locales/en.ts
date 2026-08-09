@@ -147,13 +147,13 @@ const en: Catalog = {
     'That account cannot be used to sign in. Try a different Google account.',
   'login.error.generic': 'Cannot sign in just now. Try again in a moment.',
 
-  /* The overlay page. See `id.ts` for why the copy names both the word and the
-     corner: `Done` is iOS's own label, rendered in the DEVICE's language. */
+  /* The overlay page. See `id.ts`: the first version instructed a `Done` button
+     that measurably is not there, so the link we own is the primary control and
+     the OS button is a hedged hint. */
   'handoff.ready.title': 'You are signed in.',
-  'handoff.ready.action': 'Press Done at the top left to return to JMTarot.',
-  'handoff.stale.body':
-    'This link has expired. Close this page and try signing in again from JMTarot.',
-  'handoff.continue': 'Or continue here',
+  'handoff.return': 'Return to JMTarot',
+  'handoff.ready.hint': 'If there is a Done button at the top of the screen, that works too.',
+  'handoff.stale.body': 'This link has expired. Go back to JMTarot and try signing in again.',
 
   // --- Error pages ----------------------------------------------------------
   'error.notFound.title': 'That page is not here.',

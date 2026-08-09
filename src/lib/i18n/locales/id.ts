@@ -282,34 +282,45 @@ const id = {
   'login.error.generic': 'Tidak bisa masuk sekarang. Coba lagi sebentar.',
 
   /*
-   * ── THE OVERLAY PAGE (2026-08-09) ──────────────────────────────────────────
+   * ── THE OVERLAY PAGE (2026-08-09, COPY CORRECTED THE SAME DAY) ─────────────
    *
-   * Four strings, and they are read by somebody standing inside a browser sheet
-   * that opened on top of the app, immediately after Google. They must say one
-   * thing: press the button at the top left, which belongs to iOS.
+   * Read by somebody standing inside a browser sheet that opened on top of the
+   * app, immediately after Google.
    *
-   * **`Selesai` IS iOS's OWN WORD AND WE DO NOT CONTROL IT.** The sheet renders
-   * it in the DEVICE's language, which is usually this one and is not always --
-   * an Indonesian querent with an English phone sees `Done`. So
-   * `handoff.ready.action` names the word AND the corner, and the corner is the
-   * half that is always true.
+   * **THE FIRST VERSION INSTRUCTED A BUTTON THAT WAS NOT THERE, AND IT SHIPPED.**
+   * It said *"Tekan Selesai di pojok kiri atas"* with a quiet `Atau lanjutkan di
+   * sini` link underneath, written for "the visitor this page was not written
+   * for". Measured on a real iPhone (iOS 18.7) TWICE, the second time after
+   * signing out inside the installed app so nothing was inherited: **there is no
+   * Selesai button, and the fallback link is the control that completes the
+   * flow.** So the link is the primary control now and the OS button is a hint.
+   *
+   * **THE RULE THIS BOUGHT, AND IT IS NOT ABOUT iOS:** copy that names a control
+   * belonging to the OPERATING SYSTEM is a claim you cannot verify from your own
+   * codebase. The word is rendered by the OS, in the DEVICE's language, in a
+   * position the OS chooses, and it may not be rendered at all. Name the control
+   * you own; mention theirs as an alternative.
    *
    * No "berhasil!", no exclamation mark, no explanation of cookie jars. The
    * querent did not know there was a problem and telling them now would be
    * describing our bug in the middle of their sign-in.
    */
   'handoff.ready.title': 'Kamu sudah masuk.',
-  'handoff.ready.action': 'Tekan Selesai di pojok kiri atas untuk kembali ke JMTarot.',
+  /* THE PRIMARY CONTROL, and the one thing on this page we actually own. It is a
+     link to `/`, which is what empirically hands the querent back to the
+     installed app -- where `HandoffClaim` collects the session. */
+  'handoff.return': 'Kembali ke JMTarot',
+  /* Hedged on purpose: `Selesai` is iOS's own word, rendered in the DEVICE's
+     language and sometimes not rendered at all. "Kalau ada" is the honest form. */
+  'handoff.ready.hint': 'Kalau ada tombol Selesai di pojok atas layar, itu juga bisa.',
   /*
    * The row was gone, used, or already bound. **ONE SENTENCE FOR ALL OF THEM**,
    * because the remedy is identical and the difference is only interesting to
-   * somebody probing the table. It says where to go, not what went wrong.
+   * somebody probing the table. It says where to go, not what went wrong -- and
+   * it no longer says "tutup halaman ini", which was advice about a button that
+   * does not exist.
    */
-  'handoff.stale.body':
-    'Tautan ini sudah lewat. Tutup halaman ini, lalu coba masuk lagi dari JMTarot.',
-  /* For the visitor who has no Selesai button to press -- an ordinary tab rather
-     than the sheet. Quiet, and never the main instruction. */
-  'handoff.continue': 'Atau lanjutkan di sini',
+  'handoff.stale.body': 'Tautan ini sudah lewat. Kembali ke JMTarot, lalu coba masuk lagi.',
 
   // --- Error pages ----------------------------------------------------------
   'error.notFound.title': 'Halaman itu tidak ada.',

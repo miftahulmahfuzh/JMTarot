@@ -1917,9 +1917,19 @@ in a jar the standalone shell cannot see, for ever, through every retry.
   the clause `dev-session` lives under — and **every unsuccessful outcome is the same 204**,
   because the alternative is an oracle for probing the table.
 - **THE ACCEPTANCE TEST IS ONE SENTENCE AND IT IS LOOP 6:** install to the home screen, sign
-  in, press `Done`, be signed in — then fully quit, relaunch, and still be signed in. **Unit
-  and integration tests cover the row and the hash and cannot see the thing that matters**,
-  because loop 5 has one cookie jar and iOS has two.
+  in, return to the app, be signed in — then fully quit, relaunch, and still be signed in.
+  **Unit and integration tests cover the row and the hash and cannot see the thing that
+  matters**, because loop 5 has one cookie jar and iOS has two. **CONFIRMED IN PRODUCTION
+  2026-08-09.** When testing, sign out in the jar you are testing: signing out in Safari does
+  not touch the installed app's, and the first confirmation run was confounded by exactly that.
+- **THERE IS NO `Done` BUTTON ON THE SHEET, AND `handoff.return` IS THE PRIMARY CONTROL BECAUSE
+  OF IT.** Measured on iOS 18.7 twice, the second time with the app's own jar demonstrably
+  empty. The page shipped saying *"Tekan Selesai di pojok kiri atas"* with the link as a 13px
+  muted footnote, and **the footnote is what completes the flow.** Two rules out of it: **copy
+  that names an OS control is a claim this codebase cannot verify** — hedge it
+  (`handoff.ready.hint`), never instruct it — and **never tell somebody to close a page you
+  cannot close for them**, which the stale branch did. The link renders in BOTH branches and
+  `handoff.contract.test.ts` asserts it is outside every conditional.
 
 Also still unverified on hardware: touch behaviour, safe-area insets, Add to Home Screen
 itself.

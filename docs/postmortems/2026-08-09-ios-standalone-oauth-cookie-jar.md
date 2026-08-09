@@ -291,39 +291,72 @@ wrong file. Two hand-rolled copies are two ways to get it wrong.
 **The design named the overlay's copy as the only new user-visible surface it added,
 and got that copy wrong on the first real device.**
 
-The page says *"Press **Done** at the top left to return to the app."* Alongside it,
+The page said *"Press **Done** at the top left to return to the app."* Alongside it,
 as a deliberately quiet fallback for "the visitor this page was not written for", was
-a link: *"Or continue here."*
+a 13px muted link: *"Or continue here."*
 
-On the device that confirmed the fix, **there was no Done button.** The user tapped
-the fallback link, and *that* is what completed the flow. The control written as an
-afterthought was the control that did the work.
+**There is no Done button.** The user tapped the fallback link, and *that* is what
+completed the flow. The control written as an afterthought was the control that did
+the work.
 
-Two mechanisms fit the observation and **this postmortem does not claim to know which**:
+### Measured twice, the second time unconfounded
 
-- **(a) The overlay was dismissed when the navigation returned to the app's own
-  origin**, handing control back to the standalone shell — where the visibility
-  handler then claimed the session. The link is what triggered the return.
-- **(b) The overlay never appeared for the return leg at all**, and the handoff page
-  rendered somewhere with a session already in it.
+The first run was confounded: the app had been reinstalled while Safari held a
+session, so the app's jar had inherited one at install time, and signing out *in
+Safari* does not touch the app's jar. **So the second run signed out INSIDE the
+installed app first** — leaving the app's jar demonstrably empty — and then signed in
+from the app.
 
-**The discriminating experiment is cheap and has not been run:** sign out *inside the
-installed app*, sign in again from the app, and note whether a dismiss control
-appears at all and whether the app signs itself in without touching the link.
+Same result: **no Done button, the link is what worked, and the app came back with no
+browser chrome.**
 
-### Three lessons that generalise past this bug
+### That second run also settles the mechanism, and the gate is what proves it
+
+The handoff page requires a session. The app's jar had none. **The user saw the
+handoff page anyway** — so the request that rendered it carried a session that was
+*not* in the app's jar, which is to say the overlay's. Therefore:
+
+- an overlay **did** render the return leg;
+- the link is what handed control back to the standalone app;
+- and the app obtained its session by **claiming the handoff**, which is what the
+  design says happens.
+
+The mechanism is confirmed. What remains unexplained is only **why iOS presents no
+visible dismiss affordance** for this sheet — a fact about the OS's UI, not about
+this design, and one that no amount of reading your own code will answer.
+
+### Four lessons that generalise past this bug
 
 1. **A fallback you wrote for the case you did not design for can be the primary
-   path.** Ship it, and never delete it on the grounds that it is unused — you do not
-   yet know that it is.
-2. **Copy that names a control belonging to the OPERATING SYSTEM is a claim you cannot
-   verify from your own codebase.** The word is rendered by the OS, in the *device's*
-   language, in a position the OS chooses, and it may not be rendered at all. Name the
-   button **and** the corner, and always offer an in-page control that does the same
-   job.
-3. **"It works" and "it works for the reason I designed" are different claims.** The
-   product outcome here is confirmed. The mechanism is not, and saying so is the
-   difference between a postmortem and a press release.
+   path.** Ship it, never delete it on the grounds that it is unused, and **give it
+   a real tap target** — this one was a 13px link under the 44px iOS minimum, doing
+   the most important job on the screen.
+2. **Copy that names a control belonging to the OPERATING SYSTEM is a claim you
+   cannot verify from your own codebase.** The word is rendered by the OS, in the
+   *device's* language, in a position the OS chooses, and it may not be rendered at
+   all. **Name the control you own; mention theirs as a hedged alternative** —
+   *"if there is a Done button…"*, never *"press Done"*.
+3. **Never write copy telling somebody to close a page you cannot close for them.**
+   The stale-handoff branch said *"close this page and try again"*, which is advice
+   about a button that does not exist. A page cannot dismiss an
+   `SFSafariViewController` it did not open, and `window.close()` does nothing.
+4. **"It works" and "it works for the reason I designed" are different claims**, and
+   they need different evidence. Here the first was confirmed on the first run and
+   the second needed a deliberately unconfounded one. Running that second experiment
+   cost a minute and turned a guess into a fact.
+
+### What changed as a result
+
+The link became the primary control — a full-width bordered button, 16px padding,
+rendered in **both** branches — and the OS button became a hedged one-line hint
+rendered only where it could be true. The contract test now asserts the control is
+outside every conditional, and is named for the measurement so a future edit cannot
+demote it back to a footnote without arguing with it.
+
+**The flow is self-healing whatever dismisses the sheet, including nothing at all:**
+the claim listener is mounted on the app's root for a signed-out installed app, and
+fires on mount as well as on return — so the next time the app is opened, the session
+is collected.
 
 ---
 
@@ -372,6 +405,12 @@ Before you ship an installable web app that signs in with a third-party IdP:
       boundary.**
 - [ ] Do not trust any headless browser, CI job or CDP harness to reproduce a
       cookie-jar bug. **They have one jar.**
+- [ ] **Give every return-from-overlay page an in-page control that does the job**,
+      sized as a real tap target, and never instruct an OS button as the primary
+      action.
+- [ ] When you test, **sign out in the place whose jar you are testing.** Signing out
+      in the browser does not touch the installed app's jar, and a test that gets
+      that wrong confirms nothing.
 
 ---
 
@@ -387,20 +426,25 @@ Before you ship an installable web app that signs in with a third-party IdP:
 - [x] The privacy policy's cookie list gained the third cookie. **A list that is short
       by one is the thing that document can least afford.**
 
+- [x] **Ran the discriminating experiment** — signed out *inside the installed app*,
+      signed in again. Same result, and it settles the mechanism: the overlay renders
+      the return leg, the link hands control back, the app claims. See above.
+- [x] **Overlay copy corrected**: the in-page link is the primary control in both
+      branches with a real tap target, the OS button is a hedged hint, and the
+      *"close this page"* advice is gone.
+
 **Open**
 
-- [ ] **Run the discriminating experiment above** and settle which mechanism is real.
-- [ ] **Reconsider the overlay copy**: promote the in-page link to a primary control
-      and demote the OS-button instruction to a hint. Held back deliberately — the
-      flow currently works, and changing user-visible navigation copy on one
-      observation and two competing explanations is the mistake this repo's rules
-      exist to prevent.
+- [ ] **Why iOS shows no dismiss affordance on this sheet is unexplained.** It does
+      not block anything — the in-page control covers it — but somebody with a
+      device could look and say whether there is a swipe, an `×`, or genuinely
+      nothing.
 - [ ] **No metric.** A run of handoff rows that are minted and never claimed is the
       exact signature of a broken claim leg, and nothing reports it as a rate. Today
       the only instrument is a person with a phone.
-- [ ] The install-time-copy stopgap is still formally unverified (though the
-      confirming session strongly suggests it holds: a fresh install landed signed
-      in).
+- [x] **The install-time-copy stopgap holds.** A fresh install made while Safari held
+      a session landed signed in — which is finding 7's mechanism observed from the
+      other side, and is also what made the first confirmation run confounded.
 
 ---
 

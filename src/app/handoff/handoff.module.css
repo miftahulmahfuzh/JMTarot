@@ -77,18 +77,43 @@
 }
 
 /*
- * The escape hatch. `--muted` and small on purpose: it is correct for the rare
- * visitor who is NOT in an overlay -- an ordinary Safari tab that somehow carries
- * the marker cookie -- and it must not compete with the instruction for the
- * querent this page was written for.
+ * THE PRIMARY CONTROL, AND IT WAS A 13px MUTED LINK UNTIL A REAL IPHONE SAID
+ * OTHERWISE. There is no `Selesai` button on the sheet this page renders in, so
+ * this is the only way out — and it was styled as a footnote to an instruction
+ * that named a button which does not exist.
+ *
+ * `login.module.css`'s `.submit`, because it is the same job: the one thing to
+ * press on a screen that has one thing to press. 16px of padding on a ~12px line
+ * clears the 44px iOS tap minimum, which the old link did not.
  */
-.fallback {
+.primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--button-text);
+  border: 1px solid var(--gold-border);
+  background: var(--gold-wash);
+  border-radius: var(--radius-chip);
+  padding: 16px;
+  text-decoration: none;
+}
+
+.primary:hover {
+  background: var(--gold-wash-strong);
+}
+
+/*
+ * The `Selesai` hint. `--muted` and small, because it describes a control we do
+ * not own, may not be able to see, and cannot promise is there.
+ */
+.hint {
   font-family: var(--font-body), Georgia, serif;
   font-size: 13px;
   color: var(--muted);
   margin: 0;
-}
-
-.fallback a {
-  color: var(--gold);
 }
