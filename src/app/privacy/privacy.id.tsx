@@ -174,6 +174,19 @@ export function PrivacyId({ effective }: { effective: string }) {
             dan catatan permintaan yang disimpan penyedia hosting kami &mdash; alamat IP, jenis
             peramban, dan alamat halaman.
           </P>
+          {/*
+            2026-08-09. COOKIE KETIGA, DAN INI KLAUSA DAFTAR -- daftar yang kurang satu
+            adalah hal yang paling tidak boleh terjadi di dokumen ini. `jmt_pwa`: 256 bit
+            acak, httpOnly, hanya ditulis saat aplikasi layar utama dibuka. Ia menandai
+            SATU WADAH COOKIE, bukan satu orang; mekanismenya ada di
+            `src/lib/auth/handoff.ts`.
+          */}
+          <P>
+            Kalau kamu memasang JMTarot ke layar utama, ada satu cookie lagi: penanda acak
+            (httpOnly) yang hanya ada di dalam aplikasi itu. Ia tidak menyimpan apa pun tentang
+            kamu &mdash; gunanya supaya proses masuk yang kamu selesaikan di peramban bisa
+            sampai ke aplikasi, yang di iOS tidak bisa terjadi dengan sendirinya.
+          </P>
           <P>
             {/*
               NEEDS VERIFICATION and deliberately hedged until it is done: Vercel's

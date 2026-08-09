@@ -21,15 +21,12 @@
  * merely inert in production. It must be absent.
  */
 import { NextResponse } from 'next/server';
-import { encode } from '@auth/core/jwt';
 import { z } from 'zod';
 import { DEV_PASSWORD_LOGIN_ENABLED } from '@/lib/auth/auth';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
-import { absoluteCapSeconds, sessionMaxAgeSeconds } from '@/lib/auth/ttl';
-import { nowSeconds } from '@/lib/auth/token';
+import { encodeSessionToken } from '@/lib/auth/mint';
 import { db } from '@/lib/db/client';
 import { upsertUserOnSignIn } from '@/lib/db/queries/profile';
-import { requireEnv } from '@/lib/env';
 import { LOCALE_COOKIE, LOCALE_HEADER, resolveForSignIn } from '@/lib/i18n/resolve';
 
 export const runtime = 'nodejs';
@@ -106,29 +103,25 @@ export async function POST(request: Request) {
     localeSource: negotiated.source,
   });
 
-  const maxAge = sessionMaxAgeSeconds(process.env.SESSION_TTL_HOURS);
-  const cap = absoluteCapSeconds(process.env.SESSION_ABSOLUTE_TTL_DAYS);
-
   /*
-   * `salt` is the COOKIE NAME. @auth/core uses it as the HKDF salt when deriving
-   * the encryption key from AUTH_SECRET, so the name and the ciphertext are bound
-   * together: encode with the wrong salt and the cookie decrypts to nothing, which
-   * reads exactly like a wrong secret and sends you looking in the wrong place.
-   * That is why the name comes from config.ts rather than being written out here.
+   * **THE ENCODE MOVED TO `@/lib/auth/mint.ts` (2026-08-09) AND THE REASON IT GAVE
+   * IS UNCHANGED**, which is why the paragraph moved with it rather than being
+   * summarised here: `salt` is the COOKIE NAME, @auth/core uses it as the HKDF
+   * salt, and encoding with the wrong one produces a cookie that decrypts to
+   * nothing and reads exactly like a wrong `AUTH_SECRET`.
+   *
+   * The second caller is `POST /api/auth/handoff`, which mints a session for the
+   * installed home-screen app. Two hand-rolled copies would be two ways to get
+   * that salt wrong; the cookie ATTRIBUTES stay here, because this route's are
+   * deliberately not production's.
    */
-  const token = await encode({
-    salt: SESSION_COOKIE_NAME,
-    secret: requireEnv('AUTH_SECRET'),
-    maxAge,
-    token: {
-      sub: `dev:${username}`,
-      uid: row.id,
-      email: `${username}@localhost`,
-      name: username,
-      onb: row.onboardingComplete,
-      loc: row.locale,
-      ...(cap > 0 ? { abs: nowSeconds() + cap } : {}),
-    },
+  const { token, maxAge } = await encodeSessionToken({
+    sub: `dev:${username}`,
+    uid: row.id,
+    email: `${username}@localhost`,
+    name: username,
+    onb: row.onboardingComplete,
+    loc: row.locale,
   });
 
   const response = NextResponse.json({

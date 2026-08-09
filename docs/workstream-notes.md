@@ -11344,3 +11344,159 @@ fact about the READER and splitting it by locale is a reconciliation question.
   forbids them — the readers simply do not write them. The band is printed rather than
   failed, and it is the honest measure of how far the room still is from how a group chat
   actually reads.
+
+## The standalone sign-in handoff (2026-08-09)
+
+**What landed:** `src/lib/auth/handoff.ts` (EDGE-SAFE leaf), `handoffMint.ts` (NODE-ONLY),
+`mint.ts` (the shared JWE encode, with `dev-session` rewired onto it),
+`src/lib/db/queries/handoff.ts`, `auth_handoffs` + migration `0015`, `src/app/handoff/**`,
+`src/app/api/auth/handoff/route.ts`, `src/components/HandoffClaim.tsx`, `start_url` on the
+manifest, the cookie write in the outer middleware wrapper, `/handoff` on
+`isOnboardingExempt()`'s list, the sixth sweep delete, four `handoff.*` catalog keys in both
+locales, and three test files.
+
+The design is `docs/plans/2026-08-09-standalone-signin-handoff-design.md`; its §1 holds the
+seven iPhone measurements and is the only place they survive, because the probes that
+produced them were deleted in the commit that wrote it. CLAUDE.md's short form is
+`## Signing in from the installed app`. What follows is the part that is not in either.
+
+### The bug, in one paragraph, because CLAUDE.md carried the guess for three releases
+
+The old sentence was *"the largest unverified risk in the project… the session cookie can
+land in a jar the standalone shell cannot see"*. **The guess was right and the conclusion —
+that only a real iPhone against a Vercel preview could test it — was also right, which is
+exactly why nobody tested it.** iOS seeds a home-screen web app's cookie jar from Safari **at
+install time** and the two diverge from then on; it hands `accounts.google.com` to an
+`SFSafariViewController` overlay; so Google's session lands in Safari's jar and the installed
+app is signed out for ever, through every retry, with the consent screen succeeding every
+single time. **Both halves of the old paragraph are now false and were corrected rather than
+left standing.**
+
+### Three things the implementation found that the design did not say
+
+**1. THE COOKIE HAS EXACTLY ONE PLACE IT CAN BE WRITTEN, AND IT IS NOT WHERE ANYBODY WOULD
+PUT IT.** The design says *"on that launch the server sets `jmt_pwa`"* and stops there. The
+launch is `GET /?src=pwa` while signed out — which is a CONTENT response, which means S-D10's
+outer wrapper runs `headers.delete('set-cookie')` over it. **Every plausible implementation of
+that sentence writes the cookie inside the gate, where it is deleted four lines later,
+silently, with the feature looking implemented and the installed app still unable to sign
+in.** So `markInstalledApp()` runs in the outer wrapper, BELOW the strip, and
+`handoff.contract.test.ts` asserts the source positions in that order — crude, and the only
+thing assertable, because middleware cannot be exercised in Vitest.
+
+It does not reopen S-D10: the exemption is one URL that exists nowhere but in the manifest,
+the guard is the cookie's own absence so it fires once per install, and `/` is already the one
+content route with no `next.config.ts` cache entry.
+
+**2. THE APP NEVER LEARNS THE CHALLENGE, SO THE CLAIM CANNOT BE KEYED ON IT.** §3 sketches
+`update auth_handoffs … where challenge = $1 and device_hash = $2`. The challenge is minted
+during a POST whose only response is the redirect to Google — a response iOS hands to the
+overlay, and on which §2 step 2 explicitly forbids setting a cookie. **The one value the app
+can present is the cookie it already had.** So `claimHandoff` takes the device hash and
+resolves the newest eligible challenge in an inner select. The security property §2 states is
+untouched: the overlay's challenge binds and collects nothing, the app's secret collects and
+binds nothing, and a session needs both to have happened.
+
+**3. `/handoff` HAD TO BE ONBOARDING-EXEMPT, AND THE CASE IS THE FIRST SIGN-IN.** Nothing in
+the design mentions the gate. A brand-new querent has `onb === false` at exactly the moment
+the overlay lands on `/handoff`, so the default gate sends them to `/onboarding` **inside
+`SFSafariViewController`** — nine screens answered into a session the standalone app can never
+see, after which they are still signed out. **The feature would have failed for every new
+user and worked for every returning one, which is the worst available way for it to fail: it
+looks like it works, and it works for whoever built it.** `gate.test.ts` carries the case named
+for it.
+
+### What was decided that §6 left open
+
+- **The overlay copy is written, in both locales.** `handoff.ready.title` /
+  `.ready.action` / `.stale.body` / `.continue`. Two rules came out of writing it:
+  **`Selesai` is iOS's own word and the sheet renders it in the DEVICE's language**, which is
+  usually but not always the app's — so the copy names the word AND the corner, and the corner
+  is the half that is always true. And there is no "berhasil!", no exclamation mark and no
+  explanation of cookie jars: **the querent did not know there was a problem, and telling them
+  now would be describing our bug in the middle of their sign-in.**
+- **A FAILED BIND GETS A DIFFERENT SENTENCE.** Expired, already used, already bound and never
+  existed all read as *"this link has expired, try again from JMTarot"* — one sentence, because
+  the remedy is identical and the distinctions are only useful to somebody probing the table.
+  Telling somebody they are signed in when no row was bound sends them back to an app that is
+  still signed out with nothing to do about it.
+- **THE `Atau lanjutkan di sini` LINK IS FOR THE VISITOR THE PAGE WAS NOT WRITTEN FOR.** In an
+  overlay it is unused. In an ordinary Safari tab carrying the marker cookie — a shared
+  `?src=pwa` URL is the only way that happens — there is no sheet to dismiss, and without it
+  the page is a dead end for somebody who is in fact signed in.
+- **The claim stays silent** (no spinner, no message), which is still untested on a person.
+
+### The one security case worth writing down
+
+**THE CHALLENGE IS THE ONLY VALUE THIS MECHANISM EVER PUTS IN A URL**, so the question is what
+somebody who came by it can do. The answer is: bind it, once, and collect nothing — because
+`bindHandoff`'s `where` carries `user_id is null`. **Without that clause they could re-point a
+bound row at their OWN account, and the querent's installed app would collect a session
+belonging to a stranger, silently, on a screen that says they are signed in.** That is the
+login-CSRF shape, it is one clause, and `handoff.integration.test.ts` names the case.
+
+The device secret is never stored — the table holds `sha256` of it — so a dump of
+`auth_handoffs` cannot be replayed into a session. Asserted against the ROW rather than
+against the code, because the failure mode of storing the secret is invisible until somebody
+has the dump.
+
+### `mint.ts`, and why a second hand-rolled encode was not acceptable
+
+`dev-session` has encoded a session JWE by hand since W2, with a paragraph explaining that
+`salt` IS the cookie name and that getting it wrong produces a cookie which decrypts to
+nothing and *"reads exactly like a wrong secret and sends you looking in the wrong place"*.
+The claim route needs the same encode, **in production**. Two copies would be two ways to get
+that salt wrong, so the encode moved to `mint.ts` and `dev-session` was rewired onto it. **The
+cookie ATTRIBUTES stayed at both call sites**, because they legitimately differ: the dev route
+sets `secure: false` deliberately (it only exists on `http://localhost`, where a secure cookie
+is set and then never sent back).
+
+`mint.ts` is not a second way to authenticate: it mints from claims a caller supplies and
+decides nothing. Both callers establish identity first — the dev route through the real
+sign-in upsert, the claim route through a row the overlay bound after Google said yes — and
+neither reads a user id from a request body. Its header says a third caller that cannot say
+that sentence does not belong there.
+
+### What was verified locally, and what was not
+
+Loop 5's own limitation is the whole reason this bug survived: **it has one cookie jar and
+iOS has two.** What a local dev server CAN answer was answered, on the wire, on 2026-08-09:
+
+| Request | Result |
+|---|---|
+| `GET /manifest.webmanifest` | `"start_url":"/?src=pwa"` |
+| `GET /?src=pwa` signed out | `set-cookie: jmt_pwa=…; HttpOnly; SameSite=Lax; Max-Age=34560000` — **it survives the S-D10 strip** |
+| `GET /` | no cookies at all, S-D10 intact |
+| `GET /gallery?src=pwa` | no cookies at all — the marker answers only for `/` |
+| `GET /?src=pwa` carrying `jmt_pwa` | nothing set; once per install |
+| `POST /api/auth/handoff` with no cookie / a bogus one | 204, 204 |
+| `GET /handoff?c=x` signed out | 307 → `/login?callbackUrl=%2Fhandoff%3Fc%3Dx` |
+| `GET /handoff?c=<live>` signed in | binds, renders *"Kamu sudah masuk."* + *"Tekan Selesai…"* |
+| `POST /api/auth/handoff` with the right secret against a bound row | **200 + `authjs.session-token`** |
+| the SAME request again | 204 — single use, on the wire |
+| `GET /` carrying the claimed session | 307 → `/onboarding` — **which is the proof the token narrowed**: `uid` and `onb` both came through the hand-rolled encode |
+
+**The last row is the one that matters.** A cookie encoded with the wrong salt decrypts to
+nothing and presents as "still signed out", which is indistinguishable from the bug being
+unfixed; a 307 to `/onboarding` is `readToken()` having read a real `uid` and a real `onb` out
+of a JWE this code minted.
+
+**What none of that can see is whether an installed iPhone web app can sign in.** That is loop
+6 and one sentence: install to the home screen, sign in, press `Done`, be signed in — then
+fully quit, relaunch, and still be signed in.
+
+### Still open
+
+- **The acceptance test has not been run.** Nothing here is confirmed on hardware.
+- **The install-time-copy stopgap is still unverified** (sign in in Safari, delete the icon,
+  Add to Home Screen again). It is not the fix — it cannot survive a sign-out or a session
+  expiry — but confirming it would confirm the theory §1 built for free.
+- **No analytics event was added.** The taxonomy is closed with one owner per release
+  (S-D13) and there is no owner for this change, so observability is `console` lines and the
+  sweep's `expiredHandoffs` count. **A run of rows that are never claimed is the signal that
+  the claim leg is broken**, and today nothing reports it as a rate. If this gets an event, it
+  wants to be one name with a closed `outcome` prop, folded in by the next release's S1.
+- **The claim's silence is untested on a person**, and so is the overlay copy.
+- **`SESSION_TTL_HOURS` is unset in Vercel**, so production runs the 168-hour default. This
+  design does not change it, but a handoff is now how a lapsed standalone session gets
+  renewed, so the two are related in a way they were not before.

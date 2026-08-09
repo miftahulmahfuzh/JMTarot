@@ -879,6 +879,11 @@ src/lib/auth/
   server.ts    NODE-ONLY. currentUser(), requireUser(). What everything imports.
   viewer.tsx   'use client'. The context, mounted by the OWNING SERVER PAGE.
   users.ts     DEV-ONLY. bcrypt list, fuel for the Credentials provider.
+  handoff.ts     EDGE-SAFE. The standalone sign-in handoff: names, Web Crypto,
+                 the `start_url` marker. NO node:crypto -- middleware runs it.
+  handoffMint.ts NODE-ONLY. The one DB-touching half a COMPONENT calls. Never throws.
+  mint.ts        NODE-ONLY. Encodes a session JWE by hand. TWO callers, and the
+                 `salt` IS the cookie name -- see `## Signing in from the installed app`.
 ```
 
 **Everything that needs "who is this, on the server" calls `requireUser()` in a route
@@ -1790,8 +1795,12 @@ W1 is done, and W3 is its first consumer.
 three Neon knobs (max 1, prepare false, ssl require) are conditional on `VERCEL`, **not
 `NODE_ENV`, because a preview build is also `NODE_ENV=production`; do not trim that comment**.
 `types.ts` (Db / Tx / DbOrTx) is type-only with no runtime imports, so a query module cannot
-acquire the singleton by accident. `schema.ts` has **ONE OWNER: W1** and holds thirteen tables
-(ten at W1, plus `translations`, `share_links` and `personas`); 2026-07-29 added a COLUMN and no
+acquire the singleton by accident. `schema.ts` has **ONE OWNER: W1** and holds **twenty-two
+tables** — ten at W1, then `translations`, `share_links`, `personas`, `admin_access_log`,
+`llm_calls`, `blog_posts`, `blog_post_locales`, `admin_insights`, v0.7.0's three chat tables and
+`auth_handoffs`. **The count said "thirteen" for three releases and was corrected on 2026-08-09
+rather than appended to**, per the sweep route's rule: a header that miscounts its own body is how
+the next person concludes the file is untrustworthy. 2026-07-29 added a COLUMN and no
 table, `readings.choice` (migration `0008`). `crypto.ts` is AES-256-GCM field
 encryption, `v1.<iv>.<ct>.<tag>` base64url. `queries/` is one file per read concern, **every
 function taking the handle first**. `migrations/` is generated and committed — read its README
@@ -1852,13 +1861,6 @@ edge), `src/app/onboarding/**`, `src/app/api/onboarding/**`, `src/lib/prompt/lot
 - **If the Lotus ever flattens the three readers, fix the persona paragraphs or the base contract's
   `<penanya>` rule, never the code.**
 
-**The largest unverified risk in the project: signing in with Google from a home-screen installed
-instance, in standalone mode.** Navigating to `accounts.google.com` can hand the user to Safari or an
-in-app browser, and the session cookie can land in a jar the standalone shell cannot see. The failure
-is "sign-in works in Safari and the installed app can never sign in", which breaks the product's whole
-delivery model. Only a real iPhone against a Vercel preview can test it. Also unverified on hardware:
-touch behaviour, safe-area insets, Add to Home Screen.
-
 **The domain is `www.jmtarot.site`, bought 2026-07-27 and live** (reconciliation §7.2's
 `www.jmtarot.com` was never purchased). The apex 308-redirects to `www` — serve one, never both,
 because an OAuth redirect URI is a string comparison and `AUTH_URL` pointed at the apex fails the
@@ -1867,3 +1869,57 @@ Google's Authorized Domain is the registrable `jmtarot.site`. The consent screen
 **Testing** mode, so only manually-added test accounts can sign in. **What blocked publishing was
 Google's branding requirement of an app homepage that is not a login page; signed out, `/` now renders
 a landing page, so that blocker is closed** — what remains is pressing Publish.
+
+## Signing in from the installed app (2026-08-09)
+
+**This section replaces the paragraph that called it "the largest unverified risk in the
+project" and said only a real iPhone could test it. It was measured; the guess was right;
+both sentences are now false and are corrected rather than left standing.** The seven
+measurements are `docs/plans/2026-08-09-standalone-signin-handoff-design.md` §1, the
+mechanism is `src/lib/auth/handoff.ts`, and the full account is in
+`docs/workstream-notes.md`. `src/lib/auth/{handoff,handoffMint,mint}.ts`,
+`src/lib/db/queries/handoff.ts`, `src/app/handoff/**`, `src/app/api/auth/handoff/route.ts`,
+`src/components/HandoffClaim.tsx`, migration `0015`.
+
+**THE INSTALLED APP COULD NEVER SIGN IN, AND IT IS STORAGE RATHER THAN ROUTING.** iOS seeds
+a home-screen app's cookie jar from Safari **at install time** and the two diverge from then
+on — a cookie written after the install never crosses — and it hands the
+`accounts.google.com` hop to an `SFSafariViewController` overlay. So Google's session lands
+in a jar the standalone shell cannot see, for ever, through every retry.
+
+- **`scope` DOES NOT GOVERN WHAT iOS PUNTS TO THE OVERLAY. THE ORIGIN DOES** (finding 6, and
+  the one nobody predicts). Any same-origin navigation stays inside the standalone app
+  however far outside `scope` it is; only a cross-origin hop is handed away. **That is what
+  makes the whole fix possible**, and the probe that found it was built on the opposite
+  assumption.
+- **NOTHING MOVES A COOKIE BETWEEN JARS, BECAUSE NOTHING CAN.** `start_url` is `/?src=pwa`;
+  middleware answers that launch with `jmt_pwa`, 256 opaque httpOnly bits that exist only in
+  the standalone jar. The sign-in action writes an `auth_handoffs` row keyed on
+  `sha256(jmt_pwa)`, the overlay's `/handoff?c=` binds `user_id` to it, and the app claims it
+  on **its own** request — where a `Set-Cookie` lands in the app's jar by definition.
+- **THE COOKIE IS WRITTEN IN THE OUTER MIDDLEWARE WRAPPER, BELOW THE S-D10 STRIP, AND THAT IS
+  THE ONE PLACE IT WORKS.** A signed-out `/` is a content response, so every `Set-Cookie` on
+  it is deleted — which is exactly the response the installed app launches into. Writing it
+  inside the gate is the change that looks implemented and does nothing.
+- **`/handoff` IS GATED, `isPublic()` MUST NEVER LEARN IT, AND IT IS ON
+  `isOnboardingExempt()`'s LIST INSTEAD.** A FIRST sign-in has `onb === false`, so without
+  that clause a new querent answers nine onboarding screens **inside the overlay**, into a
+  session the app can never see: the feature failing for every new user and working for every
+  returning one.
+- **THE CLAIM IS KEYED ON THE DEVICE HASH, NEVER ON THE CHALLENGE** — the app never learns the
+  challenge, which went to the overlay. The design's §3 sketches `challenge = $1`; that is the
+  row lookup. The property it states is intact: the overlay's challenge binds and collects
+  nothing, the app's secret collects and binds nothing, and a session needs both.
+- **SINGLE USE IS THE DATABASE'S JOB.** One `update … where claimed_at is null … returning`,
+  and `bindHandoff`'s `user_id is null` is what stops somebody who came by the challenge
+  re-pointing a bound row at their own account.
+- **`/api/auth/handoff` NEEDED NO GATE EDIT** — `startsWith('/api/auth/')` is already public,
+  the clause `dev-session` lives under — and **every unsuccessful outcome is the same 204**,
+  because the alternative is an oracle for probing the table.
+- **THE ACCEPTANCE TEST IS ONE SENTENCE AND IT IS LOOP 6:** install to the home screen, sign
+  in, press `Done`, be signed in — then fully quit, relaunch, and still be signed in. **Unit
+  and integration tests cover the row and the hash and cannot see the thing that matters**,
+  because loop 5 has one cookie jar and iOS has two.
+
+Also still unverified on hardware: touch behaviour, safe-area insets, Add to Home Screen
+itself.

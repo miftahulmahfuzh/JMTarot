@@ -161,3 +161,75 @@ and integration tests can cover `auth_handoffs`'s single-use guarantee and the p
 derivation, and cannot see the thing that matters. The acceptance test is one sentence:
 **install to the home screen, sign in, press `Done`, and be signed in** — then fully quit,
 relaunch, and still be signed in.
+
+## 8. What shipped (2026-08-09), and where it diverged
+
+**Built and merged the same day this document was written.** §§1–7 are unedited; this
+section is the record of what the implementation had to decide that they did not, on the
+convention that a plan is amended by appending rather than by rewriting. The full account is
+in `docs/workstream-notes.md` under *The standalone sign-in handoff*; CLAUDE.md's binding
+short form is `## Signing in from the installed app`.
+
+### Three divergences
+
+1. **THE `jmt_pwa` COOKIE IS WRITTEN IN THE OUTER MIDDLEWARE WRAPPER, BELOW THE S-D10
+   COOKIE STRIP.** §2 step 1 says *"on that launch the server sets `jmt_pwa`"*, which reads
+   as a line inside the gate. A signed-out `/` is a CONTENT response, so
+   `middleware.ts`'s outer wrapper deletes every `Set-Cookie` on it — **the plausible
+   implementation of that sentence puts the cookie in the one place guaranteed to remove it,
+   silently.** `markInstalledApp()` therefore runs last, and
+   `src/lib/auth/handoff.contract.test.ts` asserts the two source positions in that order.
+
+2. **THE CLAIM IS KEYED ON THE DEVICE HASH ALONE.** §3's statement is
+   `where challenge = $1 and device_hash = $2`. **The app never learns the challenge** — it
+   is minted during a POST whose only response is the redirect §2 forbids setting a cookie on,
+   and that response goes to the overlay. So `claimHandoff(db, deviceHash)` resolves the
+   newest eligible challenge in an inner select and the outer `claimed_at is null` keeps
+   single use where §3 puts it, in the database. **The property §2's last paragraph states is
+   unchanged**: the overlay's challenge binds and collects nothing, the app's secret collects
+   and binds nothing, and a session needs both to have happened.
+
+3. **`/handoff` IS ON `isOnboardingExempt()`'s LIST.** Not mentioned anywhere in §§1–7, and
+   without it the feature fails for every NEW querent: `onb` is `false` at exactly the moment
+   the overlay arrives, so the gate would send them to `/onboarding` **inside the sheet**,
+   nine screens into a session the standalone app can never see. It is NOT public — binding a
+   session is its job — so it could not go in `isPublic()`, which short-circuits above every
+   signed-in arm.
+
+### §6's open items, resolved and still open
+
+- **The overlay copy is WRITTEN**, in both locales: `handoff.ready.title`, `.ready.action`,
+  `.stale.body`, `.continue`. **`Selesai` is iOS's own word and the sheet renders it in the
+  DEVICE's language**, so the copy names the word *and* the corner — the corner is the half
+  that is always true. A failed bind gets a different sentence, once, for all four reasons it
+  can fail. `Atau lanjutkan di sini` is the escape hatch for the visitor who has no sheet to
+  dismiss.
+- **The claim is silent, and that is still untested on a person.**
+- **The install-time-copy stopgap is still unverified.**
+- **`SESSION_TTL_HOURS` is still unset in Vercel.** Unchanged by this work.
+
+### Not designed here, and added on implementation
+
+- **`src/lib/auth/mint.ts`.** `dev-session` has hand-rolled the session JWE since W2; the
+  claim route needs the same encode in PRODUCTION, and two copies are two ways to get `salt`
+  — which is the cookie name and the HKDF salt — wrong. The encode is shared; the cookie
+  attributes stay at both call sites, because the dev route's `secure: false` is deliberate.
+- **The sixth sweep delete**, as §3 asks. It takes no retention variable: the window is five
+  minutes and is a property of the row, and it is housekeeping rather than a security control
+  — expiry is enforced by `expires_at > now()` in every statement, against Postgres's clock.
+- **A 60/minute per-IP bound on the claim**, because it fires from a `visibilitychange`
+  handler, which is the class of caller that runs far more often than anybody expects.
+- **No analytics event.** The taxonomy is closed with one owner per release (S-D13) and this
+  change has no owner in it. **A run of rows that are never claimed is the signal that the
+  claim leg is broken, and nothing reports that as a rate today.**
+
+### Verification
+
+§7 is unchanged and is still the acceptance test: **install to the home screen, sign in,
+press `Done`, and be signed in — then fully quit, relaunch, and still be signed in. It has
+not been run.** What a local dev server could answer was answered on the wire and is tabulated
+in `docs/workstream-notes.md`; the row that matters is that a claimed session cookie makes
+`GET /` answer `307 → /onboarding`, which is `readToken()` reading a real `uid` and `onb` out
+of a JWE this code minted. Unit, contract and integration tests cover the marker, the hash,
+single use, expiry, the re-bind refusal and the sweep — **and none of them can see the thing
+that matters, because loop 5 has one cookie jar and iOS has two.**

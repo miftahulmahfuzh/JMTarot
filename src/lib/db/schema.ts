@@ -2021,6 +2021,100 @@ export const chatRuns = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// auth_handoffs
+// ---------------------------------------------------------------------------
+
+/**
+ * **HOW A HOME-SCREEN APP GETS A SESSION COOKIE INTO ITS OWN JAR.**
+ * `docs/plans/2026-08-09-standalone-signin-handoff-design.md` §3 is this table's
+ * `## Schema deltas` section; `src/lib/auth/handoff.ts` carries the mechanism.
+ *
+ * The short version: iOS gives an installed web app a cookie jar seeded from
+ * Safari **at install time** and diverging from then on, and it hands the
+ * `accounts.google.com` hop to an `SFSafariViewController` overlay — so the
+ * session Google mints lands in the wrong jar and the installed app can never
+ * sign in. Nothing here moves a cookie. One row records that the app (which
+ * holds the device secret) started a sign-in that the overlay (which holds the
+ * challenge) finished, so the app can make one request the server answers with a
+ * session cookie of its own.
+ *
+ * **POSTGRES AND NOT REDIS, AND THE REASON IS OPERATIONAL RATHER THAN
+ * ARCHITECTURAL.** `redisConfigured()` can be false — `UPSTASH_REDIS_REST_URL`
+ * missing from the dashboard is the likeliest way this project ends up degraded,
+ * and it is silent — at which point the limiter falls back to per-instance
+ * memory. A handoff on that path would be written on one lambda and claimed on
+ * another, so sign-in would work roughly one time in three **with nothing
+ * logged**. Postgres is already a hard dependency of the sign-in path.
+ *
+ * **NOTHING IN THIS TABLE IS PERSONAL DATA EXCEPT `user_id`**, which is a foreign
+ * key that cascades. There is no email, no address, no user agent: a handoff
+ * knows that a device asked and that a session answered, and deliberately nothing
+ * about either.
+ */
+export const authHandoffs = pgTable(
+  'auth_handoffs',
+  {
+    /**
+     * The value that travels in the URL Google returns to. **THE PRIMARY KEY IS
+     * THE SECRET-TO-NOBODY HALF**, on purpose: it is the only part of this
+     * mechanism that is ever written down anywhere a log or a `Referer` could
+     * reach, and it grants nothing on its own.
+     *
+     * 256 bits of base64url from `newSecret()`. `text` and not `uuid`, because a
+     * uuid is 122 bits and is a shape people assume is a database identifier and
+     * therefore safe to print.
+     */
+    challenge: text('challenge').primaryKey(),
+    /**
+     * `sha256(jmt_pwa)`, hex. **THE AUTHORISING HALF, AND THE SECRET ITSELF IS
+     * NEVER STORED** — the claim hashes what the browser presented and compares,
+     * so a dump of this table cannot be replayed into a session.
+     */
+    deviceHash: text('device_hash').notNull(),
+    /**
+     * NULL until the overlay has been through Google and filled it in. A row with
+     * a NULL here is a sign-in that was started and never finished, which is the
+     * ordinary shape of an abandoned consent screen.
+     *
+     * `cascade`, not `set null`: a handoff for a user who no longer exists is not
+     * a fact worth keeping, and leaving it would mean a row that can never be
+     * claimed and can never be explained.
+     */
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: tsCol('created_at').notNull().defaultNow(),
+    /**
+     * `created_at + HANDOFF_TTL_SECONDS`, written by the caller.
+     *
+     * **A COLUMN AND NOT A `created_at + interval` IN EVERY QUERY**, so the TTL
+     * that applied to a row is a property of the row rather than of whatever the
+     * constant happened to be when somebody ran the statement.
+     */
+    expiresAt: tsCol('expires_at').notNull(),
+    /**
+     * **SINGLE USE IS ENFORCED HERE AND NOT BY APPLICATION ORDERING.** The claim
+     * is one `update … where claimed_at is null … returning user_id`, so two tabs
+     * racing produce one session and one empty result. A check-then-update would
+     * be the same code with a window in it.
+     */
+    claimedAt: tsCol('claimed_at'),
+  },
+  (t) => [
+    /**
+     * **THE CLAIM QUERY, AND THE ONLY INDEX THIS TABLE NEEDS.** The app presents a
+     * device secret and nothing else — it never learns the challenge, which went
+     * to the overlay — so every read is by hash, newest first.
+     *
+     * Not partial on `claimed_at is null`: rows live five minutes and are swept
+     * nightly, so the table is its own working set and a partial index would buy
+     * nothing but a second thing to be wrong.
+     */
+    index('auth_handoffs_device_idx').on(t.deviceHash, t.createdAt.desc()),
+    /** The nightly sweep's sixth delete. */
+    index('auth_handoffs_expires_idx').on(t.expiresAt),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Row types
 //
 // `X` is what a select returns; `NewX` is what an insert accepts (columns with
@@ -2076,3 +2170,5 @@ export type ChatMessage = typeof chatMessages.$inferSelect;
 export type NewChatMessage = typeof chatMessages.$inferInsert;
 export type ChatRun = typeof chatRuns.$inferSelect;
 export type NewChatRun = typeof chatRuns.$inferInsert;
+export type AuthHandoff = typeof authHandoffs.$inferSelect;
+export type NewAuthHandoff = typeof authHandoffs.$inferInsert;

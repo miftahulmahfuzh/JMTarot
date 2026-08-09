@@ -38,14 +38,15 @@ const ROUTE = readFileSync(
 const CODE = ROUTE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 
 describe('the cron sweep route', () => {
-  it('does all five deletes, not one', () => {
-    // Reconciliation §7.8: ONE job, FIVE deletes now. Five separate cron entries
-    // would be five things to notice have stopped working.
+  it('does all six deletes, not one', () => {
+    // Reconciliation §7.8: ONE job, SIX deletes now. Six separate cron entries
+    // would be six things to notice have stopped working.
     expect(ROUTE).toContain('delete from users');
     expect(ROUTE).toContain('update moderation_flags');
     expect(ROUTE).toContain('delete from events');
     expect(ROUTE).toContain('deleteOrphanTranslations');
     expect(ROUTE).toContain('delete from llm_calls');
+    expect(ROUTE).toContain('deleteExpiredHandoffs');
   });
 
   it('casts every interval parameter to int', () => {
@@ -187,14 +188,36 @@ describe('the fourth delete (V2)', () => {
   });
 
   it('keeps the header’s numbered list in step with the number of deletes', () => {
-    // The header opens with a stated count. It said THREE, V2 made it four, and
-    // A3 makes it five. **A header that miscounts its own body is how the next
-    // person concludes the file is untrustworthy**, so the sentence is EDITED
-    // rather than appended to.
-    expect(ROUTE).toMatch(/FIVE DELETES/);
-    expect(ROUTE).not.toMatch(/FOUR DELETES/);
+    // The header opens with a stated count. It said THREE, V2 made it four, A3
+    // made it five, and the standalone sign-in handoff makes it six. **A header
+    // that miscounts its own body is how the next person concludes the file is
+    // untrustworthy**, so the sentence is EDITED rather than appended to.
+    expect(ROUTE).toMatch(/SIX DELETES/);
+    expect(ROUTE).not.toMatch(/FIVE DELETES/);
     expect(ROUTE).toMatch(/^\s*\*\s*4\.\s/m);
     expect(ROUTE).toMatch(/^\s*\*\s*5\.\s/m);
+    expect(ROUTE).toMatch(/^\s*\*\s*6\.\s/m);
+  });
+});
+
+describe('the sixth delete (the standalone sign-in handoff)', () => {
+  it('reaps expired handoffs, and reports the count', () => {
+    // The counts are what tell you the job is alive. A key that is always zero is
+    // a sweep that has silently stopped matching anything -- or, here, a feature
+    // nobody is using, which is worth being able to tell apart.
+    expect(ROUTE).toContain('deleteExpiredHandoffs');
+    expect(ROUTE).toContain('expiredHandoffs');
+  });
+
+  it('takes no retention variable, because the window is a property of the row', () => {
+    /*
+     * `expires_at` is written at insert from `HANDOFF_TTL_SECONDS`. A
+     * `HANDOFF_RETENTION_DAYS` here would be a SECOND opinion about the same
+     * window, settable in a dashboard, and `llm_calls`'s own parser records what
+     * happens when one of those defaults to zero.
+     */
+    expect(CODE).not.toContain('HANDOFF_RETENTION');
+    expect(CODE).not.toMatch(/handoff[^`]*make_interval/i);
   });
 });
 

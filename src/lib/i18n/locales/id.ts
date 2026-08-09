@@ -281,6 +281,36 @@ const id = {
     'Akun itu tidak bisa dipakai untuk masuk. Coba akun Google lain.',
   'login.error.generic': 'Tidak bisa masuk sekarang. Coba lagi sebentar.',
 
+  /*
+   * ── THE OVERLAY PAGE (2026-08-09) ──────────────────────────────────────────
+   *
+   * Four strings, and they are read by somebody standing inside a browser sheet
+   * that opened on top of the app, immediately after Google. They must say one
+   * thing: press the button at the top left, which belongs to iOS.
+   *
+   * **`Selesai` IS iOS's OWN WORD AND WE DO NOT CONTROL IT.** The sheet renders
+   * it in the DEVICE's language, which is usually this one and is not always --
+   * an Indonesian querent with an English phone sees `Done`. So
+   * `handoff.ready.action` names the word AND the corner, and the corner is the
+   * half that is always true.
+   *
+   * No "berhasil!", no exclamation mark, no explanation of cookie jars. The
+   * querent did not know there was a problem and telling them now would be
+   * describing our bug in the middle of their sign-in.
+   */
+  'handoff.ready.title': 'Kamu sudah masuk.',
+  'handoff.ready.action': 'Tekan Selesai di pojok kiri atas untuk kembali ke JMTarot.',
+  /*
+   * The row was gone, used, or already bound. **ONE SENTENCE FOR ALL OF THEM**,
+   * because the remedy is identical and the difference is only interesting to
+   * somebody probing the table. It says where to go, not what went wrong.
+   */
+  'handoff.stale.body':
+    'Tautan ini sudah lewat. Tutup halaman ini, lalu coba masuk lagi dari JMTarot.',
+  /* For the visitor who has no Selesai button to press -- an ordinary tab rather
+     than the sheet. Quiet, and never the main instruction. */
+  'handoff.continue': 'Atau lanjutkan di sini',
+
   // --- Error pages ----------------------------------------------------------
   'error.notFound.title': 'Halaman itu tidak ada.',
   'error.notFound.body': 'Mungkin tautannya salah, atau halamannya sudah pindah.',

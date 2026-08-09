@@ -150,6 +150,21 @@ export function PrivacyEn({ effective }: { effective: string }) {
             language cookie, and the request logs our host keeps &mdash; IP address, browser, and
             the path you asked for.
           </P>
+          {/*
+            2026-08-09. THE THIRD COOKIE, NAMED BECAUSE 2.6 IS A LIST AND A LIST THAT
+            IS SHORT BY ONE IS THE KIND OF THING THIS DOCUMENT CANNOT AFFORD. It is
+            `jmt_pwa` -- 256 random bits, httpOnly, set only on a home-screen launch --
+            and it exists because iOS gives an installed web app its own cookie jar, so a
+            sign-in completed in the browser could otherwise never reach the app. It
+            identifies a JAR and not a person: `src/lib/auth/handoff.ts` has the whole
+            mechanism.
+          */}
+          <P>
+            If you add JMTarot to your home screen there is one more: a random marker
+            (httpOnly) that exists only inside that installed app. It holds nothing about you
+            &mdash; it is what lets a sign-in you completed in the browser reach the app,
+            which on iOS it otherwise cannot.
+          </P>
           <P>We never write the text of your question to a log ourselves.</P>
         </SubClause>
 

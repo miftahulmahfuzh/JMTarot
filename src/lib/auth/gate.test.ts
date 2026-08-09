@@ -220,11 +220,56 @@ describe('isOnboardingExempt', () => {
     expect(isOnboardingExempt('/api/onboarding/answer')).toBe(true);
   });
 
+  /**
+   * ── THE STANDALONE SIGN-IN HANDOFF (2026-08-09) ─────────────────────────────
+   *
+   * **THE FIRST SIGN-IN IS THE CASE THIS CLAUSE EXISTS FOR, AND IT IS THE ONE
+   * NOBODY WOULD TEST BY HAND.** `/handoff` is reached inside an
+   * `SFSafariViewController` overlay, immediately after Google, by a querent whose
+   * `onb` is `false` because they have never been here before. Without the
+   * exemption they would be redirected to `/onboarding` INSIDE the overlay and
+   * answer nine screens in a browser whose session the standalone app can never
+   * see -- so the feature would fail for every new user and work for every
+   * returning one, which is the worst available way for it to fail.
+   */
+  it('exempts /handoff, so a FIRST sign-in binds instead of onboarding in the overlay', () => {
+    expect(isOnboardingExempt('/handoff')).toBe(true);
+    expect(at('/handoff', halfway)).toEqual({ kind: 'next' });
+  });
+
   it('exempts nothing else', () => {
     expect(isOnboardingExempt('/')).toBe(false);
     expect(isOnboardingExempt('/api/reading')).toBe(false);
     expect(isOnboardingExempt('/account')).toBe(false);
     expect(isOnboardingExempt('/onboarding-bypass')).toBe(false);
+    // The `'/s/'` precedent: an exact match and never a prefix, so a second route
+    // cannot become exempt by being spelled similarly.
+    expect(isOnboardingExempt('/handoffs')).toBe(false);
+    expect(isOnboardingExempt('/handoff/x')).toBe(false);
+  });
+});
+
+describe('/handoff is gated, and isPublic() must never learn it', () => {
+  /*
+   * **IT NEEDS A SESSION -- BINDING ONE IS ITS ENTIRE JOB.** `isPublic()`
+   * short-circuits `decide()` above every signed-in arm, so putting it there
+   * would leave the page rendering for a stranger who typed the URL, with no user
+   * to bind and nothing to say. The exemption above is the right list; this is the
+   * assertion that keeps the two apart.
+   */
+  it('is not public, in either tree', () => {
+    expect(isPublic('/handoff')).toBe(false);
+    expect(isPublic('/en/handoff')).toBe(false);
+  });
+
+  it('sends a signed-out visitor to /login rather than rendering', () => {
+    expect(at('/handoff', signedOut)).toEqual({ kind: 'redirect', to: '/login' });
+  });
+
+  it('lets a settled querent through, because a second sign-in is ordinary', () => {
+    // A returning querent whose session lapsed signs in from the installed app
+    // exactly as a new one does, and `onb` is true for them.
+    expect(at('/handoff', settled)).toEqual({ kind: 'next' });
   });
 });
 

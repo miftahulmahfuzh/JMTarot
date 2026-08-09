@@ -4,8 +4,9 @@ import { sql } from 'drizzle-orm';
 import { ERASURE_GRACE_DAYS } from '@/lib/db/queries/profile';
 
 /**
- * **ONE CRON JOB, FIVE DELETES** (reconciliation §7.8 and §7.9b; V2 §8 added the
- * fourth; A3, v0.5.0, added the fifth).
+ * **ONE CRON JOB, SIX DELETES** (reconciliation §7.8 and §7.9b; V2 §8 added the
+ * fourth; A3, v0.5.0, added the fifth; the standalone sign-in handoff added the
+ * sixth on 2026-08-09).
  *
  * Not four jobs — and **the reason has changed, so the sentence is corrected rather
  * than left standing** (reconciliation `[R3]`, v0.7.0). This used to read *"Vercel's
@@ -68,6 +69,21 @@ import { ERASURE_GRACE_DAYS } from '@/lib/db/queries/profile';
  *      (whose query is monthly, not per-request), then a daily rollup table for
  *      rows older than 90 days, which is a v0.6.0 schema and is named here only
  *      so nobody invents it in an emergency.
+ *   6. **Expired `auth_handoffs`** (2026-08-09,
+ *      `docs/plans/2026-08-09-standalone-signin-handoff-design.md` §3).
+ *
+ *      **THE ONLY ONE OF THE SIX WITH NO RETENTION VARIABLE, BECAUSE ITS WINDOW
+ *      IS FIVE MINUTES AND IS A PROPERTY OF THE ROW.** `expires_at` is written at
+ *      insert time from `HANDOFF_TTL_SECONDS`; this deletes what is already past
+ *      it, so there is no interval to parse here and nothing for a typo in the
+ *      Vercel dashboard to zero out.
+ *
+ *      **IT IS HOUSEKEEPING AND NEVER A SECURITY CONTROL.** An expired row is
+ *      already unclaimable -- every statement in `queries/handoff.ts` carries
+ *      `expires_at > now()`, against POSTGRES's clock -- so a night on which this
+ *      does not run costs disk and nothing else. Do not let a future reader
+ *      conclude the expiry is enforced here; it is enforced by the `where`
+ *      clause, and this is the tidying up after it.
  *
  * **`admin_access_log` IS NEVER SWEPT, AND ITS ABSENCE IS A TESTED PROPERTY.**
  * §9.14: an audit trail with a delete path is the audit trail's absence, and a
@@ -179,6 +195,7 @@ export async function GET(request: Request) {
     deletedEvents: 0,
     orphanedTranslations: 0,
     deletedLlmCalls: 0,
+    expiredHandoffs: 0,
   };
   const failures: string[] = [];
 
@@ -283,6 +300,34 @@ export async function GET(request: Request) {
      */
     failures.push('llm_calls');
     console.error('[cron] llm_calls TTL failed', err instanceof Error ? err.name : 'unknown');
+  }
+
+  /*
+   * **THE SIXTH DELETE.** A handoff row lives five minutes, so on a normal night
+   * this matches the sign-in attempts of one day and nothing older.
+   *
+   * A query function rather than inline SQL, for `deleteOrphanTranslations`'s
+   * reason: it has its own integration test, and the property worth testing --
+   * that a row inside its window SURVIVES -- is the one an inline statement here
+   * could never assert. `sweep.contract.test.ts` asserts it is still called.
+   *
+   * **NOT IN THE ORDERING ARGUMENT ABOVE, AND THAT IS ITSELF A FACT:**
+   * `auth_handoffs.user_id` CASCADEs, so the user purge at the top already removed
+   * every row belonging to a purged account before this line runs. Position is
+   * therefore free here, unlike for the fourth and fifth.
+   */
+  try {
+    const { deleteExpiredHandoffs } = await import('@/lib/db/queries/handoff');
+    result.expiredHandoffs = await deleteExpiredHandoffs(db);
+  } catch (err) {
+    /*
+     * The error's CLASS only. This table holds a challenge, a hash and a user id
+     * and no querent text at all -- and the rule still applies, for the reason the
+     * `llm_calls` block gives: a `catch` that is an exception to the rule is a
+     * `catch` somebody copies into one that is not.
+     */
+    failures.push('handoffs');
+    console.error('[cron] handoff sweep failed', err instanceof Error ? err.name : 'unknown');
   }
 
   /*

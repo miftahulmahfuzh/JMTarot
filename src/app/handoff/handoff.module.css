@@ -1,0 +1,94 @@
+/*
+ * The overlay page. It is rendered inside `SFSafariViewController`, which is a
+ * sheet with its own chrome above it -- so this is the one screen in the app that
+ * is deliberately short: everything must sit above the fold on an iPhone SE with a
+ * browser toolbar over the top of it, because the querent is being asked to look
+ * up at a button we do not draw.
+ *
+ * Every value is a token. `login.module.css` is the shape this borrows.
+ */
+.shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px calc(32px + env(safe-area-inset-bottom));
+}
+
+.card {
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  text-align: center;
+}
+
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-section-label);
+  text-transform: uppercase;
+  color: var(--gold);
+  white-space: nowrap;
+}
+
+.eyebrow::before,
+.eyebrow::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--gold-hairline);
+}
+
+.title {
+  font-family: var(--font-display), serif;
+  font-weight: 500;
+  font-size: var(--fs-title);
+  letter-spacing: var(--ls-title);
+  color: var(--gold-text);
+  margin: 0;
+}
+
+/*
+ * THE INSTRUCTION, AND IT IS THE ONLY THING ON THIS PAGE THAT MATTERS. Larger
+ * than the tagline it replaces, because it is not context -- it is the one action
+ * the querent has to take, and it names a control that belongs to iOS rather than
+ * to us.
+ */
+.instruction {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--text);
+  margin: 0;
+  max-width: 28ch;
+}
+
+.instruction strong {
+  color: var(--gold-text);
+  font-weight: 500;
+}
+
+/*
+ * The escape hatch. `--muted` and small on purpose: it is correct for the rare
+ * visitor who is NOT in an overlay -- an ordinary Safari tab that somehow carries
+ * the marker cookie -- and it must not compete with the instruction for the
+ * querent this page was written for.
+ */
+.fallback {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.fallback a {
+  color: var(--gold);
+}

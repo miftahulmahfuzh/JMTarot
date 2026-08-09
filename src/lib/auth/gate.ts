@@ -177,7 +177,33 @@ export function isOnboardingExempt(pathname: string): boolean {
   return (
     pathname === '/onboarding' ||
     pathname.startsWith('/onboarding/') ||
-    pathname.startsWith('/api/onboarding/')
+    pathname.startsWith('/api/onboarding/') ||
+    /*
+     * ── THE STANDALONE SIGN-IN HANDOFF (2026-08-09) ──────────────────────────
+     *
+     * **`/handoff` IS NOT PUBLIC AND MUST NEVER BE.** It needs a session — that is
+     * its entire job, binding the one Google just minted to a waiting row — so it
+     * belongs on this list and not in `isPublic()`, which short-circuits
+     * `decide()` above every signed-in arm.
+     *
+     * **IT IS HERE BECAUSE THE FIRST SIGN-IN IS THE CASE THAT MATTERS.** A brand
+     * new querent has `onb === false` at exactly this moment, so without this
+     * clause the overlay would be redirected to `/onboarding` and the nine
+     * screens would be answered INSIDE `SFSafariViewController` — after which the
+     * standalone app is still signed out, because the handoff was never bound and
+     * the session is in the wrong jar. The whole feature would fail for every new
+     * user and work for every returning one, which is the worst way for it to
+     * fail: it looks like it works.
+     *
+     * The correct order is bind, press `Done`, claim, and let the app's OWN gate
+     * send them to `/onboarding` — where the answers land in the jar that will
+     * still have them tomorrow.
+     *
+     * `=== '/handoff'` and never a prefix. There is one route under it and there
+     * must not be a second; `gate.test.ts` carries `/handoffs` as the negative
+     * control, on `'/s/'`'s precedent.
+     */
+    pathname === '/handoff'
   );
 }
 

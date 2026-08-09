@@ -1,6 +1,10 @@
+import { cookies } from 'next/headers';
 import { signIn } from '@/lib/auth/auth';
+import { PWA_COOKIE } from '@/lib/auth/handoff';
+import { handoffRedirect } from '@/lib/auth/handoffMint';
 import { track } from '@/lib/analytics/track';
 import { getT } from '@/lib/i18n/t';
+import { HandoffClaim } from './HandoffClaim';
 import styles from './SignInForm.module.css';
 
 /**
@@ -42,6 +46,32 @@ import styles from './SignInForm.module.css';
  * **`from` IS `'landing'` OR ABSENT, NEVER `'login'`** -- `public.link_clicked`'s
  * prop union does not contain that value, and this measures the PUBLIC funnel.
  * The taxonomy is unchanged at 70 names with no new entry (S-D13).
+ *
+ * ── IT ALSO OWNS THE STANDALONE HANDOFF, BOTH ENDS OF IT (2026-08-09) ────────
+ *
+ * **THE INSTALLED HOME-SCREEN APP COULD NEVER SIGN IN**, for three releases,
+ * because iOS gives it a cookie jar seeded from Safari at install time and never
+ * again, and hands `accounts.google.com` to an `SFSafariViewController` overlay --
+ * so Google's session lands in a jar the standalone shell cannot see.
+ * `src/lib/auth/handoff.ts` carries the mechanism and the seven measurements
+ * behind it. Two lines of it are here:
+ *
+ *   1. `handoffRedirect()` in the action, which sends Google to `/handoff?c=…`
+ *      instead of the ordinary destination -- but ONLY when `jmt_pwa` is present,
+ *      and doing no I/O at all when it is not.
+ *   2. `<HandoffClaim />`, mounted only for the installed app, which collects the
+ *      session on the app's own request once the querent presses `Done`.
+ *
+ * **THIS COMPONENT IS THE RIGHT OWNER FOR THE SAME REASON IT OWNS THE CONSENT
+ * LINE:** it is the one control that starts a sign-in, it renders on exactly the
+ * two surfaces a signed-out standalone app can be looking at, and splitting the
+ * mint from the claim across two files is how one of them gets changed alone.
+ *
+ * **THE "NO CLIENT JAVASCRIPT" PROPERTY ABOVE IS UNCHANGED FOR EVERY VISITOR WHO
+ * IS NOT THE INSTALLED APP**, which is every crawler and every browser: the claim
+ * component is behind the cookie check, so the landing page's primary control
+ * still ships nothing at all to a stranger. For the installed app it is required,
+ * and there is no version of this that works without it.
  */
 export async function SignInForm({
   redirectTo,
@@ -60,6 +90,13 @@ export async function SignInForm({
   from?: 'landing';
 }) {
   const t = await getT();
+  /*
+   * READ AT RENDER ONLY TO DECIDE WHETHER TO MOUNT THE CLAIMER. The action below
+   * reads the cookie again for itself, on purpose: a launch can set `jmt_pwa`
+   * between this render and that submit, and an action that trusted a value
+   * captured here would miss the very first sign-in after an install.
+   */
+  const installedApp = (await cookies()).get(PWA_COOKIE) !== undefined;
 
   return (
     <form
@@ -67,7 +104,14 @@ export async function SignInForm({
       action={async () => {
         'use server';
         if (from) track('public.link_clicked', { from, to: 'sign_in', slug: null });
-        await signIn('google', { redirectTo });
+        /*
+         * `redirectTo` UNCHANGED FOR EVERY BROWSER BUT THE INSTALLED APP. There,
+         * the deep link is traded for the handoff and the querent lands on `/`
+         * after the claim -- which costs a standalone app nothing, because its
+         * `start_url` IS `/` and it is the one client that never arrives on a
+         * deep link with no session.
+         */
+        await signIn('google', { redirectTo: await handoffRedirect(redirectTo) });
       }}
     >
       <button className={styles.submit} type="submit">
@@ -83,6 +127,11 @@ export async function SignInForm({
         {t('login.legal.lead')} <a href="/terms">{t('common.terms')}</a>{' '}
         {t('login.legal.and')} <a href="/privacy">{t('common.privacy')}</a>.
       </p>
+
+      {/* Renders nothing. It listens for the querent coming back from the
+          overlay and collects the session on the app's own request. Mounted
+          only for the installed app, so no other visitor pays a byte for it. */}
+      {installedApp ? <HandoffClaim /> : null}
     </form>
   );
 }

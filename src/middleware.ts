@@ -2,6 +2,12 @@ import NextAuth from 'next-auth';
 import { NextResponse } from 'next/server';
 import { authConfig } from '@/lib/auth/config';
 import { decide, LEGACY_SESSION_COOKIE } from '@/lib/auth/gate';
+import {
+  PWA_COOKIE,
+  PWA_COOKIE_MAX_AGE,
+  isPwaLaunch,
+  newSecret,
+} from '@/lib/auth/handoff';
 import { readToken } from '@/lib/auth/token';
 import { contentRewrite } from '@/lib/i18n/prefix';
 import {
@@ -292,7 +298,62 @@ export default async function middleware(
     response.headers.delete('set-cookie');
     response.headers.delete(STRIP_COOKIES);
   }
+  if (response instanceof Response) markInstalledApp(request, response);
   return response;
+}
+
+/**
+ * Give the home-screen app a name for itself.
+ *
+ * ── WHY THIS RUNS IN THE OUTER WRAPPER, BELOW THE STRIP ─────────────────────
+ *
+ * **A SIGNED-OUT `/` IS A CONTENT RESPONSE, SO EVERY `Set-Cookie` ON IT IS
+ * DELETED SIX LINES ABOVE.** That is S-D10 working exactly as designed — a public
+ * page sets nothing and stays edge-cacheable — and it is also precisely the
+ * response the installed app launches into. Writing the cookie inside the gate
+ * would put it in the one place guaranteed to remove it, silently, with the
+ * feature looking implemented. So this is the only position in the file where it
+ * can be written, and it is written LAST on purpose.
+ *
+ * **IT DOES NOT REOPEN S-D10.** The exemption is one URL that exists nowhere but
+ * in the manifest's `start_url`, it fires at most once per install (the guard is
+ * the cookie's own absence), and `/` is already the one content route with no
+ * `next.config.ts` cache entry — deliberately uncacheable for three reasons that
+ * predate this one. No other public content path can reach this branch, because
+ * `isPwaLaunch` answers only for `/`.
+ *
+ * ── WHAT THE COOKIE IS, AND WHAT IT IS NOT ──────────────────────────────────
+ *
+ * 256 opaque bits. It authenticates nobody and grants nothing on its own: it is
+ * the standalone jar's name for itself, and its only use is matching a row that
+ * some other browser has already bound to a real session. `src/lib/auth/handoff.ts`
+ * is the whole mechanism; the short version is that iOS gives an installed web app
+ * a cookie jar seeded from Safari at install time and never again, and hands the
+ * `accounts.google.com` hop to an overlay — so the session Google mints lands
+ * somewhere the app cannot see, and the installed app could never sign in.
+ *
+ * `newSecret()` is Web Crypto, which is why `handoff.ts` refuses `node:crypto`:
+ * this line runs on the edge.
+ */
+function markInstalledApp(request: Parameters<typeof gate>[0], response: Response): void {
+  if (!isPwaLaunch(request.nextUrl.pathname, request.nextUrl.searchParams)) return;
+  if (request.cookies.has(PWA_COOKIE)) return;
+
+  /*
+   * Serialised by hand rather than through `NextResponse.cookies`, because by
+   * this point the object is whatever `auth()` rebuilt and the only contract it
+   * is guaranteed to satisfy is `Response`. `append`, never `set`: the sliding
+   * session cookie may already be on this response and must survive.
+   */
+  const attributes = [
+    `${PWA_COOKIE}=${newSecret()}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    `Max-Age=${PWA_COOKIE_MAX_AGE}`,
+  ];
+  if (process.env.NODE_ENV === 'production') attributes.push('Secure');
+  response.headers.append('set-cookie', attributes.join('; '));
 }
 
 /**
