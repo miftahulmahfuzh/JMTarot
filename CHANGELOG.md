@@ -5,6 +5,235 @@ All notable changes to JMTarot are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.7.1] - 2026-08-09
+
+**The installed app could never sign in, and this is the release that measured why.** For
+three releases `CLAUDE.md` called it *"the largest unverified risk in the project"* and said
+only a real iPhone could settle it. A phone was found, seven measurements were taken, the
+guess was right — and **both of those sentences are now false, so they are corrected in
+place rather than left standing.** iOS seeds a home-screen web app's cookie jar from Safari
+**at install time** and the two diverge from then on, and it hands the
+`accounts.google.com` hop to an `SFSafariViewController` overlay. Google's session therefore
+lands in a jar the standalone shell cannot see, for ever, through every retry, **with the
+consent screen succeeding every single time** — which is why three releases of retrying
+never found it.
+
+**Nothing in the fix moves a cookie between jars, because nothing can.** `start_url` carries
+a marker; middleware answers that launch with `jmt_pwa`, 256 opaque bits existing only in
+the standalone jar; the sign-in action writes an `auth_handoffs` row keyed on their hash;
+the overlay's `/handoff?c=` binds a `user_id` to it; and **the app claims it on its OWN
+request**, where a `Set-Cookie` lands in the app's jar by definition. The measurement that
+makes any of it possible is the one nobody predicts: **`scope` does not govern what iOS
+punts to the overlay — the ORIGIN does**, so a same-origin claim stays inside the app
+however far outside `scope` it is. The probe that found it was built on the opposite
+assumption, and **its failure to reproduce the punt is the load-bearing result**, not a
+wasted probe.
+
+**Three of the eleven commits are one bug the querent reported in their own words and was
+talked past.** *"The typing field got cropped, so I cannot see the send button"* was answered
+first with a keyboard fix, because the reader arrived holding a vertical theory. It was a
+**width** bug: the composer's reply stub was `white-space: nowrap`, which makes an element's
+min-content width equal its max-content width, and that unbreakable minimum reaches
+`.shell`'s auto-sized track, whose `overflow: hidden` then eats `Kirim` off the right-hand
+edge. **A report from the only person holding the instrument outranks a structural argument
+from somebody holding none**, a green loop-4 measurement is evidence about *Chrome*, and **a
+comment claiming two things are one mechanic is the first place to look** — this one said the
+stub and the in-bubble quote *"read as one mechanic"* while they were built opposite.
+
+Eleven commits. **One migration** (`0015`), taking the schema from twenty-one tables to
+**twenty-two**. `LLMOp` unchanged at 13, kill switches unchanged at 7, prompt fences
+unchanged at 8, the event taxonomy unchanged at 76 — a release that adds a route, a page, a
+table and a cookie and **adds nothing to any register**. **No new dependency.** 3675 unit
+tests across 193 files; 659 integration across 46.
+
+### Added
+
+- **`src/lib/auth/handoff.ts` — the mechanism, and the only file that owns its strings.**
+  EDGE-SAFE and **Web Crypto only, never `node:crypto`**, because middleware runs
+  `newSecret()`. It holds `START_URL`, `PWA_COOKIE`, `PWA_COOKIE_MAX_AGE`, `isPwaLaunch()`
+  and `HANDOFF_TTL_SECONDS = 300`. **`manifest.ts` imports `START_URL` from here** rather
+  than writing it out, because middleware has to recognise exactly what the manifest emits
+  and two literals that must agree are two literals that will not.
+- **`handoffMint.ts` (NODE-ONLY, never throws) and `mint.ts` (the JWE encode).** `mint.ts`
+  extracts what `dev-session` had hand-rolled since W2, because the claim route needs it **in
+  production** and two copies are two ways to get `salt` wrong — it is the cookie name *and*
+  the HKDF salt, so encoding with the wrong one decrypts to nothing and reads exactly like a
+  bad `AUTH_SECRET`.
+- **`auth_handoffs` and migration `0015`** — `challenge` as the primary key, `device_hash`,
+  a nullable `user_id` that CASCADEs, `expires_at`, `claimed_at`, and two indexes. Twenty-one
+  tables to twenty-two.
+- **`/handoff`, `HandoffClaim.tsx` and `POST /api/auth/handoff`.** The overlay binds, the app
+  claims. **The claim is keyed on the DEVICE HASH and never on the challenge**, because the
+  app never learns the challenge — it was minted during a POST whose only response went to the
+  overlay. The property the design stated is intact: the overlay's challenge binds and
+  collects nothing, the app's secret collects and binds nothing, and **a session needs both.**
+- **`jmt_pwa`, written in the OUTER middleware wrapper, below the S-D10 strip.** A signed-out
+  `/` is a content response, so every `Set-Cookie` on it is deleted six lines above — and that
+  is precisely the response the installed app launches into. **Every plausible reading of "the
+  server sets the cookie" puts it inside the gate, four lines above the delete, with the
+  feature looking implemented and doing nothing.**
+- **A sixth delete in `/api/cron/sweep`, and the only one of the six with no retention
+  variable**, because its window is five minutes and is a property of the row. **It is
+  housekeeping and never a security control** — every statement in `queries/handoff.ts`
+  carries `expires_at > now()` against Postgres's clock, so a night this does not run costs
+  disk and nothing else.
+- **`replyPreview()` and `REPLY_PREVIEW_WORDS = 8` in `chatSurface.ts`.** A different ceiling
+  from the in-bubble quote's 120 characters, on purpose: **a quote in a bubble is content and
+  is read; the stub above the box is a label on a control**, read once at a glance with the
+  keyboard up. A word can be a 96-character URL, so the word cap is not a length cap and
+  `clamp` still applies.
+- **`src/app/chat/keyboardInset.ts` and `--kb-inset`.** `100dvh` tracks the browser's own
+  chrome and **cannot see the software keyboard** — iOS shrinks the visual viewport and leaves
+  the layout viewport alone. It measures the room's own rect against `visualViewport` and
+  derives nothing from `innerHeight`, so the toolbar, both safe-area insets, the pan and `dvh`
+  itself cancel. **Applied as a bottom MARGIN, never a height**, so it can only shorten the
+  room and an unset variable is byte-identical to the layout that shipped.
+- **An optional `onDismiss` on `RefusalNotice`, passed by the chat room alone.** The two
+  mounts are not the same situation: on the draw screen the refusal REPLACES `ReadingPanel`'s
+  prose slot, so closing it leaves a blank panel with nothing to say.
+- **Two documents.** `docs/plans/2026-08-09-standalone-signin-handoff-design.md` — §1 is where
+  the seven measurements live, because **the numbers are the artefact and the HTML was only the
+  instrument** — and `docs/postmortems/2026-08-09-ios-standalone-oauth-cookie-jar.md`, written
+  to be **copied out to the next app**, since any installable web app signing in with a
+  third-party IdP on iOS will meet this.
+- **A third cookie named in `/privacy` 2.6, both locales.** That clause is a list, and **a list
+  that is short by one is the thing this document can least afford.**
+
+### Changed
+
+- **`start_url` is `/?src=pwa`, a query parameter and never a second path.** `/` is a canonical
+  indexed address carrying an `hreflang` set; a `/app` twin would be a duplicate of the landing
+  page in the search index. `contentRewrite` is handed a pathname alone, so the marker is
+  invisible to the locale machinery by construction.
+- **`/handoff` joined `isOnboardingExempt()`, and it is `=== '/handoff'` and never a prefix.**
+  **The first sign-in is the case that matters**: a brand-new querent has `onb === false` at
+  exactly that moment, so without the clause the gate sends them to answer nine onboarding
+  screens **inside the overlay**, into a session the app can never see — the feature failing for
+  every new user and working for every returning one, **which is the worst way for it to fail
+  because it looks like it works.**
+- **`SignInForm` owns both ends of the handoff**, for the same reason it owns the consent line:
+  splitting the mint from the claim across two files is how one of them gets changed alone. **The
+  landing page still ships no client JavaScript to anyone who is not the installed app** — the
+  claim component sits behind the cookie check — and the action re-reads the cookie rather than
+  trusting the value captured at render, because a launch can set it in between and that is the
+  very first sign-in after an install.
+- **The chat header is one 57px row, down from 154px at 390 and 176px at 320** — ~38% of an
+  iPhone SE's `dvh` before a single bubble, on the screen whose entire content is a scrolling
+  log. Flat at every width and in both locales now, because `.back`'s 44px tap target is the
+  tallest thing in it. **The rule this encodes: copy a person reads ONCE does not belong in
+  sticky chrome.** Both lines that left looked reasonable on their own, which is how a header
+  reaches 176px without anybody deciding it should.
+- **`common.disclaimer.short` moved from the header into the top of the log** — still the one
+  owner, still read on entry because an empty room does not scroll, but in flow rather than in
+  chrome that charges for it on every frame.
+- **`chat.empty.body` names the three readers**, taking over from the deleted `chat.hint`; after
+  that every bubble names its own author.
+- **The overlay copy was corrected the same day it shipped.** It said *"Tekan Selesai di pojok
+  kiri atas"* with a 13px muted link underneath, written for *"the visitor this page was not
+  written for"* — and measured on iOS 18.7 **twice**, the second time with the app's own jar
+  demonstrably empty, **there is no Selesai button and that footnote is what completes the
+  flow.** `handoff.return` is now a full-width bordered anchor clearing the 44px minimum,
+  rendered in BOTH branches. **Copy that names an OS control is a claim this codebase cannot
+  verify** — hedge it, never instruct it — and **never tell somebody to close a page you cannot
+  close for them.**
+
+### Fixed
+
+- **The installed home-screen app can sign in. CONFIRMED IN PRODUCTION 2026-08-09.** The
+  acceptance test is one sentence and it is loop 6: install to the home screen, sign in, return,
+  be signed in — then fully quit, relaunch, and still be signed in. **Unit and integration tests
+  cover the row and the hash and cannot see the thing that matters**, because loop 5 has one
+  cookie jar and iOS has two. When testing, **sign out in the jar you are testing**: the first
+  confirmation run was confounded by a Safari sign-out that did not touch the app's jar.
+- **The cropped composer, confirmed fixed on iOS Safari by the querent against production.**
+  Three layers, two of them redundant in a spec-correct browser: `.replyText` takes
+  `.quoteText`'s treatment declaration for declaration — **`overflow-wrap: anywhere` is the
+  load-bearing one and `break-word` is NOT a substitute**, because only `anywhere` changes
+  min-content — `replyPreview` makes the string short whatever the CSS does, and `min-width: 0`
+  goes on every box between the text and the shell, `.room` included.
+- **The send button under the keyboard.** What hid it was Safari's own scroll-into-view, which
+  aims at the caret, fires on focus, and is never re-run for a layout change while focus stays
+  put — and **a tap on `Balas` does not move focus, because Safari does not focus a button when
+  it is tapped.** The belt in `ChatComposer` reveals the SEND BUTTON, the lowest thing in the
+  row and so the first to go missing, at nearest/nearest so a composer already in view is a
+  no-op.
+- **A second crop with no keyboard in it, found while reading for the first.** `.room` was a
+  two-row grid with three children whenever `chat.error.load` was showing, which put the list in
+  an `auto` row and the composer in an implicit one. It is a column now, **which has no fixed
+  number of rows to disagree with.**
+- **The refusal that would not go away.** *"Kartu tidak dibuka untuk pertanyaan ini"* sat above
+  the composer through every later look at the screen, because nothing but the next send cleared
+  it. **Dismissing remembers nothing** — it writes the same state `post()` already clears before
+  every send — because **a suppressed refusal would leave a message vanishing from the room
+  unexplained, which is the worse bug.** The button is the LAST child in both branches: W7-D10
+  orders this block *resources first, refusal second, clause link last*, and that is a decision
+  about what somebody in crisis meets first, so **a close button written above the lead is what a
+  screen reader announces first.** CSS paints it into the corner instead.
+
+### Removed
+
+- **`chat.hint`, deleted and not merely unused.** It sat under the title at `--fs-hint: 17px` —
+  the size of the messages — and wrapped to two lines at 320.
+- **The three probe pages** (`public/cards/pwaprobe1.*`, `p2/`, `p2out/`). They were scratch and
+  said so in their own commits; §1 of the design is where the seven measurements live now.
+- **`encode` from `@auth/core/jwt` in `dev-session`, and the four env reads around it** — it
+  delegates to `mint.ts`. **The paragraph explaining `salt` moved WITH the code** rather than
+  being summarised at the old site.
+- **The instruction to press a button that does not exist, and the advice to close a page.**
+  `handoff.stale.body` no longer says *"tutup halaman ini"*.
+- **A `:has()` selector, refused for a modifier class.** No stylesheet here uses it yet, and the
+  only thing it would buy is one fewer class — while the mount without a dismiss keeps the box it
+  shipped with.
+
+### Security
+
+- **`/handoff` is gated and `isPublic()` must never learn it.** It needs a session; that is its
+  entire job. `gate.test.ts` carries `/handoffs` as the negative control, on `'/s/'`'s precedent.
+  **`/api/auth/handoff` needed no gate edit** — `startsWith('/api/auth/')` is already public, the
+  clause `dev-session` lives under.
+- **Every unsuccessful claim is the same 204**, because the alternative is an oracle for probing
+  the table. **Single use is the database's job**: one `update … where claimed_at is null …
+  returning`, and **`bindHandoff`'s `user_id is null` is what stops somebody who came by the
+  challenge re-pointing a bound row at their own account.** The device secret is never stored —
+  only its SHA-256.
+- **`jmt_pwa` authenticates nobody and grants nothing on its own.** 256 opaque httpOnly bits: it
+  is the standalone jar's name for itself, and its only use is matching a row some other browser
+  has already bound to a real session. **It does not reopen S-D10** — the exemption is one URL
+  existing nowhere but in the manifest's `start_url`, it fires at most once per install with the
+  cookie's own absence as the guard, and `/` is already the one content route deliberately left
+  uncacheable for three reasons that predate this one.
+- **The sweep's sixth `catch` logs the error's CLASS only, though this table holds no querent
+  text at all.** The rule still applies for the reason the `llm_calls` block gives: **a `catch`
+  that is an exception to the rule is a `catch` somebody copies into one that is not.**
+
+### Known gaps at this tag
+
+- **Why iOS shows no dismiss affordance on that sheet is unexplained, and it is a fact about the
+  OS rather than about this code.** Two mechanisms fit the observation; **the design names the
+  discriminating experiment and it has not been run.** *"It works"* and *"it works for the reason
+  I designed"* are different claims, and only the first is made here — though the gate is strong
+  evidence for the second: `/handoff` requires a session, the app's jar had none, and the querent
+  saw `/handoff` anyway, so the request that rendered it carried the overlay's session.
+- **`keyboardInset.ts` remains unconfirmed on hardware, and no report has ever turned out to be
+  about it.** `dvh` genuinely cannot see the keyboard, but the crop that was reported was the
+  width bug. **Do not read its presence as evidence it was needed, and do not stack a third
+  explanation on it.** Loop 5's Chrome has no software keyboard and reports
+  `visualViewport.height` equal to the layout viewport in every state.
+- **The 57px header has not been felt with the keyboard up**, which is the one thing WSL cannot
+  judge about it, and the `.content` textarea on `/admin/blog` is still unmeasured on a phone.
+- **Still unverified on hardware:** touch behaviour, safe-area insets, and **Add to Home Screen
+  itself** — every measurement so far was taken on an app that was already installed.
+- **A stopgap that needs no code is recorded and untested**: sign in in Safari, delete the icon,
+  re-add it. It follows from the install-time seeding and nobody has run it.
+- **Everything v0.7.0 left open is still open**, unchanged by this release: the voices still
+  invent an occasional specific, `recurring` still does not reliably land, the two director
+  numbers are still out of band, `'persona'` is still a live `share_links` union value resolving
+  to null, `share.viewed` has still not been observed firing, and the four launch blog rows keep
+  their old hero `alt`.
+- **`npm run test:all` still fails ~12–22 of V9's limiter tests** — the harness race on the one
+  shared `serverless-redis-http`, not a regression. Run the two projects separately: `npm test`
+  passes **3675** across 193 files and `npm run test:integration` passes **659** across 46.
+
 ## [v0.7.0] - 2026-08-09
 
 **Three readers and the querent in one room, that keeps going when nobody is looking at
@@ -2432,6 +2661,7 @@ app as it now stands. The iOS tree is preserved on `feat/ios` and
 - Two superseded design exports; the Clickable export is the single visual
   reference. Both remain in history at `d7fdd89`.
 
+[v0.7.1]: https://github.com/miftahulmahfuzh/JMTarot/releases/tag/v0.7.1
 [v0.7.0]: https://github.com/miftahulmahfuzh/JMTarot/releases/tag/v0.7.0
 [v0.6.0]: https://github.com/miftahulmahfuzh/JMTarot/releases/tag/v0.6.0
 [v0.5.0]: https://github.com/miftahulmahfuzh/JMTarot/releases/tag/v0.5.0
