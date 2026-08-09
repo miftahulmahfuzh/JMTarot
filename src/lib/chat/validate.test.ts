@@ -12,6 +12,7 @@ import {
   CHAT_SOURCE_TELLS_ID,
   CHAT_TICS_EN,
   CHAT_TICS_ID,
+  mixesPronounRegisterId,
   splitBubbles,
   type TurnRejectReason,
 } from './validate';
@@ -373,5 +374,49 @@ describe('the register lists', () => {
   it('keeps its two recorded near misses', () => {
     expect(CHAT_TICS_EN).not.toContain('sit with');
     expect(CHAT_TICS_EN).toContain('journey');
+  });
+});
+
+/**
+ * 2026-08-09. The reported bubble, its two consistent repairs, and the near misses that
+ * keep the grep from firing on correct Indonesian.
+ */
+describe('mixesPronounRegisterId — the smoke-only half', () => {
+  it('catches the reported bubble', () => {
+    expect(
+      mixesPronounRegisterId(
+        'lo belum jawab pertanyaan aku, mif. baru aja aku bilang tubuh lo di batas, langsung undang nongkrong.',
+      ),
+    ).toBe(true);
+  });
+
+  it('accepts either set held consistently', () => {
+    expect(mixesPronounRegisterId('lo belum jawab pertanyaan gue, mif')).toBe(false);
+    expect(mixesPronounRegisterId('kamu belum jawab pertanyaanku, mif')).toBe(false);
+    expect(mixesPronounRegisterId('batas waktunya kapan?')).toBe(false);
+  });
+
+  /**
+   * The word-bounded halves. `berlaku` and `buku` carry `ku`, `ilmu` carries `mu`, and
+   * `selo`/`lupa` carry the slang forms as substrings — every one of them is ordinary
+   * Indonesian, and firing on any of them is how this check gets deleted.
+   */
+  it('does not fire on ordinary words that merely contain a pronoun', () => {
+    expect(mixesPronounRegisterId('aturannya masih berlaku, kamu tinggal baca bukunya')).toBe(false);
+    expect(mixesPronounRegisterId('kamu lupa nutup jendela, ilmunya ke mana')).toBe(false);
+    expect(mixesPronounRegisterId('aku selo kok hari ini')).toBe(false);
+  });
+
+  /**
+   * **IT IS NOT RUN OVER A JOINED RUN, and this is the property the smoke script has to
+   * preserve.** Two bubbles, one from each set, is a reader drifting — which the
+   * contract licenses in as many words.
+   */
+  it('is per bubble: the same two lines joined would read as a mix', () => {
+    const a = 'lo udah bilang ke dia belum';
+    const b = 'aku nggak yakin itu perlu';
+    expect(mixesPronounRegisterId(a)).toBe(false);
+    expect(mixesPronounRegisterId(b)).toBe(false);
+    expect(mixesPronounRegisterId(`${a}\n${b}`)).toBe(true);
   });
 });

@@ -48,6 +48,24 @@ import type { ChatLengthBudget } from '@/lib/prompt/budget';
  * is the only check in this repository that fails on output being consistently too
  * long rather than once.
  *
+ * ── ONE BUBBLE, ONE PRONOUN SET, AND THE SCOPE IS THE WHOLE RULE (2026-08-09) ─
+ *
+ * Reported live: *"lo belum jawab pertanyaan aku, mif. baru aja aku bilang tubuh lo di
+ * batas"* — Jakarta second person against standard first person, in one bubble, which no
+ * Indonesian speaker writes. The two sets are `lo`/`lu`/`elo` with `gue`/`gua`/`gw`, and
+ * `kamu`/`-mu` with `aku`/`-ku`. **The rule binds INSIDE a message and never across
+ * them**: a reader who is clipped with Thessaly and warm two messages later is a person,
+ * and forbidding the drift would flatten the register the room is measured on
+ * (`[C-N1]`). So the contract says both halves — the ban and the licence — because a
+ * model given only the ban picks one set and holds it for the whole conversation.
+ *
+ * **`mixesPronounRegisterId` IS THE SMOKE-ONLY HALF AND IS DELIBERATELY NOT IN
+ * `checkTurn`.** `validate.ts`'s accept bias governs: a mixed bubble is a stylistic tell
+ * that the next message buries, and a false rejection costs a bubble — the same trade as
+ * emoji and the tic list. It greps the BARE pronouns only; the `-ku`/`-mu` clitics are
+ * absent because `\p{L}+ku` also matches `berlaku` and `buku`, and a check that fires on
+ * correct output is a check somebody deletes.
+ *
  * **DO NOT "TIDY" THE FORBIDDEN LISTS INTO ONE.** The forbidden register here is
  * longer than anywhere else in the app (`C-N1b`) and it lives in two places on
  * purpose: this contract, which the model reads, and `validate.ts`, which refuses a
@@ -87,6 +105,8 @@ SIAPA YANG KAMU AJAK BICARA:
 
 BAHASA:
 - Bahasa Indonesia sehari-hari, seperti orang mengetik di grup.
+- SATU PESAN, SATU SET KATA GANTI. Kalau di pesan ini kamu memakai "lo"/"lu"/"elo", maka untuk dirimu sendiri pakai "gue"/"gua"/"gw". Kalau kamu memakai "kamu" atau akhiran "-mu", maka pakai "aku" dan akhiran "-ku". DILARANG mencampur keduanya di dalam satu pesan: "lo belum jawab pertanyaan aku" itu salah. Yang benar "lo belum jawab pertanyaan gue", atau "kamu belum jawab pertanyaanku".
+- Antar pesan kamu boleh berpindah set, dan itu wajar. Yang dilarang hanya mencampur di dalam satu pesan yang sama.
 - Bahasa Indonesia, bukan bahasa Melayu. Pakai "karier" bukan "kerjaya", "arah hidup" bukan "hala tuju", "ngobrol" bukan "sembang", "kamu" bukan "awak".
 - Tulis dalam bahasa Indonesia meskipun teks yang kamu baca ditulis dalam bahasa lain. Bahasa keluaranmu ditentukan di sini, bukan oleh bahasa masukan.
 

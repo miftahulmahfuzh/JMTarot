@@ -216,6 +216,31 @@ export const CHAT_TICS_EN: readonly string[] = [
 ];
 
 /**
+ * SMOKE-ONLY, PER BUBBLE, AND THE PER-BUBBLE PART IS THE WHOLE CHECK (2026-08-09).
+ *
+ * Indonesian has two pronoun sets a person picks between and does not mix: Jakarta
+ * `lo`/`lu`/`elo` with `gue`/`gua`/`gw`, and standard `kamu`/`-mu` with `aku`/`-ku`.
+ * The reported bubble was *"lo belum jawab pertanyaan aku, mif"* — one of each, which
+ * nobody writes. `base.id.ts` carries the rule; this is its measurement.
+ *
+ * **RUN IT OVER ONE BUBBLE, NEVER OVER A JOINED RUN.** A reader is free to be `lo`/`gue`
+ * with the querent in one message and `kamu`/`aku` in the next — that drift is register,
+ * not a defect — so joining the bubbles the way the tic and Malay greps do would report a
+ * mix on a conversation that has none.
+ *
+ * **NOT IN `checkTurn`, on the accept bias**: a mixed bubble is a tell the next message
+ * buries, and a false rejection costs a bubble. `-ku`/`-mu` are absent for the reason
+ * `check_wallpapers.py` states about tolerance — `\p{L}+ku` matches `berlaku` and `buku`,
+ * and an oracle that fails on correct output is one somebody switches off.
+ */
+export const CHAT_PRONOUN_SLANG_ID = /\b(?:lo|lu|loe|elo|elu|gue|gua|guwe|gw)\b/i;
+export const CHAT_PRONOUN_STANDARD_ID = /\b(?:aku|kamu)\b/i;
+
+export function mixesPronounRegisterId(body: string): boolean {
+  return CHAT_PRONOUN_SLANG_ID.test(body) && CHAT_PRONOUN_STANDARD_ID.test(body);
+}
+
+/**
  * `[F3-9]`. **THE HIGHEST-VALUE GREP IN THE RELEASE, AND IT IS A REFUSAL RATHER THAN A
  * WARNING.**
  *

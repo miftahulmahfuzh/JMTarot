@@ -10152,6 +10152,42 @@ what it changes is any future argument that trims the context to save tokens.
 - **Nobody has read a chat bubble on a phone.** Loop 4 and loop 6 are F4's, and a 31-word
   Margaret bubble at 320px is the geometry nothing in this workstream can answer.
 
+### One bubble, one pronoun set (2026-08-09, Miftah's report)
+
+Thessaly wrote, live: *"lo belum jawab pertanyaan aku, mif. baru aja aku bilang tubuh lo di
+batas, langsung undang nongkrong."* Jakarta second person against standard first person in
+one bubble — a sentence no Indonesian speaker produces, and the kind of tell `[C-N1]` is
+measured by. Indonesian has two sets and a speaker picks one: `lo`/`lu`/`elo` with
+`gue`/`gua`/`gw`, and `kamu`/`-mu` with `aku`/`-ku`.
+
+**The rule binds INSIDE a bubble and is licensed BETWEEN them, and the licence is the half
+that gets dropped.** A reader who is clipped with Thessaly and warm with the querent two
+messages later is a person; a model given only the ban picks one set and holds it for the
+whole conversation, which flattens the register the room exists for. `CHAT_BASE_ID`'s
+BAHASA block therefore says both halves, with the reported sentence as the worked wrong
+example and its two consistent repairs beside it.
+
+**`mixesPronounRegisterId` is the measurement and it is SMOKE-ONLY, per bubble.** Two
+things about it that will otherwise be undone:
+
+- **Not in `checkTurn`**, on `[F3-12]`'s accept bias — a mixed bubble is a tell the next
+  message buries, and a false rejection costs a bubble. Same trade as emoji and the tic
+  list.
+- **Run over ONE bubble, never over `joined`.** The tic, Malay and source-tell greps all
+  run over the joined run; this one cannot, because a reader drifting between sets across
+  two messages is the licensed behaviour and joining them reports it as the defect.
+- **The `-ku`/`-mu` clitics are deliberately absent**, so `lo udah bilang ke ibumu` is a
+  mix the grep does not see. `\p{L}+ku` also matches `berlaku` and `buku`, and
+  `check_wallpapers.py`'s rule applies: an oracle that fails on correct output is one
+  somebody switches off. The prompt covers the clitics; the grep covers the bare pronouns,
+  which is where the reported failure lived.
+
+`npm run smoke -- --chat --locale id` after the change: **ten bubbles, zero mixes**, and
+the drift is visible across them — Adrian opens with *"gue ambil air dulu"* and later asks
+*"nenekmu sehatnya lagi nggak bagus atau kamu cuma kangen, Mif?"*, each internally
+consistent. One run is not proof the prompt binds; the check is what makes the next run
+answer it.
+
 ---
 
 ## F2 — the director (v0.7.0, 2026-08-07)

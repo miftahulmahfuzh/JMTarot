@@ -191,6 +191,21 @@ describe('the chat contracts', () => {
     expect(contract('en', 'adrian')).toContain('delve');
   });
 
+  /**
+   * 2026-08-09. **BOTH HALVES, and the licence is the half that gets dropped.** A model
+   * given only the ban picks one set and holds it for the whole conversation, which
+   * flattens exactly the register `[C-N1]` measures; the drift is only forbidden INSIDE
+   * one bubble. `mixesPronounRegisterId` is the measurement.
+   */
+  it('bans one bubble mixing the two pronoun sets, and licenses the drift between them', () => {
+    for (const reader of READER_IDS) {
+      const text = contract('id', reader);
+      expect(text).toContain('SATU PESAN, SATU SET KATA GANTI');
+      expect(text).toContain('lo belum jawab pertanyaan aku');
+      expect(text).toContain('Antar pesan kamu boleh berpindah set');
+    }
+  });
+
   it('keeps the Malay rule on the Indonesian side and writes no Malay itself', () => {
     expect(contract('id', 'adrian')).toContain('bukan bahasa Melayu');
     /*

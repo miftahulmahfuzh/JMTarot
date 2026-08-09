@@ -2290,6 +2290,7 @@ async function runChat(locales: Locale[], proactive: boolean) {
     CHAT_TICS_EN,
     CHAT_TICS_ID,
     checkTurnBodies,
+    mixesPronounRegisterId,
   } = await import('@/lib/chat/validate');
   const { properNames, sharesNgram } = await import('@/lib/prompt/lotus');
   const { MALAY } = await import('@/lib/copy/vocab');
@@ -2521,6 +2522,18 @@ async function runChat(locales: Locale[], proactive: boolean) {
       for (const word of MALAY) {
         if (new RegExp(`\\b${word}\\b`, 'i').test(joined)) {
           problems.push(`[${locale}] MALAY: "${word}"`);
+        }
+      }
+      /*
+       * PER BUBBLE, NOT OVER `joined`. A reader may be "lo"/"gue" in one message and
+       * "kamu"/"aku" in the next; what nobody writes is one of each in ONE message.
+       */
+      for (const s of spoken) {
+        if (mixesPronounRegisterId(s.body)) {
+          problems.push(
+            `[${locale}] REGISTER: one bubble mixes "lo/gue" with "aku/kamu" -- ` +
+              `${s.author}: "${s.body.slice(0, 70)}"`,
+          );
         }
       }
     }
