@@ -507,6 +507,51 @@ that is false — p95 7546ms against a p50 TTFT of 4591ms — and the gate becom
 Unset falls back to `LLM_MODEL` and silently reintroduces it. `MODERATION_TIMEOUT_MS=1500`
 comes from the same measurement, not the plan's guessed 2500.
 
+**AND THE TABLE ABOVE DOES NOT SAY WHERE IT WAS MEASURED FROM, WHICH IS THE THING THAT MATTERS
+MOST ABOUT IT** (added 2026-08-19). `npm run probe:moderation` runs from a working tree — so
+every figure in that table is **WSL in Indonesia → z.ai over a consumer link**, not a Vercel
+lambda → z.ai. Nobody wrote that down, and it was silently assumed to stand in for production
+for three releases. It does not, and the difference is largest exactly where it hurts: **a
+datacenter link and a consumer link differ far more in their TAIL than in their median**, and
+the tail is the only part a timeout ever meets. The corollary bit immediately: when the
+functions moved `iad1` → `sin1` on 2026-08-19 the obvious move was to *"re-measure the
+classifier p95"*, and **this probe cannot see that change at all.**
+
+**THE ONLY INSTRUMENT FOR THE PRODUCTION PATH IS `llm_calls.total_ms` FOR `op = 'moderation'`
+(query 13).** It is timed inside the lambda around the provider call, so it isolates the hop
+that a region change moves. **Its tail is CENSORED by `MODERATION_TIMEOUT_MS`** — a call that
+times out records at roughly the timeout — so `count(*) filter (where total_ms >= 1400)` is
+the honest tail statistic there, not a percentile.
+
+**THE 903ms p95 NO LONGER REPRODUCES ON THE PROBE'S OWN PATH, AND THE D8 VERDICT FLIPPED**
+(same day, two runs, same machine and same npm script as the 2026-07-27 baseline):
+
+```
+                       p50      p95      max      n
+2026-07-27 flash      617ms    903ms       -      42
+2026-08-19 flash      746ms   2864ms   2864ms     20
+2026-08-19 flash      806ms   4508ms  10353ms     42
+
+reading TTFT p50:  4591ms (2026-07-27)  ->  1689ms (2026-08-19, n=11)
+```
+
+At n=42 the script printed its own `*** D8 PREMISE FAILS ON THIS MODEL ***` — classifier p95
+4508ms against a reading p50 of 1689ms. **Read the two ends before acting on it: the median
+barely moved (617 → 806ms) while the tail went out by 5x, and the READING got 2.7x FASTER.**
+So D8's margin was squeezed from both sides, and only one of those is a classifier problem. A
+p50 that holds while a p95 explodes is the signature of **sporadic stalls, not a shifted
+distribution** — roughly four or five calls in forty-two, which on this link is as likely to be
+a reconnect as anything provider-side.
+
+**NOTHING WAS CHANGED ON THIS EVIDENCE, DELIBERATELY.** `MODERATION_TIMEOUT_MS` stays 1500 and
+`MODERATION_MODEL` stays `glm-4.5-flash` until query 13 says what production sees, for three
+reasons: the measurement is on the wrong path, the probe's own header forbids nudging the
+timeout (*"that makes the slow case slower, it does not make it rarer"*), and **a classifier
+timeout on a blocklist-clean question fails OPEN** — so a real p95 regression costs unclassified
+readings passing, which is a rate to measure rather than an outage to react to. **What is
+recorded here is that a number this repo states as settled did not survive being re-run**, which
+is the whole reason `probe:moderation` is a committed script and not a paragraph.
+
 ### The five things a future session will otherwise undo
 
 1. **`.next/server/chunks/**` IS EXCLUDED FROM THE AUDIT ON PURPOSE.** The base contract

@@ -1727,7 +1727,17 @@ and every pattern has a near-miss test written first.
   premise is that the classifier returns before the reading's first token; on the reading model that
   is false (p95 7546ms against a p50 TTFT of 4591ms) and the gate becomes the latency. Unset falls
   back to `LLM_MODEL` and silently reintroduces it. `MODERATION_TIMEOUT_MS=1500` is the same
-  measurement.
+  measurement — **`glm-4.5-flash`'s 903ms p95, not the 7546ms**, through
+  `min(ceil(p95 × 1.5 / 500) × 500, reading_p50)`.
+- **`npm run probe:moderation` MEASURES WSL → z.ai, NEVER THE LAMBDA, AND EVERY FIGURE IN THAT
+  TABLE IS A CONSUMER LINK.** So it **cannot** answer what a function-region change did, and a
+  consumer link and a datacenter link differ most in the TAIL — the only part a timeout meets.
+  **The production instrument is `llm_calls.total_ms` for `op = 'moderation'` (query 13)**, timed
+  inside the lambda, whose tail is CENSORED by the timeout: count rows `>= 1400` rather than take
+  a percentile. **The 903ms p95 did NOT survive being re-run** (2026-08-19: 2864ms at n=20,
+  4508ms at n=42, `D8 PREMISE FAILS` printed) — but the p50 barely moved and the READING got
+  2.7× faster, so **read both ends before touching either variable**, and nothing was changed on
+  it. Full account in `docs/workstream-notes.md`.
 - **The gate PRIMES the reading before awaiting the verdict.** `iterator.next()` in `gateReading`
   issues the HTTP request; deleting it looks like a tidy-up, breaks nothing, logs nothing, and doubles
   every reading's latency forever.
