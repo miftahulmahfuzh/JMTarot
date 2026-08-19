@@ -127,8 +127,14 @@ const SWITCH_DEADLINE_MS = 6_000;
  * The marker is KEPT across the retry, which is the visible half of the fix: the
  * row goes on showing the language the querent asked for while the second attempt
  * runs, and only reverts if that one fails too. Combined with
- * `RATELIMIT_SESSION_BACKEND`'s move to memory (which deletes a Singapore→Tokyo
- * hop from this exact path), the first attempt should now usually be the only one.
+ * `RATELIMIT_SESSION_BACKEND`'s move to memory, the first attempt should now
+ * usually be the only one.
+ *
+ * **That parenthesis used to read "which deletes a Singapore→Tokyo hop from this
+ * exact path", and it was wrong twice**: Upstash has an `ap-southeast-1` region
+ * (console, 2026-07-29), and the functions ran in `iad1` until 2026-08-19, so the
+ * hop it deleted was transpacific rather than regional. The retry earns its place
+ * on the timeout argument above and needs no geography at all.
  *
  * EXACTLY ONE RETRY. Not a backoff loop: if two attempts spanning ~18s both fail,
  * something is wrong that a third request will not fix, and the querent has been

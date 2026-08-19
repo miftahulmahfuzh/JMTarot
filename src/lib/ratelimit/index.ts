@@ -93,10 +93,26 @@ export const SHARE_VIEW_GLOBAL_MAX = 10_000;
 /**
  * How long a limiter may take before we stop waiting and use memory.
  *
- * NOT a target. There is no Upstash Singapore region -- verified 2026-07-27, the
+ * NOT a target, and **the derivation below is dead -- the NUMBER is kept because
+ * it never depended on it.**
+ *
+ * This said: *"There is no Upstash Singapore region -- verified 2026-07-27, the
  * nearest is `ap-northeast-1` (Tokyo) -- so a warm round trip from a Vercel
  * Singapore function is ~80-120ms rather than the ~10-30ms a same-region one
- * would be. 1000ms is still ~8x that, and it exists only to bound a hung fetch.
+ * would be. 1000ms is still ~8x that."* Both premises were false. Upstash HAS an
+ * `ap-southeast-1` region (console, 2026-07-29), and the functions were not in
+ * Singapore at all until 2026-08-19 -- they were in `iad1`, so the real round
+ * trip was transpacific and the ~80-120ms figure was optimistic rather than
+ * conservative.
+ *
+ * **1000ms survives all of that because it is a hung-fetch bound, not a
+ * budget.** A ceiling set at ~8x a warm hop is set at ~30x an intra-region one,
+ * and both are far below the point where waiting is worse than falling back to
+ * memory. **Do not tighten it toward a measured hop**: the failure this bounds is
+ * a limiter that does not answer, and the cost of guessing low is
+ * `ratelimit.backend_degraded` on a healthy Redis -- every stated limit silently
+ * multiplied by the number of warm instances. Guessing high costs one second on
+ * a request that was already broken.
  */
 const timeoutMs = () => num('RATELIMIT_TIMEOUT_MS', 1000);
 

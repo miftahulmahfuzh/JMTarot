@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * The four 429s, and which `limit` each reports.
@@ -78,6 +78,30 @@ beforeEach(() => {
 });
 
 afterEach(() => vi.restoreAllMocks());
+
+/**
+ * ── THE FIRST CASE PAID FOR THE WHOLE MODULE GRAPH, AND FLAKED ON IT ─────────
+ *
+ * `post()` does `await import('./route')`, and the route's transitive graph is
+ * one of the largest in the app -- the prompt layer, `lotus.generate.ts`, the
+ * provider adapters. The module cache means only the FIRST `it` in this file pays
+ * that, and it paid it inside vitest's 5000ms default `testTimeout`. Alone the
+ * file passes every time; under a full `npm test` the same case failed roughly
+ * one run in three, on transform and import contention with 192 other files.
+ *
+ * **A flaky red in `npm test` is expensive out of all proportion to this test.**
+ * `CLAUDE.md` names `test:all` as the one command whose red means nothing; a
+ * second such command teaches the next session to disbelieve the suite, and it
+ * would have cost them an hour before they found the timeout rather than a bug.
+ *
+ * Warming the import in a hook is the fix rather than a bigger `testTimeout`,
+ * because it removes the cost from the measurement instead of tolerating it:
+ * hooks get their own (10s) budget, this one runs once, and every `it` below then
+ * times nothing but the route call. **Do not inline this back into `post()`.**
+ */
+beforeAll(async () => {
+  await import('./route');
+});
 
 describe('the four budgets, each with its own `limit` prop', () => {
   it('the per-user budget reports `user`', async () => {
