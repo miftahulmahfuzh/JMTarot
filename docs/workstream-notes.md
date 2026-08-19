@@ -395,7 +395,8 @@ owns W5 next.
   **A THIRD FAILURE WAS iPHONE-ONLY:** a timed-out request used to revert the marker and
   skip the refresh while the write landed anyway, so the new language appeared only on the
   next navigation. It is retried once now, and `session-update:` left Upstash to delete a
-  Tokyo hop from the path. Full write-up is the `POST /api/locale` entry under `## Traps` —
+  hop from the path — **called a "Tokyo hop" here and it was not one; see the region trap
+  under `## Traps`.** Full write-up is the `POST /api/locale` entry under `## Traps` —
   read it before changing `SWITCH_DEADLINE_MS`, `SWITCH_RETRY_DEADLINE_MS` or the catch.
 
 - **A template literal will stringify a `Localized<>` object and typecheck clean.**
@@ -7178,8 +7179,13 @@ Recorded rather than deleted, because each looks like a bug someone will helpful
 
   **TWO MORE THINGS LANDED 2026-07-28, AFTER THE SWITCH WAS REPORTED DEAD ON iPHONE
   SAFARI WHILE FINE ON A DESKTOP.** First, **the chain is now TWO round trips, not
-  three** — `session-update:` moved to memory, deleting the Tokyo hop from between the
-  write and the read. That budget only ever stopped one authenticated user spamming
+  three** — `session-update:` moved to memory, deleting a Redis hop from between the write
+  and the read. **This said "the Tokyo hop" and the geography was wrong twice over:**
+  Upstash has an `ap-southeast-1` region (console, 2026-07-29) and the functions were in
+  `iad1` until 2026-08-19, so what was deleted was a transpacific hop rather than a
+  regional one — **a bigger win than the sentence claimed, for a reason nobody knew.** The
+  change was right; only its justification was fiction. That budget only ever stopped one
+  authenticated user spamming
   `POST /api/auth/session`, and one user's requests land mostly on one warm instance, so
   per-instance costs nothing real — unlike `global` or `llm:window`, which are
   meaningless per-instance. `RATELIMIT_SESSION_BACKEND` moves it back.
