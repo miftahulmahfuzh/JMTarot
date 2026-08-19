@@ -7096,7 +7096,10 @@ Recorded rather than deleted, because each looks like a bug someone will helpful
   nor `maxDuration`**, and Vercel's Hobby default is ten seconds.
 
   Functions are Hobby in `sin1`, Neon free-plan in `ap-southeast-1`, **Upstash in
-  `ap-southeast-1` Singapore too — this line said Tokyo and was wrong** (console, 2026-07-29). A
+  `ap-southeast-1` Singapore too — this line said Tokyo and was wrong** (console, 2026-07-29).
+  **AND THE `sin1` HALF WAS ALSO WRONG UNTIL 2026-08-19 — see the region trap below; every
+  hop this paragraph calls intra-region was in fact a transpacific one, so every latency
+  figure recorded here was measured on a worse stack than the one described.** A
   free-plan Neon compute **suspends when idle**, so the first switch after a quiet spell
   is: a cold lambda whose graph includes @auth/core, postgres.js and — via `auth.ts` →
   `users.ts` — bcrypt; then `setUserLocale`, possibly the request that WAKES the
@@ -7107,6 +7110,65 @@ Recorded rather than deleted, because each looks like a bug someone will helpful
   **The lesson generalises: a user action that WRITES is one of the few things likely to
   be the request that wakes a suspended compute**, so measure those cold. Warm here was
   22ms and hid all of it.
+
+- **THE FUNCTIONS RAN IN WASHINGTON DC FOR THE PROJECT'S ENTIRE LIFE, AND FOURTEEN PLACES
+  IN THIS REPOSITORY SAID SINGAPORE** (measured 2026-08-19, fixed the same day by
+  `"regions": ["sin1"]` in `vercel.json`).
+
+  The report came from another project. `dword.site` answered
+  `x-vercel-id: sin1::iad1::…` where a sibling project answered `sin1::sin1::…`; the
+  difference was a `regions` key in one `vercel.json` and no key in the other, over a
+  dashboard `serverlessFunctionRegion` of `iad1` in **both**. Probed here on the same
+  suspicion, `/`, `/login`, `/gallery`, `/api/events` and `/arcana/the-moon` **all**
+  returned `sin1::iad1::`, and the Vercel API confirmed it at the project level:
+
+  ```
+  serverlessFunctionRegion = "iad1"
+  defaultResourceConfig.functionDefaultRegions = ["iad1"]
+  ```
+
+  So the edge middleware ran in Singapore — the gate decision, `contentRewrite()`, the
+  S-D10 cookie strip — and then handed every render to Virginia, which talked to a Neon
+  compute in `ap-southeast-1`. **~230ms per query each way, and this app's round trips are
+  sequential**: `auth()`, the profile read, the reading or chat query, the analytics
+  `after()` flush. Every one of them crossed the Pacific twice. A cold postgres.js
+  connection paid TCP + TLS + Postgres startup — three more round trips — to Singapore
+  before its first query.
+
+  Four things follow, and three of them are corrections rather than improvements:
+
+  1. **`docs/DEPLOY-VERCEL.md` §6 step 6 named the DASHBOARD, and that is the whole
+     failure.** It read *"Vercel → Project Settings → Functions → region Singapore
+     `sin1`"* — an instruction to click something, in a document nobody re-reads, with no
+     artefact in the repository afterwards and nothing that fails if it is skipped. It was
+     skipped. **A configuration fact that lives only in a dashboard is a configuration
+     fact nobody can review**; the same argument is why `MIGRATE_DATABASE_URL` makes
+     `npm run build` fail rather than trusting somebody to run a migration.
+  2. **THE UPSTASH SINGAPORE RULING WAS RIGHT FOR A REASON THAT WAS NOT TRUE YET.**
+     `CLAUDE.md` says to use `ap-southeast-1` because it is *"the same region as the
+     functions (`sin1`) and as Neon, so every hop is intra-region."* The Neon half was
+     true and the functions half was not, which means the limiter's two calls per reading
+     were `iad1` → Singapore all along — the exact cost the earlier `sin1`→Tokyo worry was
+     about, arrived at from the other direction. **The ruling needs no change; it simply
+     becomes true on the next deploy.**
+  3. **`RATELIMIT_SESSION_BACKEND` staying unset was argued from a premise that was
+     false.** The argument is that a per-user budget lands mostly on one warm instance so
+     memory costs nothing real. That still holds, but the half of it that has now expired
+     twice — first the Tokyo hop, now the transpacific one — is why that bullet says
+     **measure before moving it** rather than restating a distance.
+  4. **EVERY LATENCY NUMBER IN THIS FILE PREDATING 2026-08-19 WAS MEASURED ON THE WRONG
+     STACK, AND THAT IS NOT A REASON TO DELETE THEM.** The p50 TTFT of 4591ms, the
+     classifier's p95 of 7546ms and `MODERATION_TIMEOUT_MS=1500`, the locale-route
+     account above, the 22ms warm figure — all of them included two transpacific hops per
+     query. They are honest measurements of what production actually was. **Re-measure
+     before tightening any timeout derived from them**, because a ceiling set against a
+     Virginia stack is loose against a Singapore one, and a loose ceiling is the safe
+     direction to be wrong in.
+
+  The instrument is one line and it is the only one that answers this question —
+  `curl -4 -sI <url> | grep x-vercel-id`, where the **second** segment is where the
+  function ran. `next start` cannot see it, no unit test can see it, and the dashboard
+  agreed with the wrong answer.
 
   **A BIGGER `maxDuration` IS NOT A LATENCY REGRESSION — it stops the cold path being
   truncated — BUT IT MUST BE PAIRED WITH A BOUND ON THE CLIENT**, or you have only made

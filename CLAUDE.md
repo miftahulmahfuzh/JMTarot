@@ -285,6 +285,19 @@ not here.**
   builds could both apply one migration (drizzle takes no advisory lock), and a *destructive*
   migration still deploys ahead of the code that tolerates it.
 
+- **THE FUNCTION REGION IS PINNED BY `"regions": ["sin1"]` IN `vercel.json`, NEVER BY THE
+  DASHBOARD, AND WITHOUT THAT KEY THE WHOLE APP RAN IN WASHINGTON DC FOR THE PROJECT'S
+  ENTIRE LIFE** (measured 2026-08-19; every route answered `x-vercel-id: sin1::iad1::…`
+  and `serverlessFunctionRegion` read `iad1`, the default). Edge middleware in Singapore,
+  every render in Virginia, Neon in `ap-southeast-1` — **~230ms per query each way, on
+  sequential round trips.** `docs/DEPLOY-VERCEL.md` §6 step 6 told somebody to click a
+  control in a dashboard, which is not a mechanism: a key in the repository ships with the
+  code, is reviewable, survives a relink, and overrides the dashboard. **Every latency
+  figure in this repo predating that date was measured on that stack** — re-measure before
+  tightening any timeout derived from one. The one instrument is
+  `curl -4 -sI <url> | grep x-vercel-id`, whose **second** segment is where the function
+  ran; no test and no `next start` can see it. Full account in `docs/workstream-notes.md`.
+
 - **A PROVIDER FACT THIS REPO ASSERTS IN PROSE AND CANNOT RE-RUN WILL ROT, AND ONE DID FOR A
   WHOLE RELEASE.** Twelve places said *"z.ai reports `input_tokens: 0` and honours no
   caching"*. Both halves were false: `anthropic.ts` read the count from `message_start`, which

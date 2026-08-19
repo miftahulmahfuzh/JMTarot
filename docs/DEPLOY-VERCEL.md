@@ -842,9 +842,20 @@ follows is the procedure.
    is no seed data that can leak into production by accident.
 5. Put the **pooled** string in Vercel as `DATABASE_URL`, and set
    `FIELD_ENCRYPTION_KEY` alongside it (§2).
-6. Vercel → Project Settings → Functions → region **Singapore `sin1`**. The
-   default is Washington DC, which puts the Pacific between every query and its
-   database.
+6. **The region is pinned by `"regions": ["sin1"]` in `vercel.json`, not by the
+   dashboard.** The dashboard's Functions → region control is what this step used
+   to name, and **naming it here is what let the whole app run in Washington DC
+   for the project's entire life.** Measured 2026-08-19: every route answered
+   `x-vercel-id: sin1::iad1::…` — edge Singapore, function Virginia — while
+   `serverlessFunctionRegion` in the project settings read `iad1`, the default.
+   So every query crossed the Pacific to a Neon compute in `ap-southeast-1` and
+   back, ~230ms each way, and the app's round trips are sequential. A key in
+   `vercel.json` is the fix because it is **in the repository**: it ships with
+   the code, it is reviewable, it survives a project being relinked or recreated,
+   and it overrides the dashboard. A checklist step somebody has to remember to
+   click is not a mechanism. Single-region is allowed on Hobby. **Verify after
+   deploying** with `curl -4 -sI https://www.jmtarot.site/login | grep x-vercel-id`
+   and look for `sin1::sin1::`.
 
 ### The three driver knobs, and why they are keyed off `VERCEL`
 

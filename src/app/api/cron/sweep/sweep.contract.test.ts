@@ -160,6 +160,30 @@ describe('vercel.json', () => {
       { path: '/api/cron/nudge', schedule: '0 12 * * *' },
     ]);
   });
+
+  it('pins the functions to sin1, because the DASHBOARD did not', () => {
+    /*
+     * **This case is here because this describe block is the only one in the suite that
+     * reads `vercel.json`, not because the region has anything to do with the sweep.**
+     *
+     * `docs/DEPLOY-VERCEL.md` §6 step 6 used to say *"Vercel → Project Settings →
+     * Functions → region Singapore `sin1`"*, and that instruction was never carried out.
+     * Measured 2026-08-19: every route answered `x-vercel-id: sin1::iad1::…` and the
+     * project's `serverlessFunctionRegion` read `iad1` — **the app had run in Washington
+     * DC for its entire life** while fourteen places in this repository said Singapore.
+     * Edge middleware in Singapore, every render in Virginia, Neon in `ap-southeast-1`:
+     * ~230ms per query each way, on sequential round trips.
+     *
+     * A key in `vercel.json` is the fix rather than a dashboard click because it ships
+     * with the code and can be reviewed; **this assertion is what makes deleting it red**,
+     * which the dashboard never could. Single-region is allowed on Hobby.
+     *
+     * `curl -4 -sI <url> | grep x-vercel-id` is the only instrument that can confirm the
+     * deployed truth — its SECOND segment is where the function ran. No test can, which
+     * is exactly why this one pins the input instead.
+     */
+    expect(config.regions).toEqual(['sin1']);
+  });
 });
 
 describe('the fourth delete (V2)', () => {
