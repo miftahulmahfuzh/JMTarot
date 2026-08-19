@@ -100,7 +100,11 @@ npm run test:all           # both projects -- SEE THE WARNING BELOW
 
 **`npm run test:all` FAILS ~12-22 OF V9's LIMITER TESTS; IT IS A HARNESS RACE, NOT A
 REGRESSION. Run the two projects SEPARATELY for a true answer.** `npm test` passes
-1197, `npm run test:integration` passes 137; together a shifting subset of
+**3681 in 193 files**, `npm run test:integration` **659 in 46** (both re-measured
+twice, 2026-08-20). **This line read 1197 and 137 — low by 3x — for an unknown number
+of releases, which is the whole argument for quoting the FILE count beside the test
+count: a raw total moves on every commit and nobody re-runs it, so re-run before
+citing either.** Together a shifting subset of
 `src/lib/ratelimit/index.test.ts` and `src/lib/llm/meter.test.ts` fails, because both
 projects share the one `serverless-redis-http` on 8079. Non-deterministic and
 pre-existing. The fix belongs with V9's files: a per-project Redis namespace, or
