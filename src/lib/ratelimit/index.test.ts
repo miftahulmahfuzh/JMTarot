@@ -225,9 +225,17 @@ describe('backend selection', () => {
   it('KEEPS THE SESSION-UPDATE BUDGET ON MEMORY, even fully configured', () => {
     /*
      * The whole point is latency: this budget sits on the request path of a
-     * language switch, and Upstash's nearest region to `sin1` is TOKYO. Sending
-     * it to Redis inserts a cross-region round trip between `setUserLocale`'s
-     * write and `readSessionFacts`'s read. See `memoryOnly`'s comment.
+     * language switch, so sending it to Redis inserts a round trip between
+     * `setUserLocale`'s write and `readSessionFacts`'s read. See `memoryOnly`'s
+     * comment.
+     *
+     * **THIS CASE USED TO SAY THAT ROUND TRIP WENT TO TOKYO, AND THAT IS THE
+     * HALF OF THE ARGUMENT THAT DIED.** Upstash has an `ap-southeast-1`
+     * Singapore region (console, 2026-07-29) and the functions have been in
+     * `sin1` since 2026-08-19 -- before which they were in `iad1`, so the hop
+     * was transpacific rather than merely cross-region. What survives is that a
+     * per-user budget lands mostly on one warm instance, which is a property of
+     * the budget and not of a map. **Measure before moving it.**
      *
      * Both key forms, because `hit()` prefixes `read:` before selection runs --
      * the same trap the events test above exists to catch.

@@ -72,10 +72,17 @@ describe('POST /api/locale survives a cold serverless path', () => {
    * in the app to be the one that wakes it.
    *
    * Worse, it is TWO sequential round trips to that compute (`setUserLocale`,
-   * then `readSessionFacts` inside `refreshSession()`) with one Singapore ->
-   * Tokyo Upstash hop between them, on a `max: 1` connection. Killed at ten
-   * seconds the write is lost, the response never arrives, and the querent sees
-   * a dead toggle. Every other slow route already declares its budget.
+   * then `readSessionFacts` inside `refreshSession()`) with one Upstash hop
+   * between them, on a `max: 1` connection. Killed at ten seconds the write is
+   * lost, the response never arrives, and the querent sees a dead toggle. Every
+   * other slow route already declares its budget.
+   *
+   * **This used to call that hop `Singapore -> Tokyo`.** Upstash has an
+   * `ap-southeast-1` region (console, 2026-07-29), and the functions ran in
+   * `iad1` -- not `sin1` -- until 2026-08-19, so the real shape was worse than
+   * the comment claimed rather than better. The assertion below is unaffected:
+   * it is about the route DECLARING a budget, which a suspending Neon compute
+   * justifies on its own.
    */
   it('declares its runtime and a budget bigger than Hobby default', () => {
     expect(source).toMatch(/export const runtime = 'nodejs'/);

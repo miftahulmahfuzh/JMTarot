@@ -161,8 +161,12 @@ through a deployment from scratch. Only the rules that bite are repeated here:
 - **`UPSTASH_REDIS_REST_URL`/`_TOKEN` are both-or-neither, and WITHOUT THEM THE LIMITER
   SILENTLY REVERTS to per-instance memory.** **Use Singapore** (`ap-southeast-1`, Global
   tier) — the same region as the functions (`sin1`) and as Neon, so every hop is
-  intra-region. Five places in this repo once said Upstash has no Singapore region and to
-  use Tokyo; all corrected, do not reinstate.
+  intra-region — **which became TRUE on 2026-08-19 and was not before it; see the region
+  trap.** Five places in this repo once said Upstash has no Singapore region and to use
+  Tokyo. **This line claimed all five were corrected and FOUR OF THEM WERE NOT** — the fix
+  reached the prose and skipped `ratelimit/index.ts`, its test, `api/locale/route.ts` and
+  `localeSwitch.test.ts`, all corrected 2026-08-19. Do not reinstate Tokyo, and **do not
+  trust a sentence in this file that says a correction is complete**: say where it landed.
 - **`RATELIMIT_SESSION_BACKEND` is its own variable and should stay unset**: a per-user
   budget lands mostly on one warm instance, so memory costs nothing real. (That is now the
   whole argument — the sin1→Tokyo half has expired. Measure before moving it.)

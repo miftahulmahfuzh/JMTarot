@@ -138,17 +138,34 @@ function num(name: string, fallback: number): number {
  *
  * `auth.ts`'s jwt `trigger === 'update'` branch spends one `hit()` before it
  * re-reads the row. Every caller of `refreshSession()` pays it, and one of them
- * is `POST /api/locale` -- **on the request path of a language switch, from
- * `sin1` to Upstash's nearest region, which is TOKYO.** There is no Singapore
- * region (verified 2026-07-27), so that is a cross-region round trip inserted
- * between a database write and a database read, both of which are already
- * sequential and one of which may be waking a suspended Neon compute.
+ * is `POST /api/locale` -- **on the request path of a language switch**, so it
+ * is a Redis round trip inserted between a database write and a database read,
+ * both of which are already sequential and one of which may be waking a
+ * suspended Neon compute.
  *
- * The measured symptom: the switch appears to do nothing on iPhone Safari. The
- * client abandons at `SWITCH_DEADLINE_MS` (6s) and deliberately does not
- * refresh, so a slow round trip is indistinguishable from a dead control. Warm
- * from WSL the whole POST is 1348ms; this hop is a real slice of it and is the
- * only slice that leaves the continent.
+ * **THE DISTANCE HALF OF THIS ARGUMENT IS DEAD TWICE OVER, AND BOTH CORRECTIONS
+ * ARE WORTH MORE THAN THE ORIGINAL CLAIM WAS.** This comment said the hop ran
+ * `sin1` -> **TOKYO** because *"there is no Singapore region (verified
+ * 2026-07-27)"*. Two things were wrong with that:
+ *
+ *   1. Upstash HAS an `ap-southeast-1` Singapore region -- console, 2026-07-29,
+ *      and `CLAUDE.md` tells you to use it. **Do not reinstate Tokyo here**; the
+ *      URL lives only in Vercel, so the console is the only instrument.
+ *   2. The functions were not in `sin1` at all. They ran in `iad1` until
+ *      2026-08-19 (`x-vercel-id: sin1::iad1::…`), so the hop was transpacific
+ *      the whole time -- the exact cost this paragraph worried about, arrived at
+ *      from the other direction.
+ *
+ * With both fixed the hop is intra-region and small. **The argument for memory
+ * therefore rests entirely on the paragraph below, which never mentioned a
+ * distance**; if you are tempted to move this budget, MEASURE it rather than
+ * re-deriving a geography.
+ *
+ * The measured symptom this was written for: the switch appears to do nothing on
+ * iPhone Safari. The client abandons at `SWITCH_DEADLINE_MS` (6s) and
+ * deliberately does not refresh, so a slow round trip is indistinguishable from
+ * a dead control. Warm from WSL the whole POST measured 1348ms -- **on the
+ * `iad1` stack, so that number belongs to the old geography too.**
  *
  * **THE BUDGET LOSES NOTHING THAT MATTERS BY BEING PER-INSTANCE.** It exists so
  * an authenticated user cannot spin database reads by spamming

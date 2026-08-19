@@ -49,22 +49,32 @@ import { LOCALE_COOKIE, LOCALE_COOKIE_MAX_AGE } from '@/lib/i18n/resolve';
  * whole difference is cold start.
  *
  * `docs/DEPLOY-VERCEL.md` puts functions on Vercel's **Hobby** plan in `sin1`,
- * Neon on the **free plan** in `ap-southeast-1`, and Upstash in **Tokyo** (there
- * is no Singapore region). Hobby's default function budget is TEN SECONDS, and a
- * free-plan Neon compute SUSPENDS WHEN IDLE. So the first switch after a quiet
- * spell is:
+ * Neon on the **free plan** in `ap-southeast-1`, and Upstash in `ap-southeast-1`
+ * as well. Hobby's default function budget is TEN SECONDS, and a free-plan Neon
+ * compute SUSPENDS WHEN IDLE. So the first switch after a quiet spell is:
  *
  *   1. a cold lambda, whose graph includes @auth/core, postgres.js and -- by way
  *      of `auth.ts` -> `users.ts` -- bcrypt;
  *   2. `setUserLocale`, which may be the request that WAKES the Neon compute, on
  *      a `max: 1` connection (see `db/client.ts`);
- *   3. `refreshSession()`, which is one Singapore->Tokyo Upstash hop (`hit()` in
- *      the jwt update branch) and THEN a second query to that same compute.
+ *   3. `refreshSession()`, which is one Upstash hop (`hit()` in the jwt update
+ *      branch) and THEN a second query to that same compute.
  *
  * Three sequential round trips, one of them a database wake. Killed at ten
  * seconds the write is lost, no response arrives, and the querent is looking at
  * a disabled toggle -- which is exactly the reported symptom, and why it always
  * "works if you try again".
+ *
+ * **THE GEOGRAPHY IN THAT LIST WAS WRONG IN BOTH DIRECTIONS AND THE ROUTE'S
+ * CONCLUSION SURVIVES ANYWAY.** Step 3 said `Singapore->Tokyo`: Upstash has an
+ * `ap-southeast-1` region (console, 2026-07-29), and the functions were in
+ * `iad1` rather than `sin1` until 2026-08-19, so every hop above was
+ * transpacific -- **a worse stack than the one this comment describes, which is
+ * why the cold path was even easier to truncate than the argument claimed.**
+ * Now that all three sit in Singapore the wake dominates and the hops do not.
+ * **Do not use that as a reason to drop `maxDuration` back to the default**: the
+ * Neon compute still suspends, and a cold wake is still the one outcome that
+ * means UNKNOWN. Re-measure on a phone before touching it.
  *
  * **A BIGGER BUDGET IS NOT A LATENCY REGRESSION.** It does not make the warm
  * path slower; it stops the cold path being TRUNCATED. And it is deliberately
