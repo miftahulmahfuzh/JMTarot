@@ -560,8 +560,9 @@ rule because the model tries to translate them and invents names like *"Pulan"*.
 | `docs/provider-comparison.md` | The measurements — **two of its own numbers were wrong**, and it says so |
 | `docs/analytics-queries.md` | The queries an operator actually runs |
 
-This was an Expo/React Native iOS app until 2026-07-25; the full tree is on
-[`feat/ios`](../../tree/feat/ios). The App Store costs $99/yr, a website costs nothing
+This was an Expo/React Native iOS app until 2026-07-25; the full tree is at commit
+[`7fe0249`](../../tree/7fe0249) — an ancestor of `main`, so it stays reachable for ever
+without a branch holding it open. The App Store costs $99/yr, a website costs nothing
 and ships from Linux in one `git push`, and everything that mattered survived the move —
 the readers, the deck, the Indonesian copy, the fan. One thing got better: with a server
 in the loop, readings are generated instead of pre-written.

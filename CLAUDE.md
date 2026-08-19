@@ -45,11 +45,14 @@ and its comment is load-bearing (the `local_date` trap).
    in the same commit.** Part III of the notes holds that pass's prior text and the test
    applied to every line: does it BIND, or does it ARGUE.
 
-This was an Expo/React Native iOS app until 2026-07-25; the full tree is on
-`feat/ios`. If something reads like a leftover from that era, check that branch before
-assuming it was a mistake. `backup/main-ios-2026-07-25` was deleted as redundant —
-`feat/ios` (`7fe0249`) is an ancestor of `main` — recreate with
-`git branch backup/main-ios-2026-07-25 cfa9f29`.
+This was an Expo/React Native iOS app until 2026-07-25; **the full tree is at commit
+`7fe0249`, and there is no branch pointing at it any more** (`feat/ios` deleted 2026-08-20,
+`backup/main-ios-2026-07-25` before it). **Naming the COMMIT is not a downgrade from naming a
+branch, it is the durable form:** `7fe0249` is an ancestor of `main`, so it can never be
+garbage-collected and `git show 7fe0249:<path>` works for ever, where a branch is one
+`git push --delete` from gone. If something reads like a leftover from that era, look there
+before assuming it was a mistake — `git log 7fe0249 -- <path>`, or
+`git branch feat/ios 7fe0249` to walk the tree. `cfa9f29` is the pre-rewrite `main` tip.
 
 ## Environment
 
@@ -495,7 +498,7 @@ not here.**
   is split into `.back` (declares it, paints nothing) and `.plate` (a descendant).
 
 - **`StyleSheet.absoluteFillObject` and all React Native APIs are gone.** If you see one, it came
-  from `feat/ios`. Two more iOS-era warnings are in the notes, because each looks like a bug
+  from the iOS era (`7fe0249`). Two more of its warnings are in the notes, because each looks like a bug
   someone will helpfully "fix" back into existence: fonts no longer need per-weight subpath
   imports (but still list weights explicitly in `src/app/layout.tsx`, never a whole family), and
   **the card flip is ONE rotation, not two** (`Fan.module.css`, one `rotateY` on a shared parent
