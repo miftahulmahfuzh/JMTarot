@@ -11702,3 +11702,595 @@ the conditional expressions and checks those instead.
 **The flow is self-healing whatever dismisses the sheet, including nothing:** `HandoffClaim`
 is mounted on `/` for a signed-out installed app and fires on mount as well as on return, so
 the next launch collects the session.
+
+# Part III — the third cut, 2026-08-20
+
+**CLAUDE.md was cut a third time on 2026-08-20.** Part II records the second cut
+(167,282 -> 93,841 characters, 2026-07-29) and predicted this one in as many words:
+the file re-grows because "every ruling since appended its whole argument to the
+always-loaded file". It did it again — 93,841 -> 146,694 in three weeks, which is
+**faster than either previous re-growth**, and left 3,306 characters before the 150,000
+at which the file is rejected outright and therefore not loaded at all.
+
+**Same rules as Part II.** This is the verbatim prior text, nothing is deleted from the
+record, and where this part and CLAUDE.md disagree **CLAUDE.md wins** — these are
+snapshots. Read them for *why*, never for *what is true now*.
+
+**What was cut, and the test applied to every line:** does this sentence BIND — is it a
+rule, an invariant, a file map, or a number a session must not re-derive? Or does it
+ARGUE — evidence for a rule already stated, the story of how a bug was found, or a
+measurement whose conclusion is already in the rule above it? The first stayed. The
+second is here. Where a war story was the only thing making a rule credible, the rule
+kept one clause of it.
+
+## Moved from CLAUDE.md, 2026-08-20: The markdown editor for /admin/blog (2026-07-31)
+
+## The markdown editor for /admin/blog (2026-07-31)
+
+**Three fields and a paste box.** Judul, Gambar Utama, Konten, an `Auto Format` button and
+`Simpan`. `BlockEditor.tsx` is DELETED. `src/lib/content/{markdown,formatAdvice,heroAlt}.ts`,
+`src/lib/admin/blogFormat.ts`, `src/app/api/admin/blog/[slug]/format/route.ts`,
+`src/app/admin/blog/MarkdownEditor.tsx`, `src/components/ArticleToc.tsx`. The design is
+`docs/plans/2026-07-31-blog-markdown-editor-design.md`; its §15 records the divergences and
+the live verification, and the evidence is in `docs/workstream-notes.md`.
+
+- **MARKDOWN IS A PROJECTION OF THE DOCUMENT, NEVER THE RECORD OF IT.** `body` stays
+  `Block[]`, `Prose` stays the one renderer, and there is **no `markdown` block kind, no
+  `raw`, no `dangerouslySetInnerHTML`** — A-D10's CSP argument is untouched.
+  `serializeMarkdown` rebuilds the textarea from the stored blocks on every page load. **No
+  migration, no column.**
+- **`parseMarkdown ∘ serializeMarkdown` IS IDENTITY, AND THAT PROPERTY IS WHAT LICENSED
+  DELETING 880 LINES.** Asserted over the four committed articles as fixtures.
+  `serializeMarkdown ∘ parseMarkdown` is NOT identity and must not be forced to be —
+  formatting normalises. **The parser emits `Inline[]` always, so a stored bare-string
+  paragraph is promoted; `markdown.test.ts` asserts that changes no `plainText()` byte.**
+- **`{#anchor-id}` IS NOT DECORATION AND `cardRef`'s RULE IS EXACT, NOT HEURISTIC.** The four
+  articles carry English ids on Indonesian headings, which `slugify` cannot derive; an anchor
+  is a permanent address. And a `cardRef` is a paragraph whose **entire** content is an
+  `/arcana/<slug>` link — *"contains such a link"* would swallow the six mid-sentence ones in
+  the launch articles.
+- **THE MODEL RETURNS METADATA, NEVER THE AUTHOR'S WORDS** — headings, anchor ids, a
+  description, and code splices them. `effectiveYesNo()`/`validateChoice`'s rule for a new
+  direction of travel. `parseMarkdown`'s output is already valid, so **rejecting all the
+  advice is a correct outcome**, and `applyAdvice` inserts high-index-first or a heading lands
+  inside the paragraph it introduces.
+- **AN ALREADY-SECTIONED PASTE MAKES NO MODEL CALL** (`adviceNeeded()` returns `[]`) —
+  measured at 1.44s against 3.32s. `admin.blog_saved.model_called` is the instrument: true on
+  nearly every press means the PARSER is missing something.
+- **`blog_format` IS THE ELEVENTH `LLMOp`, AND THE SET GREW TWICE ON 2026-07-31.** The rule
+  was never that ten is a magic number — a new value is a question for Miftah. **FOUR of the
+  thirteen ops now measure something other than a reading** — `insight` and `blog_format` the
+  dashboard and the CMS, `chat_plan` and `chat_turn` the group chat — **so a cost-per-reading
+  denominator must exclude all four, and `src/lib/admin/ops.ts` is the machine-checked list**
+  with a compile guard that makes a fourteenth op an error until somebody classifies it.
+  *(This bullet said "two" over an eleven-member union for a whole release; F7 found the same
+  sentence stale in four places at once, which is the argument for the file.)*
+- **`flagCoverage.test.ts`'s ADMIN-ONLY EXEMPTION NOW HAS THREE MEMBERS AND IS OWED A CLASS
+  SWITCH.** `callClass: 'deferred'` is the switch — the fleet-wide ceiling sheds an operator's
+  press before any querent call. **The FOURTH admin-only call site must bring one
+  `ADMIN_MODEL_CALLS_ENABLED` and collapse all three entries into it.**
+- **THE HERO `alt` IS DERIVED FROM `LoreDoc.imageAlt` AND THERE IS NO FIELD FOR IT.** All four
+  committed articles shipped the bare card name — `'The World'` — which is both halves of
+  `hero-pair` on four indexed pages. **The generalisation: `hero-pair` is warning class and
+  `blog-import.ts` sets `status: 'published'` directly, so the gate was never on the path that
+  made the rows.** Re-running that script is the repair. `heroAltFor` returns `null` as a
+  REFUSAL, never `''`; `changeStatus` lints the DERIVED value so legacy rows can still be
+  published; and **`hero.alt` left the translation segment walk** — translating it would mint a
+  third description of one painting.
+- **`heroAlt.ts` CARRIES NO `server-only` AND IS ONE HOP FROM 44 LORE DOCUMENTS.**
+  `clientBoundary.test.ts` checks DIRECT imports only, so `heroAlt.test.ts` asserts no client
+  component reaches it. That assertion is the whole protection.
+- **THE TRANSLATION PUSHES AND BOTH MODEL BUTTONS WRITE (2026-07-31).** `Terjemahkan otomatis`
+  lives on the SOURCE tab, names the DESTINATION, and stores the target locale as a **draft**
+  through `saveDocument`. The pull direction was upside down: it meant navigating to an empty
+  English tab to create the English article, and **the starting point is that the article does
+  not exist yet.** The route needed no new parameter — `from` was always derived as the locale
+  that is not `to`, so the caller passes the OTHER locale. `canTranslate` now asks whether THIS
+  locale has a stored body; `targetHasBody` drives the overwrite guard, which protects a stored
+  article in a tab the operator cannot see. **`translate()` must touch no form state** — a push
+  that still called `setTitle`/`setMarkdown` would overwrite the article being edited with a
+  translation of itself, and a contract test greps the function for those setters.
+- **`via` HAS THREE VALUES AND STILL NO SECOND EVENT NAME:** `form | auto_format |
+  auto_translate`. Every route that stores fires `admin.blog_saved`, or the save metric
+  undercounts.
+- **`Simpan & terbitkan` CHAINS TWO EXISTING ENDPOINTS AND IS NOT A MODE ON `Simpan`.** A
+  combined route would restate `changeStatus`'s rules — no path back to draft, `id` before `en`,
+  and a publish refused for ANY violation including warnings, which is the one place an operator
+  meets a violation that let them save seconds earlier. The publish is SKIPPED after a create,
+  because that save navigates. `Lihat artikel` is gated on a `live` state seeded from the row and
+  **not on `state`**, which returns to `saved` while the article stays published; `publicPath`
+  comes from `blogPostPath` on the SERVER (`StatusControl`'s rule, and `adminCopy.test.ts` keeps
+  `@/lib/i18n/prefix` out of this subtree).
+- **THE LINT PANEL RENDERS ONLY WHEN IT HAS SOMETHING TO SAY, AND THE LINT ITSELF IS UNCHANGED.**
+  It still refuses saves and publishes and is the only place its words appear — measured live on
+  a real paste: `malay / tempoh` and `bare-path / /history`, both error class, both storing
+  nothing. What went is the permanent empty panel: beside three fields a standing *"Bersih."* is
+  furniture that teaches an operator to stop reading that part of the screen. `lintClean` is
+  deleted so nothing re-adds a render for it.
+- **BOTH MODEL BUTTONS WRITE, TO DIFFERENT LOCALES, AND THE COPY IS THE ONLY THING THAT SAYS
+  SO** — a test greps both hints. Auto Format's timeout copy says the draft MAY be stored and to
+  reload, because a timeout on a write path means UNKNOWN; translate's says the same about the
+  other tab. **FOUR fetches, four client bounds (25s save / 25s status / 55s translate / 45s
+  format), and the COUNT is asserted** so a fifth unbounded one is red. All four read their body
+  through one `readReply` helper — `savePublish` was written with `.catch(() => ({}))` and the
+  fence added hours earlier caught it.
+- **THE TABLE OF CONTENTS WAS ALWAYS AUTOMATIC — THE PREVIEW WAS WHAT DID NOT SHOW IT.**
+  `ArticleToc` is one component with two mounts and its label is a PROP, because
+  `adminCopy.test.ts` forbids `t()` across the admin tree. `previewStale` is DELETED, not
+  reworded; `previewHref` stays.
+- **A PASTE FROM A CHAT UI HAS NO BLANK LINES, AND MARKDOWN'S OWN RULE MADE THAT ONE
+  PARAGRAPH.** Measured on real Gemini output: 3 lines, 0 blank lines, joined into a single
+  2,292-character block. **A heading can only go BETWEEN blocks, so one block offered ONE legal
+  position and sectioning was impossible** — the model was blamed and was not at fault.
+  `splitRun` fixes it: within a run of non-blank lines, if EVERY line ends a sentence each line
+  is its own paragraph, otherwise the run is joined. A hard-wrapped paragraph breaks
+  mid-sentence, so it cannot satisfy that. `pastedArticle.ts` keeps the real paste as a fixture
+  and `blogFormat.integration.test.ts` pins all three newline shapes.
+- **`at === body.length` IS REFUSED: A HEADING TITLES WHAT FOLLOWS IT.** The first version
+  allowed it in as many words — *"a heading appended after the last block is legitimate"* — and
+  a live call returned `at: 1,2,3` on a three-block body, storing a trailing heading whose
+  section contained the page disclaimer. Legal range is `[0, body.length - 1]`.
+- **A REPEATED HEADING `id` OR `text` IS REFUSED, AND SEEDED FROM THE BODY, NOT JUST THE
+  REPLY.** glm-4.6 returned `## Three Septenaries` three times with one id; the first validator
+  accepted all three because it only refused a repeated `at`. Duplicate ids are invalid HTML and
+  give a TOC whose rows all jump to the first section.
+- **THE INDEX RULE NEEDS A WORKED EXAMPLE, NOT A DEFINITION.** *"disisipkan SEBELUM blok itu"*
+  was accurate and read backwards; the prompt now shows `[0] → at:0`. Three live runs after the
+  change: `heading,paragraph` × 3 every time, zero rejections, prose byte-identical.
+- **Still open:** the model once wrote *"Kartu Arcana Major"*, reversing *Major Arcana* — a TERM
+  neither the `card-names` lint nor the old prompt covered, now forbidden by name in the prompt,
+  and **`validateAdvice` refuses shape, not truth.** The `.content` textarea is unmeasured on a
+  phone. The four launch rows keep their old `alt` until `blog-import.ts` is re-run.
+
+
+## Moved from CLAUDE.md, 2026-08-20: The group chat (v0.7.0)
+
+## The group chat (v0.7.0)
+
+**Three readers and the querent in one room, that keeps going when nobody is looking at it.**
+`src/lib/chat/**` (types, machine, run, budget, model, address, context, prompt/**, direct/**,
+voices/**, proactive/**), `src/lib/db/queries/chat.ts`, `src/app/api/chat/**`,
+`src/app/api/cron/nudge`, `src/app/chat/**`, `src/components/Chat*.tsx`, `/admin/chat`.
+Seven workstreams, `PUBLIC_RELEASE_ROADMAP_v0.7.0.md` and
+`docs/plans/2026-08-07-RECONCILIATION-v0.7.0.md`, **and the reconciliation outranks the
+roadmap.** The full account of each is in `docs/workstream-notes.md` under F1–F7.
+
+**IT IS MEASURED BY TWO THINGS AND NOTHING ELSE — how NATURAL and how PROACTIVE the room
+feels.** Every trade below is traded in their favour, including the ones that look like
+infrastructure.
+
+- **A RUN IS THE UNIT, NOT A REQUEST.** One trigger produces one `chat_runs` row, which
+  produces 1–4 bubbles from 1–3 readers. The director writes a **beat sheet**; the voices
+  execute it **one beat per `POST /api/chat/advance`**. **An abandoned run and a proactive run
+  are the same object** (`C-D7`), which is why proactivity needed triggers rather than a second
+  pipeline. A design in which unprompted messages have their own route, table or renderer is
+  wrong.
+- **A TURN IS BUFFERED AND DELIVERED WHOLE, NEVER STREAMED** (`C-D3`) — a naturalness decision,
+  not a performance one: watching Adrian type character by character is a chatbot tell. It also
+  buys validation before display and one code path for turns nobody is watching.
+  **`ReadingView`'s streaming machinery is not reused and must not be.**
+- **CHAT CALLS ARE `deferred`, AND THAT IS A PROMISE TO THE READING** (`C-D6`). A chat run is
+  2–5 calls and sixty runs would exhaust the app's whole five-hour quota, so when the two
+  compete the reading wins. **`LLM_WINDOW_CHAT_CEILING` is the chat's own sub-budget**, peeked
+  before the fleet ceiling and defaulting to half of it. **A shed beat is not an error** — the
+  run stays `running` and the next visit delivers it.
+- **THE READERS SEE THE SIX RAW ONBOARDING ANSWERS, AND THIS AMENDS `A5` BY NAME** (`C-D8`,
+  granted with all five conditions intact). One decrypt site, in F3's assembler through
+  `queries/onboarding.ts`; **not one decrypted byte reaches the browser**; `<jawaban>` fences
+  it; **a skipped answer stays skipped**, because a reader who asks about the thing you
+  refused to answer is the worst version of this feature. `CHAT_ANSWERS_ENABLED` is the
+  reversal that needs no prompt-layer redeploy. **`/privacy` AND BOTH ONBOARDING HINTS were
+  amended in the same release** — the hints are the load-bearing edit, because nobody re-reads
+  `/privacy` and everybody reads the hint while typing the answer.
+- **A CHAT MESSAGE IS NEVER TRANSLATED** (`C-D9`). `TRANSLATABLE` gets no entry and
+  `translations` no `entity`: translating it would make Thessaly say something she did not say,
+  in a room where the querent can see the original. The chrome still follows `t()`; a bubble
+  carries its own `lang` and the page does not.
+- **CODE DERIVES THE ADDRESS FORMS AND THE MODEL PICKS ONE FROM THE LIST** (`C-D10`) —
+  `effectiveYesNo()`'s and `validateChoice`'s rule in a third place. `address.ts` is PURE and a
+  LEAF; **the full nickname is always candidate zero**, and **an empty candidate list is a
+  correct outcome, never an error.**
+- **THERE IS NO ERROR BUBBLE. A FAILURE IS SILENCE** (`C-R7`), and **a zero-beat plan is valid
+  and desirable** (`C-R6`). The two are indistinguishable from inside the room and are told
+  apart only on `/admin/chat`'s health panel. **A silence rate of zero is not good news** — it
+  means the director always answers, which is not what a group chat does.
+- **`/chat` IS GATED AND `isPublic()` MUST NEVER LEARN IT** (`C-D12`) — `/history`'s sentence
+  for a stronger reason, because this room contains the six answers spoken aloud. **`/en/chat`
+  404s**, per contract G2.
+- **A POSTED MESSAGE GOES THROUGH THE W7 GATE AND A REFUSAL IS NEVER IN A READER'S VOICE**
+  (`C-D13`). `RefusalNotice`, not a bubble: a reader who refuses you is a friend who refuses
+  you. **The classifier is not "tightened" for this surface** — grief, illness and a
+  frightening partner are what the room is for — and **a reader's own output is not
+  classified.**
+- **THE UNREAD DOT IS LIT BY A STORED BUBBLE AND NEVER BY A PENDING RUN** (`[R6]`, correcting
+  `C-D7`). `GET /api/chat/state` returns the count and the pending flag as **two fields**: the
+  count drives the dot, the flag drives the warm. A dot lit by a pending run can lead the
+  querent to a room with nothing new in it.
+- **`chat_messages.body` IS TEXT A PERSON TYPED, IN PLAINTEXT** (`C-D20`) — `readings.question`'s
+  neighbour in every privacy commitment. **Never log a driver error from any path that runs a
+  chat query**, `events.props` carries a length and never a body, and **nothing in
+  `queries/admin/chat.ts` selects the column at all.**
+- **`CHAT_MODEL` DEFAULTS TO `glm-5.2` AND IS ONE VARIABLE FOR THE DIRECTOR AND THE VOICES**
+  (`C-D4`, `ADMIN_MODEL`'s shape). It points *away* from `LLM_MODEL` for the opposite reason
+  `ADMIN_MODEL` does: everything on this surface is in a reader's voice. **The chat is, by
+  accident, already on the right side of the ~February 2027 line** `## The z.ai plan` describes.
+- **TWO NEW `LLMOp` VALUES, 11 → 13** (`C-D5`): `chat_plan` is one director call per run,
+  `chat_turn` one per beat. **Two, not one**, because averaging a tiny JSON reply with a
+  two-sentence one makes both figures meaningless; **two, not three**, because a proactive turn
+  is a `chat_turn` and what made it proactive is `chat_runs.trigger`. **`llm_calls.reading_id`
+  is NULL for both** (`[R8]`) — `readingCostsFor` folds every `reading_id`-bearing row with no
+  `op` predicate, so a non-null there would silently inflate the cost of the reading that
+  triggered the conversation.
+- **FOUR OF THE THIRTEEN OPS HAVE NO QUERENT BEHIND THEM AND `src/lib/admin/ops.ts` IS THE
+  MACHINE-CHECKED LIST.** `insight`, `blog_format`, `chat_plan`, `chat_turn`. It carries a
+  compile guard so a fourteenth op is an error until somebody classifies it — written because
+  the same rule was stated in prose four times and **three of the four were stale.**
+- **TWO NEW FLAGS, FIVE BECOMES SEVEN** (`C-D15`): `CHAT_ENABLED` and
+  `CHAT_PROACTIVE_ENABLED`, on `ANALYTICS_ENABLED`'s rule. **Off gates the model call, never
+  the cached read** — the room still opens and every past message still renders.
+- **`/admin/chat` MEASURES AND NEVER RESTRAINS.** No pause button, no ceiling editor. Its one
+  `Hero` is the proactive reply rate, **whose denominator is runs whose 24-hour window has
+  CLOSED** — including the open ones makes the release's own scorecard fall every time somebody
+  picks a range ending today. `/admin/users/[id]` shows **counts and no text** (`[R15]`),
+  because `A-D16`'s audited reveal was built for a thing you read one of.
+- **NOTHING IN THE COMPOSER MAY BE `white-space: nowrap`, AND `min-width: 0` BELONGS ON EVERY BOX
+  BETWEEN ITS TEXT AND THE SHELL** (2026-08-09, the first querent-reported bug of the release,
+  fixed and confirmed on iOS Safari). `nowrap` makes an element's MIN-content width its
+  MAX-content width — one unbreakable line — and the composer is the only part of the room that
+  does not scroll horizontally, so that minimum reaches `.shell`'s auto-sized grid track and
+  `overflow: hidden` eats `Kirim` off the right-hand edge. **`overflow-wrap: anywhere` is the
+  load-bearing declaration and `break-word` is NOT a substitute**: only `anywhere` changes
+  min-content. `replyPreview` cuts the stub to eight words as well, because the CSS argument is
+  spec-correct and Chrome-only: **loop 4 measured this green at 320 and was right about Chrome.**
+  The in-bubble quote never had the bug while its comment claimed the two *"read as one
+  mechanic"* — **a comment claiming two things are one mechanic is the first place to look.**
+- **`100dvh` cannot see the software keyboard, so `.room` carries `--kb-inset` from
+  `keyboardInset.ts` — a MARGIN, never a height**, so it can only shorten the room and `0px` is
+  the layout that shipped. iOS shrinks the visual viewport and leaves the layout viewport alone.
+  **No report has ever turned out to be about this**; do not read its presence as evidence it was
+  needed, and do not stack a third explanation on it.
+- **A HISTOGRAM ON THAT PAGE IS `InlineBars`, NOT `StackedBar`.** `stackSegments` normalises
+  every row to 100% of its own total, so a one-segment row is always full width and the
+  distribution encodes nothing. Measured at 1440 on 2026-08-08, after a plan asserted the
+  opposite. The same property makes `chat.cast`'s bar LENGTHS meaningless — compare the numbers
+  at the row ends.
+
+**Verify it with the blind read, not with a test.** `npm run smoke -- --chat` and
+`npm run smoke -- --chat --proactive` print an exchange with the names covered; if you cannot
+tell who is who, the release is not done. No unit test can stand in for it, and
+`/admin/chat`'s reply-rate panel is the only *continuous* measurement once it has shipped.
+
+
+## Moved from CLAUDE.md, 2026-08-20: Traps
+
+## Traps
+
+**This list is the rules. How each was found, the logs, the measurements, the generalisations and
+the three obsolete iOS-era warnings are in `docs/workstream-notes.md` — put new evidence there,
+not here.**
+
+- **A COMMITTED MIGRATION THAT NOBODY APPLIED TOOK PRODUCTION DOWN, AND THE APP LOOKED PERFECTLY
+  HEALTHY WHILE IT DID** (2026-07-28, the worst outage this project has had). One missing column
+  made the sign-in upsert throw, `auth.ts`'s catch return `null` and the gate bounce every querent
+  to `/login` — while **Google's consent screen succeeded every time** — and killed the language
+  switch too: ONE unapplied migration presenting as TWO unrelated-looking bugs, neither naming a
+  migration. **The class of failure is code and schema shipping on different rails.** `npm run
+  build` now runs `scripts/db-migrate-deploy.ts` FIRST and **fails the build** rather than skipping
+  when it cannot run; it needs `MIGRATE_DATABASE_URL`, refuses a `-pooler` host, and skips
+  off-Vercel on the `VERCEL` guard, not `NODE_ENV`. **Two things it does NOT fix:** concurrent
+  builds could both apply one migration (drizzle takes no advisory lock), and a *destructive*
+  migration still deploys ahead of the code that tolerates it.
+
+- **THE FUNCTION REGION IS PINNED BY `"regions": ["sin1"]` IN `vercel.json`, NEVER BY THE
+  DASHBOARD, AND WITHOUT THAT KEY THE WHOLE APP RAN IN WASHINGTON DC FOR THE PROJECT'S
+  ENTIRE LIFE** (measured 2026-08-19; every route answered `x-vercel-id: sin1::iad1::…`
+  and `serverlessFunctionRegion` read `iad1`, the default). Edge middleware in Singapore,
+  every render in Virginia, Neon in `ap-southeast-1` — **~230ms per query each way, on
+  sequential round trips.** `docs/DEPLOY-VERCEL.md` §6 step 6 told somebody to click a
+  control in a dashboard, which is not a mechanism: a key in the repository ships with the
+  code, is reviewable, survives a relink, and overrides the dashboard. **Every latency
+  figure in this repo predating that date was measured on that stack** — re-measure before
+  tightening any timeout derived from one. The one instrument is
+  `curl -4 -sI <url> | grep x-vercel-id`, whose **second** segment is where the function
+  ran; no test and no `next start` can see it. Full account in `docs/workstream-notes.md`.
+
+- **A PROVIDER FACT THIS REPO ASSERTS IN PROSE AND CANNOT RE-RUN WILL ROT, AND ONE DID FOR A
+  WHOLE RELEASE.** Twelve places said *"z.ai reports `input_tokens: 0` and honours no
+  caching"*. Both halves were false: `anthropic.ts` read the count from `message_start`, which
+  is a placeholder sent before the prompt is counted, while the real figures arrived in
+  `message_delta` — the event the adapter already opened to read `output_tokens` from. **The
+  buffered path was never affected, so half the ledger looked plausible and the other half read
+  as a provider limitation.** It nearly cost a tokenizer dependency to estimate numbers already
+  on the wire. **`npm run probe:usage` before believing any claim here about what a provider
+  reports**, and after any change to `LLM_PROVIDER`, `LLM_MODEL`, a base URL or the SDK.
+  - **`ReadingUsage.inputTokens` IS THE TOTAL, CACHE READS INCLUDED**, and
+    `cachedInputTokens` is a breakdown of it, never a sibling to add.
+  - **THE TWO WIRE FORMATS ARE OPPOSITE AND EACH ADAPTER CONVERTS ITSELF.** Anthropic's
+    `input_tokens` EXCLUDES cache reads, so `anthropic.ts` sums; OpenAI's `prompt_tokens`
+    INCLUDES them, so `openai.ts` must not. *"Make the adapters consistent"* silently doubles
+    one provider's input numbers; `usage.test.ts` and `openai.test.ts` hold a negative control
+    each.
+  - **`cache_read_tokens` HAS THREE STATES AND `0` IS A MEASUREMENT** — reported, nothing
+    cached — where NULL means nothing was reported. Rate the cache only over rows where it is
+    NOT NULL, or the figure halves across the 2026-07-30 deploy and reads as a regression.
+  - **NO BACKFILL: any average over `input_tokens` spanning 2026-07-30 is two different
+    measurements.** The full account is in `docs/workstream-notes.md`.
+
+- **FRAMEWORK BEHAVIOUR IS MEASURED HERE, NEVER RECALLED.** Two agents produced two confident,
+  mutually exclusive, both-wrong answers about React's escaping of a `<script>` text child.
+  `JsonLd.tsx` uses a plain child and `serializeJsonLd` pre-escapes `& < >` anyway — **not for
+  correctness, but because that behaviour is an unspecified implementation detail and a release must
+  not depend on one.**
+
+- **THE SEARCH CONSOLE HTML-FILE METHOD IS 302'd BY THE MIDDLEWARE MATCHER, AND THE ERROR NAMES THE
+  WRONG CAUSE** — verification fails saying the file was not found while the file is right there in
+  `public/`. Use a **DNS TXT Domain property** (`docs/DEPLOY-VERCEL.md` §7b), which also covers the
+  apex.
+
+- **`middleware.ts` must be at `src/middleware.ts`**, not the repo root, because the app lives under
+  `src/`. At the root it is silently never executed and every route is open.
+
+- **Escape `$` as `\$` in `.env` files.** Next expands `$VAR`, so a raw bcrypt hash loses
+  `$2b`/`$12`; the symptom is a 500 about malformed `AUTH_USERS` on a hash that parses perfectly
+  when you read the file. **Do NOT escape in the Vercel dashboard** — values there are literal. Same
+  trap reaches `DATABASE_URL`, where `@ : / ?` additionally need percent-encoding.
+
+- **The rate limiter's fallback is silent to the user and loud only in one event.** When Upstash is
+  unreachable every budget falls back to per-instance memory — never to unlimited, never to a
+  refusal — so the app looks healthy while every stated limit is multiplied by the number of warm
+  instances. `ratelimit.backend_degraded` and query 9 are the only way to see it, and **never
+  setting `UPSTASH_REDIS_REST_URL` in production** is the likelier way to end up there.
+
+- **BOTH UPSTASH SDK DEFAULTS ARE WRONG FOR THIS APP, AND BOTH ARE WRONG BY BEING ABSENT.**
+  `@upstash/ratelimit`'s **`timeout` defaults to ON at 5s and FAILS OPEN TO UNLIMITED** — on expiry
+  it resolves `{ success: true, reason: 'timeout' }`, a pass that never reached Redis. Hence
+  `timeout: 0` in `redis.ts`, plus `_toResult` independently throwing on `reason: 'timeout'` so
+  reinstating it degrades to memory rather than passing. And `@upstash/redis`'s **`retry` defaults to
+  five attempts** with ~4.3s of backoff, while this layer does not retry.
+
+- **THE 429's `retry-after` FROM THE CEILING IS NOT THE WINDOW LENGTH** — measured at **291 seconds**
+  on a tripped ceiling, not five hours, because the sliding window reports `reset` as the start of
+  the next sub-window. Both backends are honest and neither is ever zero, which is the property that
+  matters. Do not "fix" it to a hardcoded window length.
+
+- **`llm:window` IS A ROLLING FIVE HOURS, AND IT IS THE ONE COUNTER IN THIS APP THAT IS NOT THE
+  QUERENT'S CALENDAR DAY.** z.ai meters prompts per rolling 5-hour cycle, so a daily bucket would
+  never fire before the provider's own limit — a script burns the cycle in five minutes while a daily
+  counter still reads 400/4000. There is deliberately **no date in the key**.
+
+- **A ROUTE THAT IS 22ms WARM CAN BE KILLED AT TEN SECONDS COLD.** `POST /api/locale` was reported as
+  hanging and diagnosed as an LLM call; nothing on that path reaches a model. It was **the only
+  database-writing route declaring neither `runtime` nor `maxDuration`**, and Vercel's Hobby default
+  is ten seconds — enough to lose the write on a cold lambda plus a suspended Neon compute. Three
+  rules, each generalising past this route:
+  1. **A user action that WRITES is one of the few things likely to be the request that wakes a
+     suspended compute**, so measure those cold. **A phone is the instrument for anything on the cold
+     path** — 1348ms warm from WSL told us nothing.
+  2. **A BIGGER `maxDuration` IS NOT A LATENCY REGRESSION, BUT IT MUST BE PAIRED WITH A BOUND ON THE
+     CLIENT**, or you have only made the hang longer.
+  3. **A TIMEOUT IS THE ONE OUTCOME THAT MEANS UNKNOWN**, so it is the only one retried — once, with
+     the marker KEPT — while `!response.ok` and offline revert, because those are answers.
+
+- **Port 6379 is permanently occupied by another project's `chatbot-redis` container**, so this
+  project's `docker-compose.yml` does **not** publish its Redis port — `serverless-redis-http` reaches
+  it over the compose network and the integration suite only talks to SRH on 8079. Publishing fails
+  with "port is already allocated". SRH also rejects any request without
+  `Content-Type: application/json`.
+
+- **The native `postgresql-16` on this machine is on port 5433, has no `miftah` role, and its
+  `pg_hba.conf` is root-only.** This project uses Docker on 5432. Do not point `DATABASE_URL` at 5433.
+
+- **Port 3000 is permanently occupied by another project's Grafana container**, so `npm run dev`
+  lands on 3001 — not cosmetic, because OAuth redirect URIs are exact-match strings, so `AUTH_URL` is
+  `http://localhost:3001`. `npm start` passes no port, so a local production check is
+  `npx next start -p 3001`.
+
+- **AAAA lookups hang for 4-12s in this WSL image, which is why every npm script that touches the
+  network sets `RES_OPTIONS=no-aaaa`.** The WSL DNS proxy answers A in 0.01s and never answers AAAA,
+  and `dns.lookup` asks for both families, so **every cold outbound connection pays it** (`getent
+  ahostsv4` 0.01s vs `ahostsv6` 10.02s). It broke Google sign-in with `UND_ERR_CONNECT_TIMEOUT` while
+  the network was fine, and the symptom — `?error=Configuration`, `fetch failed` — reads exactly like
+  a bad client secret. **Do not diagnose it by retrying**: Node caches a resolution, so the second
+  attempt is fast and the first after any restart is not. **`npm run build` is intermittently a victim
+  too**, and it looks like a code failure — `Can't resolve
+  '@vercel/turbopack-next/internal/font/google/font'`, because Turbopack fetches fonts from its Rust
+  side, which does **not** honour `RES_OPTIONS`. **Retry the build.**
+  `--dns-result-order=ipv4first` does **not** work: it reorders results but still issues the AAAA
+  query.
+
+- **`docker exec … pg_isready` races initdb.** During bootstrap the container runs a temporary server
+  that reports ready and then shuts down, on the **unix socket only** — so a TCP probe cannot see it
+  and cannot race it. `db:up` probes over TCP; the symptom of getting it wrong is `FATAL: the database
+  system is shutting down` from the very next command.
+
+- **`drizzle-kit` does not load `.env.local`.** It is not Next. `DATABASE_URL is undefined`, from a
+  variable plainly set for `npm run dev`, is always this.
+
+- **`drizzle-kit push` is banned**; only `generate` + `migrate`. It applies a schema diff without
+  writing a migration file, silently desynchronizing committed history from every other machine. Full
+  rules in `src/lib/db/migrations/README.md`.
+
+- **`local_date` and `birth_date` are `string`, not `Date`.** `local_date` is the *querent's* calendar
+  day, sent by the client, and a `Date` renders in the server's zone and is a day out for anyone in
+  Jakarta between midnight and 07:00. An integration test fails if anyone "fixes" the column to
+  `mode: 'date'`.
+
+- **Drizzle's `$onUpdate()` does not fire inside `onConflictDoUpdate`** — it applies to `db.update()`
+  only. Every upsert in `src/lib/db/queries/**` sets `updatedAt` by hand; drop that line and the
+  column silently freezes at the first insert. For `daily_summaries` it is the column the regeneration
+  throttle compares against, and for `translations` the entire staleness mechanism.
+
+- **`track()` returns `void` and must never be awaited.** Import from `@/lib/analytics/track` on the
+  server and `@/lib/analytics/track.client` in a client component — never the first from the second,
+  which drags `node:async_hooks` and `next/server` into the browser bundle and fails the build. The
+  `void` return is the enforcement: a function that cannot be usefully awaited does not acquire an
+  `await` at 11pm.
+
+- **No free text in `events.props`, ever.** `question.typed` carries a `length`. `events` rows SURVIVE
+  account erasure with `user_id` nulled, and that is only honest because `sanitizeProps()` provably
+  strips everything identifying: it drops non-scalars, truncates strings to 120 characters, caps at 24
+  keys, and rejects `__proto__`, `constructor` and `prototype` by name — the last two are ordinary
+  lowercase words that pass a `lower_snake` pattern.
+
+- **Never log a driver error from any path that runs a query.** A postgres error quotes the failing
+  statement *and its bound parameters*, and `readings.question` is one of them. Production logs ids,
+  attempt, SQLSTATE and the error's class; development prints the whole thing, because there is nobody
+  to leak it to. Binds `flush.ts`, `moderation/log.ts`, `auth.ts` and V2's translate path. **The
+  generalisation: every `catch` that touches the database is a potential PII sink, and the audit is
+  "which of my bound parameters came from a person".**
+
+- **Snapshot mutable state BEFORE an `await`, in `tee.ts` especially.** Its `finish()` read fields
+  after `await source.usage`, by which time a cancelled controller had made the next `enqueue` throw
+  and the catch had overwritten `errorKind` with `'unknown'` — so **every abandoned reading was
+  recorded as failing for an unknown reason.** The cancel test asserts `errorKind` and not only
+  `status` precisely because that is what caught it.
+
+- **Scripts under `scripts/` cannot use top-level `await`.** No `"type": "module"`, so tsx transforms
+  to CJS. Wrap in `async function main()` and `main().catch(...)`.
+
+- **Never import `@/lib/db/client` from a script or a test.** It starts with `import 'server-only'`,
+  which throws outside a Next server bundle. Scripts build their own postgres.js client; tests use
+  `src/lib/db/testing/harness.ts`. Every module under `src/lib/db/queries/**` takes its handle first
+  precisely so neither needs the singleton.
+
+- **TypeScript must stay on 5.x.** `npm install typescript` resolves to 7.x, the native port, which
+  ships no full compiler JS API. `npm run typecheck` works on it; `npm run build` dies with "The id
+  argument must be of type string" after claiming TypeScript is not installed. **Run `npm run build`
+  before believing a green typecheck.**
+
+- **Never shuffle in a `useState` initialiser.** `shuffleDeck()` is impure, so it runs once on the
+  server and again on the client. React cannot patch attribute mismatches during hydration, so the DOM
+  keeps the server's cards while state holds the client's — **the querent sees one spread and is read a
+  different one**, with nothing on screen looking wrong. `Draw.tsx` starts in fixed order and shuffles
+  in an effect. Same class: `todayKey()` during render.
+
+- **No side effects inside a `setState` updater.** StrictMode double-invokes updaters, so an
+  `onToggle` called from inside one fires twice and cancels itself out — the fan was completely dead in
+  development and would have worked in production. Read the drag from a ref instead.
+
+- **SAFARI DOES NOT FOCUS A `<button>` WHEN IT IS CLICKED OR TAPPED**, so `document.activeElement` on
+  the way into a dialog captures `<body>` on the one platform this app is built for, and restoring
+  focus to that "opener" drops the querent at the top of the document. Chrome and Firefox focus
+  buttons, which is why it looks correct in every WSL loop. `AccountMenu` and `CardDetail` take the
+  opener as a **prop** (`returnFocusTo`). **Loop 5 CAN reproduce it** — a programmatic `.click()` does
+  not focus the button either — which this file previously denied.
+
+- **`container-type` does not make an element its own container.** `cqw` in the declarations of the
+  element that *declares* it resolves against the nearest **ancestor** container. `CardBack` is split
+  into `.back` (declares it, paints nothing) and `.plate` (a descendant).
+
+- **`StyleSheet.absoluteFillObject` and all React Native APIs are gone.** If you see one, it came from
+  `feat/ios`. Two more iOS-era warnings are recorded in the notes, because each looks like a bug
+  someone will helpfully "fix" back into existence: fonts no longer need per-weight subpath imports
+  (but still list weights explicitly in `src/app/layout.tsx`, never a whole family), and **the card
+  flip is ONE rotation, not two** (`Fan.module.css`, one `rotateY` on a shared parent with
+  `backface-visibility: hidden` on both faces).
+
+
+## Moved from CLAUDE.md, 2026-08-20: Environment variables
+
+### Environment variables
+
+**`.env.example` is the reference — every variable, its shape, its generation command and
+its full annotation.** Copy to `.env.local` (gitignored) for local work; set the same keys
+in the Vercel dashboard for production **and** preview. `docs/DEPLOY-VERCEL.md` walks
+through a deployment from scratch. Only the rules that bite are repeated here:
+
+- **`MIGRATE_DATABASE_URL` is REQUIRED ON VERCEL, Production AND Preview, or `npm run
+  build` FAILS BY DESIGN.** Neon's DIRECT string, **without** `-pooler`, because pgbouncer
+  in transaction mode does not reliably carry a migration's session state.
+  **`DATABASE_URL` stays POOLED.** Locally unset; the script skips off-Vercel.
+- **Two variables default in OPPOSITE directions, on purpose.** `ANALYTICS_ENABLED` — only
+  the exact string `'0'` disables writes, so a typo collects data rather than silently
+  collecting none. `RATELIMIT_BACKEND` — only the exact string `memory` does anything, so
+  a typo cannot disable enforcement. Same rule for `LOCALE_SWITCHER` (only `'0'`).
+- **`LOTUS_STUB` and `PERSONA_STUB` must NEVER be set in production**: every user silently
+  gets the fallback template and nothing alerts on it.
+- **`TRANSLATION_MODEL` and `PERSONA_MODEL` default to `LLM_MODEL` and WANT the reading
+  model**, not a cheap one — both produce prose a person reads, in a reader's voice.
+- **`CHAT_MODEL` IS ONE VARIABLE FOR THE DIRECTOR AND ALL THREE VOICES, AND IT IS SET TO
+  `glm-5.2`** (v0.7.0, `C-D4`, Miftah's ruling — *"the best model we have"*). `ADMIN_MODEL`'s
+  shape pointing the opposite way: that one points away from `LLM_MODEL` because nothing on the
+  admin surface is in a reader's voice, this one because **everything on the chat surface is.**
+  Unset falls back to `LLM_MODEL`, which is not an outage but is a different room.
+  **A `CHAT_PLANNER_MODEL` is not a fourth variable to add for symmetry** — its only effect
+  would be letting somebody make the director dumber than the readers it directs, at 2am, and
+  never notice. **`LLM_WINDOW_CHAT_CEILING` defaults to HALF the hard ceiling and is DERIVED
+  from it in `meter.ts`, never written as a literal**, so the February 2027 credit migration
+  moves both together.
+- **`ADMIN_MODEL` IS ONE VARIABLE FOR ALL THREE ADMIN MODEL CALLS AND POINTS THE OTHER WAY**
+  (2026-08-01, Miftah's ruling; `src/lib/admin/model.ts`, a LEAF). The Insight button, Auto
+  Format and `Terjemahkan otomatis` are the only sites whose caller is the operator, and
+  `flagCoverage.test.ts` already names them as one class — so a **fourth admin-only call site
+  takes this variable too and does not bring its own.** Nothing on that surface is in a
+  reader's voice, and it is the one place a model change cannot reach a querent. Unset falls
+  back to `LLM_MODEL`. **`adminModel()` returns `undefined` when unset and `adminModelName()`
+  restates `ledger.ts`'s `||` chain** — the two must stay identical, or a stored `insights.model`
+  and the `llm_calls` row beside it name different models. `prices.ts` carries a `glm-5.2` row at
+  zero, verified 2026-08-01.
+- **`LOCALE_SWITCHER` IS RENDERING ONLY**: whether the control renders, in three places
+  (the account menu, `/login`'s footer, `ContentLocaleLink` in the public footer — not the
+  reader picker), resolved as a PROP by the mounting server page, because a
+  non-`NEXT_PUBLIC_` var inlines as `undefined` in a client component. **With it off
+  English is still reachable** by cookie and `Accept-Language`, and on a public content
+  route lives at `/en/...` regardless, named to crawlers by the `hreflang` set.
+- **`UPSTASH_REDIS_REST_URL`/`_TOKEN` are both-or-neither, and WITHOUT THEM THE LIMITER
+  SILENTLY REVERTS to per-instance memory.** **Use Singapore** (`ap-southeast-1`, Global
+  tier) — the same region as the functions (`sin1`) and as Neon, so every hop is
+  intra-region — **which became TRUE on 2026-08-19 and was not before it; see the region
+  trap.** Five places in this repo once said Upstash has no Singapore region and to use
+  Tokyo. **This line claimed all five were corrected; SIX were still live and the count was
+  wrong too** — `ratelimit/index.ts` (twice), its test, `api/locale/route.ts`,
+  `localeSwitch.test.ts` and `LocaleSwitch.tsx`, all corrected 2026-08-19. Do not reinstate
+  Tokyo, and **do not trust a sentence in this file that says a correction is complete**:
+  say where it landed, because a tally is exactly what nobody re-runs.
+- **`RATELIMIT_SESSION_BACKEND` is its own variable and should stay unset**: a per-user
+  budget lands mostly on one warm instance, so memory costs nothing real. (That is now the
+  whole argument — the sin1→Tokyo half has expired. Measure before moving it.)
+- **`LLM_WINDOW_CALL_CEILING=280` is MODEL CALLS per ROLLING 5 HOURS**, not readings and
+  not per day, and **it replaced the spend cap.** `RATELIMIT_GLOBAL_HOURLY=1200` is
+  fleet-wide, where v0.2.0's 400 meant 400 per instance. **Its denominator is a LEGACY plan's
+  and expires with it — see `## The z.ai plan` below before re-deriving it.**
+- **`PERSONA_MIN_AGE_SECONDS=3600` IS A GUESS**, checked on the READ path only and never
+  guarding a user-caused regeneration — see V8.
+- **`NEXT_PUBLIC_SITE_ORIGIN` is the only `NEXT_PUBLIC_` variable this project declares**
+  — see `## The public surface`.
+- **`TEST_DATABASE_URL` is a separate variable, never an override of `DATABASE_URL`**: the
+  integration suite `TRUNCATE`s, and both the harness and the global setup refuse any value
+  whose database name does not end in `_test`. `TEST_UPSTASH_REDIS_REST_URL`/`_TOKEN`
+  absent => that suite SKIPS.
+- **Losing `FIELD_ENCRYPTION_KEY` does not break the app** — encrypted onboarding answers
+  decrypt to `null` and read as "skipped" — but the data is gone for good, and there is
+  deliberately no re-encryption path.
+- **FIVE FEATURES HAVE A MODEL-CALL KILL SWITCH AND TWO NEVER MAY** (2026-07-30, Miftah's
+  ruling). `src/lib/llm/flags.ts` — a LEAF, env only, zero imports — holds `GIST_ENABLED`,
+  `FREQUENCY_VERDICT_ENABLED`, `DAILY_SUMMARY_ENABLED`, `PERSONA_GENERATION_ENABLED` and
+  `LOTUS_GENERATION_ENABLED`, all on `ANALYTICS_ENABLED`'s rule (only the literal `'0'`
+  disables). `docs/DEPLOY-VERCEL.md` §2d is the runbook and orders them by what to reach
+  for first; the full account is in `docs/workstream-notes.md`.
+  - **THE READING AND THE TRANSLATION ARE THE BACKBONE AND GET NO FLAG.** A reading is the
+    product; a translation is the bug V2 exists to prevent. The honest tool there is a
+    maintenance page. **`flagCoverage.test.ts` asserts the absence by name, and asserts the
+    set of model call sites is EXACTLY its two tables** — so a tenth call site cannot
+    quietly ship unswitchable. The moderation classifier is absent for the opposite reason:
+    it already has `MODERATION_CLASSIFIER_ENABLED`, in `gate.ts`, named there so it cannot
+    read as "moderation off".
+  - **EVERY FLAG GATES THE MODEL CALL, NEVER THE CACHED READ** (`sharingEnabled()`'s rule).
+    Off means "write nothing new", never "hide what exists" — both `/api/memory/*` routes
+    serve their cached row and only then 204, which is already their documented common path.
+  - **`LOTUS_GENERATION_ENABLED=0` WRITES NOTHING; `PERSONA_GENERATION_ENABLED=0` STORES THE
+    TEMPLATE. THE ASYMMETRY IS A FACT ABOUT THE TWO HASHES AND MUST NOT BE "TIDIED".**
+    `lotusInputHash` is birth year + the six answers and **never moves again**, so a stored
+    fallback matches its own hash forever and every querent who onboarded during the outage
+    would feed a template into every reading they ever take, after the flag went back to `1`.
+    `personaInputHash` ends with `readings:<ids>`, so it moves on the next reading and heals
+    — and it **must** write, because `/api/persona`'s no-row branch 500s otherwise. Persona
+    also **never overwrites an existing paragraph**: the read path regenerates in an
+    `after()`, so without that guard the flag would degrade stored prose.
+    `lotus.generate.integration.test.ts` is the regression test for the trap.
+  - **`reason: 'disabled'` IS NOT `'unchanged'`, AND `persona.generated` MUST STAY SILENT FOR
+    IT** — the `drift` branch calls the generator on every `/account` view, so emitting the
+    event would inflate exactly the metric an operator scans to confirm the flag worked.
+    `llm_calls` (query 9) is the instrument. `/api/persona` does `touchPersona` for both, or
+    the `user-edit` branch never clears.
+
