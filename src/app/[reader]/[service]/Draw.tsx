@@ -406,7 +406,13 @@ export function Draw({
           if (done) break;
           if (firstByteMs === null) firstByteMs = Date.now() - requestedAt;
           raw += decoder.decode(value, { stream: true });
-          const split = splitChoiceMarker(raw, false);
+          /*
+           * `trimmed` is passed because the marker turned up on the LAST line once
+           * (2026-08-20, `glm-4.6`), and stripping it there is only safe when the
+           * candidate is one of the querent's own options -- see
+           * `splitTrailingMarker`. The leading marker needs no question and never did.
+           */
+          const split = splitChoiceMarker(raw, false, trimmed || null);
           if (!split.pending) {
             text = split.body;
             setReading({ status: 'streaming', text });
@@ -420,7 +426,7 @@ export function Draw({
          * back here — and it is also the call that yields the choice for the share
          * preview below.
          */
-        const finalSplit = splitChoiceMarker(raw, true);
+        const finalSplit = splitChoiceMarker(raw, true, trimmed || null);
         text = finalSplit.body;
         /*
          * VALIDATED ON THIS SIDE TOO, against the same sanitized-ish question the

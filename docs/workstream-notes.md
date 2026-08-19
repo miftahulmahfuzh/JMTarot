@@ -12522,3 +12522,84 @@ session and no relationship with us can open.** `src/lib/share/**`, `src/lib/db/
   it needs the same `getTranslation` + `renderedLocale` treatment in that same change. **Design C —
   generating both locales at mint — is the only way to make the mismatch itself impossible.**
 
+
+## The choice marker at the END of the body (2026-08-20)
+
+**Found by taking a reading, not by a test.** While capturing the README's media, the first live
+`spread3` of the session came back like this:
+
+```
+question: "Apa yang perlu aku perhatikan..."   <- NO options offered
+          (first take: "...Sebaiknya aku ambil?")
+...four paragraphs...
+PILIHAN: aku ambil                             <- the LAST line
+```
+
+`CHOICE_RULE_ID` forbids that twice over — the marker line goes BEFORE the reading, and a question
+offering nothing to choose between gets no marker line at all — and `glm-4.6` broke both at once.
+`splitChoiceMarker` only ever examined offset 0, so the line was not protocol as far as the code was
+concerned: it rendered as a line of the querent's reading, and `persistReading` stored it in
+`readings.body`. **This is the failure `choice.ts`'s header calls INVISIBLE in as many words: no
+event fires, because from the code's point of view nothing happened.** It had been shipped and
+unobserved since 2026-07-29.
+
+### Why the fix is mechanical as well as a prompt change
+
+`services.{id,en}.ts`'s placement sentence was genuinely confusing: *"Sebut pilihan itu di PARAGRAF
+TERAKHIR"* followed by *"tulis satu baris penanda SEBELUM bacaannya"* asks for the option at the end
+and the marker at the start, in adjacent sentences. It now says the marker is the **BARIS PALING
+PERTAMA**, never in the middle, and **never at the end** — plus `TERPISAH dari itu`, so the two
+instructions stop reading as one.
+
+**But a prompt rule alone is not trusted here, and that is the house rule** — *"the card-name check
+is MECHANICAL, not only a prompt rule; the prompt rule alone produced 'Pulan' for The Moon."* So
+`splitTrailingMarker` handles the position that was actually observed.
+
+### The asymmetry between the two branches, which is the whole design
+
+| | leading (offset 0) | trailing (last line) |
+|---|---|---|
+| strips when | always | only if the candidate passes `validateChoice` |
+| needs the question | no | **yes** — hence the third argument |
+| worst case if wrong | none: prose never opens `Pilihan:` | the querent's own option moves from prose into the box |
+
+**A reading does not open with `Pilihan:`, so at offset 0 the token cannot collide with prose.** At
+the end it can: `Pilihan: tetap di sini.` is an ordinary Indonesian sentence, and a model told to
+name the choice in its closing paragraph is *more* likely than usual to write one. Stripping on
+shape alone would delete a closing paragraph to hide eight characters — strictly worse than the bug.
+Gating on `validateChoice` bounds the worst case to moving the querent's own words into the box that
+was built to hold them.
+
+Three smaller decisions inside it, each of which a naive version gets wrong:
+
+- **The body is never right-trimmed and the newline stays in it**, because `body` must grow
+  monotonically across chunks and trimming at the flush would make the final body shorter than one
+  already painted. Trailing whitespace renders as nothing, so the invariant is free.
+- **`MARKER_SCAN_LIMIT` is reused**, so a paragraph that merely opens with `Pilihan:` and runs on is
+  not withheld from the screen until its newline arrives.
+- **A mid-body marker is NOT stripped.** Two positions have been observed; removing arbitrary
+  interior lines raises the prose-eating risk with no evidence to pay for it.
+
+### Verified with the documented instrument, against the documented baseline
+
+`npm run smoke -- --all --choice`, 18 live readings:
+
+```
+markers emitted            12 of 18   (the six `yesno` readings correctly get none)
+markers parsed at offset 0 12 of 12   every one its own line, one option
+markers leaked into prose   0
+choice violations           7         baseline 9, 8, 4 across the three prior runs
+budget violations           7         baseline 15, 6, 8
+```
+
+**The seven choice violations are the known unconverged `daily` budget, not this change.** Five of
+the seven are `daily`, which is exactly what `## The 30% cut` predicted: it has no synthesis
+paragraph, so *"name the option in your LAST paragraph"* competes with *"one small concrete thing to
+watch for today"*. The count sits inside its own recorded range, which is the only reason that can
+be said with a straight face — **a first run with no baseline could not have told a regression from
+the status quo**, and that is the argument for the table above existing at all.
+
+`build.test.ts`'s six snapshots were regenerated under the rule its header sets: the diff was read
+first, **exactly one line differed in each**, and **six changed rather than nine** — `daily` and
+`spread3` for three readers, with all three `yesno` snapshots green, which is the structural evidence
+that `CHOICE_RULE_*` is still absent from the service whose answer `effectiveYesNo()` already forces.

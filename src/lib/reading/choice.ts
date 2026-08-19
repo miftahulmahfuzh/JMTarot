@@ -112,7 +112,11 @@ export type ChoiceSplit = {
  * whose four remaining marker characters never arrived must still be shown, so
  * `pending` is never true when `done` is.
  */
-export function splitChoiceMarker(text: string, done = false): ChoiceSplit {
+export function splitChoiceMarker(
+  text: string,
+  done = false,
+  question?: string | null,
+): ChoiceSplit {
   const none = (body: string): ChoiceSplit => ({ choice: null, body, pending: false });
 
   if (text.length === 0) return none('');
@@ -129,7 +133,8 @@ export function splitChoiceMarker(text: string, done = false): ChoiceSplit {
   }
 
   if (text.slice(0, CHOICE_MARKER.length).toUpperCase() !== CHOICE_MARKER) {
-    return none(text);
+    /* Not at the front. It may still be at the back -- see `splitTrailingMarker`. */
+    return splitTrailingMarker(text, done, question ?? null);
   }
 
   const nl = text.indexOf('\n');
@@ -178,6 +183,101 @@ export function splitChoiceMarker(text: string, done = false): ChoiceSplit {
    * grows with `text`, and stripping a leading run can only ever reveal more.
    */
   return { choice, body: text.slice(nl + 1).replace(/^\s+/, ''), pending: false };
+}
+
+/**
+ * ── THE MARKER ON THE LAST LINE, WHICH IS WHERE IT ACTUALLY TURNED UP ────────
+ *
+ * Observed live 2026-08-20, the first `spread3` of the session, `glm-4.6`, on a
+ * question that offered no options at all:
+ *
+ *     ...four paragraphs...
+ *     PILIHAN: aku ambil
+ *
+ * `CHOICE_RULE_ID` forbids both of those independently — the marker line goes
+ * BEFORE the reading, and a question with nothing to choose between gets no
+ * marker at all — and the model broke both at once. Because this module only ever
+ * looked at offset 0, the line was not protocol as far as the code was concerned,
+ * so it was rendered as a line of the querent's reading and stored in
+ * `readings.body`. **That is the failure this file's header calls INVISIBLE: no
+ * event fires, because from the code's point of view nothing happened.**
+ * `CHOICE_RULE_*` was tightened in the same commit; this is the mechanical half,
+ * because *"the card-name check is MECHANICAL, not only a prompt rule"* is the
+ * house rule for exactly this shape.
+ *
+ * ── WHY THIS BRANCH NEEDS THE QUESTION AND THE LEADING ONE DOES NOT ──────────
+ *
+ * **The leading branch strips unconditionally and must keep doing so.** A reading
+ * does not open with `Pilihan:`, so at offset 0 the token cannot collide with
+ * prose and stripping it costs nothing even when the candidate is rubbish.
+ *
+ * **At the end it CAN collide.** `Pilihan: tetap di sini.` is an ordinary
+ * Indonesian sentence, and a model told to name the choice in its closing
+ * paragraph is *more* likely than usual to write one. Stripping on shape alone
+ * would delete the querent's last paragraph to hide eight characters — strictly
+ * worse than the bug. So this branch strips only when the candidate is **one of
+ * the querent's own options**, which bounds the worst case to moving the
+ * querent's own words out of the prose and into the box that was built to hold
+ * them. `validateChoice` is policy and this is protocol, so calling it from here
+ * is a deliberate exception to that separation, and the negative control in the
+ * test is what keeps it honest.
+ *
+ * **A MARKER IN THE MIDDLE OF THE BODY IS NOT STRIPPED, AND THAT IS SCOPE, NOT
+ * AN OVERSIGHT.** Two positions have been observed; removing arbitrary interior
+ * lines raises the prose-eating risk with no evidence to pay for it. The
+ * instrument if it ever happens is the one the header already names:
+ * `npm run smoke -- --all --choice`, and read the markers.
+ */
+function splitTrailingMarker(
+  text: string,
+  done: boolean,
+  question: string | null,
+): ChoiceSplit {
+  const none = (body: string): ChoiceSplit => ({ choice: null, body, pending: false });
+
+  const lastNl = text.lastIndexOf('\n');
+  if (lastNl === -1) return none(text);
+
+  const tail = text.slice(lastNl + 1);
+  /* Ends on a newline: there is no partial line to hold back. */
+  if (tail.length === 0) return none(text);
+
+  const upper = tail.toUpperCase();
+  const isMarker = upper.startsWith(CHOICE_MARKER);
+  /*
+   * Could still BECOME the marker. Same trade as the leading branch: the first
+   * character that is not `P` releases the line immediately, so an ordinary
+   * paragraph pays at most one chunk, once, and only if it opens with a prefix of
+   * the token.
+   */
+  const couldBe = !isMarker && CHOICE_MARKER.startsWith(upper);
+  if (!isMarker && !couldBe) return none(text);
+
+  /*
+   * `MARKER_SCAN_LIMIT` bounds LATENCY here exactly as it does at the front: a
+   * paragraph that merely opens with `Pilihan:` and runs on must not be withheld
+   * from the screen until its newline arrives.
+   */
+  if (tail.length > MARKER_SCAN_LIMIT) return none(text);
+
+  /*
+   * **THE NEWLINE STAYS IN THE BODY AND THE BODY IS NEVER RIGHT-TRIMMED**, because
+   * `body` must grow monotonically across chunks and trimming it at the flush
+   * would make the final body shorter than one already painted. Trailing
+   * whitespace renders as nothing, so the invariant is free.
+   */
+  const kept = text.slice(0, lastNl + 1);
+
+  if (!done) return { choice: null, body: kept, pending: true };
+
+  /* Flushed mid-token: the line never became a marker, so it is prose. */
+  if (!isMarker) return none(text);
+
+  const raw = tail.slice(CHOICE_MARKER.length).trim();
+  if (raw.length === 0) return none(text);
+  if (!validateChoice(raw, question)) return none(text);
+
+  return { choice: raw, body: kept, pending: false };
 }
 
 /** Regex-safe, so a candidate full of metacharacters is a literal. */

@@ -59,7 +59,7 @@ export const VERDICT_WORD_ID: Record<YesNo, string> = {
 const CHOICE_RULE_ID = `PERTANYAAN YANG MENAWARKAN PILIHAN:
 Kalau di dalam <pertanyaan> penanya menyebutkan dua pilihan atau lebih -- "A atau B", "A apa B", tiga sekaligus, apa pun bentuknya -- kamu WAJIB memilih SATU. Bukan dua, bukan "dua-duanya baik", bukan "tergantung kamu", bukan "yang mana pun yang terasa benar". Kartunya yang memilih; kamu yang menyampaikan.
 Sebut pilihan itu di PARAGRAF TERAKHIR, dengan kata yang sama seperti yang ditulis penanya. Bukan di mana saja, bukan tersirat -- di paragraf terakhir, supaya bacaannya sendiri yang menjawab, bukan cuma baris di atasnya. Orang yang cuma membaca prosanya harus bisa tahu kamu memilih apa.
-Lalu tulis satu baris penanda SEBELUM bacaannya, diikuti satu baris kosong:
+Lalu, TERPISAH dari itu, tulis satu baris penanda sebagai BARIS PALING PERTAMA dari jawabanmu -- sebelum paragraf pertama, bukan di tengah, dan JANGAN PERNAH di akhir. Setelah baris itu, satu baris kosong, baru bacaannya:
 
 ${CHOICE_MARKER} <satu pilihan saja, disalin persis dari pertanyaannya>
 

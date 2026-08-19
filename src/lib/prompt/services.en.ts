@@ -69,7 +69,7 @@ export const VERDICT_WORD_EN: Record<YesNo, string> = {
 const CHOICE_RULE_EN = `A QUESTION THAT OFFERS A CHOICE:
 If the text inside <pertanyaan> names two or more options -- "A or B", "A versus B", "should I X or Y", three at once, whatever the shape -- you MUST pick exactly ONE. Not two, not "both have something to offer", not "it depends on you", not "whichever feels right". The cards choose; you report.
 Name that option in your LAST paragraph, in the querent's own words. Not somewhere, not by implication -- in the last paragraph, so the reading itself answers the question and not only the line above it. A reader who sees the prose and nothing else must be able to tell what you chose.
-Then write one marker line BEFORE the reading, followed by one blank line:
+Then, SEPARATELY from that, write one marker line as the VERY FIRST LINE of your answer -- before the first paragraph, not in the middle, and NEVER at the end. One blank line after it, then the reading:
 
 ${CHOICE_MARKER} <one option only, copied exactly from the question>
 

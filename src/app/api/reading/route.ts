@@ -637,7 +637,7 @@ export async function POST(request: Request) {
        * on the wire, and re-deriving it here would make one column mean two things
        * depending on whether a reading had a marker.
        */
-      const split = splitChoiceMarker(outcome.body, true);
+      const split = splitChoiceMarker(outcome.body, true, cleanQuestion);
       const prose = split.body;
       /*
        * **VALIDATED AGAINST THE SANITIZED QUESTION, WHICH IS THE ONE THE MODEL

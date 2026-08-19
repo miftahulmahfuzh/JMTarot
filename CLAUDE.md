@@ -786,30 +786,34 @@ never said ayam or ikan. `src/lib/reading/choice.ts` (PURE, no `server-only`, no
   `defer()` strips once over the finished body, **with the same pure function**. The failure mode is a
   chunk-boundary bug rendering `PILIHAN: Ayam` above a reading, so `choice.test.ts` feeds one body in
   EVERY possible split.
+- **TWO POSITIONS HAVE BEEN SEEN AND EXACTLY TWO ARE HANDLED — FIRST LINE AND LAST** (`glm-4.6`
+  put it last on a live `spread3`, 2026-08-20, and offset 0 was all that was parsed). **The
+  leading branch strips unconditionally; the trailing branch strips ONLY when the candidate passes
+  `validateChoice`**, because `Pilihan: tetap di sini.` is an ordinary Indonesian sentence — hence
+  `splitChoiceMarker`'s third argument. **MID-BODY is not stripped: scope, not oversight.**
 - **THE STRIPPED BODY IS WHAT REACHES `persistReading`, `extractGist` AND `detectCallback`.** A marker
   in `readings.body` would be quoted back at the querent by W5's chained reading as if the reader had
   said it — the reason `[Bacaan terputus...]` is kept out of that column.
 - **`validateChoice` RETURNS A SLICE OF THE QUESTION, NEVER THE MODEL'S COPY**, which is why it
   returns a string rather than a boolean: a caller handed `true` would render the model's text.
-  **`MULTI_OPTION` IS THE HALF THAT WAS MISSING AND SHIPPED WRONG FOR ONE COMMIT** — three of eighteen
-  live readings answered with a whole clause, `makan ayam atau ikan nanti siang`, which passed every
-  word-bounded and length check and would have put the reported bug in the highlighted box. A
-  candidate containing `atau`/`apa`/`or`/`versus` or a comma named more than one option and is
-  refused. Biased towards rejecting: a false rejection costs the box, a false acceptance ships the
-  report.
-- **NEVER TRANSLATED, and it is the one piece of reading chrome that does not follow `t`.** `body` is
-  translated; `question` is not, on every surface. The choice is a fragment of the question, so it
-  follows the question — and translating it would make the substring guarantee uncheckable. Rendered
-  with **no `lang` attribute**, matching the question block: `reading.locale` is the language the
-  PROSE came out in, and a querent may type Indonesian into the English app.
+  **`MULTI_OPTION` IS THE HALF THAT WAS MISSING AND SHIPPED WRONG FOR ONE COMMIT**: a candidate
+  containing `atau`/`apa`/`or`/`versus` or a comma named more than one option and is refused,
+  because three of eighteen live readings answered with a whole clause that passed every
+  word-bounded and length check. Biased towards rejecting — a false rejection costs the box, a
+  false acceptance ships the report.
+- **NEVER TRANSLATED, and it is the one piece of reading chrome that does not follow `t`.** The
+  choice is a fragment of the question, so it follows the question — translating it would make the
+  substring guarantee uncheckable — and it renders with **no `lang` attribute**, because a querent
+  may type Indonesian into the English app.
 - **`readings.choice` RIDES ON `include_question` IN `publicReadingQuery`, IN THE SAME TERNARY.** It is
   a slice of the question, so a link excluding the question and selecting this column publishes a
   fragment of the excluded string through the one field that reads as a verdict rather than as user
   text.
-- **`npm run smoke -- --all --choice` IS THE ONLY INSTRUMENT FOR THE FORMAT.**
-  `reading.completed.choice` measures whether the model named something the querent never typed
-  (`invalid`); it CANNOT see a marker spelled differently enough to miss the matcher, which renders as
-  prose and reports `none`.
+- **`npm run smoke -- --all --choice` IS THE ONLY INSTRUMENT FOR THE FORMAT**, and
+  `reading.completed.choice` is not: it sees `invalid` (a name the querent never typed), while a
+  marker the matcher misses renders as prose and reports `none`. **Its choice-violation count has a
+  baseline — 9, 8, 4, then 7 — so a figure in that range is `daily`'s unconverged budget, not a
+  regression.**
 
 ## Localization (W6)
 

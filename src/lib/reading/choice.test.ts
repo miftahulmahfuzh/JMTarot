@@ -78,6 +78,84 @@ describe('splitChoiceMarker', () => {
     }
   });
 
+  /**
+   * ── THE MARKER AT THE END, WHICH IS WHAT ACTUALLY SHIPPED ──────────────────
+   *
+   * Observed live on 2026-08-20, first `spread3` of the session, `glm-4.6`:
+   *
+   *   question: "Aku dapat tawaran kerja di kota lain. Sebaiknya aku ambil?"
+   *   ...four paragraphs...
+   *   PILIHAN: aku ambil          <- LAST line, not the first
+   *
+   * `CHOICE_RULE_ID` forbids both halves of that — the marker goes before the
+   * reading, and a question offering no options gets no marker line at all — and
+   * `splitChoiceMarker` only looked at offset 0, so the line was not stripped and
+   * rendered as a line of the querent's reading. That is the failure this file's
+   * header calls INVISIBLE: no event fires, because there is nothing to fire
+   * about.
+   */
+  const TRAILING_QUESTION = 'Aku dapat tawaran kerja di kota lain. Sebaiknya aku ambil?';
+  const TRAILING = `${READING}\n\n${CHOICE_MARKER} aku ambil`;
+
+  it('strips a marker the model put at the END, and reports it', () => {
+    const out = splitChoiceMarker(TRAILING, true, TRAILING_QUESTION);
+    expect(out.choice).toBe('aku ambil');
+    expect(out.body).not.toContain(CHOICE_MARKER);
+    expect(out.body.trimEnd()).toBe(READING);
+    expect(out.pending).toBe(false);
+  });
+
+  /**
+   * The same exhaustiveness the leading marker gets, for the same reason: the
+   * trailing line arrives split at an arbitrary byte, and a body that shows
+   * `PILIHAN: aku ambil` for one frame has failed.
+   */
+  it('never shows a trailing marker at any chunk split', () => {
+    for (let cut = 1; cut < TRAILING.length; cut += 1) {
+      const partial = splitChoiceMarker(TRAILING.slice(0, cut), false, TRAILING_QUESTION);
+      const finished = splitChoiceMarker(TRAILING, true, TRAILING_QUESTION);
+
+      expect(partial.body, `split at ${cut}`).not.toContain(CHOICE_MARKER);
+      expect(partial.body, `split at ${cut}`).not.toContain(CHOICE_MARKER.toLowerCase());
+      // Monotonic, including across the final flush.
+      expect(finished.body.startsWith(partial.body), `split at ${cut}`).toBe(true);
+    }
+  });
+
+  /**
+   * **THE NEGATIVE CONTROL THAT LICENSES THE WHOLE BRANCH.** At offset 0 the
+   * marker cannot collide with prose, because a reading does not open with
+   * `Pilihan:`. At the END it can — `Pilihan: tetap di sini.` is an ordinary
+   * Indonesian sentence, and eating it would delete the querent's last paragraph
+   * to hide eight characters. So the trailing branch strips ONLY when the
+   * candidate is one of the querent's own options, which bounds the worst case to
+   * moving the querent's own words from the prose into the box.
+   */
+  it('leaves a trailing line alone when its candidate is not in the question', () => {
+    const prose = `${READING}\n\nPilihan: tetap di sini.`;
+    const out = splitChoiceMarker(prose, true, 'Apa yang perlu aku perhatikan bulan ini?');
+    expect(out.choice).toBeNull();
+    expect(out.body).toBe(prose);
+  });
+
+  /** No question to check against is no licence to guess. `attachmentBlock`'s belt. */
+  it('leaves a trailing marker alone when no question is supplied', () => {
+    const out = splitChoiceMarker(TRAILING, true);
+    expect(out.choice).toBeNull();
+    expect(out.body).toBe(TRAILING);
+  });
+
+  /**
+   * A LEADING MARKER STILL NEEDS NO QUESTION. The offset-0 branch is unchanged and
+   * unconditional: it strips protocol noise whether or not the candidate is any
+   * good, because `PILIHAN:` on the first line is never prose.
+   */
+  it('still strips a leading marker with no question and no valid candidate', () => {
+    const out = splitChoiceMarker(`${CHOICE_MARKER} apa saja yang bukan pilihan\n\n${READING}`, true);
+    expect(out.body).toBe(READING);
+    expect(out.choice).toBe('apa saja yang bukan pilihan');
+  });
+
   it('holds nothing back once the first line cannot be the marker', () => {
     // 'Y' is not 'P', so there is nothing to wait for and no latency to pay.
     const out = splitChoiceMarker('Y', false);

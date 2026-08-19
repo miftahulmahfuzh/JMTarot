@@ -431,6 +431,21 @@ describe('promptVersion', () => {
  * evidence that this was a budget change and not a persona regression. If a
  * FOURTH snapshot had failed, text had moved and the multiplier would have been
  * the wrong explanation.
+ *
+ * ── SIX WERE REGENERATED ON 2026-08-20, FOR `CHOICE_RULE_ID`'S PLACEMENT LINE ──
+ *
+ * Obeying the rule again, and the diff was checked before anything was written:
+ * **exactly one line differed in each of the six**, the marker-placement sentence,
+ * rewritten because `glm-4.6` put `PILIHAN:` on the LAST line of a live `spread3`
+ * — see `splitTrailingMarker` in `src/lib/reading/choice.ts`. No prose moved and no
+ * ceiling moved.
+ *
+ * **The count is the evidence: SIX, not nine.** `daily` and `spread3` for all three
+ * readers changed and all three `yesno` snapshots stayed green, which is exactly
+ * what `CHOICE_RULE_*` being in those two services and never in `yesno` predicts.
+ * Nine failures would have meant the rule had leaked into the service whose answer
+ * `effectiveYesNo()` already forces, and two answer boxes on one reading is the
+ * thing that asymmetry exists to prevent.
  */
 const FIXED_PICKS: Record<string, { id: number; reversed: boolean }[]> = {
   daily: [{ id: 18, reversed: true }],
