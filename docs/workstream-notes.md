@@ -12294,3 +12294,231 @@ through a deployment from scratch. Only the rules that bite are repeated here:
     `llm_calls` (query 9) is the instrument. `/api/persona` does `touchPersona` for both, or
     the `user-edit` branch never clears.
 
+
+## Moved from CLAUDE.md, 2026-08-20: Onboarding and the Lotus (W3)
+
+## Onboarding and the Lotus (W3)
+
+Nine screens, asked exactly once. The word "onboarding" appears nowhere the user can see it.
+`src/data/onboarding.ts` (**NO IMPORTS OUTSIDE `@/data`**, so W2's gate can reach `isOnboarded` on the
+edge), `src/app/onboarding/**`, `src/app/api/onboarding/**`, `src/lib/prompt/lotus.ts` (PURE),
+`lotus.generate.ts`.
+
+- **`profiles.completed_at` is the only completion marker.** Row presence is not completion — the
+  facts row exists from step 1 of 9, and a half-written answer set must never count as onboarded and
+  must never be distilled. Gating is the `onb` claim in W2's JWT so nothing reads the database per
+  request.
+- **The resume point is derived, never stored** — the first key with NO ROW, not the key after the last
+  one. A user who goes back to answer something they skipped leaves a gap, and resuming past it would
+  skip it forever.
+- **A stale `onb` flag cannot be fixed by redirecting.** A server component cannot write cookies, so
+  `redirect('/')` from `/onboarding` bounces off middleware's identical stale claim and loops.
+  `actions.ts` re-mints first and only navigates when `onb` is actually true.
+- **The completion route reads the answer set back from the database** before setting `completed_at`.
+  The client is trusted to say what it answered, never that it finished.
+- **THE COOLDOWN MUST NOT GUARD A USER-CAUSED REGENERATION.** `scheduleLotusRefresh`'s ten minutes
+  bound the SPECULATIVE repair the reading path fires; the answer route used it once and an edit
+  minutes later was silently swallowed, which is the delete button being a lie. Write paths call
+  `generateLotus` directly; it is idempotent.
+- **A skip is `answer_text IS NULL`, never an encrypted empty string**, which would be
+  indistinguishable from a real answer in a dump. The audit query is in `schema.ts` and must return 0.
+- **If the Lotus ever flattens the three readers, fix the persona paragraphs or the base contract's
+  `<penanya>` rule, never the code.**
+
+**The domain is `www.jmtarot.site`, bought 2026-07-27 and live** (reconciliation §7.2's
+`www.jmtarot.com` was never purchased). The apex 308-redirects to `www` — serve one, never both,
+because an OAuth redirect URI is a string comparison and `AUTH_URL` pointed at the apex fails the
+callback after a redirect that looks successful. Production `AUTH_URL=https://www.jmtarot.site`;
+Google's Authorized Domain is the registrable `jmtarot.site`. The consent screen is still in
+**Testing** mode, so only manually-added test accounts can sign in. **What blocked publishing was
+Google's branding requirement of an app homepage that is not a login page; signed out, `/` now renders
+a landing page, so that blocker is closed** — what remains is pressing Publish.
+
+
+## Moved from CLAUDE.md, 2026-08-20: Analytics and reading history (W4)
+
+## Analytics and reading history (W4)
+
+Every reading, every card and every meaningful choice is persisted, and **none of it is on the path
+of a byte the user is waiting for.** `src/lib/analytics/**`, `src/app/api/events/route.ts` (public,
+always 204), `src/components/Track*.tsx`, `docs/analytics-queries.md`.
+
+- **`events.ts` is the closed taxonomy — 67 names, a prop shape each, and NO IMPORTS**, because it
+  is the data dictionary and people read it. **ONE OWNER PER RELEASE: S1 for v0.4.0 (S-D13);** every
+  other workstream declares its events in its plan and S1 folds them in, and **folding a
+  declaration in means transcribing it**, not narrowing it.
+- **THE CEILING MOVED 66 → 67 ONCE, on 2026-07-29, and the register was revisited rather than the
+  number bumped.** Four names were drafted and ONE landed: `reading.choice_offered` became two PROPS
+  on `reading.completed` (numerator and denominator in one scan), two answer-write names became one
+  `account.answer_changed` with a closed `action`, and `revealed` was dropped — request volume in the
+  platform log answers the privacy question and a look-and-close changes no decision. **Expect to
+  FOLD rather than add, and write down what you folded.**
+- **`latency_ms` is TIME TO FIRST TOKEN**, not total generation time — that is
+  `reading.completed.total_ms`. Changing the meaning later makes every historic row a different
+  measurement.
+- **The `[Bacaan terputus...]` notice reaches the screen but NEVER `readings.body`** — a stored copy
+  would be quoted back at the querent by W5's chained reading as if the reader had said it.
+- **Writes go through one `after()` per request**, `readings` + `reading_cards` in one transaction
+  with a bounded retry; everything else fails silently and logs. **Stop the database and take a
+  reading**: it must stream and complete exactly as normal, with nothing but `[analytics]` logged.
+
+
+## Moved from CLAUDE.md, 2026-08-20: Memory features (W5)
+
+## Memory features (W5)
+
+A card-frequency verdict, readings that reference the last reading, and a per-day summary in the
+reader's voice. `src/lib/memory/**`, `src/lib/prompt/{memory,summary}.ts`,
+`src/app/api/memory/{frequency,summary}/route.ts`. **V3 rewrote both generated prompts.**
+
+- **`<riwayat>` is the tag in BOTH locales** (R17 beats W5's plan): an English querent will never
+  type "riwayat" and will absolutely type "history", so the English-looking tag is the one carrying
+  injection surface. Only the `ULANG:`/`AGAIN:` marker inside the block is localised.
+- **NEVER MATCH A BARE `lagi` IN THE CALLBACK DETECTOR.** It is also the progressive aspect marker
+  ("dia lagi mikir" = "he is thinking"), so a bare pattern fires on most sentences of casual
+  Indonesian and reports a ~90% callback rate that is entirely noise — and that ratio decides
+  whether chaining is cut or tightened. English: `again` fires, `against` must not.
+- **`chain.ts` NEVER THROWS** — it returns null. It is on the request path.
+- **`readingsOnDay` deliberately has NO filters, unlike `recallableReadings`.** Recall feeds a
+  callback, so a dead stream has nothing to quote; a day summary is a count, true whether or not the
+  third reading finished.
+
+
+## Moved from CLAUDE.md, 2026-08-20: Mystical memory verdicts (V3)
+
+## Mystical memory verdicts (V3)
+
+**The app has stopped doing arithmetic out loud.** `src/lib/memory/{shadow,tally}.ts`,
+`frequency.ts`, `src/lib/prompt/summary.ts`, `budget.ts`.
+
+- **THE COUNTS ARE DELETED FROM BOTH PROMPTS, NOT FORBIDDEN IN THEM.** The model gets two card
+  names, the **Shadow Arcana**, a written pulse line and a dominance word — never `m` or `n`. **A
+  model cannot recite a count it was never given**, and an instruction that merely forbids the tally
+  fails under compression pressure. `summary.test.ts` asserts the frequency user turn contains **no
+  digit at all**, so a digit in the OUTPUT was invented. `FrequencyMechanic`'s key set is asserted
+  exactly, because the way a tally returns is somebody adding `topCount` for a good-looking reason.
+- **`dominanceOf` is a RATIO, not `m - n`** (V3-5, correcting roadmap §5): a difference is not
+  scale-invariant, so `10:8` is `narrow` where a difference would call it wider than `4:2`.
+- **`tally.ts` NEVER RUNS AT REQUEST TIME** (V3-11): a false positive in the route would delete the
+  feature for that user with nothing on screen. **A heuristic may fail a build; it may not fail a
+  person.**
+- **`MARGARET_MULTIPLIER` reaches every reader-voiced ceiling, and ceilings only** — a floor scaled
+  by verbosity would demand length rather than permit it. Never tightened on one favourable run.
+- **Still open:** `GET /api/memory/frequency` and `/summary` **return 500 when the database is
+  down**, not 204. Fix them with `/api/persona`; one omission in three files.
+
+
+## Moved from CLAUDE.md, 2026-08-20: The reader swipe deck (V5)
+
+## The reader swipe deck (V5)
+
+On `/[reader]` the bio and today's summary are two panels of one scroll-snap track; the summary
+slides itself in once, on the first byte. `src/lib/swipeDeck.ts` (PURE — the whole auto-slide policy
+and the only part `npm test` can reach), `SwipeDeck.tsx` (generic), `ReaderDeck.tsx` (the policy
+mount), `DaySummary.tsx`.
+
+- **THE CALLER'S ARRAY LENGTH IS THE M14 CONTRACT.** One panel until the first byte, so a querent
+  who has not read today gets no dots and a deck exactly as tall as the bio. A deck rendering two
+  panels with the second one blank **is** the empty state roadmap §5 forbids, wearing a dot.
+- **THE DEPENDENCY LIST IS WHAT MAKES THE DECK SLIDE ONCE, not `slidTo`** — which is unobservable
+  today and is the only thing between the querent and three slides, or none, the moment somebody
+  adds `panels` to that list. `react-hooks/exhaustive-deps` will never argue either way, because the
+  body reads `panelsRef.current`.
+- **A JS `scrollTo({ behavior })` OVERRIDES CSS `scroll-behavior`** rather than defaulting from it,
+  so `html[data-still]` could not govern the auto-slide and `goTo` reads `data-still` itself. **The
+  same trap will catch the next component that auto-scrolls.**
+
+
+## Moved from CLAUDE.md, 2026-08-20: History (V6)
+
+## History (V6)
+
+`/history` lists the querent's own readings by day; `/history/[id]` reconstructs the draw exactly as
+it was, **read-only** (VD14). `src/lib/history/**`, `src/lib/db/queries/history.ts`,
+`src/app/history/**`, `src/app/api/history/**`.
+
+**`ReadingView` is the one renderer three surfaces mount (VD10)**, so its four rules bind the draw
+screen, `/history/[id]` and `/s/<slug>` together: no session, no fetch, and no `@/lib/db/**` import
+*even as `import type`* (`clientBoundary.test.ts`'s regex does not know the `type` keyword, which is
+why `ReadingStatus` moved to `@/data/types`). **Rule 4 is the one to protect: it NEVER renders
+`reading.body` when `reading.locale` differs from the viewer's and no translation was supplied — it
+renders the translating state instead.** That is the component's invariant and not the caller's
+discipline, which is what stops a caller shipping the bug by forgetting a prop. **Passing no `prose`
+for a foreign-locale reading leaves a stranger on a pulsing spinner forever**; deciding not to
+translate is legitimate (`{ kind: 'as-written' }`), falling back to the original silently is not.
+
+- **`todayKey()` IS NEVER CALLED DURING RENDER** — it reads `new Date()`, which differs between
+  server render and hydration. **Do not "simplify" `HistoryBrowser` into
+  `useState(() => todayKey())`.**
+- **`parseLocalDate` MUST NOT VALIDATE THE FILTER.** Its ±1-day bound answers "is this plausibly the
+  querent's TODAY"; reusing it makes every date older than yesterday a 400 that reads like a client
+  bug. `/api/history` uses it for the header, `isHistoryDate` for the parameter.
+- **THE `blocked` FILTER IS SECURITY-ADJACENT.** A blocked reading's `question` is text W7's
+  classifier flagged and redacts from `moderation_flags` at 30 days — a browsable copy under another
+  column name undoes a retention promise. `failed` and `aborted` ARE shown.
+- **THE LIST PAYLOAD CARRIES NO `body` AND NO `gist`**, asserted on the returned OBJECT (`'body' in
+  item` is false), not on a null field. The binding reason is VD8, not bytes.
+- **`/history` IS GATED AND `isPublic()` MUST NEVER LEARN IT.**
+
+
+## Moved from CLAUDE.md, 2026-08-20: Sharing (V7)
+
+## Sharing (V7)
+
+**`/s/<12 chars>` is the first URL in this project's history that a person with no account, no
+session and no relationship with us can open.** `src/lib/share/**`, `src/lib/db/queries/share.ts`,
+`src/app/api/share/route.ts`, `src/app/s/[slug]/**`, `ShareFooter.tsx`, `TryItYourself.tsx`,
+`tools/share-{seed.ts,check.py}`, and the designs in
+`docs/plans/2026-07-28-share-{live-locale,per-locale-links}-design.md`.
+
+- **VD7 AND VD8 BIND: THE PUBLIC PAGE MUST NEVER GENERATE ANYTHING.** It is the one route with no
+  session and no per-user budget, so a model call there is `LLM_WINDOW_CALL_CEILING` with no gate on
+  it. The page only ever READS; a mint has `requireUser()`, `share:create:` and `llm:window` behind
+  it.
+- **THE QUESTION IS ON THE PUBLIC PAGE, AND THAT REVERSES VD9** (Miftah's ruling): a stranger who
+  sees three cards and four paragraphs with no question cannot tell what any of it is about.
+  `include_question` defaults to `true` and the sheet offers no switch; **`include_nickname` keeps
+  its switch**, because a nickname is a name rather than context.
+- **The OG preview image carries neither the question nor the prose (VD18)**, and that got MORE
+  important, not less: a page is opened by somebody who chose to, while a preview image is cached by
+  every messenger that merely *sees* the link.
+- **`currentUser()` IS NEVER CALLED ON `/s/[slug]`, AND `curl` CANNOT SEE THE FAILURE** — a client
+  component reaching for a session context renders correct HTML on the server and throws during
+  hydration, so `curl` reports 200 with the reading in the body and the page is dead in a browser.
+  `page.contract.test.ts` fences the whole subtree.
+- **THE HEADERS MUST STAY `SAMEORIGIN` / `frame-ancestors 'self'`**, and V7's `/s/:path*` block sits
+  **AFTER** the catch-all in `next.config.ts` on purpose — Next applies every matching entry and a
+  later one with the same key wins, which is what makes `referrer-policy: no-referrer` override the
+  global value on `/s/` and only there. Reversing them is a silent no-op that reads as correct.
+- **A LINK CARRIES THE LANGUAGE IT WAS SHARED IN, AND THE WHOLE PAGE FOLLOWS THE PROSE — CHROME
+  INCLUDED.** `share_links.locale` pins what the sharer was reading and `NULL` means as-written.
+  `lang` comes from `renderedLocale(reading, translation)`, never `reading.locale`, and sits on
+  `<main>`. **The mechanism is a nested `LocaleProvider`, never a `locale` prop** — a prop would have
+  had to pass through `ReadingView` and so would have reached `/history` and the draw screen, where
+  chrome-follows-viewer is *correct*. **The provider is mounted only on a mismatch, and that is the
+  one thing on this page that reads the viewer's locale: never read it to choose what LANGUAGE to
+  render; reading it to choose what to SEND, when both choices render the same, is the only
+  exception.** An Indonesian visitor opening an English link therefore has nothing on the page they
+  can read — **that cost was offered, argued and accepted, not missed.**
+- **THE MINT RESOLVES THE PIN, IT DOES NOT TRUST IT.** A non-NULL locale always has a `translations`
+  row behind it; the mint pins `NULL` when it falls back, because a row claiming `en` with no English
+  body is a link that lies about its own language. **`fellBack` is the check and `outcome` is not a
+  substitute** — `invalid` is prose that WAS translated.
+- **RE-SHARE ROTATES THE SLUG *WITHIN ONE LANGUAGE*. DO NOT "SIMPLIFY" IT TO `revoked_at = null`** —
+  un-revoking **resurrects a capability the querent deliberately killed**: the old URL, in the group
+  chat they revoked it because of, starts working again. The regression test is the one asserting the
+  OLD slug stays dead.
+- **`unique nulls not distinct (user_id, entity, entity_id, locale)`, AND THE CLAUSE IS THE WHOLE
+  TRAP.** Postgres `UNIQUE` treats NULLs as DISTINCT and every legacy link has `locale = NULL`, so
+  the naive four-column key would let `onConflictDoUpdate`'s target MISS a legacy row and INSERT
+  rather than rotate — leaving the old slug live and unreachable from the UI, with a green suite. Two
+  integration tests are the negative control and **both fail by ACCEPTING a second row.**
+- **REVOKE IS PER-ARTIFACT AND KILLS EVERY LANGUAGE** (Miftah's ruling): two kinds of "stop sharing"
+  is a UI in which the querent taps the wrong one, believes the reading is private, and is not.
+- **Still open:** `share.viewed` has not been observed firing; two `authjs.*` cookies reach a third
+  party on `/s/`; no resolve cache is shipped (`SHARE_RESOLVE_CACHE_MS` is `0`, and turning it on
+  buys a window in which a revoked link still resolves). **`'persona'` is STILL a live union value
+  resolving to null**, and the pin covers the READING arm only — the day `/s/` mounts `PersonaBlock`
+  it needs the same `getTranslation` + `renderedLocale` treatment in that same change. **Design C —
+  generating both locales at mint — is the only way to make the mismatch itself impossible.**
+
