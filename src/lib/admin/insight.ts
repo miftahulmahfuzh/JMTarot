@@ -53,6 +53,8 @@ import { adminModel, adminModelName } from './model';
 import {
   buildInsightPrompt,
   insightInputHash,
+  isRetryableReason,
+  retryFitsBudget,
   serializePanelFacts,
   validateInsight,
   type PanelFacts,
@@ -103,6 +105,10 @@ export async function generateInsight(
     return { kind: 'unchanged', inputHash };
   }
 
+  /* When the FIRST call started. The retry's budget is spent against this and nothing
+   * else — see `retryFitsBudget`, whose ceiling is derived from the client's abort. */
+  const startedAt = Date.now();
+
   let raw: string;
   try {
     const { text } = await getProvider().complete(buildInsightPrompt(serialized), {
@@ -131,7 +137,53 @@ export async function generateInsight(
     return { kind: 'failed', reason: isCeiling(err) ? 'ceiling' : 'failed', inputHash };
   }
 
-  const checked = validateInsight(raw);
+  let checked = validateInsight(raw);
+
+  /*
+   * ── THE SECOND ATTEMPT: THE NEGATIVE EXAMPLE, WITHIN ONE PRESS ─────────────
+   *
+   * **CARD #2 WAS TEN PRESSES OF THE SAME REFUSAL**, and the ask was to show the model
+   * the shape it had just got wrong. This is that, with the loop inside one press rather
+   * than across them: the rejected text never leaves the server, nothing is stored, and
+   * an operator who pressed once gets the retry for free.
+   *
+   * **AT MOST ONE RETRY.** Two calls per press is already double on a class that exists
+   * to be shed first; a third would triple an operator convenience against a fleet-wide
+   * ceiling that a querent's reading shares.
+   */
+  if (!checked.ok && isRetryableReason(checked.reason) && retryFitsBudget(Date.now() - startedAt)) {
+    /* Snapshot BEFORE the await. `checked` is reassigned below, and `tee.ts`'s trap is
+     * exactly this shape: a field read after an await that something else has moved. */
+    const first = checked.reason;
+    const rejectedBody = raw;
+
+    try {
+      const { text } = await getProvider().complete(
+        buildInsightPrompt(serialized, { reason: first, body: rejectedBody }),
+        { op: 'insight', callClass: 'deferred', model: adminModel() },
+      );
+      raw = text;
+      checked = validateInsight(raw);
+    } catch (err) {
+      /*
+       * The retry itself did not come back. **REPORT THE FIRST ATTEMPT'S REASON, UNLESS
+       * THE RETRY WAS SHED** — `ceiling` is the newer and the more actionable fact
+       * ("come back later", and the ceiling chart will show it), where a provider 500 on
+       * the second call leaves the first attempt's shape failure as the truest thing
+       * known about this press.
+       */
+      console.error('[admin-insight] retry failed', {
+        panel: facts.title,
+        first,
+        name: err instanceof Error ? err.name : typeof err,
+        ceiling: isCeiling(err),
+      });
+      return { kind: 'failed', reason: isCeiling(err) ? 'ceiling' : first, inputHash };
+    }
+  }
+
+  /* **THE SECOND ATTEMPT'S REASON, BEING THE NEWER TRUTH.** Every value already has a
+   * sentence in `INSIGHT.error`, so a retry needs no copy of its own. */
   if (!checked.ok) return { kind: 'failed', reason: checked.reason, inputHash };
 
   return { kind: 'generated', body: checked.body, inputHash, model };
