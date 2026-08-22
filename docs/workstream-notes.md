@@ -9646,6 +9646,122 @@ keeping:
 answer) and a "does this sentence sound useful" check (which is truth, not shape). If the
 button starts refusing correct prose, loosen this first and fix the prompt.
 
+### The button refused correct prose for A7's whole life, and `_` was why (card #2, 2026-08-22)
+
+**The report was ten presses of the same refusal**, and it named the copy rather than the
+cause: *"Model menjawab dengan format daftar atau markdown, bukan paragraf, jadi tidak
+disimpan"*, over and over, on the same panel. The ask was a negative-example mechanism —
+show the model the shape it just got wrong.
+
+**It was not the model's habit. It was `validateInsight` refusing a sentence that obeyed
+every rule in the prompt**, and the section above had already written down what to do
+about it — *"if the button starts refusing correct prose, loosen this first"* — without
+anybody knowing it was already happening.
+
+The mechanism, and it is worth following because no single file is wrong:
+
+1. `panels.ts` puts op and column names into `CATATAN DARI PANEL`: `chat_plan`,
+   `chat_turn`, `blog_format`, `llm_calls.user_id`. Correct — those notes are what stop
+   the model dividing a cost by "Bacaan selesai".
+2. `INSIGHT_SYSTEM` rule 2 asks for numbers as **evidence** out of that block, and its
+   vocabulary line says technical terms stay English. Also correct.
+3. `validateInsight` refused **any `_` anywhere in the body**. Correct on the day it was
+   written, when the only underscore anybody pictured was `_miring_`.
+
+Together they make *"panggilan chat_turn naik"* — a good finding — report as markdown.
+**And it is deterministic: the same block yields the same vocabulary, so pressing again
+cannot help.** Ten presses was not bad luck; it was the only available outcome.
+
+**THE GENERALISATION IS THE PART WORTH KEEPING.** A gate over model output and a prompt
+that supplies the model's vocabulary are two owners of one contract, and nothing checks
+them against each other. `imageJoin.test.ts` exists for that shape — two owners of one
+`@id` — and this is the same failure a directory over, with the prompt on one side and the
+validator on the other. **When the facts block grows a new kind of token, the gate is the
+second place to look.**
+
+The rule is now positional rather than presence-based:
+
+```ts
+if (/(?<![A-Za-z0-9])_|_(?![A-Za-z0-9])/.test(text)) return { ok: false, reason: 'format' };
+if (text.includes('*')) return { ok: false, reason: 'format' };
+```
+
+An underscore **between** word characters is an identifier; anywhere else it is emphasis
+or a stray. `chat_turn`, `llm_calls.user_id` and `input_tokens` pass; `_miring_`, `_kata`,
+`kata_` and a lone `_` do not. **It generalises**, which is the reason it was chosen over
+an allowlist derived from `ops.ts`: a fourteenth op or one new column name in a note
+cannot bring the refusal back, where an allowlist would need an edit and would fail
+silently without one. The asterisk stayed blanket — no Indonesian prose needs one.
+
+### The negative example is a retry inside one press
+
+The card's ask, built, and the shape of it is the interesting part: **nothing stores the
+rejected text, because nothing needs to.** `generateInsight` calls, validates, and on a
+shape refusal calls once more with the rejected body fenced in `<contoh_salah>`. One
+press, at most two calls, and the rejected text never leaves the server.
+
+Two alternatives were declined, and both are recorded because each is what a fresh session
+would propose:
+
+- **Round-tripping it through the browser** — the error response carries the rejected text,
+  `InsightBox` holds it, the next press posts it back. Cheap, and it relaxes `route.ts`'s
+  stated rule that *nothing a browser posted reaches a prompt*, which is W3's
+  completion-route rule (*the client is trusted to say what it answered, never that it
+  finished*). It also still needs a second press, which is the thing being reported.
+- **Persisting the rejection** — a `last_rejected_body` column read on the next press. It
+  buys a queryable record of what the model keeps getting wrong, at the cost of a
+  migration and a column of model garbage under a table whose other rows are published
+  prose. **This is the one to revisit if the retry turns out not to rescue presses.**
+
+Five rules in the built version:
+
+- **`insightInputHash` MUST NOT SEE THE NEGATIVE EXAMPLE**, and there is a test asserting
+  it. If it did, a rescued insight would store a hash that never equals the next page
+  load's — **the cache would invert into a guarantee of one model call per view**, and the
+  box would read stale for ever. This is the one thing here that loses something real.
+- **`ceiling` and `failed` are not retryable.** Neither produced text, so there is no
+  example to give, and a `ceiling` retry spends quota the limiter has just refused — on
+  the one call class that exists to be shed before a querent's reading.
+- **The reported reason is the second attempt's**, being the newer truth. Every value
+  already had a sentence in `INSIGHT.error`, so the retry needed no copy. The exception is
+  a provider error on the retry: then the **first** reason is reported, because the shape
+  failure is the truest thing known about the press — unless the retry was *shed*, where
+  `ceiling` is both newer and more actionable.
+- **`RETRY_BUDGET_MS = 38_000` IS DERIVED FROM `InsightBox`'s `ABORT_MS`, NOT CHOSEN**, and
+  the guard is proportional (`spent * 2 <= budget`) so no separate measurement of what an
+  insight call costs has to be kept true. A first call slower than ~19s means no retry and
+  exactly A7's behaviour. **That is the right way round: pressing again is cheap, whereas
+  an aborted press costs the operator an outcome they cannot read** — the timeout copy
+  says the work *may* have completed, and on this path nothing did. A3's ordering holds:
+  `statement_timeout 10s < retry budget 38s < client abort 45s < maxDuration 60s`.
+- **No new event, and no `attempts` field.** Both calls carry `op: 'insight'`, so **two
+  ledger rows seconds apart followed by a stored insight is a rescued press**, readable in
+  query 9 and on `/admin/tokens`. An `attempts` field would need copy for a distinction
+  the operator cannot act on. `op: 'insight'`'s own note still holds — pressing the button
+  changes the panel it describes — now by two rows rather than one.
+
+**`<contoh_salah>` is the safest fence in the project and is still a fence.** What is
+inside is the model's own output, generated from a block this app built out of its own
+ledger, so unlike `<terjemahan>` no querent string is anywhere upstream. It is fenced for
+R17's reason anyway, and because the next person to widen the facts block should not have
+to rediscover why it mattered. **`empty` emits the sentence and no fence** — an empty pair
+of tags reads to a model as an example of writing nothing, which is the failure being
+corrected.
+
+### `insightPrompt.test.ts` said `insight.ts` could not be tested, and that was wrong
+
+Its header read: *"`insight.ts` HAS NO TEST HERE AND CANNOT … it reaches `@/lib/llm`, which
+starts with `import 'server-only'`."* **The premise is true and the conclusion is not.**
+`vi.mock` intercepts the specifier before the module is evaluated, so `server-only` never
+runs — and `src/lib/translate/translate.test.ts` has relied on exactly that since V2, on a
+server-only module reaching the same provider. So `insight.test.ts` exists, the comment was
+corrected rather than left standing, and **the split it argued for is untouched**: string
+transforms next door, only what needs a provider here.
+
+**The generalisation: a comment asserting something is untestable is how it stays
+untested**, and it costs more than a wrong comment normally does, because nobody
+re-examines it. The retry loop is precisely the code that had no test under the old claim.
+
 ### `ADMIN_MODEL`: one variable for three call sites
 
 `src/lib/admin/model.ts`, a LEAF — env in, a string out, no imports, so `npm test` drives every
