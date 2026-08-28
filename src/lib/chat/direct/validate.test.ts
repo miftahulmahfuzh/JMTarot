@@ -197,28 +197,50 @@ describe('checkPlan repairs a beat rather than the plan, where it can', () => {
     expect(result.repairs).toEqual([]);
   });
 
-  /** `P6` is checked before `P7`, so the fifth beat is dropped for the reason that applies. */
-  it('a fifth beat from a reader at their cap is `per_reader`, not `too_many`', () => {
+  /**
+   * `P6` is checked before `P7`, so the beat over the per-reader cap is dropped for the
+   * reason that applies to it rather than for the run being long.
+   *
+   * **DERIVED FROM `CAPS`, NOT WRITTEN OUT.** This test and the one below spelled `5`, `6`
+   * and `4` as literals, which encoded `maxBeats: 4` / `maxBeatsPerReader: 2` into an
+   * assertion that never said so — and both broke the moment task #4 raised the caps to
+   * 6 and 3, in a way that read as a behaviour regression rather than as a stale fixture.
+   * The behaviour under test is *"one beat past the per-reader cap is `per_reader`"*, and
+   * that sentence contains no numbers. Build the scenario from the caps instead.
+   *
+   * Two readers alternate up to the per-reader cap — `2 * maxBeatsPerReader` beats, which
+   * is the whole run at the current numbers — and then one more from the first reader.
+   * That last beat is the only illegal one.
+   */
+  it('a beat past a reader\'s per-reader cap is `per_reader`, not `too_many`', () => {
+    const pair = ['adrian', 'thessaly'];
+    const legal = 2 * CAPS.maxBeatsPerReader;
     const result = checkPlan(
       plan([
-        { ...BEAT, reader: 'adrian', reply: null },
-        { ...BEAT, reader: 'thessaly', reply: null },
-        { ...BEAT, reader: 'adrian', reply: null },
-        { ...BEAT, reader: 'thessaly', reply: null },
-        { ...BEAT, reader: 'adrian', reply: null },
+        ...Array.from({ length: legal }, (_, i) => ({
+          ...BEAT,
+          reader: pair[i % 2],
+          reply: null,
+        })),
+        { ...BEAT, reader: pair[0], reply: null },
       ]),
       CTX,
     );
     if (!result.ok) throw new Error(result.reason);
-    expect(result.beats).toHaveLength(4);
+    expect(result.beats).toHaveLength(Math.min(legal, CAPS.maxBeats));
     expect(result.repairs).toEqual(['per_reader']);
   });
 
-  it('six beats are TRUNCATED to the cap rather than refused, and `dropped` counts them', () => {
+  it('beats past the cap are TRUNCATED rather than refused, and `dropped` counts them', () => {
     const cast = ['thessaly', 'adrian', 'margaret'];
+    /*
+     * Two over the cap, spread across all three readers so that NO reader reaches
+     * `maxBeatsPerReader` — otherwise `P6` fires first and this stops testing `P7`.
+     */
+    const over = 2;
     const result = checkPlan(
       plan(
-        Array.from({ length: 6 }, (_, i) => ({
+        Array.from({ length: CAPS.maxBeats + over }, (_, i) => ({
           ...BEAT,
           reader: cast[i % 3],
           reply: null,
@@ -228,9 +250,9 @@ describe('checkPlan repairs a beat rather than the plan, where it can', () => {
     );
     if (!result.ok) throw new Error(result.reason);
     expect(result.beats).toHaveLength(CAPS.maxBeats);
-    expect(result.dropped).toBe(2);
+    expect(result.dropped).toBe(over);
     /* One `too_many` per beat dropped, so a caller counting repairs counts the beats. */
-    expect(result.repairs).toEqual(['too_many', 'too_many']);
+    expect(result.repairs).toEqual(Array(over).fill('too_many'));
   });
 
   /**

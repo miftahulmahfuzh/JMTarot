@@ -105,6 +105,39 @@ export function createAnthropicProvider(): LLMProvider {
             model: opts?.model ?? model,
             max_tokens: maxTokens,
             /*
+             * **REASONING IS SPENT FROM THE PROSE BUDGET, SO IT IS TURNED OFF HERE
+             * AND THE APP WAS DOWN FOR A DAY BECAUSE IT WAS NOT.**
+             *
+             * On 2026-08-27 z.ai enabled reasoning-by-default for `glm-4.6` and
+             * every reading went blank. Nothing had been deployed for six days.
+             * Two facts combined to produce an empty page:
+             *
+             *   1. This loop yields only `text_delta`, and `complete()` below keeps
+             *      only `type: 'text'` blocks. A `thinking` block is NEITHER, so it
+             *      is silently discarded rather than rendered.
+             *   2. Thinking tokens come out of `max_tokens`, which is 350-650 here
+             *      (`MAX_TOKENS` in `prompt/services.ts`) because the length control
+             *      is the product. The reasoning exhausted the budget before the
+             *      prose began, so there was frequently no text block AT ALL.
+             *
+             * Measured on the live wire, same prompt, `glm-4.6`:
+             *
+             *     default          552 thinking_delta,  97 text_delta -> truncated
+             *     thinking off       0 thinking_delta, 132 text_delta -> end_turn
+             *
+             * `types.ts`' `ReasoningEffort` predicted exactly this for the GPT-5
+             * family -- *"will spend all 650 on reasoning and return an EMPTY
+             * string"*. It was right about the mechanism and wrong only about which
+             * provider would do it first.
+             *
+             * **DELIBERATELY NOT AN ENVIRONMENT VARIABLE**, on `CHAT_PLANNER_MODEL`'s
+             * rule: the only thing a knob here could do is let somebody turn every
+             * reading blank again at 2am and never learn why. There is no setting of
+             * this that this app wants. If a future model needs reasoning, it needs
+             * `max_tokens` raised in the same change and a blind read after it.
+             */
+            thinking: { type: 'disabled' },
+            /*
              * `cache_control` IS HONOURED BY z.ai, AND THIS COMMENT SAID THE
              * OPPOSITE FOR TWO RELEASES. Re-measured 2026-07-30: the same system
              * prompt re-sent came back with `cache_read_input_tokens: 1344` of a
@@ -182,6 +215,15 @@ export function createAnthropicProvider(): LLMProvider {
         {
           model: opts?.model ?? model,
           max_tokens: maxTokens,
+          /*
+           * Off for the same reason as the streaming path above -- read that comment,
+           * it carries the measurement. **This half is the one that took the
+           * moderation gate down**: `glm-4.5-flash` at `max_tokens: 350` returned 329
+           * thinking deltas and 66 truncated characters, which cannot parse as the
+           * classifier's JSON verdict, so `gate.ts` fell back to `onNoVerdict` and
+           * every question failed OPEN with nothing on screen and nothing alerting.
+           */
+          thinking: { type: 'disabled' },
           // Spread rather than `temperature: opts?.temperature`: an explicit
           // `undefined` is serialized by the SDK as a present null-ish field on
           // some paths, and 0 is falsy, so neither `??` nor a truthiness test
