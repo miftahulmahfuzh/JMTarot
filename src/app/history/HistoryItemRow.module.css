@@ -82,13 +82,29 @@
   display: flex;
   /* = REVEAL_WIDTH in src/lib/history/swipe.ts. */
   width: 88px;
+  /*
+   * THE GAP BETWEEN THE ROW AND THE TRASH CONTROL, AND IT IS THE SAME 8px AS THE
+   * GAP BETWEEN TWO DAY CHIPS (`DateFilter.module.css`'s `.strip`). Reported on a
+   * real phone 2026-08-28: with the tray's padding at 0 the button's left edge
+   * butts straight against the sliding row and the two read as one welded object,
+   * where every other pair of controls on this screen is separated.
+   *
+   * **PADDING ON THE TRAY, NOT A NARROWER TRAY AND NOT A MARGIN ON `.trash`.**
+   * The 88px must stay equal to `REVEAL_WIDTH` -- it is the distance the slider
+   * travels, so shrinking it would stop the tray reaching the row's edge, which
+   * is the units bug this block's header warns about. Padding takes the 8px out
+   * of the button instead: `.trash` is `flex: 1`, so it becomes 80px wide, still
+   * comfortably over the 44px floor on both axes.
+   */
+  padding-left: 8px;
 }
 
 /*
- * FILLS THE TRAY. 88px wide over a row that is at least 90px tall (three 66px
- * thumbs plus 12px of padding top and bottom), so both axes clear the 44px iOS
- * minimum with room. The `min-height` is a belt: `PublicShare`'s 36px button is
- * already a known defect in this repo and a second one must not ship.
+ * FILLS WHAT THE TRAY'S PADDING LEAVES -- 80px since the 8px inset above, not the
+ * tray's full 88px -- over a row that is at least 90px tall (three 66px thumbs
+ * plus 12px of padding top and bottom), so both axes clear the 44px iOS minimum
+ * with room. The `min-height` is a belt: `PublicShare`'s 36px button is already a
+ * known defect in this repo and a second one must not ship.
  *
  * OUTLINED, NEVER FILLED, matching `DeleteAccount`'s confirm button. A filled
  * red block behind every row would make the brightest thing on the page a
