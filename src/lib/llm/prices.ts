@@ -228,6 +228,41 @@ export const PRICES: readonly ModelPrice[] = [
       'the supported three in credits (6.9 / 1.7 / 24 against GLM-4.7 at 4.6 / 1.2 / 16), ' +
       'which matters only after the renewal cliff the header dates.',
   },
+  {
+    /*
+     * **GLM-5.3, ADDED 2026-08-28 FOR TASK #4.** Released 2026-08-14, API from
+     * 2026-08-18, priced by z.ai the same as GLM-5.2.
+     *
+     * ZERO for the same reason as every row above it -- a legacy annual Pro plan bills
+     * no dollar per token, and the whole argument lives in this array's header. Read as
+     * a counterfactual, z.ai's pay-as-you-go rate for this model matches GLM-5.2's:
+     * US$1.40 input, US$0.26 cached, US$4.40 output per 1M tokens. NOT entered as the
+     * rate, because that is not what this key is billed.
+     *
+     * **THE ROW EXISTS BEFORE THE MODEL IS SWITCHED ON, AND THAT IS DELIBERATE.** A
+     * model with no row here is an `unpricedCall` on `/admin/tokens`, so shipping the
+     * cutover without it would make the dashboard silently under-report from the first
+     * call. `effectiveFrom` is today rather than backdated: nothing in `llm_calls` names
+     * this model before today, and an earlier date would claim knowledge of a price
+     * nobody looked up -- the same rule the GLM-5.2 row states above.
+     *
+     * **IT IS ALSO ON THE RIGHT SIDE OF THE ~FEBRUARY 2027 CLIFF**, which `glm-4.6` is
+     * not. See `CLAUDE.md`'s `## The z.ai plan` before re-deriving any of this.
+     */
+    model: 'glm-5.3',
+    effectiveFrom: '2026-08-28',
+    inputPerMTok: 0,
+    outputPerMTok: 0,
+    cachedInputPerMTok: 0,
+    verifiedOn: '2026-08-28',
+    source: 'https://docs.z.ai/devpack/overview',
+    note:
+      'Priced by z.ai identically to glm-5.2 at release. ZERO here for the same reason ' +
+      'as every other row -- the legacy annual Pro plan bills no dollar per token. ' +
+      'Added ahead of any cutover so that switching LLM_MODEL, CHAT_MODEL or ADMIN_MODEL ' +
+      'to it cannot produce unpriced calls. NOTE: this model reasons by default, which ' +
+      'is why anthropic.ts sends thinking:{type:disabled} -- see task #4.',
+  },
 ];
 
 /**

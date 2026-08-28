@@ -39,27 +39,47 @@ export type PlanCaps = {
 };
 
 /**
- * **FOUR, RULED BY MIFTAH** (`[R19]`): *"more voices in a run is the naturalness bet,
- * and `C-D6`'s sub-budget plus `deferred` shedding is what bounds the cost — not a cap
- * on how many people may speak."* It is also `C-D1`'s own ceiling — *"1–4 messages from
- * 1–3 readers"* — so this number exceeds nothing.
+ * **SIX SINCE 2026-08-28, AND THIS REVERSES `[R19]`.** Miftah's ruling, task #4: the room
+ * is too quiet, and he asked for four to six exchanges with readers answering each other,
+ * answering the querent, and opening subjects of their own.
  *
- * **LOWER IT TO MAKE THE ROOM QUIETER, NEVER RAISE IT TO MAKE THE ROOM LIVELIER.**
- * Liveliness comes from the MIX of one-beat and two-beat runs and from the silence rate
- * (§11's four levers); six bubbles at once is a bot dumping, and a director that *can*
- * schedule six *will*.
+ * **THE PRIOR RULING IS KEPT HERE RATHER THAN DELETED**, because it is still right about
+ * the mechanism and a future session will otherwise re-derive it and quietly lower this
+ * back. It read: *"FOUR, RULED BY MIFTAH (`[R19]`) … LOWER IT TO MAKE THE ROOM QUIETER,
+ * NEVER RAISE IT TO MAKE THE ROOM LIVELIER. Liveliness comes from the MIX of one-beat and
+ * two-beat runs and from the silence rate (§11's four levers); six bubbles at once is a
+ * bot dumping, and a director that *can* schedule six *will*."*
+ *
+ * **THAT LAST SENTENCE IS EXACTLY WHY THIS CONSTANT WAS NEVER THE THING LIMITING THE
+ * ROOM, AND THE CARD ALMOST WALKED INTO IT.** The cap has been 4 all along; what produced
+ * two-bubble runs is rule 1 of the director's own prompt, which said *"ONE or TWO is the
+ * ordinary answer … 4 almost never"*. Raising this number alone would have changed
+ * NOTHING. It is raised here so the prompt has somewhere to go, and `system.{en,id}.ts`
+ * rule 1 is rewritten in the same commit — **neither edit works without the other.**
+ *
+ * What did NOT change with it: `C-R6`/`C-R7` still hold. A zero-beat plan stays valid and
+ * desirable, and a silence rate of zero still means the director always answers, which is
+ * not what a group chat does. "Livelier" is a longer exchange when there IS one, never an
+ * answer to everything.
  */
-export const CHAT_MAX_BEATS_DEFAULT = 4;
+export const CHAT_MAX_BEATS_DEFAULT = 6;
 
 /**
- * **TWO PER READER**, and with no adjacent repeats this is what makes `A B A B` and
- * `A B C A` the only four-beat shapes available. A reader holding three of four beats
- * is a monologue with an audience in it.
+ * **THREE SINCE 2026-08-28, RAISED WITH THE CAP ABOVE AND ONLY BECAUSE OF IT.**
  *
- * Not an environment variable: it is a fact about the shape of a conversation rather
+ * It was two, on this argument: *"with no adjacent repeats this is what makes `A B A B`
+ * and `A B C A` the only four-beat shapes available. A reader holding three of four beats
+ * is a monologue with an audience in it."*
+ *
+ * **THE ARGUMENT WAS WRITTEN AGAINST A FOUR-BEAT CAP AND DOES NOT SURVIVE THE MOVE TO
+ * SIX.** Three of four is 75% of a run; three of six is half, and the no-adjacent-repeat
+ * rule still stands either way. Left at two, `A B C A B C` becomes the *only* legal
+ * six-beat shape — every run identical, which is its own kind of unnatural.
+ *
+ * Still not an environment variable: it is a fact about the shape of a conversation rather
  * than a volume knob, and `CHAT_MAX_BEATS` is already the knob.
  */
-export const MAX_BEATS_PER_READER = 2;
+export const MAX_BEATS_PER_READER = 3;
 
 /**
  * **24 MESSAGES — TWELVE EXCHANGES — AND IT IS NARROWER THAN F3's 40 ON PURPOSE.**
