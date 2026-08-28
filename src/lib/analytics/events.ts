@@ -76,6 +76,11 @@ export const EVENT_NAMES = [
   'reading.completed',
   'reading.failed',
   'reading.aborted',
+  /*
+   * TWO SURFACES SINCE 2026-08-28 -- the draw screen's error panel and
+   * `/history/[id]`'s refill. See its prop shape for why that is a `surface` prop
+   * and not a second name.
+   */
   'reading.retried',
   'reading.rate_limited',
 
@@ -133,6 +138,31 @@ export const EVENT_NAMES = [
   'history.viewed',
   'history.filtered',
   'history.item_opened',
+  /*
+   * THE 77th NAME, AND THE ONLY ONE ADDED FOR THE DELETE FEATURE. The
+   * accounting this file's rule demands:
+   *
+   *   CONSIDERED, REJECTED  widening `history.item_opened` with an `action`
+   *            prop instead of a new name. Opening and deleting have different
+   *            denominators, and a merged name would make "how many readings
+   *            were opened" require a `props->>'action'` predicate on every
+   *            existing query — silently changing what two months of rows mean.
+   *   DROPPED  `history.delete_cancelled` (the sheet opened, then Batal).
+   *            v0.4.0's `revealed` precedent: a look-and-close changes no
+   *            decision.
+   *   DROPPED  a `status` prop, which `history.item_opened` carries. Whether a
+   *            deleted reading had finished is recoverable by joining `readings`
+   *            on `reading_id`, and the retry feature is the thing that answers
+   *            the question it would have asked.
+   *   FOLDED OUT  nothing. `history.filtered` was the candidate — it has fired
+   *            since V6 and nothing reads it weekly — but a delete that empties
+   *            a day makes the strip MORE interesting, not less, and dropping a
+   *            name to keep a total round is how a taxonomy loses its history.
+   *
+   * `reading.retried` was ALREADY on this list before this change (see `— the
+   * reading —` above); the retry work folds in no name.
+   */
+  'history.item_deleted',
 
   // — translation (V2) —
   'translation.generated',
@@ -364,7 +394,44 @@ export type EventMap = {
                                  chars_before_failure: number; error_kind: string; source: EventSource };
   'reading.aborted':           { reading_id: string; chars_before_abort: number;
                                  reason: 'user' | 'navigation' | 'timeout'; source: EventSource };
-  'reading.retried':           { reader_id: string; service_id: string; attempt: number };
+  /*
+   * ── `surface`, `reading_id`, `prior_status` AND `age_days` (2026-08-28) ──────
+   *
+   * **FOUR PROPS AND NOT A SECOND NAME, AT A CEILING THAT IS ALREADY BINDING.** A
+   * `history.reading_refilled` was drafted and dropped: it would have cost a name
+   * this register has none spare of, AND it would have put the refill outside
+   * `where name = 'reading.retried'` -- the one query that answers "how often does
+   * anybody retry at all". Same reasoning that folded `chat.message_blocked` into
+   * `moderation.refused`'s `surface`.
+   *
+   * `reading_id` IS NULL ON THE DRAW SCREEN AND THAT IS NOT A GAP: a draw-screen
+   * retry mints a NEW `readings.id` which does not exist when the button is
+   * pressed, where a history refill keeps the id it is refilling.
+   *
+   * **`prior_status` IS THE ONE MEASUREMENT THIS FEATURE OWES ITSELF.**
+   * Retryability is `body IS NULL` and never a status list, so from the screen
+   * `aborted` (walked away) and `failed` (the stream died) are indistinguishable --
+   * and they are different products. If nearly every refill is on an `aborted` row,
+   * the ruling should be revisited on that evidence rather than on taste. Null on
+   * the draw screen, where there is no stored row to have had a status. Spelled as
+   * the literal union because THIS FILE HAS NO IMPORTS, BY RULE.
+   *
+   * `age_days` is `dayOffset(today, local_date)`, and `0` on the draw screen is
+   * true rather than filler. It separates recovery-affordance from archaeology.
+   *
+   * **`attempt` MEANS SOMETHING SLIGHTLY DIFFERENT ON EACH SURFACE AND THAT IS
+   * WRITTEN DOWN RATHER THAN NORMALISED**: on the draw screen it counts presses
+   * within one draw, on `/history/[id]` presses within one page view. Nothing
+   * persists it. Group by `reading_id` for the true total.
+   *
+   * An `outcome` prop was considered and dropped: the outcome is already
+   * `reading.completed` / `reading.failed` with `source: 'client'` and the same
+   * `reading_id`, and a fact recorded twice is how two records drift.
+   */
+  'reading.retried':           { reader_id: string; service_id: string; attempt: number;
+                                 surface: 'draw' | 'history'; reading_id: string | null;
+                                 prior_status: 'ok' | 'partial' | 'failed' | 'aborted' | 'blocked' | null;
+                                 age_days: number };
   /*
    * `limit` IS V9's ADDITION, AND IT IS NOT A WIDENING OF WHAT IS COLLECTED ABOUT
    * A PERSON. The route deliberately answers all four ceilings with identical
@@ -664,6 +731,32 @@ export type EventMap = {
   'history.item_opened':       { reading_id: string; reader_id: string; service_id: string;
                                  status: string; age_days: number;
                                  needs_translation: boolean };
+  /**
+   * ONE ROW, DELETED BY ITS OWNER.
+   *
+   * NO FREE TEXT (rule 1), and this event is the one where that rule is doing
+   * real work: the feature exists because somebody asked an embarrassing
+   * question, so the question itself is the last thing that may appear here.
+   * `question_length` is a length and `0` means there was no question — the same
+   * shape `reading.completed.choice_length` already has for an absent value.
+   *
+   * `had_share_link` IS `shared_at`, WHICH MEANS "WAS EVER PUBLIC" AND NOT "IS
+   * PUBLIC NOW". V7 leaves that column non-null after a revoke on purpose, and
+   * the honest reading of this prop is therefore *the querent deleted something
+   * they had once shared* — which, given the motive, is the most interesting
+   * thing this event records.
+   *
+   * `via` IS HOW THE TRAY CAME TO BE OPEN, and it is the one prop that could not
+   * be recovered from the tables. A gesture nobody finds is the single way this
+   * feature fails silently: `swipe` near zero against a live `keyboard` count
+   * means the swipe is undiscoverable, and no query over `readings` can see it.
+   *
+   * `age_days` uses `dayOffset(today, item.localDate)` — the querent's own
+   * calendar day on both sides, never `created_at`.
+   */
+  'history.item_deleted':      { reading_id: string; reader_id: string; service_id: string;
+                                 age_days: number; had_share_link: boolean;
+                                 question_length: number; via: 'swipe' | 'keyboard' };
 
   /**
    * ONE NAME, NOT TWO. There is deliberately no `translation.failed`.

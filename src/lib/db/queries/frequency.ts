@@ -11,7 +11,7 @@
  * fingerprint and the gate in `src/lib/memory/frequency.ts`. This file is the
  * two scans and nothing else.
  */
-import { and, between, count, eq, inArray, sql } from 'drizzle-orm';
+import { and, between, count, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Locale } from '@/data/types';
 import type { DbOrTx } from '../types';
 import { frequencyVerdicts, readingCards, type FrequencyVerdict } from '../schema';
@@ -64,6 +64,16 @@ export type CardCount = {
  * about whether the model finished a sentence. No filter is needed for that,
  * because `blocked` readings write no card rows at all.
  *
+ * A SOFT-DELETED READING'S CARDS DO NOT COUNT, AND THAT IS NOT AN EXCEPTION TO
+ * R7. R7 is about a reading the querent TOOK and the app failed to finish; this
+ * is about a reading the querent asked to be rid of. The verdict is prose about
+ * their pattern, and building it out of a draw they deleted is the feature
+ * failing at the one thing the delete control promises.
+ *
+ * NOTHING HAS TO INVALIDATE THE CACHED VERDICT: `fingerprintOf` is computed over
+ * the window's reading count and the ranked counts, both of which move when a
+ * reading leaves, so `frequency_verdicts` self-invalidates on the next read.
+ *
  * NO PER-CARD `count(distinct reading_id)`, which W5's §3.2 SQL carries.
  * Nothing consumes it: the ranking uses count and lastSeen, and the prompt is
  * handed count and reversedCount. The number the gate actually needs is the
@@ -90,7 +100,19 @@ export async function cardCounts(
     })
     .from(readingCards)
     .where(
-      and(eq(readingCards.userId, userId), between(readingCards.localDate, since, until)),
+      and(
+        eq(readingCards.userId, userId),
+        between(readingCards.localDate, since, until),
+        /*
+         * **THE DENORMALIZED COLUMN, NOT A JOIN, AND NOT AN `exists`.** This scan
+         * is the 0.12ms plan the header defends and it touches `readings` nowhere;
+         * a sub-select to find out whether the parent was deleted would replace it
+         * with a semi-join for a predicate that eliminates almost nothing.
+         * `softDeleteReading` writes both columns in one transaction, which is what
+         * makes reading the copy here correct.
+         */
+        isNull(readingCards.deletedAt),
+      ),
     )
     .groupBy(readingCards.cardId)
     .orderBy(sql`count(*) desc`, readingCards.cardId);
@@ -125,8 +147,14 @@ export async function readingsInWindow(
   const [row] = await db
     .select({ n: sql<number>`count(distinct ${readingCards.readingId})` })
     .from(readingCards)
+    /* THE SAME PREDICATE AS `cardCounts`, so the same index serves it and so the
+       gate's denominator cannot disagree with the numerator it gates. */
     .where(
-      and(eq(readingCards.userId, userId), between(readingCards.localDate, since, until)),
+      and(
+        eq(readingCards.userId, userId),
+        between(readingCards.localDate, since, until),
+        isNull(readingCards.deletedAt),
+      ),
     );
   return Number(row?.n ?? 0);
 }

@@ -141,6 +141,23 @@ const EXEMPT: Array<{ file: string; why: string; ownSwitch?: string }> = [
     file: 'src/lib/translate/translate.ts',
     why: 'THE BACKBONE. V2 exists because the alternative was shipping Indonesian prose to an English querent; a switch here reinstates the bug the workstream was built to remove.',
   },
+{
+    /*
+     * **PHASE 3 OF THE RETRY WORK. THE SAME PRODUCT RULING AS THE ROW ABOVE, AND
+     * IT IS NOT A NEW DECISION.** This route is `/api/reading` writing over a row
+     * that already exists; the prose it produces is the product in exactly the way
+     * the draw screen's is. A flag here would be a switch that turns unfinished
+     * readings into permanently unfinished ones, which is the maintenance-page
+     * case rather than the env-var case.
+     *
+     * It is NOT a member of the admin-only class below it: a querent presses this
+     * button, so there IS a degraded querent experience for a flag to protect --
+     * which is the property that puts a site in the FLAGGED table, and this one is
+     * exempt for the opposite reason to `blogAutoTranslate` and `insight`.
+     */
+    file: 'src/app/api/reading/retry/[id]/route.ts',
+    why: 'THE PRODUCT, on the same ruling as `/api/reading` above. A retry is a reading; switching it off leaves the querent with a reading that can never finish and no way to say so.',
+  },
   {
     /*
      * **A6's BLOG AUTO-TRANSLATE. EXEMPT FOR A REASON UNLIKE THE OTHER THREE**, and it

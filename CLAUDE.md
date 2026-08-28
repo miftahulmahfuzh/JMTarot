@@ -1134,12 +1134,10 @@ always 204), `src/components/Track*.tsx`, `docs/analytics-queries.md`. **The tax
 the fold-rather-than-add postmortem and the retry semantics are in
 `docs/workstream-notes.md`.** What stays here reaches outside W4:
 
-- **`events.ts` IS THE CLOSED TAXONOMY — 67 names, a prop shape each, and NO IMPORTS**, because
-  it is the data dictionary and people read it. **ONE OWNER PER RELEASE:** every other
-  workstream declares its events in its plan and that owner folds them in, and **folding a
-  declaration in means transcribing it**, not narrowing it. **Expect to FOLD rather than add,
-  and write down what you folded** — the ceiling has moved once, and the register was revisited
-  rather than the number bumped.
+- **`events.ts` IS THE CLOSED TAXONOMY: a prop shape each, NO IMPORTS, ONE OWNER PER RELEASE.**
+  `events.test.ts`'s ceiling is the machine-checked register and holds the fold ledger; folding a
+  declaration in means TRANSCRIBING it, not narrowing it, and expect to FOLD rather than add.
+  **Do not restate the count here** — this line said 67 while the file held 76.
 - **`latency_ms` is TIME TO FIRST TOKEN**, not total generation time — that is
   `reading.completed.total_ms`. Changing the meaning later makes every historic row a different
   measurement.
@@ -1200,26 +1198,27 @@ to read before editing `ReaderDeck.tsx`.** What stays here reaches outside V5:
   itself. **The same trap will catch the next component that auto-scrolls.**
 ## History (V6)
 
-`/history` lists the querent's own readings by day; `/history/[id]` reconstructs the draw
-exactly as it was, **read-only** (VD14). `src/lib/history/**`,
-`src/lib/db/queries/history.ts`, `src/app/history/**`, `src/app/api/history/**`. **The rest —
-`parseLocalDate` vs `isHistoryDate`, why the list payload carries no `body` and no `gist`, and
-`HistoryBrowser`'s `todayKey()` trap — is in `docs/workstream-notes.md`.** What stays here
-reaches outside V6:
+`/history` lists the querent's readings by day; `/history/[id]` reconstructs the draw, refills an
+unfinished one, and a row swipes left to a soft delete. `src/lib/history/**`,
+`src/lib/reading/retryable.ts`, `src/lib/db/queries/history.ts`, `src/app/history/**`,
+`src/app/api/{history,reading/retry}/**`. **The rest — `parseLocalDate` vs `isHistoryDate`, the
+`todayKey()` trap, rule 4's `as-written` hatch and every measurement — is in
+`docs/workstream-notes.md`.** What stays here reaches outside V6:
 
 - **`ReadingView` IS THE ONE RENDERER THREE SURFACES MOUNT (VD10)**, so its four rules bind the
   draw screen, `/history/[id]` and `/s/<slug>` together: no session, no fetch, and no
-  `@/lib/db/**` import *even as `import type`* (`clientBoundary.test.ts`'s regex does not know
-  the `type` keyword, which is why `ReadingStatus` lives in `@/data/types`). **Rule 4 is the one
-  to protect: it NEVER renders `reading.body` when `reading.locale` differs from the viewer's
-  and no translation was supplied** — it renders the translating state instead. That is the
-  component's invariant and not the caller's discipline, which is what stops a caller shipping
-  the bug by forgetting a prop. **Passing no `prose` for a foreign-locale reading leaves a
-  stranger on a pulsing spinner forever**; deciding not to translate is legitimate
-  (`{ kind: 'as-written' }`), falling back to the original silently is not.
-- **THE `blocked` FILTER IS SECURITY-ADJACENT.** A blocked reading's `question` is text W7's
-  classifier flagged and redacts from `moderation_flags` at 30 days — a browsable copy under
-  another column name undoes a retention promise. `failed` and `aborted` ARE shown.
+  `@/lib/db/**` import *even as `import type`*. **Rule 4 is the one to protect: it NEVER renders
+  `reading.body` when `reading.locale` differs from the viewer's and no translation was
+  supplied** — it renders the translating state. The component's invariant, not the caller's
+  discipline; **a refilled reading is in `readings.locale` like any other.**
+- **THE `blocked` FILTER IS SECURITY-ADJACENT** — that `question` is text W7 redacts from
+  `moderation_flags` at 30 days. `failed` and `aborted` ARE shown.
+- **RETRY IS `body IS NULL`, NEVER A STATUS LIST. A DELETE REVOKES EVERY SHARE LINK AND CLEARS
+  THE DAY SUMMARIES WRITTEN ABOUT IT, IN ONE TRANSACTION, BEFORE THE FLAG.** VD14 argues about
+  prose the querent already read, so it never reached an empty row; `retryable.ts` is the
+  predicate both sides ask, a refill keeps `readings.id`, and `partial` has prose and never
+  retries. `redactForUser`'s order, because the feature is embarrassment, not disk — `isStale`
+  cannot see a removed source id — and there is no restore, so the copy must not imply one.
 - **`/history` IS GATED AND `isPublic()` MUST NEVER LEARN IT.**
 ## Sharing (V7)
 

@@ -465,13 +465,42 @@ const en: Catalog = {
 
   'history.error': 'Your history will not open just now. Try again in a moment.',
 
-  'history.item.unfinished': 'This reading did not finish.',
+  // The second sentence is the whole of the list's retry hint (2026-08-28), and a
+  // string rather than a control -- see id.ts for why the row cannot hold a button.
+  'history.item.unfinished': 'This reading did not finish. Open it to try again.',
   'history.item.shared': 'Shared',
+  // See id.ts for why this copy names the share link and refuses both
+  // "permanent" and any promise of a restore.
+  //
+  // `Keep it`, NOT `Cancel` — `account.delete.cancel`'s ruling: on a
+  // destructive sheet the safe button says what it DOES.
+  'history.item.delete.aria': 'Delete this reading',
+  'history.item.delete.heading': 'Deleting this reading',
+  'history.item.delete.body1':
+    'This reading goes from your history — the cards, your question and the text. Any link you shared for it stops working too.',
+  'history.item.delete.body2': 'There is no way to bring it back from here.',
+  'history.item.delete.cancel': 'Keep it',
+  'history.item.delete.confirm': 'Yes, delete this reading',
+  'history.item.delete.working': 'Deleting…',
+  'history.item.delete.failed': 'That did not go through. Try again in a moment.',
 
   'history.detail.back': '← History',
   'history.detail.question': 'What you asked',
   'history.detail.noBody': 'No text was kept for this reading.',
   'history.translating': 'Translating…',
+
+  // ── The refill (2026-08-28) ───────────────────────────────────────────────
+  //
+  // NOT `common.retry`. That one sits under an error and means "send that request
+  // again"; this sits under a reading that never arrived. See id.ts.
+  'history.retry.action': 'Try again',
+  'history.retry.hint': 'The cards stay as they were. Only the text is written again.',
+  'history.retry.waiting': 'Writing the reading…',
+  'history.retry.otherLanguage':
+    'This came back in the language the reading was written in. Open the page again to see it translated.',
+  // TERMINAL: the button is gone by the time this renders, so it must not say
+  // "try again". See id.ts for why it does not say which cause it was.
+  'history.retry.stale': 'This reading can no longer be retried. Reload the page.',
 
 
   // ── Sharing (V7) ──────────────────────────────────────────────────────────

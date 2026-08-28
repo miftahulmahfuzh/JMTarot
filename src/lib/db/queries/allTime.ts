@@ -28,12 +28,22 @@
  * `ERASURE_GRACE_DAYS`, so filtering here would make this page lie during the
  * grace window while every other query in the app still returned the rows.
  *
+ * **A SOFT-DELETED READING IS EXCLUDED, AND THAT IS THE OPPOSITE CALL ON A
+ * DIFFERENT COLUMN. THE TWO ARE NOT RELATED AND MUST NOT BE "MADE CONSISTENT".**
+ * `users.deleted_at` is restorable and belongs to an account that is on its way
+ * out; `readings.deleted_at` is FINAL and belongs to a reading a querent asked to
+ * be rid of, on this very page's neighbour screen. All four reads below carry
+ * `deleted_at is null`. `recentReadingIds` filtering is what moves
+ * `personaInputHash` after a delete, so the persona regenerates on the next visit
+ * instead of staying prose about a draw that is gone -- the ordinary mechanism, no
+ * new code.
+ *
  * `ALL_TIME_GATE` AND THE TWO PREDICATES ARE NOT HERE. They are pure product
  * judgement with no handle to take, so `contract.test.ts` puts them in
  * `@/lib/persona/lines.ts` -- the same wall W3 hit with the Lotus cache and W5
  * hit with `windowBounds`.
  */
-import { and, count, eq, sql } from 'drizzle-orm';
+import { and, count, eq, isNull, sql } from 'drizzle-orm';
 import type { ReaderId } from '@/data/types';
 import { readingCards, readings } from '@/lib/db/schema';
 import type { DbOrTx } from '@/lib/db/types';
@@ -69,13 +79,13 @@ export type TopReader = {
   runnerUpCount: number;
 };
 
-/** Every reading ever, whatever its status. */
+/** Every reading ever, whatever its status -- except the ones they deleted. */
 export async function readingCountAllTime(db: DbOrTx, userId: string): Promise<number> {
   if (!UUID_RE.test(userId)) return 0;
   const [row] = await db
     .select({ n: count() })
     .from(readings)
-    .where(eq(readings.userId, userId));
+    .where(and(eq(readings.userId, userId), isNull(readings.deletedAt)));
   // Number() for `cardCounts`'s reason: postgres.js hands bigint aggregates back
   // as strings, and a string count compares with >= and then sorts wrong.
   return Number(row?.n ?? 0);
@@ -99,7 +109,10 @@ export async function topCardAllTime(db: DbOrTx, userId: string): Promise<TopCar
       lastSeen: sql<string>`max(${readingCards.localDate})`,
     })
     .from(readingCards)
-    .where(eq(readingCards.userId, userId))
+    /* The denormalized column, for `cardCounts`'s reason: this is the
+       leading-column-only case of `reading_cards_user_date_card_idx` and joining
+       `readings` to find the parent's state would give up that plan. */
+    .where(and(eq(readingCards.userId, userId), isNull(readingCards.deletedAt)))
     .groupBy(readingCards.cardId)
     /* Card id ascending as the tiebreak, so the order is TOTAL. Without it the
        winner of a tie depends on the plan, and `personas.input_hash` covers the
@@ -123,7 +136,7 @@ export async function topReaderAllTime(db: DbOrTx, userId: string): Promise<TopR
   const rows = await db
     .select({ readerId: readings.readerId, count: count() })
     .from(readings)
-    .where(eq(readings.userId, userId))
+    .where(and(eq(readings.userId, userId), isNull(readings.deletedAt)))
     .groupBy(readings.readerId)
     .orderBy(sql`count(*) desc`, readings.readerId)
     /* TWO rows, not one. The runner-up count is what `readerMustLead` needs, and
@@ -161,7 +174,9 @@ export async function recentReadingIds(
   const rows = await db
     .select({ id: readings.id })
     .from(readings)
-    .where(and(eq(readings.userId, userId)))
+    /* The redundant-looking `and()` was already here; the second argument is what
+       makes a delete move the hash, which is what regenerates the persona. */
+    .where(and(eq(readings.userId, userId), isNull(readings.deletedAt)))
     .orderBy(sql`${readings.createdAt} desc`, sql`${readings.id} desc`)
     .limit(limit);
   return rows.map((r) => r.id);

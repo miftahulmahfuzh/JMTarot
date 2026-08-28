@@ -1213,6 +1213,119 @@ client fetches, so it would photograph one language of chrome around another lan
 content). **`state=xlate` uses a REAL reading**, because the detail page is a server component
 doing a primary-key read and a fabricated uuid 404s.
 
+### The refill and the delete (2026-08-28)
+
+Miftah pulled production, found three rows rendering *"Bacaan ini tidak selesai"* and asked
+whether the detail screen could try again — and separately asked for swipe-to-delete, because
+*"sometimes user asked some embarrassing questions in the past"*. Two features, one surface,
+four phases, one branch.
+
+**VD14 IS AMENDED AND THE BOUND IS `body IS NULL`.** `src/lib/reading/retryable.ts` is PURE, so
+the browser deciding whether to draw a button and the route deciding whether to honour a press
+ask the same question of the same function — which is the only reason a control the querent can
+see and an endpoint that refuses them cannot say different things. **It is not a status list,
+and widening it to one is the way this feature breaks:** `partial` has real prose that stops
+mid-sentence, `aborted` and `failed` are indistinguishable from the row, and the screen has only
+ever said "this reading did not finish". **A status the UI never shows must not silently change
+what a button does.** Open question 7 of `docs/plans/2026-07-27-history.md` asked for this in
+2026-07 and is answered there, in place, next to the VD14 paragraph it narrows.
+
+**THE REFILL KEEPS `readings.id` AND NEVER TOUCHES `reading_cards`** — which is what makes
+`history.retry.hint`'s *"Kartunya tetap sama"* a promise the QUERY keeps rather than a sentence
+the copy hopes is true. Six foreign keys point at that id — `reading_cards`, `llm_calls`,
+`chat_messages.attached_reading_id`, `chat_runs.trigger_reading_id`, `translations.entity_id`
+and `share_links.entity_id` — and the insert-a-new-row design that reads as tidier would have
+orphaned every one of them.
+
+**A RETRIED READING CARRIES TWO `llm_calls` ROWS AND TWO CLIENT `reading.completed` EVENTS FOR
+ONE `reading_id`, AND BOTH ARE RECORDED RATHER THAN FIXED.** `readingCostsFor` folds every
+`reading_id`-bearing row with no `op` predicate, so `/admin` shows the sum of both attempts —
+arguably right, since both were paid for. `reading.retried` with `surface: 'history'` is the
+discriminator that says which `reading.completed` is the second one. Do not "deduplicate" either
+without first deciding what the number is supposed to mean.
+
+**`reading.retried` WAS ALREADY IN THE TAXONOMY AND WAS ALREADY BEING FIRED, BY `Draw.tsx`.**
+The analysis said to fold a new name in; the file said the name exists. Zero names added, one
+shape widened — and it mattered arithmetically: `EVENT_NAMES.length` and `events.test.ts`'s
+ceiling were BOTH 76 when this work opened, so the register was at its cap, and the delete's
+`history.item_deleted` is what moved it to 77. **`[R1]`'s lesson repeated: a session trusting a
+prose count instead of the register would have added a name, gone red, and looked for the cause
+in its own diff.** CLAUDE.md's W4 bullet was claiming 67 at the time, which is why that line now
+refuses to state a count at all.
+
+**`prior_status` IS THE MEASUREMENT THE `body IS NULL` RULING OWES ITSELF.** If nearly every
+refill lands on an `aborted` row, this feature is somebody wandering back to a reading they
+walked out on — a different product from recovering a dead stream — and the ruling should be
+revisited on that evidence rather than on taste.
+
+#### HistoryDetail now has two async sources of prose, and one line keeps them apart
+
+`needs` is computed from the SERVER prop `reading`, never from the refilled view. A refilled row
+has a body, so deriving `needs` from the view would start a translation of prose that arrived
+seconds ago in the language the querent is already reading. **There is no `router.refresh()` in
+that file, and if somebody adds one, that sentence is what stops being true.**
+
+**THE REFRESH IS ABSENT FOR A SECOND, INDEPENDENT AND STRONGER REASON:** the retry route writes
+its row inside the response's own `defer()`, so a refresh fired at stream end races the write and
+repaints `history.detail.noBody` — *"Tidak ada teks yang tersimpan"* — over prose the querent
+just watched arrive. `ShareFooter`'s three 250ms attempts exist because of the same race, on the
+same page.
+
+#### Rule 4 survives the refill because of `refillView`, not because of the component's care
+
+`resolveProse` short-circuits to `{ kind: 'unavailable' }` whenever `reading.body === null`,
+whatever the caller passed — deliberately, so an empty row cannot be dressed up as prose. So a
+refill handed in through the `prose` prop alone paints **nothing**, and the body has to move onto
+a COPY of the reading. That copy is what makes the language question live again, and the mismatch
+branch returns V7's `{ kind: 'as-written' }` — a NAMED decision, rendered with a `lang`
+attribute — and **never `{ kind: 'original' }`, which `resolveProse` treats identically to an
+omitted prop** and which would therefore put Indonesian prose in the English app through the very
+function written to prevent that. It never returns `translated`: nothing was translated.
+`HistoryDetail.test.ts` asserts the pair through the real `resolveProse` rather than restating
+what it does, which is what makes that case a regression test instead of a description. The
+component is unreachable from the unit project (`environment: 'node'`), and that is precisely why
+the decision is an exported function rather than an `if` inside a render.
+
+#### The refusal renders above the reading, and the 403 branch sits above `!res.ok`
+
+`RefusalNotice` is mounted ABOVE `<ReadingView>` and **never in its `footer` slot**: that slot
+renders directly under `common.disclaimer.long`, and a self-harm refusal placed under "this is
+for entertainment only" is the one arrangement of those two blocks that is actually obscene. It
+scrolls itself into view once, because the press that produced it may have happened at the bottom
+of a long scroll — without that, the querent presses a button and nothing appears to happen.
+
+**THE 403 BRANCH MUST STAY ABOVE THE `!res.ok` CHECK** or the refusal is swallowed as
+`http_403`, losing the clause link, the crisis resources and any sign the app decided rather than
+fell over; a non-`moderation_blocked` 403 (an un-onboarded caller) falls through to the generic
+path on purpose. **AND A REFUSAL ON A RETRY IS A CORRECT OUTCOME, NOT A CONTRADICTION** — the
+question was classified once, before the first attempt, possibly months ago, and the classifier is
+allowed to have moved since. One `glm-4.5-flash` call per refill is the price of not regenerating
+a stored question with no gate on it. The row is untouched, so the control comes back.
+
+**404 AND 409 ARE ONE TERMINAL `stale` STATE THAT TAKES THE CONTROL AWAY**, and that is the whole
+reason `stale` is its own member rather than an `error` with different copy: re-offering the press
+would be offering a refusal. **500 and 503 deliberately stay in the generic branch** — transient,
+row untouched, pressing again is the correct thing to do.
+
+#### The list row hints in a string, and `HistoryItemRow.tsx` was not edited for it
+
+`history.item.unfinished` grew a second sentence — *"Buka untuk coba ulang."* — and Phase 2's
+file was not touched. Three reasons, each sufficient: `!item.hasBody` is ALREADY exactly the
+retryable set, so the row can say so for free; that paragraph sits inside the row's `<Link>` and
+inside the swipe surface, so an interactive control there would swallow both the tap and the
+drag; and one act must not have two places to press, least of all on an 88px row that was
+simultaneously growing a swipe-to-delete.
+
+#### What only a real iPhone can answer
+
+The button is 44px by an explicit `min-height` rather than by arithmetic on its padding —
+`PublicShare`'s 36px, a recorded defect on twenty-three pages, is the reason that rule exists —
+but **nobody has pressed this on glass.** Still open: thumb reach at the bottom of a long scroll;
+whether the pulsing `history.retry.waiting` label reads as progress or as a hang across a real
+generation on a cold Neon compute; whether the refusal's `scrollIntoView` lands sensibly on a
+phone-height viewport; and the width of `history.retry.otherLanguage` at 320 (loop 4 answers the
+last one without hardware, and should).
+
 ### Still open, and none of it is V6's to close
 
 - **`readings.shared_at` is added by V6's migration and written by V7.** V6 only reads it, to
@@ -12719,3 +12832,42 @@ the status quo**, and that is the argument for the table above existing at all.
 first, **exactly one line differed in each**, and **six changed rather than nine** — `daily` and
 `spread3` for three readers, with all three `yesno` snapshots green, which is the structural evidence
 that `CHOICE_RULE_*` is still absent from the service whose answer `effectiveYesNo()` already forces.
+
+## The worktree nearly migrated production, and three CLAUDE.md environment facts are stale (2026-08-28)
+
+Found while implementing Phase 1 of `HISTORY_RETRY_AND_SOFT_DELETE_PLAN.md` in the worktree
+`~/.worktrees/jmtarot/history-retry-and-soft-delete`. **None of it is about the phase's code**;
+all of it is about the machine, and the first item is the one that matters.
+
+- **THE ONLY `.env.local` ON THIS MACHINE IS A PRODUCTION `vercel env pull` DUMP, AND COPYING IT
+  INTO A WORKTREE MAKES `npm run build` BELIEVE IT IS A VERCEL BUILD.**
+  `/home/miftah/jmtarot/.env.local` sets `VERCEL=1`, `VERCEL_ENV=production` and a **production
+  Neon `DATABASE_URL` and `MIGRATE_DATABASE_URL`**. `scripts/db-migrate-deploy.ts` skips
+  off-Vercel on the `VERCEL` guard — so with that file present the guard *passes* and the build
+  attempts to apply committed migrations **to production**, from a feature worktree, as an
+  ordinary local `npm run build`. **Nothing was applied**: the script threw `Invalid URL` while
+  parsing the connection string, before opening a connection. That is luck, not a mechanism.
+  **The rule: never copy a `vercel env pull` output into a worktree.** Write a minimal
+  local-only `.env.local` pointing at the Docker Postgres instead. The migration guard is
+  `VERCEL`, not `NODE_ENV`, deliberately (a preview build is also `NODE_ENV=production`), and
+  that same correctness is what makes an env dump dangerous on a laptop.
+- **Node 24 is NOT installed.** CLAUDE.md's `## Environment` says Node 24 lives at
+  `~/tools/node-v24.18.0-linux-x64/bin` and must be prepended to PATH because the default is
+  20.11.1. **That directory does not exist**; the highest available is `node-v22.23.1-linux-x64`,
+  which is already the default `node`. Typecheck, both test projects and `npm run build` all ran
+  green on v22.23.1.
+- **The native `postgresql-16` cluster is on 5432, not 5433**, so it collides with this project's
+  Docker Postgres and `npm run db:up` fails with
+  `failed to bind host port for 127.0.0.1:5432: address already in use`.
+  `/etc/postgresql/16/main/postgresql.conf` reads `port = 5432`. CLAUDE.md's Traps entry says
+  5433. Worked around for one session with an **uncommitted** compose override on 127.0.0.1:5442;
+  `docker-compose.yml` was not touched. A permanent fix needs sudo to stop the native cluster and
+  is Miftah's call.
+- **The unit-test baseline had already drifted before this work.** CLAUDE.md quotes
+  `npm test` at 3681 in 193 files; the pre-phase tree measured higher, and after Phase 1 it is
+  **3726 in 195**. The integration baseline is accurate: 659 in 46 → **668 in 47**, exactly the
+  +9 cases / +1 file Phase 1 adds. Per that line's own rule, **re-run before citing either.**
+
+**These four lines are recorded here and NOT in CLAUDE.md on purpose** — invariant 9 of the plan
+set gives `CLAUDE.md` to Phase 4 alone, at exactly net zero. Anyone correcting the environment
+section there owes a compression elsewhere in the same commit.

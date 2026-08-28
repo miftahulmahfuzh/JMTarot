@@ -904,8 +904,46 @@ const id = {
   // A row whose reading never finished. It is SHOWN -- the querent drew those
   // cards, and the frequency verdict already counts them -- so it has to say why
   // there is no text behind it, or opening it reads as a bug.
-  'history.item.unfinished': 'Bacaan ini tidak selesai.',
+  /*
+   * **THE SECOND SENTENCE IS THE WHOLE OF THE LIST'S RETRY HINT (2026-08-28), AND
+   * IT IS A STRING CHANGE RATHER THAN A CONTROL.** `!item.hasBody` is already
+   * exactly the retryable set, so the row can say so for free -- but the paragraph
+   * sits inside the row's `<Link>` and inside the swipe surface, so a button there
+   * would swallow both the tap and the drag, and one act would have two places to
+   * press. The one place to press stays `/history/[id]`.
+   */
+  'history.item.unfinished': 'Bacaan ini tidak selesai. Buka untuk coba ulang.',
   'history.item.shared': 'Dibagikan',
+  /*
+   * ── Deleting one reading ─────────────────────────────────────────────────
+   *
+   * THE COPY MAY NOT PROMISE PERMANENCE AND MAY NOT PROMISE A RESTORE, and
+   * those are two different traps. The row is KEPT — it is a soft delete, for
+   * the operator and for `/admin` — so "permanen" would be false. And there is
+   * no restore UI, no route and no grace period, so "kamu bisa memulihkannya"
+   * would be worse than false. `dari sini` is the sentence that is true in both
+   * directions.
+   *
+   * `body1` NAMES THE SHARE LINK, which is the one consequence the querent
+   * cannot see from this screen: the delete revokes every live `/s/<slug>` for
+   * this reading in the same transaction. Given that the whole feature exists
+   * because somebody is embarrassed, a live public URL surviving the delete is
+   * the failure that matters, and saying so is what makes the promise checkable.
+   *
+   * `Batal` and `Ya, hapus bacaan ini` DUPLICATE `account.delete.*`'s words on
+   * purpose rather than reusing its keys. `AccountMenu`'s ruling: a shared key
+   * is how one edit silently changes two screens, and these two sheets will
+   * diverge the first time either one is reworded.
+   */
+  'history.item.delete.aria': 'Hapus bacaan ini',
+  'history.item.delete.heading': 'Hapus bacaan ini',
+  'history.item.delete.body1':
+    'Bacaan ini akan hilang dari Jejakmu — kartunya, pertanyaanmu, dan teksnya. Tautan yang pernah kamu bagikan untuk bacaan ini juga berhenti bekerja.',
+  'history.item.delete.body2': 'Tidak ada cara untuk mengembalikannya dari sini.',
+  'history.item.delete.cancel': 'Batal',
+  'history.item.delete.confirm': 'Ya, hapus bacaan ini',
+  'history.item.delete.working': 'Menghapus…',
+  'history.item.delete.failed': 'Belum berhasil. Coba lagi sebentar lagi.',
 
   'history.detail.back': '← Jejak',
   'history.detail.question': 'Pertanyaanmu',
@@ -914,6 +952,29 @@ const id = {
   // as `reading.waiting`: it has to hold a screen for several seconds without
   // looking hung.
   'history.translating': 'Menerjemahkan…',
+
+  // ── The refill (2026-08-28) ───────────────────────────────────────────────
+  //
+  // `Coba ulang` IS MIFTAH'S WORD AND IT IS NOT `common.retry`, which reads
+  // `Coba lagi`. One letter apart in Indonesian and a world apart in meaning:
+  // `common.retry` sits under an error and means "send that request again", where
+  // this sits under a reading that never arrived and means "write this one now".
+  'history.retry.action': 'Coba ulang',
+  // THE HINT IS THE PROMISE THE FEATURE KEEPS, and it can be said out loud
+  // because the query enforces it: `refillReading` never touches `reading_cards`,
+  // so the hand cannot move.
+  'history.retry.hint': 'Kartunya tetap sama. Hanya teksnya yang ditulis ulang.',
+  'history.retry.waiting': 'Menulis ulang bacaan…',
+  // Rule 4's failure state, in words. The prose came back in the reading's own
+  // language, so it is held rather than shown; the next view of this page picks it
+  // up through V2 as an ordinary translation.
+  'history.retry.otherLanguage':
+    'Teksnya ditulis dalam bahasa asli bacaan ini. Buka lagi halaman ini untuk melihat terjemahannya.',
+  // THE TERMINAL ANSWER (409 `not_retryable`, 404 `not_found`). It must NOT say
+  // "coba lagi": the button is gone by the time this renders. It does not say
+  // WHICH of the five things happened, because the route deliberately does not
+  // tell us -- a distinguishable answer would turn a uuid guess into an oracle.
+  'history.retry.stale': 'Bacaan ini sudah tidak bisa diulang. Muat ulang halaman ini.',
 
   // ── The yes/no verdict, rendered ──────────────────────────────────────────
   //
