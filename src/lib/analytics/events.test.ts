@@ -124,9 +124,42 @@ describe('the event taxonomy', () => {
    * the roadmap would have added a name, seen this test go red, and looked for the
    * cause in their own diff — 67 + 1 is under the ceiling and 70 + 1 is not.
    */
+  /*
+   * ── 76 -> 77, THE `/history` DELETE (2026-08-28), AND THE CAP WAS BINDING ───
+   *
+   * **ONE NAME FOR TWO FEATURES, AND THE SECOND FEATURE ADDED NONE.** The
+   * `/history` work shipped a soft delete and a retry in one plan set:
+   *
+   *   LANDED, one:   `history.item_deleted`.
+   *   FOLDED, one:   the retry, into `reading.retried`'s EXISTING shape —
+   *                  `surface: 'draw' | 'history'`, plus `reading_id`,
+   *                  `prior_status` and `age_days`. The name has existed since
+   *                  the draw screen's error panel and is already fired from
+   *                  `Draw.tsx`; a `history.reading_refilled` was drafted and
+   *                  dropped because it would have put the refill OUTSIDE
+   *                  `where name = 'reading.retried'`, which is the query that
+   *                  answers "how often does anybody retry at all". Same
+   *                  argument that folded `chat.message_blocked` into
+   *                  `moderation.refused.surface`.
+   *   DROPPED, two:  `history.delete_cancelled` (a look-and-close changes no
+   *                  decision — the `revealed` precedent) and a merge of the
+   *                  delete into `history.item_opened` with an `action` prop,
+   *                  which would have silently changed what two months of
+   *                  "readings opened" rows mean.
+   *   FOLDED OUT:    nothing. `history.filtered` was the candidate and was kept:
+   *                  a delete that empties a day makes the strip MORE
+   *                  interesting, and dropping a name to keep a total round is
+   *                  how a taxonomy loses its history.
+   *
+   * **`[R1]` FOR THE THIRD TIME: THE CAP WAS ALREADY AT ITS CEILING WHEN THIS
+   * WORK OPENED** — 76 names against a 76 bound — so `history.item_deleted` went
+   * red on this line and not in the diff that added it. Both the plan index and
+   * the analysis said "fold in `reading.retried`" believing it was new; it was
+   * not, and reading THIS register rather than the plan is what caught it.
+   */
   it('stays inside the fixed name budget', () => {
     expect(EVENT_NAMES.length).toBeGreaterThanOrEqual(44);
-    expect(EVENT_NAMES.length).toBeLessThanOrEqual(76);
+    expect(EVENT_NAMES.length).toBeLessThanOrEqual(77);
   });
 
   it("admin.page_viewed's pages are route TEMPLATES, not resolved paths (A1-18, R32)", () => {

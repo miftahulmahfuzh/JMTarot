@@ -906,6 +906,36 @@ const id = {
   // there is no text behind it, or opening it reads as a bug.
   'history.item.unfinished': 'Bacaan ini tidak selesai.',
   'history.item.shared': 'Dibagikan',
+  /*
+   * ── Deleting one reading ─────────────────────────────────────────────────
+   *
+   * THE COPY MAY NOT PROMISE PERMANENCE AND MAY NOT PROMISE A RESTORE, and
+   * those are two different traps. The row is KEPT — it is a soft delete, for
+   * the operator and for `/admin` — so "permanen" would be false. And there is
+   * no restore UI, no route and no grace period, so "kamu bisa memulihkannya"
+   * would be worse than false. `dari sini` is the sentence that is true in both
+   * directions.
+   *
+   * `body1` NAMES THE SHARE LINK, which is the one consequence the querent
+   * cannot see from this screen: the delete revokes every live `/s/<slug>` for
+   * this reading in the same transaction. Given that the whole feature exists
+   * because somebody is embarrassed, a live public URL surviving the delete is
+   * the failure that matters, and saying so is what makes the promise checkable.
+   *
+   * `Batal` and `Ya, hapus bacaan ini` DUPLICATE `account.delete.*`'s words on
+   * purpose rather than reusing its keys. `AccountMenu`'s ruling: a shared key
+   * is how one edit silently changes two screens, and these two sheets will
+   * diverge the first time either one is reworded.
+   */
+  'history.item.delete.aria': 'Hapus bacaan ini',
+  'history.item.delete.heading': 'Hapus bacaan ini',
+  'history.item.delete.body1':
+    'Bacaan ini akan hilang dari Jejakmu — kartunya, pertanyaanmu, dan teksnya. Tautan yang pernah kamu bagikan untuk bacaan ini juga berhenti bekerja.',
+  'history.item.delete.body2': 'Tidak ada cara untuk mengembalikannya dari sini.',
+  'history.item.delete.cancel': 'Batal',
+  'history.item.delete.confirm': 'Ya, hapus bacaan ini',
+  'history.item.delete.working': 'Menghapus…',
+  'history.item.delete.failed': 'Belum berhasil. Coba lagi sebentar lagi.',
 
   'history.detail.back': '← Jejak',
   'history.detail.question': 'Pertanyaanmu',

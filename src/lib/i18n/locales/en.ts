@@ -467,6 +467,20 @@ const en: Catalog = {
 
   'history.item.unfinished': 'This reading did not finish.',
   'history.item.shared': 'Shared',
+  // See id.ts for why this copy names the share link and refuses both
+  // "permanent" and any promise of a restore.
+  //
+  // `Keep it`, NOT `Cancel` — `account.delete.cancel`'s ruling: on a
+  // destructive sheet the safe button says what it DOES.
+  'history.item.delete.aria': 'Delete this reading',
+  'history.item.delete.heading': 'Deleting this reading',
+  'history.item.delete.body1':
+    'This reading goes from your history — the cards, your question and the text. Any link you shared for it stops working too.',
+  'history.item.delete.body2': 'There is no way to bring it back from here.',
+  'history.item.delete.cancel': 'Keep it',
+  'history.item.delete.confirm': 'Yes, delete this reading',
+  'history.item.delete.working': 'Deleting…',
+  'history.item.delete.failed': 'That did not go through. Try again in a moment.',
 
   'history.detail.back': '← History',
   'history.detail.question': 'What you asked',

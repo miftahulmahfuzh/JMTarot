@@ -133,6 +133,31 @@ export const EVENT_NAMES = [
   'history.viewed',
   'history.filtered',
   'history.item_opened',
+  /*
+   * THE 77th NAME, AND THE ONLY ONE ADDED FOR THE DELETE FEATURE. The
+   * accounting this file's rule demands:
+   *
+   *   CONSIDERED, REJECTED  widening `history.item_opened` with an `action`
+   *            prop instead of a new name. Opening and deleting have different
+   *            denominators, and a merged name would make "how many readings
+   *            were opened" require a `props->>'action'` predicate on every
+   *            existing query — silently changing what two months of rows mean.
+   *   DROPPED  `history.delete_cancelled` (the sheet opened, then Batal).
+   *            v0.4.0's `revealed` precedent: a look-and-close changes no
+   *            decision.
+   *   DROPPED  a `status` prop, which `history.item_opened` carries. Whether a
+   *            deleted reading had finished is recoverable by joining `readings`
+   *            on `reading_id`, and the retry feature is the thing that answers
+   *            the question it would have asked.
+   *   FOLDED OUT  nothing. `history.filtered` was the candidate — it has fired
+   *            since V6 and nothing reads it weekly — but a delete that empties
+   *            a day makes the strip MORE interesting, not less, and dropping a
+   *            name to keep a total round is how a taxonomy loses its history.
+   *
+   * `reading.retried` was ALREADY on this list before this change (see `— the
+   * reading —` above); the retry work folds in no name.
+   */
+  'history.item_deleted',
 
   // — translation (V2) —
   'translation.generated',
@@ -664,6 +689,32 @@ export type EventMap = {
   'history.item_opened':       { reading_id: string; reader_id: string; service_id: string;
                                  status: string; age_days: number;
                                  needs_translation: boolean };
+  /**
+   * ONE ROW, DELETED BY ITS OWNER.
+   *
+   * NO FREE TEXT (rule 1), and this event is the one where that rule is doing
+   * real work: the feature exists because somebody asked an embarrassing
+   * question, so the question itself is the last thing that may appear here.
+   * `question_length` is a length and `0` means there was no question — the same
+   * shape `reading.completed.choice_length` already has for an absent value.
+   *
+   * `had_share_link` IS `shared_at`, WHICH MEANS "WAS EVER PUBLIC" AND NOT "IS
+   * PUBLIC NOW". V7 leaves that column non-null after a revoke on purpose, and
+   * the honest reading of this prop is therefore *the querent deleted something
+   * they had once shared* — which, given the motive, is the most interesting
+   * thing this event records.
+   *
+   * `via` IS HOW THE TRAY CAME TO BE OPEN, and it is the one prop that could not
+   * be recovered from the tables. A gesture nobody finds is the single way this
+   * feature fails silently: `swipe` near zero against a live `keyboard` count
+   * means the swipe is undiscoverable, and no query over `readings` can see it.
+   *
+   * `age_days` uses `dayOffset(today, item.localDate)` — the querent's own
+   * calendar day on both sides, never `created_at`.
+   */
+  'history.item_deleted':      { reading_id: string; reader_id: string; service_id: string;
+                                 age_days: number; had_share_link: boolean;
+                                 question_length: number; via: 'swipe' | 'keyboard' };
 
   /**
    * ONE NAME, NOT TWO. There is deliberately no `translation.failed`.

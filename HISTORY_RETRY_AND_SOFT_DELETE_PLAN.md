@@ -7,7 +7,7 @@
 **Branch:** `feature/history-retry-and-soft-delete` (base: `origin/main` @ `8931a09`)
 **Cards:** [#11](https://github.com/miftahulmahfuzh/JMTarot/issues/11) (retry), [#12](https://github.com/miftahulmahfuzh/JMTarot/issues/12) (delete)
 **Phases:** 4
-**Status:** phase 1/4 complete
+**Status:** phase 2/4 complete
 **Reconciled:** 2026-08-28 — two rounds. Round 1: 18 conflicts found, 18 resolved. Round 2
 (verification of round 1's four moved contracts): 2 further conflicts found and resolved,
 0 open questions. **Round 2 re-measured all three of round 1's measured claims and all three
@@ -149,7 +149,7 @@ Every phase must hold all of these. They are ranked by what breaks if they are l
 | # | Title | Package | Files | Depends on | Difficulty | Plan | TaskID |
 |---|-------|---------|-------|-----------|------------|------|--------|
 | 1 ✅ | Soft delete — schema, read filters, delete route | `src/lib/db`, `src/app/api/history` | 13 | — | HARD | `.workflows/plan/history-retry-and-soft-delete/phase-1.md` | `P1-DB-A000` |
-| 2 | Soft delete — the swipe gesture and the row | `src/app/history`, `src/lib/history`, `src/lib/analytics` | 9 | 1 | NORMAL | `.workflows/plan/history-retry-and-soft-delete/phase-2.md` | `P1-AH-A000` |
+| 2 ✅ | Soft delete — the swipe gesture and the row | `src/app/history`, `src/lib/history`, `src/lib/analytics` | 9 | 1 | NORMAL | `.workflows/plan/history-retry-and-soft-delete/phase-2.md` | `P1-AH-A000` |
 | 3 | Retry — the predicate, the writer, the endpoint | `src/lib/reading`, `src/lib/db/queries`, `src/lib/analytics`, `src/app/api/reading` | 6 | **1 (HARD: `refillReading`'s `WHERE` names `readings.deletedAt`, and `log.ts`'s union must already carry `'retry'` — Phase 3 does not compile without Phase 1)** | HARD | `.workflows/plan/history-retry-and-soft-delete/phase-3.md` | `P1-LR-A000` |
 | 4 | Retry — the `Coba ulang` control, copy, docs | `src/app/history/[id]`, `src/lib/i18n`, `src/lib/analytics`, `docs` | 11 | **3 (HARD: imports `isRetryable`, calls the retry route) — and 2, SOFT: Phase 2 must have moved `events.test.ts`'s ceiling, or `npm test` is red for a reason that is not in this phase's diff** | NORMAL | `.workflows/plan/history-retry-and-soft-delete/phase-4.md` | `P1-AH-A001` |
 

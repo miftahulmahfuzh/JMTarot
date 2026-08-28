@@ -1,5 +1,125 @@
+/*
+ * The row, its swipe surface and its confirmation sheet.
+ *
+ * `--tray` MUST EQUAL `REVEAL_WIDTH` IN `src/lib/history/swipe.ts`. There is no
+ * mechanism that keeps them in step — a CSS module cannot import a constant —
+ * so they are written down together and each names the other. The failure mode
+ * is a tray that stops short of the row's edge or overshoots it, which looks
+ * like a rendering bug and is a units bug.
+ *
+ * THE SHEET BLOCK IS STRUCTURALLY `DeleteAccount.module.css` AND THAT
+ * DUPLICATION IS DELIBERATE FOR NOW. One modal idiom in this app, two copies of
+ * it; extracting a shared sheet component is a refactor across `/account` and
+ * `/history` and belongs in its own change, not inside a delete feature.
+ * No new token is introduced — `--danger` already exists and this is its second
+ * consumer.
+ */
+
 .row {
   margin: 0;
+}
+
+/*
+ * The clipping box. The tray is `position: absolute` inside it, so it
+ * contributes ZERO to layout width at any viewport — which is why loop 4's
+ * numbers for this row are unchanged by the whole feature.
+ *
+ * `touch-action: pan-y` IS THE LOAD-BEARING DECLARATION. It hands vertical
+ * scrolling to the browser, natively, while still delivering the horizontal
+ * pointermove stream to us. Without it a horizontal drag competes with the
+ * page's own scroll and the row judders; with `none` instead, the list stops
+ * scrolling under a thumb that starts on a row, which is every thumb.
+ */
+.swipe {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-card);
+  touch-action: pan-y;
+}
+
+/*
+ * OPAQUE, OR THE TRAY SHOWS THROUGH. `.link`'s own background is a 1.5% white
+ * wash designed to sit over the page's backdrop; over an 88px control it is a
+ * smear. `--canvas` is the page's own ground colour and not a new value.
+ *
+ * `user-select: none` is a real trade: it costs selecting the question text
+ * with a mouse. A drag across the row that paints a selection instead of moving
+ * the row reads as broken, and the question is one clamped line on a phone.
+ */
+.slider {
+  position: relative;
+  z-index: 1;
+  background: var(--canvas);
+  border-radius: var(--radius-card);
+  transition: transform 220ms var(--ease-card);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Mid-gesture the transform must follow the finger exactly; a transition here
+   makes the row lag behind by a fifth of a second, which feels like weight. */
+.slider[data-dragging='true'] {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slider {
+    transition: none;
+  }
+}
+
+/*
+ * UNDER the slider in paint order, AFTER it in DOM order. z-index decides what
+ * is seen, DOM order decides what Tab reaches — so the destructive control is
+ * painted behind the row and is reached after the link, never before it.
+ */
+.tray {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 0;
+  display: flex;
+  /* = REVEAL_WIDTH in src/lib/history/swipe.ts. */
+  width: 88px;
+}
+
+/*
+ * FILLS THE TRAY. 88px wide over a row that is at least 90px tall (three 66px
+ * thumbs plus 12px of padding top and bottom), so both axes clear the 44px iOS
+ * minimum with room. The `min-height` is a belt: `PublicShare`'s 36px button is
+ * already a known defect in this repo and a second one must not ship.
+ *
+ * OUTLINED, NEVER FILLED, matching `DeleteAccount`'s confirm button. A filled
+ * red block behind every row would make the brightest thing on the page a
+ * control nobody asked to see.
+ */
+.trash {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0;
+  color: var(--danger);
+  background: rgba(163, 66, 58, 0.1);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-card);
+  cursor: pointer;
+}
+
+.trash:hover {
+  background: rgba(163, 66, 58, 0.2);
+}
+
+.trash:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--gold-border);
+}
+
+.trashMark {
+  width: 24px;
+  height: 24px;
 }
 
 .link {
@@ -105,4 +225,158 @@
   letter-spacing: var(--ls-button);
   text-transform: uppercase;
   color: var(--gold);
+}
+
+/* --- the confirmation sheet ---------------------------------------------- */
+
+/* 1000, the same rung as AccountMenu and DeleteAccount. Nothing else on
+   `/history` is above the page. */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(10, 8, 18, 0.94);
+  backdrop-filter: blur(6px);
+  animation: fade 200ms ease-out;
+}
+
+.sheet {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 520px;
+  /* `position: fixed` and portalled, so body's safe-area padding does not reach
+     it. Without this the buttons sit under the home indicator in standalone
+     mode. */
+  padding: 10px 16px calc(16px + env(safe-area-inset-bottom));
+  background: var(--canvas);
+  /* Gold here would make it look like the account menu. */
+  border-top: 1px solid var(--danger);
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+  animation: rise 260ms var(--ease-card);
+}
+
+.sheet:focus,
+.sheet:focus-visible {
+  outline: none;
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scrim,
+  .sheet {
+    animation: none;
+  }
+}
+
+.grip {
+  width: 36px;
+  height: 3px;
+  margin: 0 auto 12px;
+  border-radius: var(--radius-chip);
+  background: var(--gold-hairline);
+}
+
+.sheetTitle {
+  margin: 0 0 10px;
+  font-family: var(--font-display), serif;
+  font-weight: 400;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-section-label);
+  text-transform: uppercase;
+  color: var(--danger);
+  text-align: center;
+}
+
+.sheetBody {
+  margin: 0 0 10px;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-hint);
+  line-height: 1.45;
+  color: var(--text-warm);
+}
+
+.sheetBody:last-of-type {
+  margin-bottom: 4px;
+}
+
+.sheetFailed {
+  margin: 6px 0 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: var(--fs-hint);
+  color: var(--danger);
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.cancel,
+.confirm {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 44px floor. `AccountMenu`'s `.close` records that 14px of padding plus a
+     10px Cinzel line box measures 43.99. Same fix, same reason. */
+  min-height: 44px;
+  padding: 14px 12px;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  border-radius: var(--radius-chip);
+  cursor: pointer;
+}
+
+/* THE SAFE BUTTON IS THE PRIMARY-STYLED ONE, so the control a thumb goes to by
+   habit is the one that keeps the reading. */
+.cancel {
+  color: var(--button-text);
+  background: var(--gold-wash);
+  border: 1px solid var(--gold-border);
+}
+
+.cancel:hover:not(:disabled) {
+  background: var(--gold-wash-strong);
+}
+
+.confirm {
+  color: var(--danger);
+  background: transparent;
+  border: 1px solid var(--danger);
+}
+
+.confirm:hover:not(:disabled) {
+  color: var(--gold-pale);
+  background: rgba(163, 66, 58, 0.16);
+}
+
+.cancel:focus-visible,
+.confirm:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--gold-border);
+}
+
+.cancel:disabled,
+.confirm:disabled {
+  cursor: default;
 }

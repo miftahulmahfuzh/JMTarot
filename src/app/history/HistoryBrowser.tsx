@@ -39,6 +39,19 @@ export function HistoryBrowser() {
   /** `null` until the days request lands. NOT the same as `[]` — see `emptyState`. */
   const [days, setDays] = useState<string[] | null>(null);
   const [load, setLoad] = useState<Load>({ status: 'idle' });
+  /**
+   * ONE TRAY AT A TIME, AND THE LIST OWNS WHICH.
+   *
+   * A row cannot know that another row was swiped, so with the state held per
+   * row three trays sit open at once and a tap closes only the one it landed
+   * on. Holding it here is also what makes "swipe a second row" close the
+   * first, which is the behaviour every list with this gesture has.
+   */
+  const [openId, setOpenId] = useState<string | null>(null);
+  /**
+   * Bumped when a day empties, to refetch the strip. See `removeItem`.
+   */
+  const [daysNonce, setDaysNonce] = useState(0);
   /** StrictMode double-invokes effects; `history.viewed` must fire once. */
   const viewedFired = useRef(false);
 
@@ -53,7 +66,9 @@ export function HistoryBrowser() {
     setSelected(isHistoryDate(q, now) ? q : now);
   }, []);
 
-  // Step 2: which days have anything. Fetched once; the strip is built from it.
+  // Step 2: which days have anything. Fetched on mount, and again when a delete
+  // empties the selected day -- see `removeItem` for why a refetch and not a
+  // splice. `viewedFired` keeps `history.viewed` firing exactly once across both.
   useEffect(() => {
     if (!today) return;
     const controller = new AbortController();
@@ -85,7 +100,7 @@ export function HistoryBrowser() {
       }
     })();
     return () => controller.abort();
-  }, [today]);
+  }, [today, daysNonce]);
 
   // Step 3: the selected day's items. Re-runs on every filter change.
   useEffect(() => {
@@ -135,6 +150,45 @@ export function HistoryBrowser() {
     [days, today],
   );
 
+  /**
+   * Which row's tray is open. Both updaters are PURE — nothing decides anything
+   * inside them, which is the rule `Fan.tsx` paid for.
+   */
+  const setTray = useCallback((id: string, open: boolean) => {
+    setOpenId((current) => (open ? id : current === id ? null : current));
+  }, []);
+
+  /**
+   * A CONFIRMED REMOVAL, NEVER AN OPTIMISTIC ONE — AND THAT IS A DEPARTURE
+   * WORTH READING BEFORE IT IS "FIXED" BACK.
+   *
+   * `HistoryItemRow`'s sheet issues the DELETE and calls this only after a 2xx,
+   * so there is nothing to revert and no revert path exists. The optimistic
+   * version was considered and refused: the route is a WRITE, and a write is one
+   * of the few things likely to be the request that wakes a suspended Neon
+   * compute, so "gone" would be on screen for seconds before the server had
+   * agreed and could then be un-said. For a feature whose entire purpose is
+   * somebody's embarrassment, a false "it's gone" is the one lie that must not
+   * be told.
+   *
+   * THE DAY STRIP IS REFETCHED RATHER THAN SPLICED, AND ONLY WHEN THE DAY JUST
+   * EMPTIED. `days` is `historyDays(db, user.id, HISTORY_DAY_LIMIT)` — a LIMITED
+   * window — so removing one day can pull an older one INTO it, and only the
+   * server knows which. A splice would silently shorten the strip by one for
+   * ever. One extra indexed read of the querent's own rows, at most once per
+   * emptied day, on a route that is deliberately not rate limited (H12).
+   */
+  const removeItem = useCallback(
+    (id: string) => {
+      setOpenId((current) => (current === id ? null : current));
+      if (load.status !== 'ok') return;
+      const items = load.items.filter((i) => i.id !== id);
+      setLoad({ status: 'ok', items });
+      if (items.length === 0) setDaysNonce((n) => n + 1);
+    },
+    [load],
+  );
+
   /* The pre-hydration render and the first frame after it. No children, so
      there is nothing to replace when `today` arrives. */
   if (!today || !selected) return <div className={styles.shell} aria-busy="true" />;
@@ -150,7 +204,14 @@ export function HistoryBrowser() {
           <p className={styles.count}>{t.plural('history.count', load.items.length)}</p>
           <ol className={styles.list}>
             {load.items.map((item) => (
-              <HistoryItemRow key={item.id} item={item} today={today} />
+              <HistoryItemRow
+                key={item.id}
+                item={item}
+                today={today}
+                open={openId === item.id}
+                onOpenChange={setTray}
+                onDeleted={removeItem}
+              />
             ))}
           </ol>
         </>
