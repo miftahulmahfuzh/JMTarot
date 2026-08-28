@@ -254,6 +254,19 @@ const STREAM_CALLS: Array<{
     why: 'the querent is watching a spinner, and this is the only place that can turn a refusal into a 429',
   },
   {
+    /*
+     * PHASE 3 OF THE RETRY WORK. The SECOND `op: 'reading'` streaming site, and
+     * the only one that writes over a row that already exists. It reserves
+     * `interactive` for `/api/reading`'s exact reason -- a person pressed a button
+     * and is watching a spinner -- and a refusal here becomes the same 429.
+     */
+    file: 'src/app/api/reading/retry/[id]/route.ts',
+    op: 'reading',
+    opMarker: "op: 'reading',",
+    reserves: "reserveModelCall('interactive')",
+    why: 'the querent pressed retry and is watching a spinner, exactly as on the draw screen',
+  },
+  {
     file: 'src/app/api/memory/summary/route.ts',
     op: 'day_summary',
     opMarker: "op: 'day_summary',",

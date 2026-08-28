@@ -3,7 +3,7 @@
  * chained readings. See profile.ts for the contract every file here follows.
  */
 import { and, desc, eq, gte, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
-import type { Locale, ReaderId, ServiceId } from '@/data/types';
+import type { Locale, ReaderId, ReadingStatus, ServiceId, YesNo } from '@/data/types';
 import type { HistoryCard, HistoryItem, ReadingDetail } from '@/lib/history/types';
 import type { DbOrTx } from '../types';
 import {
@@ -758,4 +758,130 @@ export async function softDeleteReading(
       summariesCleared,
     };
   });
+}
+
+// ---------------------------------------------------------------------------
+// The retry
+// ---------------------------------------------------------------------------
+
+/**
+ * What a retry is allowed to move. **WHAT IS ABSENT FROM THIS TYPE IS THE
+ * SPECIFICATION**, and it is absent so that the column cannot be written by
+ * mistake rather than because nobody thought of it:
+ *
+ *   `id`, `user_id`     The row is the same row. Every FK pointing at it stays
+ *                       valid and keeps pointing at the thing the querent
+ *                       retried -- `reading_cards`, `llm_calls`,
+ *                       `chat_messages.attached_reading_id`,
+ *                       `chat_runs.trigger_reading_id`, `translations.entity_id`
+ *                       and `share_links.entity_id` all name this id.
+ *   `reader_id`,        The draw is not re-taken. Same reader, same service,
+ *   `service_id`,       same hand, same question, same day.
+ *   `question`,
+ *   `local_date`
+ *   `locale`            **THE LANGUAGE THE PROSE CAME OUT IN, AND IT IS
+ *                       IMMUTABLE.** A retry regenerates in that same language,
+ *                       whatever the querent's interface says now. Moving it
+ *                       leaves V2's translation of this reading stale against a
+ *                       body that was never in the language the column claims --
+ *                       permanently, because `ReadingView`'s rule 4 keys off
+ *                       exactly this column and `translations` has no
+ *                       `source_hash` to notice with. **`ReadingRefill` having no
+ *                       `locale` field is what makes that unwritable.**
+ *   `session_id`        The session that took the reading, not the one retrying.
+ *   `created_at`        When the draw happened. A bumped one silently reorders
+ *                       the querent's own history around a retry.
+ *   `shared_at`         "Was this ever public" is unchanged by a regeneration.
+ *   `gist`              Written separately, by `setReadingGist` from inside
+ *                       `extractGist`, after this returns.
+ *
+ * `body: null` IS LEGITIMATE, not a caller bug: it is the retry-that-also-failed
+ * case. The row keeps `body IS NULL` and so stays retryable, while the status,
+ * timing and token columns still move to record the SECOND attempt. The first
+ * attempt's token counts are overwritten and are NOT lost -- `llm_calls` keeps a
+ * row per attempt, which is the ledger's whole job.
+ */
+export type ReadingRefill = {
+  status: ReadingStatus;
+  body: string | null;
+  choice: string | null;
+  verdict: YesNo | null;
+  model: string;
+  promptVersion: string;
+  latencyMs: number | null;
+  tokenInput: number | null;
+  tokenOutput: number | null;
+};
+
+/**
+ * REGENERATE THE PROSE OF ONE UNFINISHED READING, IN PLACE, OVER ITS OWN DRAW.
+ *
+ * **THE SAFETY IS IN THE `WHERE`, AND NONE OF IT MAY MOVE INTO JAVASCRIPT.**
+ * That is the entire design of this function; a fetch-then-compare version looks
+ * equivalent and is not:
+ *
+ *   `id = $`            the row.
+ *   `user_id = $`       OWNERSHIP AS A PREDICATE, `readingWithCards`'s rule. A
+ *                       read-then-compare is one forgotten `if` away from
+ *                       overwriting a stranger's reading.
+ *   `body is null`      **THE RULE** (invariant 6), and the one a read-then-write
+ *                       provably cannot hold: two presses of the button, or one
+ *                       press and one lost-ack retry, BOTH read `null`, both
+ *                       generate, and the second overwrites prose the querent is
+ *                       already reading on screen. Expressed here, the loser
+ *                       updates zero rows and finds out.
+ *   `deleted_at is null` covers the window between the route's read and this
+ *                       write, which is exactly as long as a model call.
+ *   `status <> 'blocked'` a blocked reading has `body IS NULL` and no cards, so
+ *                       every other clause admits it.
+ *
+ * RETURNS A ROW COUNT, NOT A BOOLEAN AND NOT A ROW. **`0` IS A NORMAL OUTCOME**
+ * -- the guard doing its job -- so nothing here throws for it and the caller
+ * decides what it means.
+ *
+ * NO `updatedAt`: `readings` has no such column. Recorded because the reflex is
+ * to check for Drizzle's `$onUpdate()` trap, and the answer here is that the
+ * column is absent, not that the trap was handled.
+ *
+ * A MALFORMED UUID IS A ZERO, NOT A DRIVER ERROR. `where id = 'banana'` raises
+ * SQLSTATE 22P02, and an unhandled one puts the failing statement -- with its
+ * bound parameters -- into the platform log. `UUID_RE` is the same guard
+ * `readingWithCards` and `softDeleteReading` use.
+ *
+ * `returning` RATHER THAN THE DRIVER'S ROW COUNT: the same round trip, and it
+ * reads the same on every driver.
+ */
+export async function refillReading(
+  db: DbOrTx,
+  userId: string,
+  readingId: string,
+  row: ReadingRefill,
+): Promise<number> {
+  if (!UUID_RE.test(readingId)) return 0;
+
+  const updated = await db
+    .update(readings)
+    .set({
+      status: row.status,
+      body: row.body,
+      choice: row.choice,
+      verdict: row.verdict,
+      model: row.model,
+      promptVersion: row.promptVersion,
+      latencyMs: row.latencyMs,
+      tokenInput: row.tokenInput,
+      tokenOutput: row.tokenOutput,
+    })
+    .where(
+      and(
+        eq(readings.id, readingId),
+        eq(readings.userId, userId),
+        isNull(readings.body),
+        isNull(readings.deletedAt),
+        ne(readings.status, 'blocked'),
+      ),
+    )
+    .returning({ id: readings.id });
+
+  return updated.length;
 }

@@ -7,7 +7,7 @@
 **Branch:** `feature/history-retry-and-soft-delete` (base: `origin/main` @ `8931a09`)
 **Cards:** [#11](https://github.com/miftahulmahfuzh/JMTarot/issues/11) (retry), [#12](https://github.com/miftahulmahfuzh/JMTarot/issues/12) (delete)
 **Phases:** 4
-**Status:** phase 2/4 complete
+**Status:** phase 3/4 complete
 **Reconciled:** 2026-08-28 — two rounds. Round 1: 18 conflicts found, 18 resolved. Round 2
 (verification of round 1's four moved contracts): 2 further conflicts found and resolved,
 0 open questions. **Round 2 re-measured all three of round 1's measured claims and all three
@@ -150,7 +150,7 @@ Every phase must hold all of these. They are ranked by what breaks if they are l
 |---|-------|---------|-------|-----------|------------|------|--------|
 | 1 ✅ | Soft delete — schema, read filters, delete route | `src/lib/db`, `src/app/api/history` | 13 | — | HARD | `.workflows/plan/history-retry-and-soft-delete/phase-1.md` | `P1-DB-A000` |
 | 2 ✅ | Soft delete — the swipe gesture and the row | `src/app/history`, `src/lib/history`, `src/lib/analytics` | 9 | 1 | NORMAL | `.workflows/plan/history-retry-and-soft-delete/phase-2.md` | `P1-AH-A000` |
-| 3 | Retry — the predicate, the writer, the endpoint | `src/lib/reading`, `src/lib/db/queries`, `src/lib/analytics`, `src/app/api/reading` | 6 | **1 (HARD: `refillReading`'s `WHERE` names `readings.deletedAt`, and `log.ts`'s union must already carry `'retry'` — Phase 3 does not compile without Phase 1)** | HARD | `.workflows/plan/history-retry-and-soft-delete/phase-3.md` | `P1-LR-A000` |
+| 3 ✅ | Retry — the predicate, the writer, the endpoint | `src/lib/reading`, `src/lib/db/queries`, `src/lib/analytics`, `src/app/api/reading` | 6 | **1 (HARD: `refillReading`'s `WHERE` names `readings.deletedAt`, and `log.ts`'s union must already carry `'retry'` — Phase 3 does not compile without Phase 1)** | HARD | `.workflows/plan/history-retry-and-soft-delete/phase-3.md` | `P1-LR-A000` |
 | 4 | Retry — the `Coba ulang` control, copy, docs | `src/app/history/[id]`, `src/lib/i18n`, `src/lib/analytics`, `docs` | 11 | **3 (HARD: imports `isRetryable`, calls the retry route) — and 2, SOFT: Phase 2 must have moved `events.test.ts`'s ceiling, or `npm test` is red for a reason that is not in this phase's diff** | NORMAL | `.workflows/plan/history-retry-and-soft-delete/phase-4.md` | `P1-AH-A001` |
 
 <The TaskID column is filled in by /implement when it creates the tasks.>
@@ -446,6 +446,53 @@ compiles on Phase 1 and its one red test is fixed inside its own commit. Phase 3
 column and union, which `depends_on: [1]` records. Phase 4 needs Phase 3's exports and route, and
 Phase 2's ceiling move. **No dependency points forward. No symbol is deleted anywhere in this
 plan set**, so there is no deleted-then-used class of conflict to resolve.
+
+---
+
+## Phase 3 landing notes (2026-08-28)
+
+**Three things the plan did not anticipate, recorded here rather than discovered by Phase 4.**
+
+1. **Two files outside the plan set's file table were edited, both required, and neither was on
+   any non-touch list:** `src/lib/llm/callClass.test.ts` and `src/lib/llm/flagCoverage.test.ts`.
+   `POST /api/reading/retry/[id]` is a new `streamReading()` call site **and** a new model call
+   site, and both registries assert their table is **exactly** the set of call sites — so the
+   phase does not go green without registering it. Registered as `op: 'reading'` /
+   `reserveModelCall('interactive')` in `STREAM_CALLS`, and in the `EXEMPT` (no-flag) table on the
+   same product ruling as `/api/reading` — *a retry is a reading* — **explicitly not as a fourth
+   member of the admin-only class**, which would have triggered that class's owed
+   `ADMIN_MODEL_CALLS_ENABLED` collapse. This joins `events.test.ts` (Phase 2) and `Draw.tsx`
+   (Phase 4) in the ledger of files edited outside the impact table.
+
+2. **The 200 path is UNMEASURED live, and it is an environment fact rather than a defect:** the
+   local `LLM_API_KEY` is expired and z.ai answers `401 token expired or incorrect`. Measured live
+   against a real dev server and real Postgres: 401 with no session; 405 on GET; `404 not_found`
+   for an absent uuid, a non-uuid (`banana`), **another user's fully-retryable reading** and a
+   soft-deleted reading; `409 not_retryable` for a reading that has prose; **the no-oracle rule
+   proven on one row** — the same id answered 409 while live and 404 once soft-deleted; **a start
+   failure writes nothing** — after the failed model call the row still had `body IS NULL`,
+   `status = 'failed'`, `model = 'seed'`, still retryable; and **the viewer half of the locale
+   split** — with `readings.locale = 'id'` the 500 came back Indonesian for the `id` UI and English
+   for `?lang=en`, so `tView` follows the viewer. **Still unmeasured: the prose half (that
+   generated text follows `readLocale`) and the `x-reading-locale` header**, both of which exist
+   only on the 200 path — so manual checks 3, 4 and 7 of Phase 3's Verification section are **not
+   satisfied by measurement** and need a working key. Phase 4 reads that header, validates it with
+   `isLocale` and falls back to `reading.locale`; conflict 4's fallback is doing real work.
+
+3. **Environment drift found while running the loops. `CLAUDE.md` was NOT edited — Phase 4 owns it
+   and Invariant 9 makes every edit there net-neutral — so this is filed here for that phase:**
+   - `~/tools/node-v24.18.0-linux-x64` **does not exist.** Installed Node is **v22.23.1** and is
+     the default on PATH, so CLAUDE.md's `export PATH=~/tools/node-v24…` line is a silent no-op.
+   - **Port 3000 is not taken any more** — `npm run dev` bound 3000, not 3001 — while `AUTH_URL`
+     still says 3001.
+   - **`npm run db:up` fails.** `docker-compose.yml` hardcodes `127.0.0.1:5432:5432`, 5432 is held
+     by an unrelated process, and this worktree's `.env.local` expects **5442**. Worked around with
+     a scratchpad-only compose override (`ports: !override ['127.0.0.1:5442:5432']`); **nothing in
+     the repo was changed.** Postgres is currently up on 5442, which is what `.env.local` wants.
+
+*Also recorded on the route rather than fixed, as the plan directs:* a retried reading carries
+**two** `op: 'reading'` rows in `llm_calls` for one `reading_id`, and `readingCostsFor` folds them.
+
 
 ## Open Questions
 

@@ -2,16 +2,16 @@
 
 **Package Path**: `src/app/history`
 **Package Code**: AH
-**Last Updated**: 2026-08-28 16:27:00
+**Last Updated**: 2026-08-28 16:55
 **Total Active Tasks**: 1
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 0
+- P1 High: 1
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 1
+- Blocked: 0
 - Completed: 1
 
 ---
@@ -21,6 +21,16 @@
 ### [P0] Critical
 
 ### [P1] High
+- [ ] **P1-AH-A001** Phase 4: Retry — the `Coba ulang` control, copy, docs
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `HistoryDetail.tsx` rewritten — the retry control and the stream that fills it, plus `refillView`, exported and unit-tested because `ReadingView`'s rule 4 is held by that function and not by the component's discipline, with no `router.refresh()` so the translation effect and the refill can never fight; every status Phase 3 emits is branched on (401 → `/login`; 429 → the rate-limit copy; 403 + `moderation_blocked` → `RefusalNotice`, and that branch MUST stay above the `!res.ok` check; 404 and 409 → a terminal `stale` state that takes the control away; 500 and 503 → the generic `reading.failed` branch); `events.ts` widening `reading.retried`'s prop shape with `surface`, `reading_id`, `prior_status`, `age_days` and adding NO name; the four-prop compile fix at `Draw.tsx:678-686`; five `history.retry.*` keys and six strings in both catalogs, Indonesian first, anchored on `'history.item.unfinished'` and never on a line range because Phase 2 has already inserted eight keys into the same block; and the doc edits that are part of the work — `queries/history.ts:323`'s now-false comment, `docs/plans/2026-07-27-history.md` (VD14's narrow amendment and open question 7), `docs/workstream-notes.md` V6, and the plan set's only `CLAUDE.md` edit at exactly net zero (+131 / −131, 142,385 bytes before and after). Does not touch `src/lib/db/**` except that one comment, any API route, `HistoryItemRow.tsx` and its `.module.css`, `HistoryBrowser.tsx`, `swipe.ts` or `events.test.ts`. **Exit criteria**: the control appears on exactly the readings `isRetryable` admits and on no others; pressing it streams prose into the page and a reload shows the stored version; a refusal renders `RefusalNotice` above the reading and not a generic error; a 409 or 404 takes the control away rather than looping; a viewer in the other locale never sees raw foreign prose from a refill; both catalogs typecheck; this phase moves `EVENT_NAMES.length` by zero; `wc -c CLAUDE.md` reads 142,385, unchanged.
+  - **Unblocked**: 2026-08-28 — P1-LR-A000 landed (the `retryable()` / `isRetryable()` LEAF, `refillReading`, `refillReadingRow` and `POST /api/reading/retry/[id]`), so the HARD dependency is satisfied. **Two files outside the plan set's file table were edited by Phase 3 and Phase 4 should know**: `src/lib/llm/callClass.test.ts` and `src/lib/llm/flagCoverage.test.ts` — the retry route is a new `streamReading()` call site and a new model call site, and both registries assert their table is EXACTLY the set of call sites, so it had to be registered (`op: 'reading'` / `reserveModelCall('interactive')` in `STREAM_CALLS`, and `EXEMPT` on the same ruling as `/api/reading`, "a retry is a reading" — explicitly not a fourth member of the admin-only class). **Phase 3's 200 path is UNMEASURED live** because the local `LLM_API_KEY` is expired, so `x-reading-locale` and the `readLocale` half of the locale split have not been observed on the wire; Phase 4 reads that header and falls back to `reading.locale`, which is the branch that was designed for exactly this. Original dependency note: (HARD — imports `isRetryable`, calls the retry route). **The SOFT dependency on P1-AH-A000 is SATISFIED as of 2026-08-28: Phase 2 landed and moved `events.test.ts`'s ceiling to 77.** Phase 4 must therefore NOT touch `events.test.ts` — it widens `reading.retried`'s existing prop shape and adds no name.
+  - **Status**: open
+  - **Plan Set**: `HISTORY_RETRY_AND_SOFT_DELETE_PLAN.md` (phase 4 of 4)
+  - **Depends on**: P1-LR-A000 (hard), P1-AH-A000 (soft)
+  - **Plan**: `.workflows/plan/P1-AH-A001.md`
+
 
 ### [P2] Medium
 
@@ -29,15 +39,6 @@
 ### [P4] Backlog
 
 ### 🚫 Blocked
-- [ ] **P1-AH-A001** Phase 4: Retry — the `Coba ulang` control, copy, docs
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns `HistoryDetail.tsx` rewritten — the retry control and the stream that fills it, plus `refillView`, exported and unit-tested because `ReadingView`'s rule 4 is held by that function and not by the component's discipline, with no `router.refresh()` so the translation effect and the refill can never fight; every status Phase 3 emits is branched on (401 → `/login`; 429 → the rate-limit copy; 403 + `moderation_blocked` → `RefusalNotice`, and that branch MUST stay above the `!res.ok` check; 404 and 409 → a terminal `stale` state that takes the control away; 500 and 503 → the generic `reading.failed` branch); `events.ts` widening `reading.retried`'s prop shape with `surface`, `reading_id`, `prior_status`, `age_days` and adding NO name; the four-prop compile fix at `Draw.tsx:678-686`; five `history.retry.*` keys and six strings in both catalogs, Indonesian first, anchored on `'history.item.unfinished'` and never on a line range because Phase 2 has already inserted eight keys into the same block; and the doc edits that are part of the work — `queries/history.ts:323`'s now-false comment, `docs/plans/2026-07-27-history.md` (VD14's narrow amendment and open question 7), `docs/workstream-notes.md` V6, and the plan set's only `CLAUDE.md` edit at exactly net zero (+131 / −131, 142,385 bytes before and after). Does not touch `src/lib/db/**` except that one comment, any API route, `HistoryItemRow.tsx` and its `.module.css`, `HistoryBrowser.tsx`, `swipe.ts` or `events.test.ts`. **Exit criteria**: the control appears on exactly the readings `isRetryable` admits and on no others; pressing it streams prose into the page and a reload shows the stored version; a refusal renders `RefusalNotice` above the reading and not a generic error; a 409 or 404 takes the control away rather than looping; a viewer in the other locale never sees raw foreign prose from a refill; both catalogs typecheck; this phase moves `EVENT_NAMES.length` by zero; `wc -c CLAUDE.md` reads 142,385, unchanged.
-  - **Blocked by**: P1-LR-A000 (HARD — imports `isRetryable`, calls the retry route). **The SOFT dependency on P1-AH-A000 is SATISFIED as of 2026-08-28: Phase 2 landed and moved `events.test.ts`'s ceiling to 77.** Phase 4 must therefore NOT touch `events.test.ts` — it widens `reading.retried`'s existing prop shape and adds no name.
-  - **Status**: blocked
-  - **Plan Set**: `HISTORY_RETRY_AND_SOFT_DELETE_PLAN.md` (phase 4 of 4)
-  - **Depends on**: P1-LR-A000 (hard), P1-AH-A000 (soft)
-  - **Plan**: `.workflows/plan/P1-AH-A001.md`
 
 ---
 

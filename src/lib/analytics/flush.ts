@@ -19,7 +19,12 @@
  */
 import { events } from '@/lib/db/schema';
 import { insertCalls } from '@/lib/db/queries/admin/calls';
-import { insertReading, type ReadingCardInput } from '@/lib/db/queries/history';
+import {
+  insertReading,
+  refillReading,
+  type ReadingCardInput,
+  type ReadingRefill,
+} from '@/lib/db/queries/history';
 import { touchLastSeen as touchLastSeenQuery } from '@/lib/db/queries/profile';
 import type { DbOrTx } from '@/lib/db/types';
 import type { NewReading } from '@/lib/db/schema';
@@ -371,6 +376,72 @@ export async function persistReading(
     },
     { label: 'readings', context: { readingId: row.id, userId: row.userId } },
   );
+}
+
+/** Mirrors `ReadingRefill`, for symmetry with `ReadingRow`. One shape, one owner. */
+export type ReadingRefillRow = ReadingRefill;
+
+/**
+ * THE RETRY'S WRITE. A separate function beside `persistReading`, and the
+ * separation is the point rather than a tidiness preference.
+ *
+ * **WHY `persistReading` CANNOT DO THIS, AND WHY THE FAILURE WOULD BE SILENT.**
+ * It INSERTS, and its retry loop catches SQLSTATE 23505 and returns -- "already
+ * written by a lost-ack attempt", which is correct on the insert path. Run
+ * against an existing `readings.id` that catch fires on the FIRST attempt,
+ * WRITES NOTHING, and RETURNS NORMALLY. The retry would appear to succeed: the
+ * querent watches prose arrive on screen, nothing logs, and a reload shows the
+ * same empty reading. A branch inside that function is one `if` away from that
+ * outcome for ever, so this is its own function.
+ *
+ * **WHAT IT SHARES DELIBERATELY.** `withRetry`, because the failure policy here
+ * is `persistReading`'s and not `flushEvents`': a lost row is the querent's own
+ * prose, not a dashboard. The OPTIONAL HANDLE LAST, because this is a WRITER and
+ * not a query module -- rule 1 of `queries/**` is handle-FIRST, the two
+ * conventions are opposites on purpose, and `contract.test.ts` enforces only the
+ * query-module one. And `handle()`'s DYNAMIC `import('@/lib/db/client')`, since a
+ * static one pulls in `server-only`, which throws under Vitest and would take
+ * `sanitizeProps`'s unit tests down with it.
+ *
+ * **THE ONE THING IT DOES NOT SHARE: THERE IS NO `enabled()` GATE.**
+ * `persistReading` opens with `if (!enabled()) return`; this does not.
+ * `ANALYTICS_ENABLED` silences the analytics WRITE PATH, and a refill is the
+ * querent's own prose being restored into a row they are looking at -- it has no
+ * metric character at all. Leaving the gate off also makes this callable
+ * directly from the integration suite. Operationally it changes nothing today:
+ * the route calls it from inside `defer()`, which returns early on the same
+ * variable.
+ *
+ * **THE RETURN VALUE HAS ONE AMBIGUITY, AND IT IS NOT A DATA ERROR.** `false`
+ * cannot distinguish "somebody else won the race" from "this call's own first
+ * attempt committed and lost its acknowledgement". In BOTH cases the row holds
+ * prose, which is the only thing any caller acts on. It is the exact counterpart
+ * of `persistReading`'s 23505 catch.
+ *
+ * **THE ZERO IS A `warn`, NOT `logFailure`, WHICH SAYS "failed".** A zero is a
+ * legitimate outcome -- the guard doing its job -- and labelling it a failure
+ * trains whoever reads these lines to ignore the ones that are not. `undefined`
+ * means `withRetry` gave up and has ALREADY logged through `logFailure`, so it
+ * is not logged a second time. IDS ONLY, never the row: `ReadingRefill.body` is
+ * the reading itself.
+ */
+export async function refillReadingRow(
+  userId: string,
+  readingId: string,
+  row: ReadingRefill,
+  injected?: DbOrTx,
+): Promise<boolean> {
+  const updated = await withRetry(
+    async () => refillReading(await handle(injected), userId, readingId, row),
+    { label: 'readings.refill', context: { readingId, userId } },
+  );
+
+  if (updated === 1) return true;
+
+  if (updated === 0) {
+    console.warn('[readings] refill guard unmatched', JSON.stringify({ readingId, userId }));
+  }
+  return false;
 }
 
 /**
