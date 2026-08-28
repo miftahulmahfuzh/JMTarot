@@ -76,6 +76,11 @@ export const EVENT_NAMES = [
   'reading.completed',
   'reading.failed',
   'reading.aborted',
+  /*
+   * TWO SURFACES SINCE 2026-08-28 -- the draw screen's error panel and
+   * `/history/[id]`'s refill. See its prop shape for why that is a `surface` prop
+   * and not a second name.
+   */
   'reading.retried',
   'reading.rate_limited',
 
@@ -389,7 +394,44 @@ export type EventMap = {
                                  chars_before_failure: number; error_kind: string; source: EventSource };
   'reading.aborted':           { reading_id: string; chars_before_abort: number;
                                  reason: 'user' | 'navigation' | 'timeout'; source: EventSource };
-  'reading.retried':           { reader_id: string; service_id: string; attempt: number };
+  /*
+   * ── `surface`, `reading_id`, `prior_status` AND `age_days` (2026-08-28) ──────
+   *
+   * **FOUR PROPS AND NOT A SECOND NAME, AT A CEILING THAT IS ALREADY BINDING.** A
+   * `history.reading_refilled` was drafted and dropped: it would have cost a name
+   * this register has none spare of, AND it would have put the refill outside
+   * `where name = 'reading.retried'` -- the one query that answers "how often does
+   * anybody retry at all". Same reasoning that folded `chat.message_blocked` into
+   * `moderation.refused`'s `surface`.
+   *
+   * `reading_id` IS NULL ON THE DRAW SCREEN AND THAT IS NOT A GAP: a draw-screen
+   * retry mints a NEW `readings.id` which does not exist when the button is
+   * pressed, where a history refill keeps the id it is refilling.
+   *
+   * **`prior_status` IS THE ONE MEASUREMENT THIS FEATURE OWES ITSELF.**
+   * Retryability is `body IS NULL` and never a status list, so from the screen
+   * `aborted` (walked away) and `failed` (the stream died) are indistinguishable --
+   * and they are different products. If nearly every refill is on an `aborted` row,
+   * the ruling should be revisited on that evidence rather than on taste. Null on
+   * the draw screen, where there is no stored row to have had a status. Spelled as
+   * the literal union because THIS FILE HAS NO IMPORTS, BY RULE.
+   *
+   * `age_days` is `dayOffset(today, local_date)`, and `0` on the draw screen is
+   * true rather than filler. It separates recovery-affordance from archaeology.
+   *
+   * **`attempt` MEANS SOMETHING SLIGHTLY DIFFERENT ON EACH SURFACE AND THAT IS
+   * WRITTEN DOWN RATHER THAN NORMALISED**: on the draw screen it counts presses
+   * within one draw, on `/history/[id]` presses within one page view. Nothing
+   * persists it. Group by `reading_id` for the true total.
+   *
+   * An `outcome` prop was considered and dropped: the outcome is already
+   * `reading.completed` / `reading.failed` with `source: 'client'` and the same
+   * `reading_id`, and a fact recorded twice is how two records drift.
+   */
+  'reading.retried':           { reader_id: string; service_id: string; attempt: number;
+                                 surface: 'draw' | 'history'; reading_id: string | null;
+                                 prior_status: 'ok' | 'partial' | 'failed' | 'aborted' | 'blocked' | null;
+                                 age_days: number };
   /*
    * `limit` IS V9's ADDITION, AND IT IS NOT A WIDENING OF WHAT IS COLLECTED ABOUT
    * A PERSON. The route deliberately answers all four ceilings with identical

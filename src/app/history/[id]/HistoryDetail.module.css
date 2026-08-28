@@ -1,0 +1,101 @@
+/*
+ * The refill control, on `/history/[id]` and nowhere else.
+ *
+ * `.retry` IS `ReadingPanel.module.css`'s `.retry`, VALUE FOR VALUE, AND THE
+ * DUPLICATION IS DELIBERATE. On the draw screen that button means "the stream
+ * broke, send it again"; here it means "the stream broke months ago, send it
+ * again". One act, one shape, so it must look identical — but two call sites is
+ * not a pattern yet, and hoisting it into a shared module would make every future
+ * change to either screen a change to both.
+ *
+ * `min-height: 44px` IS WRITTEN DOWN RATHER THAN LEFT TO ARITHMETIC. The padding
+ * gets there today (14 + 14 + a ~13px line box), which is exactly how
+ * `PublicShare`'s button ended up at 36px — a recorded defect on twenty-three
+ * pages. A number that has to be true belongs in the stylesheet, not in a sum
+ * somebody has to redo after changing a font size.
+ *
+ * Tokens only: no new hex value, font size or easing curve enters the project
+ * here. `13px` and `15px` are the literals `ReadingPanel` and the account surface
+ * already use for a hint and a message respectively.
+ */
+
+.retryBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.retry {
+  align-self: flex-start;
+  min-height: 44px;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  color: var(--button-text);
+  border: 1px solid var(--gold-border);
+  background: var(--gold-wash);
+  border-radius: var(--radius-chip);
+  padding: 14px 18px;
+}
+
+.retry:hover {
+  background: var(--gold-wash-strong);
+}
+
+.retry:focus-visible {
+  outline: 2px solid var(--gold-border);
+  outline-offset: 2px;
+}
+
+/*
+ * The label that has to hold a screen for the length of a whole generation on a
+ * cold Neon compute without reading as a hang. Same job as `reading.waiting`'s.
+ */
+.waiting {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-section-label);
+  text-transform: uppercase;
+  color: var(--gold);
+  animation: breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .waiting {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+.hint,
+.otherLanguage {
+  margin: 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: 13px;
+  color: var(--faint);
+}
+
+.error {
+  margin: 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 15px;
+  color: var(--muted);
+}

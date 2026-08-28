@@ -904,7 +904,15 @@ const id = {
   // A row whose reading never finished. It is SHOWN -- the querent drew those
   // cards, and the frequency verdict already counts them -- so it has to say why
   // there is no text behind it, or opening it reads as a bug.
-  'history.item.unfinished': 'Bacaan ini tidak selesai.',
+  /*
+   * **THE SECOND SENTENCE IS THE WHOLE OF THE LIST'S RETRY HINT (2026-08-28), AND
+   * IT IS A STRING CHANGE RATHER THAN A CONTROL.** `!item.hasBody` is already
+   * exactly the retryable set, so the row can say so for free -- but the paragraph
+   * sits inside the row's `<Link>` and inside the swipe surface, so a button there
+   * would swallow both the tap and the drag, and one act would have two places to
+   * press. The one place to press stays `/history/[id]`.
+   */
+  'history.item.unfinished': 'Bacaan ini tidak selesai. Buka untuk coba ulang.',
   'history.item.shared': 'Dibagikan',
   /*
    * ── Deleting one reading ─────────────────────────────────────────────────
@@ -944,6 +952,29 @@ const id = {
   // as `reading.waiting`: it has to hold a screen for several seconds without
   // looking hung.
   'history.translating': 'Menerjemahkan…',
+
+  // ── The refill (2026-08-28) ───────────────────────────────────────────────
+  //
+  // `Coba ulang` IS MIFTAH'S WORD AND IT IS NOT `common.retry`, which reads
+  // `Coba lagi`. One letter apart in Indonesian and a world apart in meaning:
+  // `common.retry` sits under an error and means "send that request again", where
+  // this sits under a reading that never arrived and means "write this one now".
+  'history.retry.action': 'Coba ulang',
+  // THE HINT IS THE PROMISE THE FEATURE KEEPS, and it can be said out loud
+  // because the query enforces it: `refillReading` never touches `reading_cards`,
+  // so the hand cannot move.
+  'history.retry.hint': 'Kartunya tetap sama. Hanya teksnya yang ditulis ulang.',
+  'history.retry.waiting': 'Menulis ulang bacaan…',
+  // Rule 4's failure state, in words. The prose came back in the reading's own
+  // language, so it is held rather than shown; the next view of this page picks it
+  // up through V2 as an ordinary translation.
+  'history.retry.otherLanguage':
+    'Teksnya ditulis dalam bahasa asli bacaan ini. Buka lagi halaman ini untuk melihat terjemahannya.',
+  // THE TERMINAL ANSWER (409 `not_retryable`, 404 `not_found`). It must NOT say
+  // "coba lagi": the button is gone by the time this renders. It does not say
+  // WHICH of the five things happened, because the route deliberately does not
+  // tell us -- a distinguishable answer would turn a uuid guess into an oracle.
+  'history.retry.stale': 'Bacaan ini sudah tidak bisa diulang. Muat ulang halaman ini.',
 
   // ── The yes/no verdict, rendered ──────────────────────────────────────────
   //

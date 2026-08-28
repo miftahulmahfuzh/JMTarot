@@ -681,6 +681,18 @@ export function Draw({
             reader_id: reader.id,
             service_id: service.id,
             attempt: attempt.current,
+            /*
+             * `surface` SINCE 2026-08-28, when `/history/[id]` grew a refill and
+             * this event stopped having one call site. **The three null-or-zero
+             * values below are not fillers.** This retry mints a NEW `readings.id`
+             * that does not exist yet, so there is nothing to name; there is no
+             * stored row to have had a `prior_status`; and the reading is seconds
+             * old, so `age_days` is genuinely 0. See the prop shape in `events.ts`.
+             */
+            surface: 'draw',
+            reading_id: null,
+            prior_status: null,
+            age_days: 0,
           });
           requestReading(picks, question);
         }}

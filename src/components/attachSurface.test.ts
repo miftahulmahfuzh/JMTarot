@@ -108,7 +108,16 @@ describe('the two controls (F6 tasks 6 and 7)', () => {
      * *the UI is never wider than the server*, and here it is deliberately narrower.
      */
     const src = stripComments(file('app/history/[id]/HistoryDetail.tsx'));
-    expect(src).toMatch(/attachable\(reading\)\s*\?/);
+    /*
+     * **THE ARGUMENT IS `view` AND NOT `reading`, SINCE 2026-08-28, AND THE PIN IS
+     * ON THE REFILLED ONE ON PURPOSE.** `/history/[id]` now offers `Coba ulang` on a
+     * `body IS NULL` row and paints the result in place, so `reading` — the server
+     * prop — still has no body afterwards while `view` is what is on screen.
+     * Gating on `reading` would silently refuse to offer *Bahas di grup* on a
+     * reading the querent just watched arrive, which is the failure this line is
+     * here to catch.
+     */
+    expect(src).toMatch(/attachable\(view\)\s*\?/);
     expect(src.indexOf('<AttachReadingLink')).toBeLessThan(src.indexOf('<ShareFooter'));
   });
 

@@ -7,9 +7,18 @@
 ## Overview
 
 The querent's own past readings: `/history` lists them by day, `/history/[id]`
-reconstructs one draw exactly as it was, read-only (VD14). Since Phase 2 of the
+reconstructs one draw exactly as it was. Since Phase 2 of the
 history-retry-and-soft-delete plan a row also carries a **swipe-to-reveal delete**,
-which is the first destructive control this surface has ever had.
+which is the first destructive control this surface has ever had, and since Phase 4
+`/history/[id]` carries **`Coba ulang`** — the refill control for a reading that
+never got prose.
+
+**VD14 IS NARROWLY AMENDED, NOT REPEALED.** The page is still read-only about the
+*draw*: the hand, the question, the reader, the service and the locale are all
+immutable, and the refill re-streams prose over the same cards in the same language.
+**Retryability is `body IS NULL`, never a status list** — `isRetryable` in
+`src/lib/reading/retryable.ts` is the predicate, and `queries/history.ts`'s
+`readingsForDay` header was corrected in this phase to say so.
 
 This is a Next.js App Router route package — server components, client components
 and CSS modules, not a library. Its pure logic deliberately lives one directory
@@ -22,6 +31,8 @@ React nor the DOM.
 - Render the day filter and the selected day's list, entirely client-side.
 - Reconstruct one past reading, server-rendered, with a client-side translation.
 - Own the swipe gesture, the confirm sheet and the one `DELETE` call per row.
+- Own the refill: the `Coba ulang` press, the streamed body, and the exhaustive
+  status branching against `POST /api/reading/retry/[id]`.
 - Keep `todayKey()` off the render path — the whole shape of `HistoryBrowser`.
 
 **THE ROUTE IS GATED BY `src/middleware.ts` and `isPublic()` must never learn it.**
@@ -116,8 +127,125 @@ statement and its bound parameters.
 
 ### `HistoryDetail` (`[id]/HistoryDetail.tsx`) — `'use client'`
 
-The thin wrapper that owns the **translation and nothing else**; everything visual is
-`ReadingView` (VD10). Also mounts `AttachReadingLink` and `ShareFooter`.
+The thin wrapper that owns the **translation and, since Phase 4, the refill** —
+nothing else. Everything visual is `ReadingView` (VD10). Also mounts
+`AttachReadingLink`, `ShareFooter` and, on a refusal, `RefusalNotice`.
+
+**TWO ASYNC SOURCES OF PROSE, AND TWO LINES KEEP THEM APART.** V2's translation
+streams the body this reading *already has*; the refill streams a body into a reading
+that never had one. Both write this component's state.
+
+1. **`needs` IS COMPUTED FROM THE SERVER PROP `reading`, NEVER FROM THE REFILLED
+   VIEW.** A refilled row has a body, so deriving it from the view would start a
+   translation of prose that arrived seconds ago in the language already on screen.
+2. **THERE IS NO `router.refresh()` IN THIS FILE AND THERE MUST NEVER BE.** The only
+   mention of it is the prohibition in the header comment. Two independent reasons:
+   a refresh makes `reading.body` non-null, which makes `needs` true, which sets the
+   translation effect off against the refill; and the retry route writes its row
+   inside the response's own `defer()`, so a refresh at stream end races that write
+   and repaints `history.detail.noBody` over prose the querent just watched arrive.
+   `useRouter` is imported for exactly one thing: `router.replace('/login')` on a 401.
+
+`RetryState` is a six-member union — `idle`, `running{painted}`, `done`, `error`,
+**`stale`** and `blocked{payload}` — and `stale` being its own member rather than an
+`error` with different copy is the whole point: the control is *removed*, not
+re-offered.
+
+### `refillView` (exported from `[id]/HistoryDetail.tsx`) — PURE
+
+```ts
+export function refillView(
+  reading: ReadingViewData,
+  refill: Refill | null,
+  viewer: Locale,
+): { view: ReadingViewData; prose: ReadingProse | null }
+```
+
+**THIS IS WHERE `ReadingView`'s RULE 4 SURVIVES THE REFILL, AND IT IS EXPORTED AND
+UNIT-TESTED FOR EXACTLY THAT REASON** — rule 4 is the renderer's invariant rather
+than the caller's discipline, and the refill is the one path that hands the renderer
+a body the server did not send. The component itself is unreachable from the unit
+project, so a seven-case truth table in `[id]/HistoryDetail.test.ts` holds it,
+asserted **through the real `resolveProse`** rather than by restating its rules.
+
+- **It returns `{ kind: 'as-written' }` on a language mismatch and NEVER
+  `{ kind: 'original' }`.** `resolveProse` treats `original` identically to an
+  omitted prop, so returning it would put Indonesian prose in the English app
+  through the very function written to prevent that. It never returns `translated`
+  either: nothing was translated.
+- **The body moves onto a COPY of the reading, not just into the `prose` prop.**
+  `resolveProse` short-circuits to `unavailable` whenever `reading.body === null`
+  whatever the caller passed, so a refill handed in through `prose` alone paints
+  nothing at all. The copy claims `status: 'ok'` — the same claim `Draw.tsx` makes
+  when its stream ends normally — and falls back to the stored `choice`, so a refill
+  with no marker does not erase a verdict the row already carried.
+- `refill === null` returns the reading by **identity**, so nothing re-renders before
+  a press.
+
+### The refill request, and the order of its branches
+
+```
+POST /api/reading/retry/<id>            (runtime nodejs, maxDuration 60)
+  headers: content-type, x-jmt-session, x-jmt-local-date
+  body: '{}'    ← NO picks and NO question; the route reads both from the row
+  AbortController; aborted on unmount and on a second press
+```
+
+| Status | Outcome |
+| --- | --- |
+| 401 | `auth.session_expired` + `router.replace('/login')`. Nothing to show. |
+| 429 | `reading.rate_limited` with **`limit: 'unknown'`** — the browser is deliberately not told which ceiling it hit — plus the rate-limit copy. |
+| 403 + `moderation_blocked` | `RefusalNotice`, mounted **above** `ReadingView`. |
+| 404, 409 | **`stale`. Terminal, and the control is removed.** |
+| everything else (500/503, no body) | the generic `reading.failed` branch; pressing again is correct. |
+
+- **THE 403 BRANCH MUST STAY ABOVE THE `!res.ok` CHECK** (verified in this phase at
+  line 303 against 334). Below it, a refusal is swallowed as `http_403` and shows
+  "could not start" — losing the clause link, the crisis resources and any sign the
+  app made a decision. `403` is also what middleware gives an un-onboarded caller, so
+  the **body** is the discriminator and anything else 403-shaped falls through.
+- **A REFUSAL ON A RETRY IS A CORRECT OUTCOME.** The question was classified once,
+  possibly months ago, and the classifier is allowed to have moved. The row is left
+  untouched, so the control comes back.
+- **404 AND 409 ARE ANSWERS, NOT FAILURES.** 404 collapses five causes (absent, not
+  yours, blocked, soft-deleted, not a uuid); 409 means the row is no longer retryable,
+  most likely because another tab refilled it. Deliberately not distinguished on
+  screen — the route does not tell us which, on purpose.
+- **500 and 503 stay in the generic branch on purpose**: transient, row untouched.
+- **The locale comes off `x-reading-locale` through `isLocale()`, defaulting to
+  `reading.locale`** on an absent or malformed header, which is what the route's own
+  comment instructs every client to do — and is the branch that carries the whole
+  feature if the header is ever dropped.
+- **Prose is painted while streaming ONLY when it is already in the viewer's
+  language.** Rule 4 forbids showing foreign prose with no translation, and there is
+  no translation of something that does not exist yet, so the mismatch case is
+  delivered whole behind `history.retry.otherLanguage` and picked up as a cached
+  translation on the next view.
+- The choice marker is stripped with `splitChoiceMarker(wire, …)` over the text
+  accumulated **so far** and validated client-side against the same stored question,
+  because rendering the model's unvalidated word would put model-controlled text in a
+  highlighted box.
+
+### `[id]/HistoryDetail.module.css`
+
+New in Phase 4. `.retryBlock`, `.retry`, `.waiting`, `.hint`, `.otherLanguage`,
+`.error`. **Tokens only** — no new hex value, font size or easing curve.
+
+- **`.retry` IS `ReadingPanel.module.css`'s `.retry` VALUE FOR VALUE, AND THE
+  DUPLICATION IS DELIBERATE.** One act, one shape; but two call sites is not a
+  pattern yet, and hoisting it would make every future change to either screen a
+  change to both.
+- **PLUS AN EXPLICIT `min-height: 44px`.** The padding gets there today, which is
+  exactly how `PublicShare`'s button ended up at 36px — a recorded defect on
+  twenty-three pages. A number that has to be true belongs in the stylesheet, not in
+  a sum somebody has to redo after changing a font size.
+- `.waiting` carries a `breathe` keyframe with a `prefers-reduced-motion` opt-out: it
+  has to hold a screen for a whole generation on a cold Neon compute without reading
+  as a hang.
+- **`attachSurface.test.ts` was re-pinned from `attachable(reading)` to
+  `attachable(view)`** in this phase, because both footer conditions deliberately
+  moved to the refilled `view` — gating on the server prop would refuse *Bahas di
+  grup* on a reading the querent just watched arrive.
 
 ## The swipe (Phase 2)
 
@@ -216,8 +344,29 @@ DELETE /api/history/<id>
                                              bump daysNonce IF the day emptied
 
 /history/<id> (server, ONE awaited read)
-   └─ HistoryDetail (client) ── POST /api/translate ──► ReadingView
+   └─ HistoryDetail (client)
+        ├─ needs = reading.locale !== viewer && reading.body !== null   [SERVER PROP]
+        │     └─ POST /api/translate ──► prose
+        └─ isRetryable(status, hasBody, cardCount) ──► Coba ulang
+              └─ POST /api/reading/retry/<id>
+                   ├─ 401 ──► /login          429 ──► error copy
+                   ├─ 403+moderation_blocked ──► RefusalNotice (ABOVE ReadingView)
+                   ├─ 404 | 409 ──► stale (control removed)
+                   └─ 200 ──► x-reading-locale ──► stream ──► refill
+                                 └─ refillView(reading, refill, viewer)
+                                      ├─ view  (body, locale, status: 'ok', choice)
+                                      └─ prose ('as-written' on a mismatch, else null)
+                                            └─ shownProse = refillProse ?? prose
+   ──► ReadingView
 ```
+
+`canRetry` is computed **from the server row, not from `view`**, so a successful
+refill takes the button away for the life of the page without a refetch.
+`cardCount` is required rather than decoration: a `blocked` reading has
+`body IS NULL` and no `reading_cards` rows, so `hasBody` alone would admit it.
+`deletedAt` is deliberately **not** passed — `readingWithCards` already filtered it
+server-side, and hardcoding `null` would be this file asserting a fact it cannot
+observe.
 
 **Why the strip is refetched and not spliced:** `days` comes from
 `historyDays(db, user.id, HISTORY_DAY_LIMIT)` — a *limited* window — so removing one
@@ -234,16 +383,24 @@ limited (H12).
   specifier in a `'use client'` file and its regex does not know the `type` keyword.
 - `@/lib/history/swipe` — `REVEAL_WIDTH`, `SwipeDrag`, `beginDrag`, `advanceDrag`,
   `endDrag`.
-- `@/lib/history/dates` — `isHistoryDate`, `dayOffset`, `DAY_CHIP_LIMIT`.
+- `@/lib/history/dates` — `isHistoryDate`, `dayOffset` (also `reading.retried`'s
+  `age_days`), `DAY_CHIP_LIMIT`.
+- `@/lib/reading/retryable` — `isRetryable`. The predicate, shared with the route.
+- `@/lib/reading/choice` — `splitChoiceMarker`, `validateChoice`, for the refill
+  stream. The same two functions `Draw.tsx` uses.
+- `@/lib/chat/attachmentView` — `attachable`, now called on `view`.
+- `@/lib/i18n/locale` — `isLocale`, to narrow `x-reading-locale`.
+- `@/lib/moderation/types` — `RefusalPayload` (client-importable by design).
 - `@/lib/history/empty` — `emptyState`. The two-empty-states decision, tested
   without a DOM.
-- `@/lib/analytics/track.client` + `@/lib/analytics/localdate` — the four events and
-  the two headers. **Never `@/lib/analytics/track` in a client component.**
+- `@/lib/analytics/track.client` + `@/lib/analytics/localdate` — the four `history.*`
+  events, the refill's six reused ones, and the two headers. **Never `@/lib/analytics/track` in a client component.**
 - `@/lib/i18n/LocaleProvider` (`useT`), `@/lib/i18n/t` (`getT`, `getLocale`),
   `@/lib/i18n/format` (`formatLocalDate`, `formatTime`), `@/lib/i18n/resolve`.
 - `@/lib/storage` — `todayKey()`.
 - `@/data/{deck,readers,services}` — `cardById`, `readerById`, `serviceById`.
-- `@/components/{CardFace,ReadingView,ShareFooter,AccountButton,ChatButton,AttachReadingLink}`.
+- `@/components/{CardFace,ReadingView,ShareFooter,AccountButton,ChatButton,
+  AttachReadingLink,RefusalNotice}`.
 - Server-only, `[id]/page.tsx` alone: `@/lib/auth/server`, `@/lib/db/client`,
   `@/lib/db/queries/{history,profile,translations}`, `@/app/api/history/log`.
 
@@ -265,12 +422,14 @@ Its API counterparts are `GET /api/history`, `GET /api/history/days`
 `runtime = 'nodejs'`, 204 on success, 400 on a malformed uuid, 503 on a driver
 error, and idempotent by design — `softDeleteReading`'s return value is discarded
 precisely because the difference between "just deleted" and "already gone" is an
-oracle).
+oracle). Since Phase 4 it also calls **`POST /api/reading/retry/[id]`**
+(`runtime = 'nodejs'`, `maxDuration = 60` — it is a whole generation), which is
+`src/app/api/reading/**`'s to document.
 
 ## Analytics
 
-Four client-fired events (H11 — history routes carry no `withAnalytics` and are not
-rate limited): `history.viewed`, `history.filtered`, `history.item_opened` and, new
+Four `history.*` client-fired events (H11 — history routes carry no `withAnalytics`
+and are not rate limited): `history.viewed`, `history.filtered`, `history.item_opened` and, new
 in Phase 2, **`history.item_deleted`** with a seven-scalar prop shape —
 `reading_id`, `reader_id`, `service_id`, `age_days`, `had_share_link`,
 `question_length`, `via`. `EVENT_NAMES` moved 76 → 77.
@@ -279,6 +438,30 @@ in Phase 2, **`history.item_deleted`** with a seven-scalar prop shape —
 means **was ever public**, and that is the fact worth having here.
 `question_length` is a length and never the text — no free text in `events.props`,
 ever.
+
+**Phase 4 added ZERO event names.** The refill reuses six existing ones and widens
+one prop shape: `reading.retried` gained `surface: 'draw' | 'history'`, `reading_id`,
+`prior_status` (a literal union, because `events.ts` has no imports by rule) and
+`age_days`. `Draw.tsx`'s existing call site took the four props as the compile fix —
+`reading_id: null` and `prior_status: null` there, which are **not gaps**: a
+draw-screen retry mints an id that does not exist when the button is pressed, and
+there is no stored row to have had a status.
+
+- **`prior_status` IS THE ONE MEASUREMENT THIS FEATURE OWES ITSELF.** Retryability is
+  `body IS NULL`, so from the screen `aborted` (walked away) and `failed` (the stream
+  died) are indistinguishable — and they are different products.
+- **`attempt` MEANS SOMETHING SLIGHTLY DIFFERENT ON EACH SURFACE and that is written
+  down rather than normalised**: presses within one draw there, presses within one
+  page view here. Nothing persists it; group by `reading_id` for the true total.
+- The refill also fires `reading.completed` with `source: 'client'` on the **same
+  `reading_id`** as the server's copy — `reading.retried` with `surface: 'history'`
+  is what makes the second row on one id identifiable — plus
+  `reading.aborted { reason: 'user' }` on unmount or a second press,
+  `reading.failed`, `reading.rate_limited` and `auth.session_expired`.
+- **No `track()` on the refusal branch.** The server already emitted
+  `moderation.refused` with the source, the category and the confidence bucket; a
+  client copy would double every row in the one table whose counts decide whether the
+  gate is too tight.
 
 ## Concurrency
 
@@ -290,6 +473,12 @@ so `controller.signal.aborted` is checked before setting an error state.
 `viewedFired` is a ref, not state, because StrictMode double-invokes effects and
 `history.viewed` must fire once. `started` in `HistoryDetail` does the same job for
 a path where **each run is a model call**.
+
+The refill has its own `retryAbort` ref: a second press aborts the first, and an
+unmount-only effect (`[]`, deliberately) aborts on leaving the page — which is what
+turns the catch into `reading.aborted { reason: 'user' }` rather than a failure. The
+`scrollIntoView` effect is keyed on `retry.kind` and not on the payload, so a second
+refusal for the same reason does not re-scroll a page the querent has since moved.
 
 ## Error handling
 
@@ -322,23 +511,48 @@ transform must follow the finger exactly — and again under
   under the finger.
 - **An open tray swallows the next tap.** iOS's own rule: while a destructive
   control is exposed the row is not a link, it is a thing to put away.
-- **Phase 4's retry hint goes in the `unfinished` paragraph, as TEXT.** That
-  paragraph is inside the `<Link>` and inside the swipe surface, so an interactive
-  control there would swallow both the tap and the drag. One place to press stays
-  `/history/[id]`.
+- **The retry hint is in the `unfinished` paragraph as TEXT, and that is where it
+  stays.** That paragraph is inside the `<Link>` and inside the swipe surface, so an
+  interactive control there would swallow both the tap and the drag. `Coba ulang`
+  lives on `/history/[id]` and the list only says *"Open it to try again"* —
+  `history.item.unfinished` was amended in Phase 4 to say exactly that.
+- **Do not add `router.refresh()` to `HistoryDetail`, in any branch.** It looks like
+  the obvious way to make a refilled page consistent and it is the one change that
+  sets the translation effect against the refill *and* races the route's own
+  `defer()` write.
+- **Do not reorder the status branches.** The `403 + moderation_blocked` check above
+  `!res.ok`, and `404`/`409` before it, are load-bearing; each collapses into the
+  generic error if moved.
+- **`refillView` must never return `{ kind: 'original' }`.** It reads as "the prose is
+  fine as it is" and `resolveProse` treats it as an omitted prop, which is rule 4
+  breached through the function written to hold it.
 - The delete copy says neither *"permanen"* nor offers a restore: the row is kept for
   the operator, so "permanent" would be false, and there is no restore UI, so
   offering one would be worse. *"from here"* is the precise, honest sentence.
 
 ## Notes
 
-**Phase 2 of 4.** Phase 1 (`P1-DB-A000`, committed `3c7801e`) landed
-`readings.deleted_at` / `reading_cards.deleted_at`, `softDeleteReading`, sixteen read
-filters and the `DELETE` route — its documentation is
-`src/lib/db/.workflows/package_readme.md` and is not this package's to maintain.
-Phases 3 and 4 (retry) are not yet done and will touch `HistoryItemRow`'s
-`unfinished` branch and `/history/[id]`.
+**THE PLAN SET IS COMPLETE — Phase 4 of 4 (`P1-AH-A001`).** Phase 1
+(`P1-DB-A000`, committed `3c7801e`) landed `readings.deleted_at` /
+`reading_cards.deleted_at`, `softDeleteReading`, sixteen read filters and the
+`DELETE` route; Phase 2 the swipe gesture; Phase 3 the retry predicate, the writer
+and `POST /api/reading/retry/[id]`. The first and third live in
+`src/lib/db/.workflows/package_readme.md` and `src/app/api/**` and are not this
+package's to maintain.
 
-Open, carried from V6: the question is rendered in the list and a history list gets
-scrolled in public (V6 open question 1); the swipe and the sheet are unmeasured on a
-real phone, which is loop 6 and the only loop that can answer a gesture on glass.
+**Still open, and none of it should be read as done:**
+
+- **Phase 3's 200 path is unmeasured live** — the local LLM key is expired — so
+  **`x-reading-locale` has never been observed on the wire.** The `isLocale()`
+  fallback to `reading.locale` is what makes that survivable, not verified.
+- **Loop 4 has not been run** for the width of `history.retry.otherLanguage` at
+  320/360/390.
+- **Loop 6 (a real iPhone) has not been run**, and it owns four questions this
+  package cannot answer from WSL: the 44px button on glass, thumb reach at the bottom
+  of a long scroll, whether the pulsing `.waiting` label reads as progress or as a
+  hang on a cold Neon compute, and where the refusal's `scrollIntoView` actually
+  lands.
+- Carried from V6 and Phase 2: the question is rendered in the list and a history
+  list gets scrolled in public (V6 open question 1); the swipe and the confirm sheet
+  are unmeasured on a real phone — the same loop 6, the only one that can answer a
+  gesture on glass.

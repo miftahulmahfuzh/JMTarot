@@ -363,9 +363,16 @@ function groupCards<T extends { readingId: string } & HistoryCard>(
  * them toward the frequency verdict, and a History that hides a draw the
  * frequency feature counted makes two features disagree about the same past --
  * which is precisely the class of failure the memory workstream exists to avoid.
- * They render with a "this reading did not finish" line and no retry (VD14).
+ * They render with a "this reading did not finish" line that, since 2026-08-28,
+ * also offers a REFILL -- `/history/[id]`'s `Coba ulang`, which regenerates prose
+ * in place over the stored hand. **THAT IS A NARROW AMENDMENT TO VD14 AND NOT A
+ * REVERSAL:** VD14's argument is that a regeneration would make the querent's
+ * memory of the reading and the app's disagree, and a row with `body IS NULL` has
+ * no remembered text for anything to disagree with. Retryability is `body IS NULL`
+ * and NEVER a status list -- see `src/lib/reading/retryable.ts`.
  * `partial` is shown as normal: it has real prose, and the `[Bacaan terputus…]`
- * notice deliberately never reached `readings.body`.
+ * notice deliberately never reached `readings.body` -- so it is also never
+ * retryable.
  *
  * NO `body` AND NO `gist` IN THE SELECT -- `hasBody` is computed in SQL. See
  * `HistoryItem`'s header.
