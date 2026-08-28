@@ -436,6 +436,11 @@ export async function ownsShareableReading(
         eq(readings.userId, userId),
         eq(readings.status, 'ok'),
         sql`${readings.body} is not null`,
+        /* A deleted reading is not shareable. Minting one would hand out a fresh
+           public URL for something the querent asked to be rid of -- the exact
+           failure the delete transaction revokes links to prevent, arriving from
+           the other direction. */
+        isNull(readings.deletedAt),
       ),
     )
     .limit(1);
@@ -493,6 +498,10 @@ export async function shareableReadingSource(
         eq(readings.userId, userId),
         eq(readings.status, 'ok'),
         sql`${readings.body} is not null`,
+        /* `ownsShareableReading`'s predicate, kept identical on purpose: these two
+           answer the same eligibility question and a mint that passed one and
+           failed the other would translate prose it then refused to publish. */
+        isNull(readings.deletedAt),
       ),
     )
     .limit(1);
@@ -562,6 +571,15 @@ export function publicReadingQuery(
         eq(readings.id, readingId),
         eq(readings.status, 'ok'),
         sql`${readings.body} is not null`,
+        /*
+         * **THE THIRD ENFORCEMENT, AND THE ONE WITH NO SESSION BEHIND IT.**
+         * `softDeleteReading` revokes every live link in the same transaction, so
+         * a stranger's request should already fail at the slug. This is what
+         * protects against the transaction having half-run in some future edit, or
+         * against a link minted by a path that forgot 8a -- the same argument this
+         * header already makes for `status = 'ok'` being checked twice.
+         */
+        isNull(readings.deletedAt),
       ),
     )
     .limit(1);

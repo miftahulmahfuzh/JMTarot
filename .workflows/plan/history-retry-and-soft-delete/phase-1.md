@@ -1,0 +1,2100 @@
+# Phase 1: Soft delete — schema, read filters, delete route
+
+**Plan set:** `HISTORY_RETRY_AND_SOFT_DELETE_PLAN.md`
+**Analysis:** `20260828-145716-GEV5_code_analyzer.md`
+**Depends on:** none
+**Difficulty:** HARD
+**Package:** `src/lib/db` (+ `src/app/api/history`)
+
+---
+
+## Goal
+
+After this phase a reading can be marked deleted, and every read a querent or a stranger can
+reach refuses to return it — enforced by a `WHERE` predicate in SQL and never by a filter in
+JavaScript. `DELETE /api/history/<id>` exists, is idempotent, revokes every live share link for
+the reading in the same transaction, and clears any day summary whose prose was written about
+it. Nothing in the UI calls it yet, so the app behaves exactly as it does today.
+
+---
+
+## Interface Contract
+
+The reconciler reads this section to detect cross-phase conflicts.
+
+**Deletes:** none.
+
+**Renames:** none.
+
+**Creates:**
+
+- Column `readings.deleted_at timestamptz null` (`src/lib/db/schema.ts`, in the `readings`
+  table, between `sharedAt` and `createdAt`).
+- Column `reading_cards.deleted_at timestamptz null` (`src/lib/db/schema.ts`, in the
+  `reading_cards` table, between `localDate` and `createdAt`).
+- **No new index.** Argued in Step 1.
+- Migration `src/lib/db/migrations/0016_v14-readings-soft-delete.sql` + its `meta/_journal.json`
+  entry (`idx: 16`) + `meta/0016_snapshot.json`.
+- `softDeleteReading` (`src/lib/db/queries/history.ts`, appended at the end of the file):
+
+  ```ts
+  export type SoftDeleteOutcome = {
+    deleted: boolean;
+    cardsMarked: number;
+    linksRevoked: number;
+    summariesCleared: number;
+  };
+
+  export async function softDeleteReading(
+    db: DbOrTx,
+    userId: string,
+    readingId: string,
+  ): Promise<SoftDeleteOutcome>;
+  ```
+
+- `clearDaySummaries` (`src/lib/db/queries/summary.ts`, appended at the end of the file):
+
+  ```ts
+  export async function clearDaySummaries(
+    db: DbOrTx,
+    userId: string,
+    localDate: string,
+    readingId: string,
+  ): Promise<number>;
+  ```
+
+- `src/app/api/history/[id]/route.ts` — **`DELETE` only**, no other verb.
+  `export const runtime = 'nodejs'`, `export const maxDuration = 20`.
+
+  | Outcome | Status | Body |
+  |---|---|---|
+  | deleted now, already deleted, not yours, does not exist | **204** | none |
+  | `id` is not a uuid | **400** | `{ "error": "bad id" }` |
+  | no session | **401** | `{ "error": "Unauthorized" }` (from `requireUser()`) |
+  | onboarding incomplete | **403** | `{ "error": "Onboarding required" }` (from `requireUser()`) |
+  | driver error | **503** | `{ "error": "unavailable" }` |
+
+  **The 204 carries no body and never will.** A JSON body distinguishing "deleted" from
+  "already gone" is the existence oracle `readingWithCards` exists to prevent.
+
+- `src/lib/db/queries/history.softDelete.integration.test.ts` (new).
+- `src/app/api/history/[id]/route.contract.test.ts` (new, unit project, source-level).
+
+**Signature changes:**
+
+- `logHistoryFailure(surface: 'list' | 'days' | 'detail', err)` ->
+  `logHistoryFailure(surface: 'list' | 'days' | 'detail' | 'delete' | 'retry', err)`
+  (`src/app/api/history/log.ts:22` — **the signature is on line 22, not 26**; verified against
+  the tree at `8931a09`). Widening only; no caller breaks.
+
+  **RECONCILED: THIS PHASE LANDS THE WHOLE UNION, INCLUDING `'retry'`, WHICH IS PHASE 3'S
+  SURFACE.** Both phases planned to widen the same line, and one line with two owners is how a
+  merge silently drops one of them. The earlier phase takes the edit (the reconciler's
+  one-owner rule), so Phase 3 makes **no change to `log.ts` at all** and simply calls
+  `logHistoryFailure('retry', err)` against a union that already admits it. A union member with
+  no caller compiles and is not dead code for one phase: it is a declaration that the file has
+  five surfaces, which is what stops the sixth arriving without one.
+
+**The filter predicate, exactly, everywhere:**
+
+- On `readings`: `isNull(readings.deletedAt)`
+- On `reading_cards`: `isNull(readingCards.deletedAt)`
+
+added as one more argument to the existing `and(...)` in each `where`. No `exists` sub-select
+anywhere, and none on `reading_cards` in particular — see Step 1.
+
+**Reads that gain the predicate (11 functions, 5 files):**
+
+| Function | File |
+|---|---|
+| `recentReadings` | `queries/history.ts` |
+| `readingsOnLocalDate` | `queries/history.ts` |
+| `recallableReadings` | `queries/history.ts` |
+| `readingsForDay` | `queries/history.ts` |
+| `historyDays` | `queries/history.ts` |
+| `readingWithCards` | `queries/history.ts` |
+| `cardCounts` | `queries/frequency.ts` |
+| `readingsInWindow` | `queries/frequency.ts` |
+| `readingsOnDay` | `queries/summary.ts` |
+| `ownsShareableReading` | `queries/share.ts` |
+| `shareableReadingSource` | `queries/share.ts` |
+| `publicReadingQuery` | `queries/share.ts` |
+| `readingCountAllTime` | `queries/allTime.ts` |
+| `topCardAllTime` | `queries/allTime.ts` |
+| `topReaderAllTime` | `queries/allTime.ts` |
+| `recentReadingIds` | `queries/allTime.ts` |
+
+(16 rows; the phase scope named 11 by name and left four `allTime` reads plus `readingsOnDay`
+as decisions. Both decisions are **yes** — see Step 6 and Step 7.)
+
+**Reads that deliberately do NOT gain it:** everything under `src/lib/db/queries/admin/**`. The
+operator's panels count what happened, and a deletion is a thing that happened;
+`/admin/users/[id]` shows counts and no text (`[R15]`), so no question text is exposed.
+
+**Requires (from earlier phases):** nothing.
+
+**Leaves alone (owned by others):**
+
+- `src/app/history/**` and every React component (Phase 2, Phase 4)
+- `src/lib/i18n/locales/{id,en}.ts` (Phase 2, Phase 4)
+- `src/lib/analytics/events.ts` — **no event is added or fired in this phase, on the server or
+  anywhere else.** `EVENT_NAMES` stays at 76.
+- `src/app/api/reading/**`, `src/lib/analytics/flush.ts`, `src/lib/reading/retryable.ts`
+  (Phase 3)
+- `src/lib/history/types.ts` — `HistoryItem` and `ReadingDetail` gain **no field**. A deleted
+  reading never reaches a client, so there is nothing to render about it.
+- `src/lib/db/queries/history.ts:323`'s stale VD14 comment (Phase 4 owns that edit)
+- `docs/**`, `CLAUDE.md` (Phase 4)
+
+---
+
+## Files
+
+| File | Action | What changes |
+|---|---|---|
+| `src/lib/db/schema.ts` | modify | `readings.deletedAt` after `:421`; `reading_cards.deletedAt` after `:460` |
+| `src/lib/db/migrations/0016_v14-readings-soft-delete.sql` | create | generated, two `ADD COLUMN`s |
+| `src/lib/db/migrations/meta/_journal.json` | modify | generated, `idx: 16` |
+| `src/lib/db/migrations/meta/0016_snapshot.json` | create | generated |
+| `src/lib/db/queries/history.ts` | modify | `:5` import, `:15` two new imports, six `where`s, `softDeleteReading` appended at `:532` |
+| `src/lib/db/queries/frequency.ts` | modify | `:14` import, `cardCounts` `:88`, `readingsInWindow` `:126` |
+| `src/lib/db/queries/summary.ts` | modify | `:7` import, `readingsOnDay` `:123`, `clearDaySummaries` appended at `:177` |
+| `src/lib/db/queries/share.ts` | modify | `ownsShareableReading` `:434`, `shareableReadingSource` `:487`, `publicReadingQuery` `:566` |
+| `src/lib/db/queries/allTime.ts` | modify | `:36` import, four `where`s at `:77`, `:101`, `:125`, `:164` |
+| `src/app/api/history/log.ts` | modify | `:22` widen the `surface` union to all **five** values (`'retry'` included, for Phase 3), and two paragraphs in the header |
+| `src/app/api/history/[id]/route.ts` | create | the `DELETE` handler |
+| `src/lib/db/queries/history.softDelete.integration.test.ts` | create | the proofs |
+| `src/app/api/history/[id]/route.contract.test.ts` | create | the source-level guards |
+
+**How to read the steps below.** Every edit to an existing file is given as an exact
+`FIND` / `REPLACE` pair against the tree at `8931a09` — the text is unique in its file unless
+noted, so it can be applied literally. Every new file is given in full.
+
+---
+
+## Implementation Steps
+
+### Step 1: The schema delta
+
+**File:** `src/lib/db/schema.ts:421` and `src/lib/db/schema.ts:460`
+
+**Change:** two nullable `timestamptz` columns, no index.
+
+**Why `reading_cards` carries the column too, denormalized.** `cardCounts`
+(`queries/frequency.ts:78`) and `readingsInWindow` (`:119`) select from `readingCards` with **no
+join to `readings`**, filtered on the denormalized `readingCards.userId` and
+`readingCards.localDate`. That file's header defends it as a measured single-table plan —
+*"a bitmap index scan with both date bounds in the `Index Cond`… 0.12ms"* over 45,000 card rows.
+An `exists (select 1 from readings …)` sub-select there would replace the scan with a
+semi-join and undo the measurement. The column joins `user_id` and `local_date` as the third
+thing copied from the parent reading in the same transaction, for exactly the reason those two
+are there.
+
+**Why no index.** Deleted readings are rare by construction, so `deleted_at is null` is a
+predicate that eliminates almost nothing and would be evaluated as a filter after the index scan
+either way. On `readings` the two existing indexes still serve every query and the filter is
+applied to rows already fetched. On `reading_cards`, `reading_cards_user_date_card_idx` is
+already an index **scan** rather than index-only — `cardCounts`'s
+`filter (where reversed)` references a column the index does not carry, so the heap fetch is
+already paid and `deleted_at` rides along on the same tuple for free. A partial index
+(`where deleted_at is null`) would be write amplification on the hottest write table in the
+schema to save nothing measurable, which is exactly the trade `allTime.ts`'s header and
+`schema.ts:471-482` both refuse. **Reach for one only if `explain` on a real dataset shows a
+row-estimate error caused by the new predicate** — and measure before, per `historyDays`'s
+header, which is in the file because the last plan claim in this area was wrong.
+
+**Code — `readings`, inserting between `sharedAt` and `createdAt`:**
+
+FIND (`schema.ts:421-422`):
+
+```ts
+    sharedAt: tsCol('shared_at'),
+    createdAt: tsCol('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    index('readings_user_created_idx').on(t.userId, t.createdAt.desc()),
+```
+
+REPLACE:
+
+```ts
+    sharedAt: tsCol('shared_at'),
+    /**
+     * THE QUERENT ASKED FOR THIS READING TO GO. Null is the normal state.
+     *
+     * A SOFT DELETE AND THERE IS NO RESTORE. The row is kept for the operator —
+     * `/admin` counts what happened, and a deletion is a thing that happened —
+     * but from the querent's side it is final, and the copy must never imply a
+     * grace period. This is NOT `users.deleted_at`, which IS restorable for
+     * `ERASURE_GRACE_DAYS`; the two columns share a name and share nothing else.
+     *
+     * **THE MOTIVE IS EMBARRASSMENT, NOT DISK**, and every consequence follows
+     * from that. `readings.question` is text a person typed and may be the thing
+     * they want gone, so a delete that leaves it quotable by W5's chained reading,
+     * or readable at a live `/s/<slug>`, has deleted nothing. Hence
+     * `softDeleteReading` revokes every live share link in the same transaction
+     * and clears any day summary written about the reading, and hence sixteen
+     * reads across five query modules carry `deleted_at is null`.
+     *
+     * **NOT `notNull` WITH A DEFAULT, AND NEVER A BOOLEAN.** The timestamp is what
+     * lets a future retention sweep find rows old enough to erase for real, and a
+     * boolean would have to be joined to something else to answer "when".
+     */
+    deletedAt: tsCol('deleted_at'),
+    createdAt: tsCol('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    index('readings_user_created_idx').on(t.userId, t.createdAt.desc()),
+```
+
+**Code — `reading_cards`, inserting between `localDate` and `createdAt`:**
+
+FIND (`schema.ts:460-461`):
+
+```ts
+    localDate: dateCol('local_date').notNull(),
+    createdAt: tsCol('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    /**
+     * The FK Postgres does not index for you. Two things need it: W5's
+```
+
+REPLACE:
+
+```ts
+    localDate: dateCol('local_date').notNull(),
+    /**
+     * DENORMALIZED FROM `readings.deleted_at`, FOR `user_id` AND `local_date`'s
+     * REASON AND NOT FOR A NEW ONE.
+     *
+     * `cardCounts` and `readingsInWindow` in `queries/frequency.ts` read this
+     * table with NO JOIN to `readings` — that single-table plan is measured at
+     * 0.12ms over 45,000 rows and is the whole argument for the two columns above.
+     * Hiding a deleted reading's cards with an `exists (select 1 from readings …)`
+     * would replace that scan with a semi-join and undo the measurement, so the
+     * fact is copied instead.
+     *
+     * **WRITTEN ONLY BY `softDeleteReading`, IN THE SAME TRANSACTION AS THE
+     * PARENT'S, so the two can never disagree** — the same discipline
+     * `insertReading` applies to `user_id` and `local_date`. Nothing else may set
+     * it; a card row cannot be deleted independently of its reading.
+     */
+    deletedAt: tsCol('deleted_at'),
+    createdAt: tsCol('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    /**
+     * The FK Postgres does not index for you. Two things need it: W5's
+```
+
+**Impact:** additive only. Every existing query keeps working; nothing reads the column yet.
+
+---
+
+### Step 2: The migration
+
+**File:** `src/lib/db/migrations/0016_v14-readings-soft-delete.sql` (generated)
+
+**Change:** generate it — never hand-write it, and never `drizzle-kit push` (`README.md` rule 7).
+
+```sh
+export PATH=~/tools/node-v24.18.0-linux-x64/bin:$PATH
+npm run db:up
+npm run db:generate -- --name v14-readings-soft-delete
+npm run db:migrate
+```
+
+**Expected content of the generated `.sql`** (statement order is drizzle's and does not matter;
+if what it emits differs from this, the schema edit is wrong, not the migration):
+
+```sql
+ALTER TABLE "reading_cards" ADD COLUMN "deleted_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "readings" ADD COLUMN "deleted_at" timestamp with time zone;
+```
+
+**Commit `schema.ts`, the `.sql`, `meta/_journal.json` and `meta/0016_snapshot.json` in ONE
+commit** (`README.md` rule 4). The journal entry is `"idx": 16, "version": "7", "tag":
+"0016_v14-readings-soft-delete"`.
+
+**Two things not to do.** No down-migration dropping the columns — a destructive migration
+still deploys ahead of the code that tolerates it, which is what the 2026-07-28 outage was
+bought with. And no row inserts (`README.md` rule 8).
+
+**Impact:** production and the local container gain two nullable columns. `npm run build` on
+Vercel applies it before the code that reads it, which is the whole point of
+`scripts/db-migrate-deploy.ts`.
+
+---
+
+### Step 3: `queries/history.ts` — imports
+
+**File:** `src/lib/db/queries/history.ts:5` and `:15`
+
+FIND:
+
+```ts
+import { and, desc, eq, gte, inArray, isNotNull, ne, sql } from 'drizzle-orm';
+```
+
+REPLACE:
+
+```ts
+import { and, desc, eq, gte, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
+```
+
+FIND (`:9-15`):
+
+```ts
+import {
+  readingCards,
+  readings,
+  type NewReading,
+  type NewReadingCard,
+  type Reading,
+} from '../schema';
+```
+
+REPLACE:
+
+```ts
+import {
+  readingCards,
+  readings,
+  type NewReading,
+  type NewReadingCard,
+  type Reading,
+} from '../schema';
+/*
+ * **THE FIRST TIME A QUERY MODULE IMPORTS TWO OTHERS, AND IT IS DELIBERATE.**
+ * `softDeleteReading` at the foot of this file has to revoke the reading's share
+ * links and clear the day summaries written about it INSIDE ONE TRANSACTION, so
+ * that a failure in either aborts the delete rather than leaving a reading marked
+ * deleted with a live public URL. `src/lib/account/delete.ts` is the precedent in
+ * full — it imports `revokeAllForUser` from `queries/share.ts` for exactly this
+ * shape of reason and calls it in exactly this position.
+ *
+ * Both are safe imports: neither carries `server-only`, `react` or `next/*`, and
+ * `contract.test.ts`'s transitive walk now follows this file into both of them, so
+ * a future edit that dirties either one fails here as well as there.
+ */
+import { revokeArtifactLinks } from './share';
+import { clearDaySummaries } from './summary';
+```
+
+**Impact:** none at runtime.
+
+---
+
+### Step 4: `queries/history.ts` — the six read filters
+
+**File:** `src/lib/db/queries/history.ts`
+
+Each edit adds one line to an existing `and(...)`. No projection changes, no reordering.
+
+**4a. `recentReadings` (`:67-76`).** No caller today; filtered anyway, so that acquiring one
+cannot resurrect a deleted reading.
+
+FIND:
+
+```ts
+/** Most recent first. Served by `readings_user_created_idx`. */
+export async function recentReadings(
+  db: DbOrTx,
+  userId: string,
+  limit: number,
+): Promise<Reading[]> {
+  return db
+    .select()
+    .from(readings)
+    .where(eq(readings.userId, userId))
+    .orderBy(desc(readings.createdAt))
+    .limit(limit);
+}
+```
+
+REPLACE:
+
+```ts
+/**
+ * Most recent first. Served by `readings_user_created_idx`.
+ *
+ * NO CALLER TODAY, AND IT CARRIES `deleted_at is null` ANYWAY. A read with no
+ * surface is a read that will one day acquire one, and the person who wires it up
+ * will be thinking about the surface rather than about this predicate.
+ */
+export async function recentReadings(
+  db: DbOrTx,
+  userId: string,
+  limit: number,
+): Promise<Reading[]> {
+  return db
+    .select()
+    .from(readings)
+    .where(and(eq(readings.userId, userId), isNull(readings.deletedAt)))
+    .orderBy(desc(readings.createdAt))
+    .limit(limit);
+}
+```
+
+**4b. `readingsOnLocalDate` (`:88-97`).**
+
+FIND:
+
+```ts
+export async function readingsOnLocalDate(
+  db: DbOrTx,
+  userId: string,
+  localDate: string,
+): Promise<Reading[]> {
+  return db
+    .select()
+    .from(readings)
+    .where(and(eq(readings.userId, userId), eq(readings.localDate, localDate)))
+    .orderBy(readings.createdAt);
+}
+```
+
+REPLACE:
+
+```ts
+export async function readingsOnLocalDate(
+  db: DbOrTx,
+  userId: string,
+  localDate: string,
+): Promise<Reading[]> {
+  return db
+    .select()
+    .from(readings)
+    .where(
+      and(
+        eq(readings.userId, userId),
+        eq(readings.localDate, localDate),
+        /*
+         * NO CALLER TODAY EITHER — `summary.ts`'s `readingsOnDay` is what the day
+         * summary route actually uses — but the two ask the SAME question of the
+         * same table, and two day-shaped reads that disagree about a deleted
+         * reading is a bug waiting for its first caller. Both filter.
+         */
+        isNull(readings.deletedAt),
+      ),
+    )
+    .orderBy(readings.createdAt);
+}
+```
+
+**4c. `recallableReadings` (`:190-200`) — five filters become six.**
+
+FIND (the doc block's filter list, `:160-166`):
+
+```
+ *   - `id <> excludeReadingId`  the reading being written right now
+ *   - `local_date >= since`     the lookback. A callback to something five
+ *                               weeks old is not memory, it is surveillance.
+ *   - `body is not null`        a stream that died said nothing to refer back to
+ *   - `gist is not null`        the extraction failed, so there is no clause
+ *   - `status <> 'blocked'`     W7 refused the question; the reader never spoke
+```
+
+REPLACE:
+
+```
+ *   - `id <> excludeReadingId`  the reading being written right now
+ *   - `local_date >= since`     the lookback. A callback to something five
+ *                               weeks old is not memory, it is surveillance.
+ *   - `body is not null`        a stream that died said nothing to refer back to
+ *   - `gist is not null`        the extraction failed, so there is no clause
+ *   - `status <> 'blocked'`     W7 refused the question; the reader never spoke
+ *   - `deleted_at is null`      **THE SHARPEST OF THE SIX.** The querent deleted
+ *                               this reading, and the whole point of the control
+ *                               is that they were embarrassed by it. Recall is
+ *                               the one path that would quote it back at them
+ *                               inside a LATER reading's prompt — in a reader's
+ *                               voice, as if it had been said aloud again. The
+ *                               `gist` is model output rather than the raw
+ *                               question, which makes this LESS obvious and not
+ *                               less bad.
+```
+
+Also change the header's first line `FIVE FILTERS, each excluding a reading that would produce a
+bad callback:` to `SIX FILTERS, each excluding a reading that would produce a bad callback:`.
+
+FIND (the `where`):
+
+```ts
+      and(
+        eq(readings.userId, args.userId),
+        gte(readings.localDate, args.sinceLocalDate),
+        isNotNull(readings.body),
+        isNotNull(readings.gist),
+        ne(readings.status, 'blocked'),
+        args.excludeReadingId ? ne(readings.id, args.excludeReadingId) : undefined,
+      ),
+```
+
+REPLACE:
+
+```ts
+      and(
+        eq(readings.userId, args.userId),
+        gte(readings.localDate, args.sinceLocalDate),
+        isNotNull(readings.body),
+        isNotNull(readings.gist),
+        ne(readings.status, 'blocked'),
+        isNull(readings.deletedAt),
+        args.excludeReadingId ? ne(readings.id, args.excludeReadingId) : undefined,
+      ),
+```
+
+**4d. `readingsForDay` (`:356-362`).**
+
+FIND:
+
+```ts
+    .from(readings)
+    .where(
+      and(
+        eq(readings.userId, userId),
+        eq(readings.localDate, localDate),
+        ne(readings.status, 'blocked'),
+      ),
+    )
+    .orderBy(desc(readings.createdAt), desc(readings.id));
+```
+
+REPLACE:
+
+```ts
+    .from(readings)
+    .where(
+      and(
+        eq(readings.userId, userId),
+        eq(readings.localDate, localDate),
+        ne(readings.status, 'blocked'),
+        /*
+         * TWO FILTERS NOW, AND THEY ARE NOT THE SAME KIND OF THING. `blocked` is
+         * ours — W7 refused the question and the reader never spoke. This one is
+         * the querent's: they asked for this reading to go, and this list is the
+         * screen they asked from. It is also the ONLY filter here whose omission
+         * would be visible to them within seconds.
+         */
+        isNull(readings.deletedAt),
+      ),
+    )
+    .orderBy(desc(readings.createdAt), desc(readings.id));
+```
+
+**4e. `historyDays` (`:468`).** The strip must match the list exactly, or a chip leads to an
+empty day.
+
+FIND:
+
+```ts
+    .where(and(eq(readings.userId, userId), ne(readings.status, 'blocked')))
+    .orderBy(desc(readings.localDate))
+```
+
+REPLACE:
+
+```ts
+    /*
+     * THE SAME PAIR OF FILTERS AS `readingsForDay`, AND THE PAIR MUST STAY
+     * IDENTICAL. The header already says so for `blocked`: a chip that leads to
+     * the empty state is worse than no chip. Deleting the last reading of a day
+     * has to take the day's chip with it.
+     */
+    .where(
+      and(
+        eq(readings.userId, userId),
+        ne(readings.status, 'blocked'),
+        isNull(readings.deletedAt),
+      ),
+    )
+    .orderBy(desc(readings.localDate))
+```
+
+**4f. `readingWithCards` (`:495-500`).** This one covers four surfaces at once: `/history/[id]`,
+`GET /api/chat/messages`'s attachment previews, `/chat?attach=`, and the attachment block that
+enters the chat prompt.
+
+FIND:
+
+```ts
+    .where(
+      and(
+        eq(readings.id, readingId),
+        eq(readings.userId, userId),
+        ne(readings.status, 'blocked'),
+      ),
+    )
+    .limit(1);
+  if (!row) return null;
+```
+
+REPLACE:
+
+```ts
+    .where(
+      and(
+        eq(readings.id, readingId),
+        eq(readings.userId, userId),
+        ne(readings.status, 'blocked'),
+        /*
+         * **NULL NOW COVERS FOUR THINGS, NOT THREE** — "does not exist", "belongs
+         * to someone else", "was blocked", "was deleted" — and every caller must
+         * keep collapsing all four into the same 404. A distinguishable "you
+         * deleted this" is the existence oracle this function's header refuses,
+         * wearing a friendlier label.
+         *
+         * ONE PREDICATE, FOUR SURFACES. Besides `/history/[id]`, this function is
+         * what `GET /api/chat/messages`, `/chat?attach=` and `chat/context.ts`'s
+         * prompt block all go through, so a deleted reading stops being quotable
+         * in the room by the same line. `chat_messages.attached_reading_id` is
+         * `on delete set null` and F6 already renders a missing attachment; a
+         * deleted one presents identically.
+         */
+        isNull(readings.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!row) return null;
+```
+
+**Impact:** a reading with `deleted_at` set disappears from the list, the strip, the detail
+page, all three chat attachment paths and W5 recall. Nothing sets the column yet, so behaviour
+is unchanged until Step 8.
+
+---
+
+### Step 5: `queries/frequency.ts` — the two single-table scans
+
+**File:** `src/lib/db/queries/frequency.ts:14`, `:88`, `:126`
+
+FIND (`:14`):
+
+```ts
+import { and, between, count, eq, inArray, sql } from 'drizzle-orm';
+```
+
+REPLACE:
+
+```ts
+import { and, between, count, eq, inArray, isNull, sql } from 'drizzle-orm';
+```
+
+**5a. `cardCounts`.**
+
+FIND:
+
+```ts
+      lastSeen: sql<string>`max(${readingCards.localDate})`,
+    })
+    .from(readingCards)
+    .where(
+      and(eq(readingCards.userId, userId), between(readingCards.localDate, since, until)),
+    )
+    .groupBy(readingCards.cardId)
+```
+
+REPLACE:
+
+```ts
+      lastSeen: sql<string>`max(${readingCards.localDate})`,
+    })
+    .from(readingCards)
+    .where(
+      and(
+        eq(readingCards.userId, userId),
+        between(readingCards.localDate, since, until),
+        /*
+         * **THE DENORMALIZED COLUMN, NOT A JOIN, AND NOT AN `exists`.** This scan
+         * is the 0.12ms plan the header defends and it touches `readings` nowhere;
+         * a sub-select to find out whether the parent was deleted would replace it
+         * with a semi-join for a predicate that eliminates almost nothing.
+         * `softDeleteReading` writes both columns in one transaction, which is what
+         * makes reading the copy here correct.
+         */
+        isNull(readingCards.deletedAt),
+      ),
+    )
+    .groupBy(readingCards.cardId)
+```
+
+**5b. `readingsInWindow`.**
+
+FIND:
+
+```ts
+    .select({ n: sql<number>`count(distinct ${readingCards.readingId})` })
+    .from(readingCards)
+    .where(
+      and(eq(readingCards.userId, userId), between(readingCards.localDate, since, until)),
+    );
+```
+
+REPLACE:
+
+```ts
+    .select({ n: sql<number>`count(distinct ${readingCards.readingId})` })
+    .from(readingCards)
+    /* THE SAME PREDICATE AS `cardCounts`, so the same index serves it and so the
+       gate's denominator cannot disagree with the numerator it gates. */
+    .where(
+      and(
+        eq(readingCards.userId, userId),
+        between(readingCards.localDate, since, until),
+        isNull(readingCards.deletedAt),
+      ),
+    );
+```
+
+Also amend `cardCounts`'s header paragraph on R7 so it does not read as licence to count a
+deleted reading's cards. FIND:
+
+```
+ * Reconciliation R7: failed and aborted readings DO count -- the querent drew
+ * those cards, and the verdict is about what the deck keeps giving them, not
+ * about whether the model finished a sentence. No filter is needed for that,
+ * because `blocked` readings write no card rows at all.
+```
+
+(exactly one occurrence in the file, inside `cardCounts`'s doc comment — verified with
+`grep -c`)
+
+REPLACE:
+
+```
+ * Reconciliation R7: failed and aborted readings DO count -- the querent drew
+ * those cards, and the verdict is about what the deck keeps giving them, not
+ * about whether the model finished a sentence. No filter is needed for that,
+ * because `blocked` readings write no card rows at all.
+ *
+ * A SOFT-DELETED READING'S CARDS DO NOT COUNT, AND THAT IS NOT AN EXCEPTION TO
+ * R7. R7 is about a reading the querent TOOK and the app failed to finish; this
+ * is about a reading the querent asked to be rid of. The verdict is prose about
+ * their pattern, and building it out of a draw they deleted is the feature
+ * failing at the one thing the delete control promises.
+ *
+ * NOTHING HAS TO INVALIDATE THE CACHED VERDICT: `fingerprintOf` is computed over
+ * the window's reading count and the ranked counts, both of which move when a
+ * reading leaves, so `frequency_verdicts` self-invalidates on the next read.
+```
+
+**Impact:** a deleted reading stops feeding the frequency verdict, and the cached verdict
+regenerates by itself the next time the panel is opened.
+
+---
+
+### Step 6: `queries/summary.ts` — `readingsOnDay` (**decision: YES, it filters**) and
+`clearDaySummaries`
+
+**File:** `src/lib/db/queries/summary.ts:7`, `:123`, and appended at `:177`
+
+**The decision, stated on the function.** `readingsOnDay` filters deleted readings out. Its
+header currently argues the opposite for a different question and that argument is preserved,
+because it is still right about `failed`/`aborted`: *"a day summary is a COUNT and a shape of
+the day… true whether or not the third reading finished."* A deletion is not a reading that
+failed to finish; it is a reading the querent asked to be rid of, and the summary is **prose a
+reader writes about their day** — the one artifact in the app that would go on describing it
+afterwards. Writing about a reading somebody just deleted is the feature failing, in a reader's
+voice, on the reader picker.
+
+FIND (`:7`):
+
+```ts
+import { and, eq, inArray, sql } from 'drizzle-orm';
+```
+
+REPLACE:
+
+```ts
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+```
+
+FIND (`:122-124`):
+
+```ts
+    .from(readings)
+    .where(and(eq(readings.userId, userId), eq(readings.localDate, localDate)))
+    .orderBy(readings.createdAt, readings.id);
+```
+
+REPLACE:
+
+```ts
+    .from(readings)
+    .where(
+      and(
+        eq(readings.userId, userId),
+        eq(readings.localDate, localDate),
+        /*
+         * **THE ONE FILTER, AND IT DOES NOT CONTRADICT THE "NO FILTERS" HEADER
+         * BELOW — IT IS A DIFFERENT QUESTION.** That paragraph is about `failed`
+         * and `aborted`: "you drew three times today" is true whether or not the
+         * third one finished, and dropping it would make the summary disagree with
+         * what the querent remembers doing. This is the opposite case. A deleted
+         * reading is one the querent has asked not to remember, and this row is
+         * PROSE A READER WRITES ABOUT THEIR DAY — the only generated artifact that
+         * would keep describing it. `softDeleteReading` additionally DELETES any
+         * stored summary that named this reading, because `isStale` detects a new
+         * id and not a removed one, so the filter alone would leave yesterday's
+         * paragraph standing.
+         */
+        isNull(readings.deletedAt),
+      ),
+    )
+    .orderBy(readings.createdAt, readings.id);
+```
+
+**Append at the end of the file (`:177`):**
+
+```ts
+/**
+ * Delete every cached day summary that was written ABOUT this reading.
+ *
+ * **BECAUSE `isStale` CANNOT SEE A REMOVAL.** `src/lib/memory/summary.ts:63`
+ * fires on a prompt-version bump or on an id it has not seen; a source reading
+ * that has GONE leaves `hasNew` false and the stored paragraph is served
+ * unchanged, for ever. So filtering `readingsOnDay` is necessary and not
+ * sufficient: without this, a querent deletes an embarrassing reading and the
+ * reader keeps recounting their day with it in.
+ *
+ * **KEYED ON THE SOURCE LIST, NOT ON THE DAY.** `$1 = any(source_reading_ids)`
+ * clears only the rows that actually named this reading — a summary generated
+ * before the reading was taken never mentioned it and is still true. All readers
+ * and all locales, because the row is keyed by reader for the VOICE and by locale
+ * for the language, and neither changes what happened.
+ *
+ * **A DELETE, NOT A FLAG.** This is a read-through cache; the next visit
+ * regenerates it from what is left, which is `putDailySummary`'s ordinary
+ * first-write path. The one cost is that `generation_count` restarts at 0 for
+ * that day, so the "is the throttle set right?" query undercounts by however many
+ * regenerations preceded a delete. Recorded rather than worked around: a
+ * counter's accuracy is not worth carrying a tombstone for.
+ *
+ * `${readingId}::uuid` IS CAST EXPLICITLY, `queries/admin/users.ts`'s pattern. A
+ * bare parameter is sent untyped by postgres.js and `unknown = any(uuid[])` is
+ * one planner decision away from an error nobody expected.
+ */
+export async function clearDaySummaries(
+  db: DbOrTx,
+  userId: string,
+  localDate: string,
+  readingId: string,
+): Promise<number> {
+  const rows = await db
+    .delete(dailySummaries)
+    .where(
+      and(
+        eq(dailySummaries.userId, userId),
+        eq(dailySummaries.localDate, localDate),
+        sql`${readingId}::uuid = any(${dailySummaries.sourceReadingIds})`,
+      ),
+    )
+    .returning({ id: dailySummaries.id });
+  return rows.length;
+}
+```
+
+**Impact:** the day summary stops mentioning a deleted reading, immediately and not on the next
+throttle window.
+
+---
+
+### Step 7: `queries/allTime.ts` — the four `/account` reads (**decision: YES, they filter**)
+
+**File:** `src/lib/db/queries/allTime.ts:36`, `:77`, `:101`, `:125`, `:164`
+
+**The decision, stated on the file.** All four filter. `/account` is the querent's own view of
+themselves — the card that keeps arriving, the reader whose path opened, the count, and the
+persona hash. Counting a reading they deleted makes the page a record of a past they asked the
+app to stop keeping, on the screen where they went to control exactly that. The file's existing
+"A SOFT-DELETED USER'S ROWS ARE NOT EXCLUDED" paragraph is about `users.deleted_at` and is
+untouched; the two are unrelated columns and the header has to say so, because a reader who
+conflates them will delete the wrong filter.
+
+`recentReadingIds` filtering has a deliberate second effect: it moves `personaInputHash`, so
+deleting a reading makes the persona regenerate on the next `/account` view rather than
+continuing to be prose derived from a draw that is gone. That is the same mechanism an ordinary
+new reading uses and needs no new code.
+
+FIND (`:22-33`, the header paragraph):
+
+```
+ * A SOFT-DELETED USER'S ROWS ARE NOT EXCLUDED. The account is restorable for
+ * `ERASURE_GRACE_DAYS`, so filtering here would make this page lie during the
+ * grace window while every other query in the app still returned the rows.
+```
+
+REPLACE:
+
+```
+ * A SOFT-DELETED USER'S ROWS ARE NOT EXCLUDED. The account is restorable for
+ * `ERASURE_GRACE_DAYS`, so filtering here would make this page lie during the
+ * grace window while every other query in the app still returned the rows.
+ *
+ * **A SOFT-DELETED READING IS EXCLUDED, AND THAT IS THE OPPOSITE CALL ON A
+ * DIFFERENT COLUMN. THE TWO ARE NOT RELATED AND MUST NOT BE "MADE CONSISTENT".**
+ * `users.deleted_at` is restorable and belongs to an account that is on its way
+ * out; `readings.deleted_at` is FINAL and belongs to a reading a querent asked to
+ * be rid of, on this very page's neighbour screen. All four reads below carry
+ * `deleted_at is null`. `recentReadingIds` filtering is what moves
+ * `personaInputHash` after a delete, so the persona regenerates on the next visit
+ * instead of staying prose about a draw that is gone — the ordinary mechanism, no
+ * new code.
+```
+
+**7a. `readingCountAllTime` (`:73-82`).**
+
+FIND:
+
+```ts
+/** Every reading ever, whatever its status. */
+export async function readingCountAllTime(db: DbOrTx, userId: string): Promise<number> {
+  if (!UUID_RE.test(userId)) return 0;
+  const [row] = await db
+    .select({ n: count() })
+    .from(readings)
+    .where(eq(readings.userId, userId));
+```
+
+REPLACE:
+
+```ts
+/** Every reading ever, whatever its status — except the ones they deleted. */
+export async function readingCountAllTime(db: DbOrTx, userId: string): Promise<number> {
+  if (!UUID_RE.test(userId)) return 0;
+  const [row] = await db
+    .select({ n: count() })
+    .from(readings)
+    .where(and(eq(readings.userId, userId), isNull(readings.deletedAt)));
+```
+
+**7b. `topCardAllTime` (`:101`).**
+
+FIND:
+
+```ts
+    .from(readingCards)
+    .where(eq(readingCards.userId, userId))
+    .groupBy(readingCards.cardId)
+```
+
+REPLACE:
+
+```ts
+    .from(readingCards)
+    /* The denormalized column, for `cardCounts`'s reason: this is the
+       leading-column-only case of `reading_cards_user_date_card_idx` and joining
+       `readings` to find the parent's state would give up that plan. */
+    .where(and(eq(readingCards.userId, userId), isNull(readingCards.deletedAt)))
+    .groupBy(readingCards.cardId)
+```
+
+**7c. `topReaderAllTime` (`:125`).**
+
+FIND:
+
+```ts
+    .select({ readerId: readings.readerId, count: count() })
+    .from(readings)
+    .where(eq(readings.userId, userId))
+    .groupBy(readings.readerId)
+```
+
+REPLACE:
+
+```ts
+    .select({ readerId: readings.readerId, count: count() })
+    .from(readings)
+    .where(and(eq(readings.userId, userId), isNull(readings.deletedAt)))
+    .groupBy(readings.readerId)
+```
+
+**7d. `recentReadingIds` (`:164`).**
+
+FIND:
+
+```ts
+    .select({ id: readings.id })
+    .from(readings)
+    .where(and(eq(readings.userId, userId)))
+    .orderBy(sql`${readings.createdAt} desc`, sql`${readings.id} desc`)
+```
+
+REPLACE:
+
+```ts
+    .select({ id: readings.id })
+    .from(readings)
+    /* The redundant-looking `and()` was already here; the second argument is what
+       makes a delete move the hash, which is what regenerates the persona. */
+    .where(and(eq(readings.userId, userId), isNull(readings.deletedAt)))
+    .orderBy(sql`${readings.createdAt} desc`, sql`${readings.id} desc`)
+```
+
+FIND (`:36`):
+
+```ts
+import { and, count, eq, sql } from 'drizzle-orm';
+```
+
+REPLACE:
+
+```ts
+import { and, count, eq, isNull, sql } from 'drizzle-orm';
+```
+
+**Impact:** `/account`'s three tallies and the persona hash stop counting deleted readings.
+
+---
+
+### Step 8: `queries/share.ts` — the three share reads
+
+**File:** `src/lib/db/queries/share.ts:434`, `:487`, `:566`. `isNull` is already imported.
+
+All three are a **belt to the revoke**, not the mechanism. `softDeleteReading` revokes every
+live link in the same transaction; these predicates are what protect against a link minted by
+some future code path that forgot, which is the argument `publicReadingQuery`'s own header
+already makes for its `status = 'ok'` clause.
+
+**8a. `ownsShareableReading`.**
+
+FIND:
+
+```ts
+    .from(readings)
+    .where(
+      and(
+        eq(readings.id, readingId),
+        eq(readings.userId, userId),
+        eq(readings.status, 'ok'),
+        sql`${readings.body} is not null`,
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
+```
+
+REPLACE:
+
+```ts
+    .from(readings)
+    .where(
+      and(
+        eq(readings.id, readingId),
+        eq(readings.userId, userId),
+        eq(readings.status, 'ok'),
+        sql`${readings.body} is not null`,
+        /* A deleted reading is not shareable. Minting one would hand out a fresh
+           public URL for something the querent asked to be rid of — the exact
+           failure the delete transaction revokes links to prevent, arriving from
+           the other direction. */
+        isNull(readings.deletedAt),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
+```
+
+**8b. `shareableReadingSource`.**
+
+FIND:
+
+```ts
+    .from(readings)
+    .where(
+      and(
+        eq(readings.id, readingId),
+        eq(readings.userId, userId),
+        eq(readings.status, 'ok'),
+        sql`${readings.body} is not null`,
+      ),
+    )
+    .limit(1);
+  if (!row || row.body === null) return null;
+```
+
+REPLACE:
+
+```ts
+    .from(readings)
+    .where(
+      and(
+        eq(readings.id, readingId),
+        eq(readings.userId, userId),
+        eq(readings.status, 'ok'),
+        sql`${readings.body} is not null`,
+        /* `ownsShareableReading`'s predicate, kept identical on purpose: these two
+           answer the same eligibility question and a mint that passed one and
+           failed the other would translate prose it then refused to publish. */
+        isNull(readings.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!row || row.body === null) return null;
+```
+
+**8c. `publicReadingQuery` — the one that faces the internet.**
+
+FIND:
+
+```ts
+    .leftJoin(profiles, eq(profiles.userId, readings.userId))
+    .where(
+      and(
+        eq(readings.id, readingId),
+        eq(readings.status, 'ok'),
+        sql`${readings.body} is not null`,
+      ),
+    )
+    .limit(1);
+```
+
+REPLACE:
+
+```ts
+    .leftJoin(profiles, eq(profiles.userId, readings.userId))
+    .where(
+      and(
+        eq(readings.id, readingId),
+        eq(readings.status, 'ok'),
+        sql`${readings.body} is not null`,
+        /*
+         * **THE THIRD ENFORCEMENT, AND THE ONE WITH NO SESSION BEHIND IT.**
+         * `softDeleteReading` revokes every live link in the same transaction, so
+         * a stranger's request should already fail at the slug. This is what
+         * protects against the transaction having half-run in some future edit, or
+         * against a link minted by a path that forgot 8a — the same argument this
+         * header already makes for `status = 'ok'` being checked twice.
+         */
+        isNull(readings.deletedAt),
+      ),
+    )
+    .limit(1);
+```
+
+**Impact:** `/s/<slug>` for a deleted reading 404s even if a link somehow survived the revoke.
+The `.toSQL()` assertions in `share.integration.test.ts` match on `\bquestion\b`, `\bchoice\b`
+and `\bnickname\b` and are unaffected by a `deleted_at` clause.
+
+---
+
+### Step 9: `softDeleteReading`
+
+**File:** `src/lib/db/queries/history.ts` — appended at the end, after `readingWithCards`
+(currently `:532`)
+
+**Code (complete):**
+
+```ts
+// ---------------------------------------------------------------------------
+// The delete
+// ---------------------------------------------------------------------------
+
+/**
+ * What the transaction actually did. Returned for the tests and for a caller that
+ * wants to log; **the route deliberately puts none of it on the wire.**
+ */
+export type SoftDeleteOutcome = {
+  /**
+   * False when there was no LIVE row to flag — already deleted, not theirs, or
+   * never existed. The route answers 204 either way, and the three are
+   * indistinguishable to the caller by design.
+   */
+  deleted: boolean;
+  cardsMarked: number;
+  linksRevoked: number;
+  summariesCleared: number;
+};
+
+/**
+ * SOFT-DELETE ONE READING, AND EVERYTHING THAT WOULD STILL SPEAK ABOUT IT.
+ *
+ * **THE FEATURE IS ABOUT EMBARRASSMENT, NOT DISK** (Miftah's request, verbatim:
+ * *"sometimes user asked some embarrassing questions in the past"*). That is the
+ * whole reason this is a transaction and not an `update`. Three things would
+ * otherwise keep the reading speaking after the querent believed it was gone:
+ *
+ *   1. **A live `/s/<slug>`** — a public URL, with the question on it by default
+ *      since 2026-07-28, very possibly in the group chat they are embarrassed
+ *      about. `revokeArtifactLinks` kills every language of it.
+ *   2. **A stored day summary** — prose in a reader's voice describing the day,
+ *      which `isStale` cannot invalidate on a REMOVED source id. See
+ *      `clearDaySummaries`.
+ *   3. **The frequency verdict and W5 recall** — both handled by the read filters
+ *      instead, because both are derived on demand and self-heal.
+ *
+ * **ORDER MATTERS AND IT IS NOT ALPHABETICAL — `src/lib/account/delete.ts` IS THE
+ * PRECEDENT AND ITS ARGUMENT TRANSFERS EXACTLY.** The revoke and the summary clear
+ * run BEFORE the flag, so a failure in a statement that actually removes something
+ * aborts the whole thing rather than leaving a reading marked deleted with a live
+ * public URL. The reverse order fails silently in precisely the case that matters.
+ *
+ * **THE READ COMES FIRST AND IS INSIDE THE TRANSACTION.** `clearDaySummaries`
+ * needs the reading's `local_date`, which is the querent's own calendar day and
+ * cannot be derived from `created_at` (it rolls over at 07:00 in Jakarta). The
+ * same read is what makes this a no-op for "not yours", "does not exist" and
+ * "already deleted" — one branch, no oracle, nothing written.
+ *
+ * **CONCURRENCY.** Two simultaneous deletes both find the live row; the final
+ * `where deleted_at is null` means exactly one reports `deleted: true` and the
+ * other's statements are all no-ops. The timestamp therefore cannot be moved by a
+ * replay, so "when did they delete this" stays answerable — `deleteAccount`'s
+ * idempotence argument, one table over.
+ *
+ * **`userId` IS IN EVERY `WHERE`, INCLUDING THE CARDS'.** `queries/share.ts`'s
+ * rule 1: not defence in depth, the actual authorization. A reading id reaches the
+ * browser (it is in `HistoryItem` and in the `x-reading-id` header), so a
+ * statement keyed on it alone would be a delete token for anybody who read one.
+ *
+ * **NOTHING IS HARD-DELETED AND THERE IS NO RESTORE.** The row survives for the
+ * operator; from the querent's side the deletion is final and the copy must not
+ * imply otherwise. `reading_cards`, `llm_calls`, `translations` and
+ * `chat_messages.attached_reading_id` all keep pointing at a row that still
+ * exists, which is why none of them needed a migration.
+ *
+ * **A MALFORMED UUID IS A NO-OP, NOT A DRIVER ERROR.** `readingWithCards`'s rule,
+ * and here it also keeps the querent's own id out of a 22P02 error's bound
+ * parameters.
+ */
+export async function softDeleteReading(
+  db: DbOrTx,
+  userId: string,
+  readingId: string,
+): Promise<SoftDeleteOutcome> {
+  const nothing: SoftDeleteOutcome = {
+    deleted: false,
+    cardsMarked: 0,
+    linksRevoked: 0,
+    summariesCleared: 0,
+  };
+  if (!UUID_RE.test(readingId)) return nothing;
+
+  return db.transaction(async (tx) => {
+    /*
+     * `local_date` AND NOTHING ELSE. Not the question, not the body: the smallest
+     * projection is the one that cannot put the querent's own words into a driver
+     * error's bound-parameter list, which is the rule `ownsShareableReading`'s
+     * header states and `api/history/log.ts` exists to enforce downstream.
+     */
+    const [live] = await tx
+      .select({ localDate: readings.localDate })
+      .from(readings)
+      .where(
+        and(
+          eq(readings.id, readingId),
+          eq(readings.userId, userId),
+          isNull(readings.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!live) return nothing;
+
+    // 1. The public URLs, in every language. Per-artifact, never per-link.
+    const links = await revokeArtifactLinks(tx, userId, 'reading', readingId);
+
+    // 2. The generated prose that describes it.
+    const summariesCleared = await clearDaySummaries(tx, userId, live.localDate, readingId);
+
+    /*
+     * ONE TIMESTAMP FOR BOTH TABLES, taken here rather than twice. Two `new Date()`
+     * calls would differ by a millisecond and make "were these written together?"
+     * unanswerable from the data, which is the only audit either column supports.
+     */
+    const deletedAt = new Date();
+
+    // 3. The cards, so the frequency scan stops counting them without a join.
+    const cards = await tx
+      .update(readingCards)
+      .set({ deletedAt })
+      .where(
+        and(
+          eq(readingCards.readingId, readingId),
+          eq(readingCards.userId, userId),
+          isNull(readingCards.deletedAt),
+        ),
+      )
+      .returning({ id: readingCards.id });
+
+    // 4. The reading. LAST, for `delete.ts`'s reason.
+    const flagged = await tx
+      .update(readings)
+      .set({ deletedAt })
+      .where(
+        and(
+          eq(readings.id, readingId),
+          eq(readings.userId, userId),
+          isNull(readings.deletedAt),
+        ),
+      )
+      .returning({ id: readings.id });
+
+    return {
+      deleted: flagged.length === 1,
+      cardsMarked: cards.length,
+      linksRevoked: links.length,
+      summariesCleared,
+    };
+  });
+}
+```
+
+**Impact:** the writer exists. `db.transaction` is available on `Tx` as well as `Db`, so the
+integration suite gets a savepoint inside `withRollback` — the property `insertReading`'s header
+already relies on.
+
+---
+
+### Step 10: `logHistoryFailure` gains its fourth AND fifth surface
+
+**File:** `src/app/api/history/log.ts:22`
+
+**RECONCILED — THIS PHASE LANDS BOTH NEW MEMBERS.** Phase 3 also needed `'retry'` on this
+line, and two phases editing one signature is how a merge quietly drops one. The earlier phase
+owns the file region, so `'retry'` is declared here and Phase 3 makes no edit to this file.
+
+FIND:
+
+```ts
+export function logHistoryFailure(surface: 'list' | 'days' | 'detail', err: unknown): void {
+```
+
+REPLACE:
+
+```ts
+export function logHistoryFailure(
+  surface: 'list' | 'days' | 'detail' | 'delete' | 'retry',
+  err: unknown,
+): void {
+```
+
+And add one paragraph to the header, after the `readingWithCards` sentence:
+
+FIND:
+
+```
+ * A postgres error quotes the failing statement AND ITS BOUND PARAMETERS.
+ * `readingsForDay` selects `readings.question`, so a bare
+ * `console.error('...', err)` here puts the querent's typed question into the
+ * platform log. `readingWithCards` additionally selects `body`, which is the
+ * whole reading.
+```
+
+REPLACE:
+
+```
+ * A postgres error quotes the failing statement AND ITS BOUND PARAMETERS.
+ * `readingsForDay` selects `readings.question`, so a bare
+ * `console.error('...', err)` here puts the querent's typed question into the
+ * platform log. `readingWithCards` additionally selects `body`, which is the
+ * whole reading.
+ *
+ * `'delete'` IS THE FOURTH SURFACE AND IT BINDS NO USER TEXT AT ALL —
+ * `softDeleteReading` selects `local_date` and binds two uuids and a timestamp.
+ * It goes through the helper anyway, because the value of this rule is that it
+ * has no exceptions to remember, and because the next statement somebody adds to
+ * that transaction will not come with a fresh audit.
+ *
+ * `'retry'` IS THE FIFTH AND IS THE SHARPEST OF ALL FIVE.
+ * `POST /api/reading/retry/[id]` loads its source row through `readingWithCards`,
+ * which selects `question` AND `body` — so a raw log there would put both the
+ * querent's typed question and the whole reading into the platform log, from a
+ * route that is not even in this directory. Declared here rather than there
+ * because a `surface` union with two owners is how a merge drops one of them.
+```
+
+**Impact:** none at runtime. Phase 3's route can call `logHistoryFailure('retry', err)` the
+moment this lands, and needs no edit to this file.
+
+---
+
+### Step 11: `DELETE /api/history/[id]`
+
+**File:** `src/app/api/history/[id]/route.ts` (new)
+
+**Routing note:** `days/` is a static segment and Next resolves it ahead of `[id]`, so
+`/api/history/days` is unaffected. This file exports `DELETE` only; a `GET /api/history/<uuid>`
+is a 405, which is correct — the detail payload is a server component's read, not an endpoint.
+
+**Code (complete):**
+
+```ts
+/**
+ * DELETE one reading. The querent's own row, gone from every screen.
+ *
+ *   DELETE /api/history/<uuid>
+ *     -> 204 deleted, already deleted, not yours, or never existed — ONE answer
+ *     -> 400 the path segment is not a uuid
+ *     -> 401 no session
+ *     -> 403 onboarding not finished
+ *     -> 503 the database is unreachable
+ *
+ * **ONE ANSWER FOR FOUR OUTCOMES, AND NO BODY ON IT.** `readingWithCards`'s rule:
+ * a distinguishable "exists but is not yours" turns a uuid guess into an existence
+ * oracle, and a reading id is a value that reaches the browser. A JSON body saying
+ * `{ deleted: true | false }` would reintroduce exactly that, wearing the label of
+ * a convenience for the client. The client does not need it: 204 means "it is
+ * gone", which is true in all four cases and is the only thing the row's removal
+ * from the list depends on.
+ *
+ * **THE 400 IS NOT AN ORACLE.** A malformed uuid is a malformed request rather
+ * than an answer about anybody's data — every uuid-SHAPED id gets the same 204 —
+ * and refusing it is what tells a broken caller it is broken instead of silently
+ * succeeding at nothing.
+ *
+ * **NO `withAnalytics`, NO `track()`, NO EVENT FROM HERE.** All the history events
+ * fire from the CLIENT (H11), which is where `history.item_deleted` belongs too;
+ * firing one from the server would put it on a different request from its
+ * siblings for no gain, and `events.ts` has one owner per release.
+ *
+ * **NO RATE LIMIT, THE SAME CALL AS `../route.ts` AND `../days/route.ts`.**
+ * `src/lib/ratelimit.ts`'s budget is sized for MODEL CALLS, and this spends none.
+ * What it costs is one short transaction against the caller's own rows on indexed
+ * predicates, it is idempotent, and every replay after the first writes nothing —
+ * so a loop gains an authenticated attacker nothing they could not get from
+ * `GET /api/history`, which also carries no budget. If that is ever revisited the
+ * shape is `hit('history:delete:<uid>', …)`, one namespace deeper, so it cannot
+ * cost somebody a reading (H12).
+ *
+ * **`maxDuration` IS DECLARED AND IS BIGGER THAN THE SIBLINGS' 15.** This is the
+ * first WRITE in this directory, and CLAUDE.md records that a user action that
+ * writes is one of the few things likely to be the request that wakes a suspended
+ * Neon compute — which is what killed `POST /api/locale` at Vercel's ten-second
+ * Hobby default. 20 leaves room for a cold lambda plus a compute wake on a
+ * four-statement transaction. **AND A BIGGER BUDGET HERE IS ONLY SAFE BECAUSE THE
+ * CLIENT BOUNDS ITSELF**: raising it without an `AbortController` on the caller
+ * does not fix a hang, it lengthens one. The caller is Phase 2's trash control and
+ * it must carry one.
+ *
+ * **`logHistoryFailure`, NEVER `console.error(err)`.** The rule with no
+ * exceptions; this path happens to bind only uuids, and that is not a reason to
+ * make an exception in the file where the next statement gets added.
+ */
+import { NextResponse } from 'next/server';
+
+import { requireUser } from '@/lib/auth/server';
+import { db } from '@/lib/db/client';
+import { softDeleteReading } from '@/lib/db/queries/history';
+import { logHistoryFailure } from '../log';
+
+export const runtime = 'nodejs';
+export const maxDuration = 20;
+
+/**
+ * `queries/share.ts`'s guard, not `queries/history.ts`'s stricter one. Postgres
+ * raises SQLSTATE 22P02 on a malformed uuid literal and an unhandled one 500s a
+ * request that should be a 400 — and puts the failing statement in the platform
+ * log. `softDeleteReading` guards again; this one is what makes the 400 possible
+ * at all, because from inside the query a bad uuid and a missing row look alike.
+ */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export async function DELETE(
+  _request: Request,
+  ctx: { params: Promise<{ id: string }> },
+) {
+  const auth = await requireUser();
+  if (!auth.ok) return auth.response;
+
+  const { id } = await ctx.params;
+  if (!UUID_RE.test(id)) {
+    return NextResponse.json({ error: 'bad id' }, { status: 400 });
+  }
+
+  try {
+    /*
+     * THE RETURN VALUE IS DELIBERATELY DISCARDED. `deleted` is the difference
+     * between "we just deleted it" and "it was already gone", and that difference
+     * is the oracle. It exists for the integration tests, which have a session and
+     * a fixture and no threat model.
+     */
+    await softDeleteReading(db, auth.user.id, id);
+    return new NextResponse(null, {
+      status: 204,
+      headers: { 'cache-control': 'private, no-store' },
+    });
+  } catch (err) {
+    logHistoryFailure('delete', err);
+    return NextResponse.json({ error: 'unavailable' }, { status: 503 });
+  }
+}
+```
+
+**Impact:** the endpoint exists and nothing calls it. `isPublic()` is untouched — `/api/history`
+is gated already and must stay gated; there is no `/en/api/history` and no reason for one.
+
+---
+
+### Step 12: The integration tests
+
+**File:** `src/lib/db/queries/history.softDelete.integration.test.ts` (new)
+
+**Code (complete):**
+
+```ts
+/**
+ * The soft delete, against a real Postgres.
+ *
+ * ONE FILE FOR THE WRITER AND EVERY READ IT HAS TO REACH, not one per query
+ * module: the interesting assertion is never "this `where` clause works", it is
+ * "the reading is gone from ALL of these at once", and that is a property of the
+ * set. `history.v6.integration.test.ts` makes the same call for V6's three reads
+ * and its fixture builder is the model for this one.
+ */
+import { afterAll, describe, expect, it } from 'vitest';
+import { sql } from 'drizzle-orm';
+import type { ReaderId, ReadingStatus, ServiceId } from '@/data/types';
+import { dailySummaries, shareLinks, users } from '@/lib/db/schema';
+import { closeTestDb, withRollback } from '@/lib/db/testing/harness';
+import type { Tx } from '@/lib/db/types';
+import { cardCounts, readingsInWindow } from './frequency';
+import {
+  historyDays,
+  insertReading,
+  readingsForDay,
+  readingWithCards,
+  recallableReadings,
+  softDeleteReading,
+} from './history';
+import { ownsShareableReading, publicReadingForShare } from './share';
+import { readingsOnDay } from './summary';
+
+afterAll(closeTestDb);
+
+const DAY = '2026-08-27';
+
+async function makeUser(tx: Tx, sub: string): Promise<string> {
+  const [u] = await tx
+    .insert(users)
+    .values({ googleSub: sub, email: `${sub}@example.com` })
+    .returning();
+  return u.id;
+}
+
+type Opts = {
+  localDate?: string;
+  body?: string | null;
+  gist?: string | null;
+  status?: ReadingStatus;
+  question?: string | null;
+  readerId?: ReaderId;
+  serviceId?: ServiceId;
+  cards?: [number, boolean, number][];
+};
+
+async function reading(tx: Tx, userId: string, o: Opts = {}): Promise<string> {
+  const row = await insertReading(
+    tx,
+    {
+      userId,
+      readerId: o.readerId ?? 'thessaly',
+      serviceId: o.serviceId ?? 'daily',
+      locale: 'id',
+      model: 'test',
+      promptVersion: 'id-v1.testtest',
+      localDate: o.localDate ?? DAY,
+      body: o.body === undefined ? 'sebuah bacaan' : o.body,
+      gist: o.gist === undefined ? 'sebuah inti' : o.gist,
+      status: o.status ?? 'ok',
+      question: o.question ?? null,
+      verdict: null,
+    },
+    (o.cards ?? [[8, false, 0]]).map(([cardId, reversed, position]) => ({
+      cardId,
+      reversed,
+      position,
+    })),
+  );
+  return row.id;
+}
+
+/** A live share link for one reading, in one language. */
+async function shareLink(tx: Tx, userId: string, readingId: string, locale: 'id' | 'en' | null) {
+  const [row] = await tx
+    .insert(shareLinks)
+    .values({
+      userId,
+      entity: 'reading',
+      entityId: readingId,
+      slug: `${locale ?? 'as'}${readingId.slice(0, 9)}`,
+      locale,
+      includeQuestion: true,
+      includeNickname: false,
+    })
+    .returning({ id: shareLinks.id });
+  return row.id;
+}
+
+describe('softDeleteReading', () => {
+  it('marks the reading and its cards, and reports what it did', () =>
+    withRollback(async (tx) => {
+      const user = await makeUser(tx, 'dev:sd-basic');
+      const id = await reading(tx, user, { cards: [[3, false, 0], [7, true, 1]] });
+
+      const out = await softDeleteReading(tx, user, id);
+      expect(out.deleted).toBe(true);
+      expect(out.cardsMarked).toBe(2);
+
+      const rows = await tx.execute(
+        sql`select deleted_at from readings where id = ${id}::uuid`,
+      );
+      expect(rows[0].deleted_at).not.toBeNull();
+
+      const cards = await tx.execute(
+        sql`select deleted_at from reading_cards where reading_id = ${id}::uuid`,
+      );
+      expect(cards).toHaveLength(2);
+      for (const c of cards) expect(c.deleted_at).not.toBeNull();
+    }));
+
+  /**
+   * ONE ASSERTION PER SURFACE, IN ONE TEST, because the requirement is the
+   * conjunction. A reading that vanishes from the list and survives in recall has
+   * not been deleted; it has been hidden from the screen the querent was looking
+   * at, which is the failure this feature is about.
+   */
+  it('is invisible to every read a querent can reach', () =>
+    withRollback(async (tx) => {
+      const user = await makeUser(tx, 'dev:sd-invisible');
+      const kept = await reading(tx, user);
+      const gone = await reading(tx, user, { localDate: '2026-08-26' });
+
+      await softDeleteReading(tx, user, gone);
+
+      expect((await readingsForDay(tx, user, '2026-08-26')).map((i) => i.id)).toEqual([]);
+      expect(await historyDays(tx, user, 10)).toEqual([DAY]);
+      expect(await readingWithCards(tx, user, gone)).toBeNull();
+      expect(await readingWithCards(tx, user, kept)).not.toBeNull();
+
+      const recalled = await recallableReadings(tx, {
+        userId: user,
+        limit: 10,
+        sinceLocalDate: '2026-01-01',
+      });
+      expect(recalled.map((r) => r.id)).toEqual([kept]);
+
+      expect((await readingsOnDay(tx, user, '2026-08-26')).map((r) => r.id)).toEqual([]);
+    }));
+
+  it('stops feeding the frequency scan, which reads reading_cards with no join', () =>
+    withRollback(async (tx) => {
+      const user = await makeUser(tx, 'dev:sd-frequency');
+      await reading(tx, user, { cards: [[5, false, 0]] });
+      const gone = await reading(tx, user, { cards: [[5, false, 0], [5, true, 1]] });
+
+      expect(await readingsInWindow(tx, user, '2026-01-01', '2026-12-31')).toBe(2);
+
+      await softDeleteReading(tx, user, gone);
+
+      const counts = await cardCounts(tx, user, '2026-01-01', '2026-12-31');
+      expect(counts).toEqual([
+        { cardId: 5, count: 1, reversedCount: 0, lastSeen: DAY },
+      ]);
+      expect(await readingsInWindow(tx, user, '2026-01-01', '2026-12-31')).toBe(1);
+    }));
+
+  it('revokes every live share link for the reading, in every language', () =>
+    withRollback(async (tx) => {
+      const user = await makeUser(tx, 'dev:sd-share');
+      const id = await reading(tx, user);
+      const other = await reading(tx, user);
+      await shareLink(tx, user, id, 'id');
+      await shareLink(tx, user, id, 'en');
+      await shareLink(tx, user, other, 'id');
+
+      const out = await softDeleteReading(tx, user, id);
+      expect(out.linksRevoked).toBe(2);
+
+      expect(await publicReadingForShare(tx, id, true)).toBeNull();
+      expect(await ownsShareableReading(tx, id, user)).toBe(false);
+
+      const mine = await tx.execute(
+        sql`select revoked_at from share_links where entity_id = ${id}::uuid`,
+      );
+      for (const r of mine) expect(r.revoked_at).not.toBeNull();
+
+      // THE CONTROL: the other reading's link is untouched.
+      const theirs = await tx.execute(
+        sql`select revoked_at from share_links where entity_id = ${other}::uuid`,
+      );
+      expect(theirs[0].revoked_at).toBeNull();
+    }));
+
+  /**
+   * `isStale` FIRES ON A NEW SOURCE ID AND NOT ON A REMOVED ONE, so the read
+   * filter alone leaves yesterday's paragraph standing. This is the assertion
+   * that `clearDaySummaries` is what closes it.
+   */
+  it('clears the day summary that named it and leaves one that did not', () =>
+    withRollback(async (tx) => {
+      const user = await makeUser(tx, 'dev:sd-summary');
+      const id = await reading(tx, user);
+      const other = await reading(tx, user);
+
+      await tx.insert(dailySummaries).values([
+        {
+          userId: user,
+          readerId: 'thessaly',
+          localDate: DAY,
+          locale: 'id',
+          body: 'hari yang menyebut bacaan itu',
+          sourceReadingIds: [id, other],
+          promptVersion: 'test',
+        },
+        {
+          userId: user,
+          readerId: 'margaret',
+          localDate: DAY,
+          locale: 'id',
+          body: 'hari yang tidak menyebutnya',
+          sourceReadingIds: [other],
+          promptVersion: 'test',
+        },
+      ]);
+
+      const out = await softDeleteReading(tx, user, id);
+      expect(out.summariesCleared).toBe(1);
+
+      const left = await tx.execute(
+        sql`select reader_id from daily_summaries where user_id = ${user}::uuid`,
+      );
+      expect(left.map((r) => r.reader_id)).toEqual(['margaret']);
+    }));
+
+  it('is idempotent and does not move the timestamp', () =>
+    withRollback(async (tx) => {
+      const user = await makeUser(tx, 'dev:sd-idempotent');
+      const id = await reading(tx, user);
+
+      const first = await softDeleteReading(tx, user, id);
+      expect(first.deleted).toBe(true);
+      const [before] = await tx.execute(
+        sql`select deleted_at from readings where id = ${id}::uuid`,
+      );
+
+      const second = await softDeleteReading(tx, user, id);
+      expect(second).toEqual({
+        deleted: false,
+        cardsMarked: 0,
+        linksRevoked: 0,
+        summariesCleared: 0,
+      });
+
+      const [after] = await tx.execute(
+        sql`select deleted_at from readings where id = ${id}::uuid`,
+      );
+      expect(after.deleted_at).toEqual(before.deleted_at);
+    }));
+
+  it('refuses a reading that is not the caller own, and writes nothing', () =>
+    withRollback(async (tx) => {
+      const mine = await makeUser(tx, 'dev:sd-mine');
+      const theirs = await makeUser(tx, 'dev:sd-theirs');
+      const id = await reading(tx, theirs);
+      await shareLink(tx, theirs, id, 'id');
+
+      const out = await softDeleteReading(tx, mine, id);
+      expect(out.deleted).toBe(false);
+
+      const rows = await tx.execute(
+        sql`select deleted_at from readings where id = ${id}::uuid`,
+      );
+      expect(rows[0].deleted_at).toBeNull();
+      const links = await tx.execute(
+        sql`select revoked_at from share_links where entity_id = ${id}::uuid`,
+      );
+      expect(links[0].revoked_at).toBeNull();
+    }));
+
+  it('treats a malformed uuid as a no-op rather than a driver error', () =>
+    withRollback(async (tx) => {
+      const user = await makeUser(tx, 'dev:sd-uuid');
+      await expect(softDeleteReading(tx, user, 'banana')).resolves.toEqual({
+        deleted: false,
+        cardsMarked: 0,
+        linksRevoked: 0,
+        summariesCleared: 0,
+      });
+    }));
+
+  /**
+   * THE BOUNDARY TEST, copied from `src/lib/account/delete.integration.test.ts`.
+   * A trigger created inside the test transaction makes the FLAG fail;
+   * `share_links.revoked_at` must still be null afterwards. Without it, "the same
+   * transaction" is a claim in a comment.
+   *
+   * `softDeleteReading` opens a SAVEPOINT inside `withRollback`'s transaction, so
+   * the abort unwinds to the savepoint and the outer test transaction survives to
+   * make its assertion.
+   */
+  it('leaves the share link live when the flag fails', () =>
+    withRollback(async (tx) => {
+      const user = await makeUser(tx, 'dev:sd-boundary');
+      const id = await reading(tx, user);
+      await shareLink(tx, user, id, 'id');
+
+      await tx.execute(sql`
+        create function pg_temp.boom() returns trigger language plpgsql as
+          $$ begin raise exception 'boom'; end $$`);
+      await tx.execute(sql`
+        create trigger t_boom before update on readings
+          for each row execute function pg_temp.boom()`);
+
+      await expect(softDeleteReading(tx, user, id)).rejects.toThrow();
+
+      await tx.execute(sql`drop trigger t_boom on readings`);
+
+      const links = await tx.execute(
+        sql`select revoked_at from share_links where entity_id = ${id}::uuid`,
+      );
+      expect(links[0].revoked_at).toBeNull();
+
+      const cards = await tx.execute(
+        sql`select deleted_at from reading_cards where reading_id = ${id}::uuid`,
+      );
+      expect(cards[0].deleted_at).toBeNull();
+    }));
+});
+```
+
+**File:** `src/app/api/history/[id]/route.contract.test.ts` (new, **unit** project — no
+database, no `.integration.` in the name)
+
+**Code (complete):**
+
+```ts
+/**
+ * `DELETE /api/history/[id]`, checked at the source level.
+ *
+ * **THE ROUTE IS NOT EXERCISED HERE**, for `share/route.contract.test.ts`'s
+ * reason: it reaches `requireUser()`, the `server-only` database singleton and a
+ * Next `Request`, none of which belongs in Vitest. What the transaction does is
+ * proven properly in `history.softDelete.integration.test.ts`. What is left is the
+ * handful of properties that are one deleted line away from a real hole.
+ */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+const ROUTE = readFileSync(
+  join(process.cwd(), 'src', 'app', 'api', 'history', '[id]', 'route.ts'),
+  'utf8',
+);
+
+/**
+ * The route with its comments removed, FOR THE NEGATIVE ASSERTIONS ONLY. The
+ * header explains at length why there is no body on the 204 and why nothing is
+ * logged raw, so a `not.toMatch` against the raw source fails on the sentence
+ * forbidding the thing. `queries/contract.test.ts` records the lesson: a rule that
+ * fires on prose describing the rule is a rule people delete.
+ */
+const CODE = ROUTE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+describe('the history delete route', () => {
+  it('reads the route at all, so nothing below passes vacuously', () => {
+    expect(ROUTE).toContain('export async function DELETE');
+    expect(CODE).toContain('requireUser');
+    expect(CODE.length).toBeGreaterThan(400);
+  });
+
+  it('exports DELETE and nothing else', () => {
+    // A GET here would be a second, session-scoped copy of the detail read that
+    // `/history/[id]/page.tsx` already does as a server component.
+    expect(CODE).not.toMatch(/export async function (GET|POST|PUT|PATCH)/);
+  });
+
+  it('requires a session before it looks at the path', () => {
+    const body = CODE.slice(CODE.indexOf('export async function DELETE'));
+    expect(body).toContain('await requireUser()');
+    expect(body).toContain('if (!auth.ok) return auth.response');
+    expect(body.indexOf('requireUser')).toBeLessThan(body.indexOf('ctx.params'));
+  });
+
+  it('declares runtime and maxDuration, and maxDuration clears the Hobby default', () => {
+    // `POST /api/locale` was the only database-writing route declaring neither and
+    // was killed at ten seconds on a cold lambda over a suspended Neon compute.
+    expect(ROUTE).toContain("export const runtime = 'nodejs'");
+    const m = ROUTE.match(/export const maxDuration = (\d+)/);
+    expect(m).not.toBeNull();
+    expect(Number(m![1])).toBeGreaterThan(10);
+  });
+
+  it('answers 204 with NO body, so it is not an existence oracle', () => {
+    expect(CODE).toContain('status: 204');
+    // The one thing that must never appear: a JSON answer on the success path.
+    expect(CODE).not.toMatch(/NextResponse\.json\(\s*\{\s*deleted/);
+  });
+
+  it('logs through the helper and never the driver error', () => {
+    expect(CODE).toContain("logHistoryFailure('delete', err)");
+    expect(CODE).not.toMatch(/console\.(error|log|warn)\s*\(/);
+  });
+
+  it('fires no analytics event from the server', () => {
+    // H11: all three history events fire from the client, and `history.item_deleted`
+    // (Phase 2) joins them there. `events.ts` has one owner per release.
+    expect(CODE).not.toContain('withAnalytics');
+    expect(CODE).not.toMatch(/\btrack\(/);
+  });
+});
+```
+
+**Impact:** `npm test` gains 7 unit assertions; `npm run test:integration` gains 9 cases.
+
+---
+
+## Verification
+
+**Build:**
+
+```sh
+export PATH=~/tools/node-v24.18.0-linux-x64/bin:$PATH
+npm run typecheck
+npm run build          # NOT optional — the TypeScript 5.x trap. Retry once on a
+                       # turbopack font-resolution failure; that is the AAAA trap.
+```
+
+**Tests — run the two projects SEPARATELY. `npm run test:all` fails 12–22 of V9's limiter tests
+as a known harness race and its red means nothing:**
+
+```sh
+npm run db:up
+npm run db:migrate
+npm run db:test:reset
+npm test                                     # 3681 in 193 files on this base, + 7
+npm run test:integration                     # 659 in 46 on this base, + 9
+npm test -- contract                         # the query-module contract, explicitly
+npm run test:integration -- share frequency summary allTime history
+```
+
+`queries/contract.test.ts` is the one to watch: this phase makes `queries/history.ts` import two
+sibling query modules for the first time, so its transitive `server-only` walk now covers a path
+it did not before.
+
+**Manual check:**
+
+1. `npm run db:studio` — `readings` and `reading_cards` each have a `deleted_at`, both null.
+2. `npm run dev`, sign in, take a reading, then from a terminal:
+   `curl -X DELETE -b <session cookie> http://localhost:3001/api/history/<id>` -> `204`, no body.
+   Repeat -> `204`. `/history` no longer lists it; `/history/<id>` 404s; the day's chip is gone
+   if it was the last reading of that day.
+3. `curl -X DELETE .../api/history/not-a-uuid` -> `400`. `curl` with no cookie -> `401`.
+4. `explain analyze` the two frequency queries against the seeded database
+   (`npm run db:seed`) and confirm the plan is still an index scan on
+   `reading_cards_user_date_card_idx` with `deleted_at is null` as a filter, not a join.
+5. **Stop the database** (`npm run db:down`) and hit the route: `503`, and the log line is
+   `[history] delete failed { name: … }` with no statement and no parameters in it.
+
+**Exit criteria:**
+
+- `0016` applies on a fresh `db:nuke` + `db:up` + `db:migrate`.
+- `softDeleteReading` is proven by integration test to remove the reading from `readingsForDay`,
+  `historyDays`, `readingWithCards`, `recallableReadings`, `readingsOnDay`, `cardCounts`,
+  `readingsInWindow` and `publicReadingForShare`, and to revoke both of its share links.
+- The boundary test proves a failing flag leaves the share link live.
+- Nothing in the UI calls the route, `EVENT_NAMES` is still 76, and the app behaves exactly as
+  it did before.
+
+---
+
+## Handoffs
+
+**To Phase 2 (the swipe gesture and the row) — the route contract it must code against:**
+
+- `DELETE /api/history/<id>`. **204 with an empty body on success AND on every no-op.** Do not
+  parse a body; do not branch on one. `res.status === 204` is the whole success test, and
+  `res.ok` alone is also true for a 200 that this route never returns.
+- **400 / 401 / 403 / 503 are the failure branches**, and only 503 is worth a revert-and-retry
+  message. A 401 means the session died and belongs on the sign-in path; a 400 is a client bug.
+- **The client MUST carry an `AbortController` with a timeout.** `maxDuration = 20` is only
+  safe paired with a bound on the caller — that is `POST /api/locale`'s lesson in full, and
+  raising the server budget without bounding the client does not fix a hang, it lengthens one.
+  **RECONCILED: Phase 2 removes the row only on a 2xx and has no optimistic state to keep, so
+  an abort takes Phase 2's ordinary failure branch** — the sheet stays open, the row stays in
+  the list, and the copy asks them to try again. That is not the "keep it hidden and re-fetch"
+  this bullet originally asked for, and the substitution is deliberate: **the route is
+  idempotent, so a second press of an unknown-outcome delete is free and settles it**, whereas
+  hiding a row on an unknown outcome is the false *"it's gone"* Phase 2 exists to refuse. A
+  timeout still means UNKNOWN; the resolution is one more tap rather than an optimistic guess.
+  **The bound is 25s, longer than the route's own 20s**, so the client never aborts a request
+  the server would still have answered.
+- **Deleting the last reading of a day removes that day from `GET /api/history/days`**, so the
+  strip needs refetching (or the chip pruning locally) when a day empties.
+- `events.ts` is untouched by Phase 1: `EVENT_NAMES` is at **76**, and `history.item_deleted`
+  is Phase 2's to fold in as the 77th. The route fires nothing, so the event must fire from the
+  client alongside `history.viewed` / `.filtered` / `.item_opened` (H11).
+- `HistoryItem` gained no field. There is no `deletedAt` on the wire and there must not be — a
+  deleted reading never reaches a client.
+
+**To Phase 3 (retry) — what `queries/history.ts` looks like when this phase is done:**
+
+- Line 5 is
+  `import { and, desc, eq, gte, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';`
+  — `isNull` is already there; do not re-add it. **RECONCILED: this phase is the only owner of
+  that token on that line.**
+- `src/app/api/history/log.ts:22` already reads
+  `surface: 'list' | 'days' | 'detail' | 'delete' | 'retry'`. **RECONCILED: this phase landed
+  the whole union; Phase 3 edits that file not at all and simply calls
+  `logHistoryFailure('retry', err)`.**
+- Two new sibling imports sit after the `../schema` block: `./share` and `./summary`. A third
+  is a decision, not a habit.
+- `UUID_RE` is still declared at `:283` and is in scope for anything appended at the foot.
+- `softDeleteReading` and `SoftDeleteOutcome` are the last things in the file; append
+  `refillReading` **after** them.
+- **`refillReading`'s guard must be `user_id = $2 AND body IS NULL AND deleted_at IS NULL`** —
+  the third conjunct is this phase's column and it is not optional. Retrying a deleted reading
+  would spend a model call writing prose into a row nothing will ever display, and would do it
+  on the querent's budget.
+- `src/lib/reading/retryable.ts` already plans to take `{ status, hasBody, deletedAt }`. Nothing
+  on the wire carries `deletedAt` today (`HistoryItem` has no such field), so either the pure
+  predicate takes it as an always-`null` third input for symmetry with the server, or Phase 3
+  adds the field — **and if it adds the field, it owns that decision and the argument for it**,
+  because a deleted reading is never in a list payload in the first place.
+
+**To Phase 4 (docs) — what this phase produced that belongs in writing:**
+
+- `src/lib/db/queries/history.ts:323`'s *"and no retry (VD14)"* is Phase 4's edit; this phase
+  deliberately left it alone even though it edited the same doc block's neighbours.
+- The one `CLAUDE.md` ruling this phase earns: **a reading delete revokes its share links and
+  clears the day summaries written about it, in the same transaction, before the flag** — and
+  per invariant 9 it has to displace something.
+  **RECONCILED: PHASE 4 IS THE ONLY PHASE THAT TOUCHES `CLAUDE.md`, AND IT HAS ALREADY ABSORBED
+  THIS RULING INTO ITS ARITHMETIC** (its Step 12's `## History (V6)` replacement names the
+  revoke, the day-summary clear, `redactForUser`'s order and the absence of a restore). **This
+  phase writes NO `CLAUDE.md` line of its own** — one file, one owner, one measurement, or the
+  net-neutral byte count is wrong the moment two phases both edit it.
+- For `docs/workstream-notes.md`, V6's section: `isStale` cannot see a removed source id, which
+  is why the read filter on `readingsOnDay` needed `clearDaySummaries` beside it; and the
+  `frequency_verdicts` fingerprint self-invalidates, which is why it needed nothing.
+
+**Deliberately not done, and left for whoever wants it:**
+
+- **`translations` rows for a deleted reading's body survive.** Nothing can reach them —
+  every path goes through `readingWithCards` or `publicReadingQuery` — and there is no hard
+  delete for readings at all, so removing them would be the only place in this feature that
+  destroys data. Consistent with the plan's "nothing is hard-deleted".
+- **No retention sweep.** `readings.deleted_at` is the timestamp a future sweep would use; it
+  does not exist and this phase does not build one.
+- **`/admin` is unfiltered, deliberately** (plan §Scope). If that is ever revisited it is a
+  change to `queries/admin/**`, which this phase did not touch.
+- **`daily_summaries.generation_count` restarts at 0** for a day whose summary was cleared.
+  Recorded on `clearDaySummaries`; not worth a tombstone.
+- **No rate limit on the delete route.** The shape if it is ever wanted is on the route header.
+
+---
+
+## Rollback
+
+`git revert` the phase's commits. **The migration is additive only** — two nullable columns — so
+reverting the code leaves them in place, unused, and nothing breaks: every query that learned
+the predicate goes back to not knowing it.
+
+**That is also the risk, and it is the honest one to state: a full revert un-deletes readings
+somebody asked to delete.** If that matters at the time, revert in two steps instead — take out
+`src/app/api/history/[id]/route.ts` and Phase 2's caller first, which stops any new deletion,
+and leave the read filters in place so the existing ones stay deleted.
+
+**Do not write a down-migration that drops the columns.** `drizzle-kit push` is banned, a
+destructive migration still deploys ahead of the code that tolerates it, and that is what the
+2026-07-28 outage was bought with.

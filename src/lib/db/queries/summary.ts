@@ -4,7 +4,7 @@
  *
  * See profile.ts for the contract every file here follows.
  */
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Locale, ReaderId, ServiceId } from '@/data/types';
 import type { DbOrTx } from '../types';
 import {
@@ -120,7 +120,26 @@ export async function readingsOnDay(
       verdict: readings.verdict,
     })
     .from(readings)
-    .where(and(eq(readings.userId, userId), eq(readings.localDate, localDate)))
+    .where(
+      and(
+        eq(readings.userId, userId),
+        eq(readings.localDate, localDate),
+        /*
+         * **THE ONE FILTER, AND IT DOES NOT CONTRADICT THE "NO FILTERS" HEADER
+         * BELOW -- IT IS A DIFFERENT QUESTION.** That paragraph is about `failed`
+         * and `aborted`: "you drew three times today" is true whether or not the
+         * third one finished, and dropping it would make the summary disagree with
+         * what the querent remembers doing. This is the opposite case. A deleted
+         * reading is one the querent has asked not to remember, and this row is
+         * PROSE A READER WRITES ABOUT THEIR DAY -- the only generated artifact that
+         * would keep describing it. `softDeleteReading` additionally DELETES any
+         * stored summary that named this reading, because `isStale` detects a new
+         * id and not a removed one, so the filter alone would leave yesterday's
+         * paragraph standing.
+         */
+        isNull(readings.deletedAt),
+      ),
+    )
     .orderBy(readings.createdAt, readings.id);
 
   if (rows.length === 0) return [];
@@ -175,3 +194,49 @@ export type DayReadingRow = {
   gist: string | null;
   verdict: string | null;
 };
+
+/**
+ * Delete every cached day summary that was written ABOUT this reading.
+ *
+ * **BECAUSE `isStale` CANNOT SEE A REMOVAL.** `src/lib/memory/summary.ts:63`
+ * fires on a prompt-version bump or on an id it has not seen; a source reading
+ * that has GONE leaves `hasNew` false and the stored paragraph is served
+ * unchanged, for ever. So filtering `readingsOnDay` is necessary and not
+ * sufficient: without this, a querent deletes an embarrassing reading and the
+ * reader keeps recounting their day with it in.
+ *
+ * **KEYED ON THE SOURCE LIST, NOT ON THE DAY.** `$1 = any(source_reading_ids)`
+ * clears only the rows that actually named this reading -- a summary generated
+ * before the reading was taken never mentioned it and is still true. All readers
+ * and all locales, because the row is keyed by reader for the VOICE and by locale
+ * for the language, and neither changes what happened.
+ *
+ * **A DELETE, NOT A FLAG.** This is a read-through cache; the next visit
+ * regenerates it from what is left, which is `putDailySummary`'s ordinary
+ * first-write path. The one cost is that `generation_count` restarts at 0 for
+ * that day, so the "is the throttle set right?" query undercounts by however many
+ * regenerations preceded a delete. Recorded rather than worked around: a
+ * counter's accuracy is not worth carrying a tombstone for.
+ *
+ * `${readingId}::uuid` IS CAST EXPLICITLY, `queries/admin/users.ts`'s pattern. A
+ * bare parameter is sent untyped by postgres.js and `unknown = any(uuid[])` is
+ * one planner decision away from an error nobody expected.
+ */
+export async function clearDaySummaries(
+  db: DbOrTx,
+  userId: string,
+  localDate: string,
+  readingId: string,
+): Promise<number> {
+  const rows = await db
+    .delete(dailySummaries)
+    .where(
+      and(
+        eq(dailySummaries.userId, userId),
+        eq(dailySummaries.localDate, localDate),
+        sql`${readingId}::uuid = any(${dailySummaries.sourceReadingIds})`,
+      ),
+    )
+    .returning({ id: dailySummaries.id });
+  return rows.length;
+}

@@ -419,6 +419,28 @@ export const readings = pgTable(
      * will make the badge disappear on revoke, which is a lie about the past.
      */
     sharedAt: tsCol('shared_at'),
+    /**
+     * THE QUERENT ASKED FOR THIS READING TO GO. Null is the normal state.
+     *
+     * A SOFT DELETE AND THERE IS NO RESTORE. The row is kept for the operator —
+     * `/admin` counts what happened, and a deletion is a thing that happened —
+     * but from the querent's side it is final, and the copy must never imply a
+     * grace period. This is NOT `users.deleted_at`, which IS restorable for
+     * `ERASURE_GRACE_DAYS`; the two columns share a name and share nothing else.
+     *
+     * **THE MOTIVE IS EMBARRASSMENT, NOT DISK**, and every consequence follows
+     * from that. `readings.question` is text a person typed and may be the thing
+     * they want gone, so a delete that leaves it quotable by W5's chained reading,
+     * or readable at a live `/s/<slug>`, has deleted nothing. Hence
+     * `softDeleteReading` revokes every live share link in the same transaction
+     * and clears any day summary written about the reading, and hence sixteen
+     * reads across five query modules carry `deleted_at is null`.
+     *
+     * **NOT `notNull` WITH A DEFAULT, AND NEVER A BOOLEAN.** The timestamp is what
+     * lets a future retention sweep find rows old enough to erase for real, and a
+     * boolean would have to be joined to something else to answer "when".
+     */
+    deletedAt: tsCol('deleted_at'),
     createdAt: tsCol('created_at').notNull().defaultNow(),
   },
   (t) => [
@@ -458,6 +480,23 @@ export const readingCards = pgTable(
      * over every reading in a 666-day window.
      */
     localDate: dateCol('local_date').notNull(),
+    /**
+     * DENORMALIZED FROM `readings.deleted_at`, FOR `user_id` AND `local_date`'s
+     * REASON AND NOT FOR A NEW ONE.
+     *
+     * `cardCounts` and `readingsInWindow` in `queries/frequency.ts` read this
+     * table with NO JOIN to `readings` — that single-table plan is measured at
+     * 0.12ms over 45,000 rows and is the whole argument for the two columns above.
+     * Hiding a deleted reading's cards with an `exists (select 1 from readings …)`
+     * would replace that scan with a semi-join and undo the measurement, so the
+     * fact is copied instead.
+     *
+     * **WRITTEN ONLY BY `softDeleteReading`, IN THE SAME TRANSACTION AS THE
+     * PARENT'S, so the two can never disagree** — the same discipline
+     * `insertReading` applies to `user_id` and `local_date`. Nothing else may set
+     * it; a card row cannot be deleted independently of its reading.
+     */
+    deletedAt: tsCol('deleted_at'),
     createdAt: tsCol('created_at').notNull().defaultNow(),
   },
   (t) => [

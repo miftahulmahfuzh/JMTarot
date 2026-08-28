@@ -12719,3 +12719,42 @@ the status quo**, and that is the argument for the table above existing at all.
 first, **exactly one line differed in each**, and **six changed rather than nine** — `daily` and
 `spread3` for three readers, with all three `yesno` snapshots green, which is the structural evidence
 that `CHOICE_RULE_*` is still absent from the service whose answer `effectiveYesNo()` already forces.
+
+## The worktree nearly migrated production, and three CLAUDE.md environment facts are stale (2026-08-28)
+
+Found while implementing Phase 1 of `HISTORY_RETRY_AND_SOFT_DELETE_PLAN.md` in the worktree
+`~/.worktrees/jmtarot/history-retry-and-soft-delete`. **None of it is about the phase's code**;
+all of it is about the machine, and the first item is the one that matters.
+
+- **THE ONLY `.env.local` ON THIS MACHINE IS A PRODUCTION `vercel env pull` DUMP, AND COPYING IT
+  INTO A WORKTREE MAKES `npm run build` BELIEVE IT IS A VERCEL BUILD.**
+  `/home/miftah/jmtarot/.env.local` sets `VERCEL=1`, `VERCEL_ENV=production` and a **production
+  Neon `DATABASE_URL` and `MIGRATE_DATABASE_URL`**. `scripts/db-migrate-deploy.ts` skips
+  off-Vercel on the `VERCEL` guard — so with that file present the guard *passes* and the build
+  attempts to apply committed migrations **to production**, from a feature worktree, as an
+  ordinary local `npm run build`. **Nothing was applied**: the script threw `Invalid URL` while
+  parsing the connection string, before opening a connection. That is luck, not a mechanism.
+  **The rule: never copy a `vercel env pull` output into a worktree.** Write a minimal
+  local-only `.env.local` pointing at the Docker Postgres instead. The migration guard is
+  `VERCEL`, not `NODE_ENV`, deliberately (a preview build is also `NODE_ENV=production`), and
+  that same correctness is what makes an env dump dangerous on a laptop.
+- **Node 24 is NOT installed.** CLAUDE.md's `## Environment` says Node 24 lives at
+  `~/tools/node-v24.18.0-linux-x64/bin` and must be prepended to PATH because the default is
+  20.11.1. **That directory does not exist**; the highest available is `node-v22.23.1-linux-x64`,
+  which is already the default `node`. Typecheck, both test projects and `npm run build` all ran
+  green on v22.23.1.
+- **The native `postgresql-16` cluster is on 5432, not 5433**, so it collides with this project's
+  Docker Postgres and `npm run db:up` fails with
+  `failed to bind host port for 127.0.0.1:5432: address already in use`.
+  `/etc/postgresql/16/main/postgresql.conf` reads `port = 5432`. CLAUDE.md's Traps entry says
+  5433. Worked around for one session with an **uncommitted** compose override on 127.0.0.1:5442;
+  `docker-compose.yml` was not touched. A permanent fix needs sudo to stop the native cluster and
+  is Miftah's call.
+- **The unit-test baseline had already drifted before this work.** CLAUDE.md quotes
+  `npm test` at 3681 in 193 files; the pre-phase tree measured higher, and after Phase 1 it is
+  **3726 in 195**. The integration baseline is accurate: 659 in 46 → **668 in 47**, exactly the
+  +9 cases / +1 file Phase 1 adds. Per that line's own rule, **re-run before citing either.**
+
+**These four lines are recorded here and NOT in CLAUDE.md on purpose** — invariant 9 of the plan
+set gives `CLAUDE.md` to Phase 4 alone, at exactly net zero. Anyone correcting the environment
+section there owes a compression elsewhere in the same commit.
