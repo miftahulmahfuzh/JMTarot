@@ -123,3 +123,19 @@ describe('the seam with F1', () => {
     expect(plan).toContain('if (!chatEnabled())');
   });
 });
+
+/**
+ * **THE TWO CLOCK FIELDS ARE OPTIONAL, SO A FORGOTTEN WIRING IS SILENT.** They are
+ * optional because a dozen fixtures build these shapes; the cost is that nothing but this
+ * grep can see `prompt.ts` failing to pass them. `prompt.ts` imports `@/lib/db/client` and
+ * therefore cannot be imported by a unit test at all, which is this file's whole reason.
+ */
+describe('the querent’s clock reaches both consumers', () => {
+  it('passes the assembler’s offset into the window and into the plan input', () => {
+    const prompt = read('prompt.ts');
+    expect(prompt.match(/clock: ctx\.clock/g)?.length).toBe(2);
+    /* One instant for the header and every age in it. */
+    expect(prompt).toContain('const now = Date.now();');
+    expect(prompt).toMatch(/\n    now,\n/);
+  });
+});

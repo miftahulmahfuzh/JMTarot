@@ -4,6 +4,7 @@ import { READERS } from '@/data/readers';
 import type { Locale } from '@/data/types';
 import { MALAY } from '@/lib/copy/vocab';
 import { LOCALES } from '@/lib/i18n/locale';
+import { resolveChatClock } from '../clock';
 import type { ChatAuthor } from '../types';
 import { buildPlanPromptFrom, PLAN_MAX_TOKENS, type PlanInput } from './assemble';
 import { affinityFor } from './affinity';
@@ -23,10 +24,32 @@ describe('the contract carries its rules, in both locales', () => {
   for (const locale of LOCALES) {
     const half = HALVES[locale];
 
-    it(`all ten numbered rules are present (${locale})`, () => {
-      for (const n of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
+    /* **THIS SAID "ten" WHILE ELEVEN EXISTED.** A count written as a sentence goes stale;
+     * it is a list the loop walks now, so a thirteenth rule fails here rather than
+     * silently going unasserted. */
+    it(`all twelve numbered rules are present (${locale})`, () => {
+      for (const n of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]) {
         expect(half).toContain(`\n${n}. `);
       }
+    });
+
+    /**
+     * `BAHAN`'s lesson, applied to a second header line: **a line the rules never mention
+     * is a line the director reads as unexplained furniture.** There is no worked example
+     * of `SEKARANG` in the system half and there cannot be one — `[F2-9]` forbids a
+     * quantity there and the digit test enforces it — so the rule carrying the whole
+     * weight is what this asserts.
+     */
+    it(`the rules name the clock line and forbid copying it into an angle (${locale})`, () => {
+      expect(half).toContain(locale === 'id' ? 'SEKARANG' : 'NOW');
+      expect(half).toMatch(
+        locale === 'id'
+          ? /JANGAN PERNAH menyalin jam atau tanggal/
+          : /NEVER copy a clock time or a date/,
+      );
+      expect(half).toMatch(
+        locale === 'id' ? /Kalau baris SEKARANG tidak ada/ : /If there is no NOW line/,
+      );
     });
 
     it(`the six intents are spelled exactly as the union spells them (${locale})`, () => {
@@ -329,6 +352,28 @@ describe('the user turn', () => {
     expect(user).toContain('BAHAN: reading: The Tower, The Star');
     expect(user.indexOf('BAHAN:')).toBeLessThan(user.indexOf('<obrolan>'));
     expect(user).toContain('PEMICU: penanya baru saja selesai membaca kartu');
+  });
+
+  /**
+   * R1, director side. **`SEKARANG` is first, above `PEMICU`** — every other line says
+   * something about this run; the clock says when all of it is happening.
+   */
+  it('renders the clock line first when an offset is known, and omits it when it is not', () => {
+    const withClock = buildPlanPromptFrom(
+      input({
+        now: Date.parse('2026-08-30T01:39:48.000Z'),
+        clock: resolveChatClock({
+          offsetMinutes: 420,
+          now: new Date('2026-08-30T01:39:48.000Z'),
+        }),
+      }),
+    );
+    expect(withClock.user.startsWith('SEKARANG: Minggu, 30 Agustus 2026, 08.39 (pagi)')).toBe(true);
+    expect(withClock.user.indexOf('SEKARANG:')).toBeLessThan(withClock.user.indexOf('PEMICU:'));
+
+    const without = buildPlanPromptFrom(input());
+    expect(without.user).not.toContain('SEKARANG:');
+    expect(without.user.startsWith('PEMICU:')).toBe(true);
   });
 });
 

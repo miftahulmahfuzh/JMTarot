@@ -2147,6 +2147,12 @@ const CHAT_SCRIPT: Record<Locale, Array<{ text: string; probes: string }>> = {
       text: '@margaret setuju sama adrian?',
       probes: 'THE READER-TO-READER PROBE. Does she answer HIM, using his actual words?',
     },
+    {
+      text: 'idealnya gue lari jam 5 pagi. tapi tadi kartunya bilang makan siang gue bakal jelek',
+      probes:
+        'THE CLOCK PROBE (R1). It is 14.0x WIB. Two different five-o-clocks and a lunch: ' +
+        'any reader writing "jam 5 nanti" has reproduced the 2026-08-30 production bug.',
+    },
     { text: 'iya deh', probes: 'THE ENDING PROBE. Does the room know to let it stop? (C-R6)' },
   ],
   en: [
@@ -2163,12 +2169,18 @@ const CHAT_SCRIPT: Record<Locale, Array<{ text: string; probes: string }>> = {
       text: 'do you actually agree with him, margaret',
       probes: 'THE READER-TO-READER PROBE',
     },
+    {
+      text: 'i normally run at five in the morning. but the cards said my lunch today would be bad',
+      probes:
+        'THE CLOCK PROBE (R1). It is early afternoon. "your run later at five" is the bug; ' +
+        'so is answering about the run when the reading was about lunch.',
+    },
     { text: 'fair enough', probes: 'THE ENDING PROBE' },
   ],
 };
 
 /**
- * The canned beat sheets, one per user message: `[1] [1] [2] [1] [1] [3] [1] [0]`.
+ * The canned beat sheets, one per user message: `[1] [1] [2] [1] [1] [3] [1] [2] [0]`.
  *
  * **THE DIRECTOR IS NOT CALLED.** `--chat --director` would be F2's flag and F2's cost;
  * this run is about the VOICES, and chaining a planner call in would make a voice failure
@@ -2193,6 +2205,16 @@ const CHAT_SHEETS: Array<Array<{ reader: ReaderId; to: 'user' | ReaderId; intent
     { reader: 'margaret', to: 'user', intent: 'agree', angle: null },
   ],
   [{ reader: 'margaret', to: 'adrian', intent: 'push_back', angle: null, replyToPrevious: true }],
+  /*
+   * **BOTH ANGLES ARE NULL, DELIBERATELY.** An angle naming the clock would hand the model
+   * the answer, and what is being measured is whether it derives *tadi* from `<waktu>` on
+   * its own. Two beats so the second can disagree with the first about which five o'clock
+   * was meant.
+   */
+  [
+    { reader: 'thessaly', to: 'user', intent: 'answer', angle: null },
+    { reader: 'adrian', to: 'user', intent: 'react', angle: null },
+  ],
   [],
 ];
 
@@ -2908,6 +2930,11 @@ async function runDirector(locales: Locale[], withVoices = false) {
         caps,
         triggerMessageId: triggerId,
         now: clock,
+        /* **ONE FIXTURE CLOCK FOR THE WHOLE SCRIPT** (phase 1's constant). A clock
+         * resolved from this run's own moving instant would print a director header
+         * hours away from the `<waktu>` block the voice prompts in the SAME run carry,
+         * which is the one thing a printed run must never show. */
+        clock: CHAT_CLOCK,
       });
       const cast = recentlySpoke(window);
       const affinity = affinityFor(line.body, locale, { recentlySpoke: cast });
@@ -2915,6 +2942,7 @@ async function runDirector(locales: Locale[], withVoices = false) {
         {
           trigger: 'user_message',
           fallbackLocale: locale,
+          clock: CHAT_CLOCK,
           window,
           affinity,
           awaiting: awaitingReader(window),
@@ -2939,6 +2967,18 @@ async function runDirector(locales: Locale[], withVoices = false) {
         trigger: 'user_message',
       });
       process.stdout.write(`\n--- ${no}. ${line.body}\n    (${line.probes})\n`);
+      /*
+       * **THE HEADER, PRINTED — R1's ONLY INSTRUMENT ON THE DIRECTOR SIDE.** The plan's
+       * verification says to read the `SEKARANG:` line above `PEMICU:`, and until this
+       * line existed the director runner printed the sheets and never the prompt, so
+       * that instruction could not be carried out at all. It is an INSTRUMENT, not a
+       * check: no threshold, no grep, nothing for phase 9's rewrite to keep in step.
+       * Read it for its SHAPE and its position, not for the hour — every clock in this
+       * script is the one `CHAT_CLOCK` fixture (14.05 WIB), on purpose.
+       */
+      process.stdout.write(
+        `    header| ${prompt.user.slice(0, prompt.user.indexOf('<obrolan>')).trim().split('\n').join('\n    header| ')}\n`,
+      );
 
       if (!checked.ok) {
         /* **A REFUSAL IS THE FALLBACK, AND THE FALLBACK IS NOT SILENCE** (`[F2-7]`). It is
@@ -3299,6 +3339,8 @@ async function runProactive(locales: Locale[]) {
          */
         triggerMessageId: brief.replyTo,
         now: clock,
+        /* The same one clock — see the director runner above. */
+        clock: CHAT_CLOCK,
       });
       const cast = recentlySpoke(window);
       const affinity = affinityFor('', locale, { recentlySpoke: cast });
@@ -3307,6 +3349,7 @@ async function runProactive(locales: Locale[]) {
         {
           trigger: fixture.trigger,
           fallbackLocale: locale,
+          clock: CHAT_CLOCK,
           window,
           affinity,
           awaiting: awaitingReader(window),

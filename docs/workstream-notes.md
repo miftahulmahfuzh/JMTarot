@@ -12871,3 +12871,158 @@ all of it is about the machine, and the first item is the one that matters.
 **These four lines are recorded here and NOT in CLAUDE.md on purpose** — invariant 9 of the plan
 set gives `CLAUDE.md` to Phase 4 alone, at exactly net zero. Anyone correcting the environment
 section there owes a compression elsewhere in the same commit.
+
+## The chat learned what time it is, and two rulings were reversed to do it (2026-08-30)
+
+Phase 2 of `CHAT_TIME_AWARENESS_USER_MEMORY_PROACTIVE_PLAN.md`, satisfying R1. **Two standing
+decisions were reversed by name. Both are quoted here in full, because both were correct about
+the world they were written in and a future session reading only the new code would conclude
+somebody had been careless.**
+
+### The bug, from the row itself
+
+`2026-08-30T01:39:48Z`, which is **08:39:48 WIB**. The room had spent the previous six minutes
+agreeing that 05:00 was the querent's morning run time; the reading on the table was a yes/no
+about whether lunch would be any good. Thessaly wrote:
+
+> makan tetap, mif. Perut kosong jam 5 nanti malah kepala pusing, lari gimana mau jalan.
+
+**Two errors compound in one bubble and both have the same cause.** `nanti` — *later* — is
+applied to a time three hours and forty minutes past. And it is **the wrong five o'clock**: the
+five belonged to the run, the question was about lunch.
+
+**Nothing in the prompt could have prevented either**, because nothing in the prompt said what
+time it was. The model was handed a transcript whose newest line is *"just now"* and in which the
+token `5` appears, and `nanti` is the statistically ordinary continuation.
+
+### Reversal 1 — `prompt/build.ts`'s `ageLabel` header
+
+It said, in capitals:
+
+> **NO CLOCK TIME, AND THAT IS A DIVERGENCE FROM THE PLAN'S §4.3 WITH A REASON.** The plan
+> renders `[14:02]`. **The server does not know the querent's timezone** — only `local_date`
+> does, and only because a client sends it (`C-N2d`, F5's quiet-hours argument) — so a clock time
+> in this prompt would be Jakarta's or the lambda's, and a reader remarking that it is late at
+> night to somebody eating lunch is worse than a reader with no clock at all. **A relative age is
+> true in every timezone**, and it is also the thing the model actually needs: `C-D11`'s *"out of
+> nowhere"* reply is about an old message, not about 14:02.
+
+**The premise is false as of this commit** and the browser now reports an offset. **The
+conclusion survives on its other leg**: there is still no clock on a transcript line, because a
+timestamp beside a line invites the model to quote it, and the clock is stated once, in a
+`<waktu>` block at the head of the user turn. The fear the paragraph names — *a reader remarking
+that it is late at night to somebody eating lunch* — is now the thing the block prevents rather
+than the thing it would cause.
+
+### Reversal 2 — `direct/window.ts`'s `[F2-16]`, reason 3 of three
+
+> **The server does not know the querent's timezone.** Only `local_date` does, and only when a
+> client sends one. **Every bucket below is computable from a duration alone** — which is why the
+> list stops at *kemarin* and contains no *"pagi tadi"*, a phrase that would need a wall clock the
+> server has not got.
+
+**Reason 3 is dead; reasons 1 and 2 are load-bearing and were not touched.** Reason 1 (*a
+timestamp invites the model to mention it*) is why the widening added seven **words** and not one
+figure. Reason 2 (*a bucket cannot be recited as a figure*) is why `window.test.ts`'s assertion
+that **no bucket string contains a digit** was **extended to the clocked path rather than
+relaxed** — the likeliest wrong move here would have been deleting it because *"we have a clock
+now"*, and the clock is exactly the thing that makes a copied figure available.
+
+One thing the clock strictly improves: `[F2-16]` kept *kemarin* to a narrow 20–30 hours *"because
+it is the one bucket a reader could repeat to the querent as a fact"*. With an offset it is a
+derived calendar fact, so a reader repeating it is repeating something true.
+
+### `[R17]` bought this for one line, and it worked
+
+`chat_threads.utc_offset_minutes` has existed since migration `0014`, unread, added *"so that
+ruling the other way later is one line rather than a migration"*. **It was one line.** The column
+cost nothing for a release and a half and saved a migration in a phase that would otherwise have
+needed one. Worth remembering the next time somebody argues an unread nullable column is dead
+weight — and note that `[R17]`'s **other** half (quiet hours) is Phase 8's to reverse, not this
+one's.
+
+### What was decided along the way, and is not obvious from the diff
+
+- **One block, one fact, never a stamp per line.** The alternative — `[14:02]` on every
+  transcript row, which the original plan's §4.3 asked for — is what `[F2-16]` reason 1 forbids,
+  and it multiplies the surface for a reader to quote a timestamp back at somebody.
+- **`<waktu>` is FIRST, above `<penanya>`.** `<penanya>` is first *"so it reads as background the
+  conversation is laid over"*; the clock is background to that background. `<obrolan>` stays last
+  and nearest the instruction, which is `memory.ts`'s dilution argument and is not negotiable.
+- **The tag is `<waktu>` in both locales**, R17's rule: an English querent will never type
+  *"waktu"* and would absolutely type *"time"* or *"now"*, so the Indonesian-looking tag is the
+  one carrying no injection surface. **It was added to `sanitize.ts`'s `DELIMITER` even though
+  every byte of the block is code-derived** — the builder that writes a fence strips its
+  material, mechanically, so a querent cannot forge the frame by typing `</waktu>`. That is
+  nine tags, and the header comment's spelled-out count and the alternation are held in step by
+  `sanitize.test.ts`.
+- **A null offset renders nothing — not UTC, and not *"waktu tidak diketahui"*.** `assemble.ts`'s
+  rule: an absent line is silence, and a line saying the clock is unknown is a fact the model will
+  hedge around.
+- **The base contract's worked example spells its numbers as words** (*jam sembilan pagi*, *jam
+  lima pagi*). `[F2-9]`'s finding is that a figure in a system half is a figure the model can
+  copy; the director's half is machine-checked for it and the voice's half is not, so the
+  discipline had to be applied by hand. The `<waktu>` block itself renders digits, because it is
+  the frame the model compares against numerically — V3's *"no arithmetic out loud"* is about
+  counts offered as evidence, and a clock is not evidence.
+- **The director's `SEKARANG:` line has a rule and no worked example, and that is a knowing
+  trade.** `BAHAN` shipped before the rules mentioned it and was read as unexplained furniture
+  over six measured live runs — so a new header line wants an example. But `[F2-9]` forbids a
+  quantity in the system half and `system.test.ts` enforces it, and showing a *fake-shaped* clock
+  would be the blog editor's `at:` failure exactly. **Rule 12 describes it and shows nothing**;
+  `npm run smoke -- --chat --director` is the only instrument that says whether that was enough.
+  **If the director starts ignoring the line, an example built out of words rather than figures is
+  the first thing to try.**
+- **`ageLabel` and `gapLabel` in `build.ts` were not touched.** They render durations, which were
+  true under every offset and were never the bug.
+- **`system.test.ts` said *"all ten numbered rules"* while eleven existed.** Corrected to twelve in
+  passing. A count written as a sentence goes stale; this one is now a list the loop walks.
+
+### Two things the plan's own substitution table did not name, found while building it
+
+- **`resolveChatClock` does not return null on a bad instant, and the cancelled `wallClockAt`
+  did.** Phase 1's function deliberately falls back to the real now rather than throw inside
+  `advance()`. `buildWindow` mechanically substituting one for the other would have clocked a
+  message with an unparseable `created_at` at *today* and rendered a confident *pagi tadi* over
+  an age that is not known — worse than the *lama sekali* it fell to before there was a clock.
+  The `Number.isNaN(at)` guard is what makes the comment beside it true. **The generalisation: a
+  substitution table that swaps one function for another is only mechanical where their FAILURE
+  arms agree, and that is the column such a table never has.**
+- **The smoke script uses ONE fixture clock, and the plan's own verification line asked for two.**
+  Step 12a says *"a second fixture clock is how the director and the voice end up describing
+  different afternoons inside one printed run"*; the verification section then expected the
+  director header to read `09.0x`, which is that run's own moving instant. **12a is right and the
+  verification line is superseded**: the `--chat --director` run builds voice prompts from
+  `chatFixtureContext` too, so a director clock resolved from the moving instant would print
+  `SEKARANG: … 09.0x` above `<waktu>` blocks saying 14.05, in the same output. Every clock in the
+  script is `CHAT_CLOCK`. **Read `SEKARANG:` for its SHAPE and its position above `PEMICU:`, not
+  for the hour.**
+
+### The English SHORTNESS check fails, and it was failing BEFORE this phase
+
+`npm run smoke -- --chat --locale en` ends `FAIL [en] SHORTNESS: the shortest bubble is 7 words,
+over 6`. **It is not phase 2's, and that was established by measurement rather than by argument:**
+the same command was run on the phase 1 tip (`ccc18f9`) with every phase 2 change stashed, and it
+failed **identically — `min=7`, `mean=19.4`, same message.** The Indonesian half is `all clean` on
+both trees.
+
+Two things follow. **The check belongs to phase 9**, which owns every threshold, grep and proxy in
+that script; phase 2 touched fixtures and added one header print and no check at all. And **the
+cheap way to attribute a stochastic gate failure is to stash and re-run the same command on the
+base commit** — one draw each is not a distribution, but an identical `min` and an identical `mean`
+across two trees is enough to say the diff did not cause it, which is the only question that was
+being asked.
+
+### The trap this file exists to record
+
+**Never `getHours()`, `getDay()` or `getDate()` in `clock.ts`.** The technique is *shift the
+instant by the offset, then read it as UTC*, so every getter must be the `getUTC*` twin. The local
+getters read the **server's** zone — UTC on Vercel (`sin1` is a region, not a locale) and **WIB in
+this WSL image** — which means a unit test written on this laptop passes on the wrong code and
+production renders a clock seven hours out. `clock.test.ts` pins a fixed instant against an
+offset the server does not have, which is the only shape of test that can see it.
+
+**And the sign.** The column and `QuietHours.offsetMinutes` both mean *minutes to ADD to UTC*
+(Jakarta `+420`), while the browser's `Date.prototype.getTimezoneOffset()` returns `-420`. A sign
+error renders a clock fourteen hours out, and every rule downstream then works perfectly against
+a wrong number.

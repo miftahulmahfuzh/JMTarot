@@ -118,12 +118,28 @@ export async function buildPlanPrompt(input: DirectorInput): Promise<CompletionP
     clock: input.clock,
   });
 
+  /*
+   * **ONE `now` FOR THE WHOLE PROMPT.** The header's clock and every line's age are read
+   * off the same instant, so a run planned across a second boundary cannot say
+   * *baru saja* above a `SEKARANG` line a minute later than the message it describes.
+   */
+  const now = Date.now();
+
   const window = buildWindow({
     messages: ctx.messages,
     locale: input.fallbackLocale,
     caps,
     triggerMessageId: input.triggerMessageId,
-    now: Date.now(),
+    now,
+    /*
+     * **THE ASSEMBLER IS THE ONE SOURCE.** `ChatContext.clock` was resolved once in
+     * `advance()` from `chat_threads.utc_offset_minutes` and rode the same read that built
+     * this window, and `DirectorInput.clock` is deliberately not consulted even though
+     * phase 1 declares it: two paths to one value is two paths that eventually disagree,
+     * and the failure would be a director and a voice describing different afternoons
+     * inside one run.
+     */
+    clock: ctx.clock,
   });
 
   /*
@@ -142,6 +158,8 @@ export async function buildPlanPrompt(input: DirectorInput): Promise<CompletionP
   const planInput: PlanInput = {
     trigger: input.trigger,
     fallbackLocale: input.fallbackLocale,
+    now,
+    clock: ctx.clock,
     window,
     affinity,
     awaiting: awaitingReader(window),

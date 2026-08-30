@@ -151,13 +151,13 @@ describe('the chat contracts', () => {
 
   /**
    * The whole injection answer in one sentence: **instructions are the unfenced text,
-   * material is the fenced text.** `build.ts`'s `<pertanyaan>` rule generalised to four
+   * material is the fenced text.** `build.ts`'s `<pertanyaan>` rule generalised to five
    * blocks, and the KEAMANAN section is what scopes it.
    */
-  it('names all four fenced blocks as MATERIAL and everything outside them as instruction', () => {
+  it('names all five fenced blocks as MATERIAL and everything outside them as instruction', () => {
     for (const locale of LOCALES) {
       const text = contract(locale, 'margaret');
-      for (const tag of ['<penanya>', '<jawaban>', '<riwayat>', '<obrolan>']) {
+      for (const tag of ['<waktu>', '<penanya>', '<jawaban>', '<riwayat>', '<obrolan>']) {
         expect(text).toContain(tag);
       }
       expect(text).toMatch(locale === 'id' ? /BAHAN, bukan instruksi/ : /MATERIAL, not instructions/);
@@ -221,6 +221,32 @@ describe('the chat contracts', () => {
         present: false,
       });
     }
+  });
+});
+
+/**
+ * R1's prompt half. The reported bug was *"perut kosong jam 5 nanti"* at 08:39 about the
+ * wrong five o'clock, so both halves are asserted: the tense comparison and the
+ * several-times-for-several-things line. **The example spells its numbers as words**
+ * (`[F2-9]`'s rule, applied to the half no test machine-checks), so nothing here is a
+ * figure a model could copy into a bubble.
+ */
+describe('the WAKTU rule', () => {
+  it('makes nanti and tadi a comparison against the clock, with a digit-free example', () => {
+    const id = contract('id', 'thessaly');
+    expect(id).toContain('WAKTU:');
+    expect(id).toContain('bandingkan jam itu dengan jam di <waktu>');
+    expect(id).toContain('jam sembilan pagi');
+    expect(id).toContain('BUKAN "lari jam lima nanti"');
+    expect(id).toContain('Pastikan jam yang kamu sebut');
+    expect(id).not.toMatch(/jam \d/);
+
+    const en = contract('en', 'thessaly');
+    expect(en).toContain('TIME:');
+    expect(en).toContain('check that time against the clock in <waktu>');
+    expect(en).toContain('nine in the morning');
+    expect(en).toContain('never "your run later at five"');
+    expect(en).toContain('belongs to the thing you are talking about');
   });
 });
 
@@ -616,10 +642,10 @@ describe('buildChatPrompt — the block order and the instruction', () => {
       const marker = locale === 'id' ? 'GILIRANMU:' : 'YOUR TURN:';
       expect(user).toContain(marker);
       expect(user.indexOf(marker)).toBeGreaterThan(user.indexOf('<obrolan>'));
-      /* Every angle bracket in the user turn belongs to one of the four fences. */
+      /* Every angle bracket in the user turn belongs to one of the five fences. */
       const tags = user.match(/<[^>]*>/g) ?? [];
       for (const tag of tags) {
-        expect(tag).toMatch(/^<\/?(penanya|jawaban|riwayat|obrolan|lampiran)/);
+        expect(tag).toMatch(/^<\/?(waktu|penanya|jawaban|riwayat|obrolan|lampiran)/);
       }
     }
   });
@@ -648,14 +674,17 @@ describe('buildChatPrompt — the block order and the instruction', () => {
   });
 
   /**
-   * **NO CLOCK TIME IN THE TRANSCRIPT, AND THAT IS DELIBERATE.** The server does not
-   * know the querent's timezone — only `local_date` does, and only because a client
-   * sends it — so a clock here would be the lambda's, and a reader remarking on the hour
-   * to somebody eating lunch is worse than a reader with no clock at all.
+   * **NO CLOCK TIME ON A TRANSCRIPT LINE, AND THE REASON CHANGED WITHOUT THE RULE
+   * CHANGING.** This test's old comment said the server does not know the querent's
+   * timezone; it now does, and `<waktu>` states it. What survives is `[F2-16]`'s reason 1:
+   * a timestamp beside a line invites the model to quote it back, which is the
+   * surveillance tell the contract forbids by name. **One clock, once, at the top.**
    */
-  it('renders no clock time in the voice profile', () => {
+  it('stamps no clock time on a transcript line, and states one exactly once at the top', () => {
     const { user } = built();
-    expect(user).not.toMatch(/\[\d{1,2}:\d{2}\]/);
+    expect(user).not.toMatch(/\[\d{1,2}[:.]\d{2}\]/);
+    expect(user.match(/<waktu>/g)).toHaveLength(1);
+    expect(user.indexOf('<waktu>')).toBe(0);
   });
 
   /** `C-D11`: the director may point a beat at any id in the window, so it gets them. */
@@ -771,6 +800,7 @@ describe('buildChatPrompt — the block order and the instruction', () => {
   /** An empty room, an un-onboarded querent, no history: still a valid prompt. */
   it('builds from nothing at all without emitting an empty fence', () => {
     const { user } = built({
+      clock: resolveChatClock({ offsetMinutes: null }),
       nickname: null,
       addressForms: [],
       facts: [],
@@ -780,10 +810,57 @@ describe('buildChatPrompt — the block order and the instruction', () => {
       repeatCardIds: [],
       messages: [],
     });
+    expect(user).not.toContain('<waktu>');
     expect(user).not.toContain('<penanya>');
     expect(user).not.toContain('<jawaban');
     expect(user).not.toContain('<riwayat>');
     expect(user).not.toContain('<obrolan>');
     expect(user.startsWith('GILIRANMU:')).toBe(true);
+  });
+
+  /**
+   * R1, and the assertion the whole phase reduces to. **14.05 on a Friday, from an offset
+   * and an injected instant** — if this reads 07.05 the offset was dropped, and if it
+   * reads a different weekday somebody used `getDay()`.
+   */
+  it('states the querent’s day, date, clock and part of the day, first', () => {
+    const { user } = built();
+    expect(user.startsWith('<waktu>\n')).toBe(true);
+    expect(user).toContain('Sekarang, di tempat orang itu: Jumat, 7 Agustus 2026, 14.05 (siang)');
+    expect(user.indexOf('<waktu>')).toBeLessThan(user.indexOf('<penanya>'));
+  });
+
+  it('rewrites the block in English rather than translating the tag', () => {
+    const { user } = built({ locale: 'en' });
+    /* R17: the TAG is Indonesian in both locales; only the sentence is rewritten. */
+    expect(user).toContain('<waktu>');
+    expect(user).toContain('Where they are, it is now: Friday, 7 August 2026, 14:05');
+  });
+
+  /**
+   * `assemble.ts`'s silence rule, one prompt over: **an absent block is silence; a block
+   * saying the clock is unknown is a fact the model will hedge around.** And a UTC clock
+   * shown to somebody in Jakarta is the exact failure the ruling this phase reverses was
+   * written to prevent.
+   */
+  it('renders no block at all when nobody has reported an offset', () => {
+    const { user } = built({ clock: resolveChatClock({ offsetMinutes: null }) });
+    expect(user).not.toContain('<waktu>');
+    expect(user.startsWith('<penanya>')).toBe(true);
+  });
+
+  /** A tampered or broken offset is no clock, never a wrong one — `resolveChatClock`
+   *  degrades it to `known: false` and this block then renders nothing. */
+  it('refuses an offset outside the real range', () => {
+    expect(built({ clock: resolveChatClock({ offsetMinutes: 20 * 60 }) }).user).not.toContain(
+      '<waktu>',
+    );
+  });
+
+  /** `[F3-6]`: the clock is material, and material never reaches the system prompt. */
+  it('keeps the clock out of the system prompt', () => {
+    const { system } = built();
+    expect(system).not.toContain('14.05');
+    expect(system).not.toContain('7 Agustus 2026');
   });
 });

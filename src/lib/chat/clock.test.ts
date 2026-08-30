@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { dayPartOf, resolveChatClock, weekdayOf } from './clock';
+import { LOCALES } from '@/lib/i18n/locale';
+import {
+  CHAT_TIME_VOCAB,
+  dayPartOf,
+  renderNow,
+  resolveChatClock,
+  WEEKDAYS,
+  weekdayOf,
+} from './clock';
 
 /** `01:39:48Z` on 2026-08-30 — the bubble that started this workstream. */
 const THE_BUG = new Date('2026-08-30T01:39:48.000Z');
@@ -119,5 +127,55 @@ describe('resolveChatClock, without one', () => {
     /* It fell back to the real now rather than throwing inside `advance()`. */
     expect(clock.known).toBe(true);
     expect(clock.localDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+/* ------------------------------------------------------------------------- *
+ * Phase 2: the rendering half. `resolveChatClock`, `dayPartOf` and
+ * `localDayDelta` are phase 1's and their cases are above; what follows covers
+ * `renderNow` and the vocabulary's completeness.
+ * ------------------------------------------------------------------------- */
+
+describe('renderNow', () => {
+  const known = (ms: number, offset: number) => {
+    const c = resolveChatClock({ offsetMinutes: offset, now: new Date(ms) });
+    if (!c.known) throw new Error('fixture clock must be known');
+    return c;
+  };
+
+  it('names the weekday, the dated month, a 24-hour clock and the part of the day', () => {
+    const w = known(THE_BUG.getTime(), 420);
+    expect(renderNow(w, 'id')).toBe('Minggu, 30 Agustus 2026, 08.39 (pagi)');
+    expect(renderNow(w, 'en')).toBe('Sunday, 30 August 2026, 08:39 (morning)');
+  });
+
+  /**
+   * `formatTimeOfDay`'s measured finding, carried over: **both locales are a 24-hour
+   * clock and only the separator differs.** A meridiem would reopen `en-GB` vs `en-US`
+   * for a time the model reasons about, which is worse than for one a person reads.
+   */
+  it('writes no meridiem in either locale, and pads both fields', () => {
+    const early = known(Date.parse('2026-08-30T00:05:00.000Z'), 0);
+    for (const locale of LOCALES) {
+      const line = renderNow(early, locale);
+      expect(line).not.toMatch(/AM|PM/i);
+      expect(line).toMatch(/00[.:]05/);
+    }
+  });
+
+  /**
+   * **ONE VOCABULARY FOR THE RELEASE.** Phase 7's `time_of_day` notes read this same table,
+   * which is what stops one prompt saying *"Monday morning"* on one line and *"siang"* on
+   * another. If a second table ever appears, this test is where the duplication should have
+   * been caught.
+   */
+  it('has a word for every weekday and every day part, in both locales', () => {
+    for (const locale of LOCALES) {
+      expect(CHAT_TIME_VOCAB[locale].weekdays).toHaveLength(WEEKDAYS.length);
+      for (const word of CHAT_TIME_VOCAB[locale].weekdays) expect(word.length).toBeGreaterThan(2);
+      for (const word of Object.values(CHAT_TIME_VOCAB[locale].parts)) {
+        expect(word.length).toBeGreaterThan(2);
+      }
+    }
   });
 });

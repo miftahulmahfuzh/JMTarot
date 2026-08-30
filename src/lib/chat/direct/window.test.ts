@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { LOCALES } from '@/lib/i18n/locale';
-import type { Beat } from '../types';
+import { resolveChatClock } from '../clock';
+import type { Beat, KnownChatClock } from '../types';
 import { planCaps } from './caps';
 import {
   ageBucket,
@@ -23,6 +24,13 @@ function ago(minutes: number): string {
 
 function msg(over: Partial<WindowSource> & Pick<WindowSource, 'id' | 'author'>): WindowSource {
   return { body: 'halo', createdAt: ago(1), ...over };
+}
+
+/** WIB, the zone the reported bug happened in. Throws rather than widen the type. */
+function at(ms: number): KnownChatClock {
+  const clock = resolveChatClock({ offsetMinutes: 420, now: new Date(ms) });
+  if (!clock.known) throw new Error('fixture clock must be known');
+  return clock;
 }
 
 describe('ageBucket', () => {
@@ -56,9 +64,85 @@ describe('ageBucket', () => {
     expect(ageBucket(0, 'en')).toBe('just now');
     expect(ageBucket(60 * 25, 'en')).toBe('yesterday');
   });
+
+  /**
+   * `[F2-16]` reason 2 SURVIVES THE CLOCK, and this is the assertion that says so. The
+   * widening added seven phrases; **every one of them is a word.** The reason the buckets
+   * exist — a model cannot recite a figure it was never handed — never depended on the
+   * timezone, so it did not move when reason 3 did.
+   */
+  it('contains no digit on the CLOCKED path either, at every hour of the day', () => {
+    const now = Date.parse('2026-08-30T01:39:48.000Z');
+    for (const locale of LOCALES) {
+      for (const hoursAgo of [1, 2, 4, 8, 12, 18, 24, 30, 40, 60, 100, 500]) {
+        const span = { at: at(now - hoursAgo * 3_600_000), now: at(now) };
+        expect(ageBucket(hoursAgo * 60, locale, span)).not.toMatch(/\d/);
+      }
+    }
+  });
+
+  /**
+   * The vocabulary `[F2-16]` refused for want of an offset. **`kemarin`, not `kelmarin`** —
+   * the Malay word is on `MALAY` and this is the likeliest place in the release for it to
+   * arrive.
+   */
+  it('names the part of the day once there is a clock', () => {
+    const nowMs = Date.parse('2026-08-30T05:00:00.000Z'); // 12:00 WIB, siang
+    const now = at(nowMs);
+    const bucket = (iso: string) =>
+      ageBucket(Math.round((nowMs - Date.parse(iso)) / 60_000), 'id', {
+        at: at(Date.parse(iso)),
+        now,
+      });
+    expect(bucket('2026-08-29T22:00:00.000Z')).toBe('pagi tadi'); // 05:00 WIB today
+    expect(bucket('2026-08-29T20:00:00.000Z')).toBe('dini hari tadi'); // 03:00 WIB today
+    expect(bucket('2026-08-29T15:00:00.000Z')).toBe('semalam'); // 22:00 WIB yesterday, `late`
+    expect(bucket('2026-08-29T02:00:00.000Z')).toBe('kemarin'); // 09:00 WIB yesterday
+    expect(bucket('2026-08-27T02:00:00.000Z')).toBe('beberapa hari lalu');
+  });
+
+  /**
+   * **THE FIRST TWO RUNGS ARE UNCONDITIONAL** and the clock cannot reach them: they are
+   * true in every calendar, they are the two the director acts on most, and routing them
+   * through day-part arithmetic could only make them worse.
+   */
+  it('leaves the two shortest rungs alone whatever the clock says', () => {
+    const now = Date.parse('2026-08-30T01:39:48.000Z');
+    const span = { at: at(now - 60_000), now: at(now) };
+    expect(ageBucket(1, 'id', span)).toBe('baru saja');
+    expect(ageBucket(30, 'id', span)).toBe('beberapa menit lalu');
+  });
 });
 
 describe('buildWindow', () => {
+  /**
+   * The two paths side by side, on one message. **The offset is what separates them**, and
+   * the un-clocked arm is the pre-phase behaviour byte for byte — which is what makes the
+   * optional argument safe for the twelve fixtures that never pass it.
+   */
+  it('renders anchored ages when an offset is supplied and duration ages when it is not', () => {
+    const messages = [msg({ id: 'a', author: 'user', createdAt: ago(60 * 7) })];
+    const withClock = buildWindow({
+      messages,
+      locale: 'id',
+      caps: CAPS,
+      triggerMessageId: null,
+      now: NOW, // 12:00Z = 19:00 WIB
+      clock: resolveChatClock({ offsetMinutes: 420, now: new Date(NOW) }),
+    });
+    /* 7 hours before 19:00 WIB is 12:00 WIB — siang, and now is malam. */
+    expect(withClock[0].ageLabel).toBe('siang tadi');
+
+    const without = buildWindow({
+      messages,
+      locale: 'id',
+      caps: CAPS,
+      triggerMessageId: null,
+      now: NOW,
+    });
+    expect(without[0].ageLabel).toBe('beberapa jam lalu');
+  });
+
   it('numbers oldest-first, 1-based, with the trigger highest', () => {
     const window = buildWindow({
       messages: [

@@ -148,6 +148,7 @@ ATURAN
     - "reply" null, KECUALI kalau BAHAN memang menyebut sebuah pesan — pertanyaan pembaca yang menggantung, atau pesan yang tidak dibalas siapa pun. Mengutip pesan lama yang tidak ada hubungannya dengan BAHAN membuat ruangan terasa macet.
     - Di run seperti ini "beats":[] BUKAN jawaban. Aturan DIAM ITU BOLEH berlaku untuk pesan yang baru masuk: tidak ada yang bicara di sini, jadi tidak ada yang bisa kamu putuskan untuk tidak dijawab — dan sistem sudah memastikan BAHAN-nya ada isinya sebelum kamu dipanggil. Satu beat, kadang dua.
     - Kalau tidak ada baris BAHAN, berarti penanya memang baru mengirim pesan dan seluruh aturan di atas berlaku seperti biasa.
+12. JAM. Baris SEKARANG di atas jendela menyebut hari dan jam di tempat penanya. Itu jam penanya, bukan jammu dan bukan jam server. Pakai baris itu untuk menilai apakah pesan terakhir di jendela masih hangat atau sudah basi, dan apakah sesuatu yang disebut penanya sudah lewat atau belum. Umur tiap baris di jendela sudah ditulis sebagai kata, bukan angka -- jangan menghitung sendiri, dan JANGAN PERNAH menyalin jam atau tanggal ke dalam "angle". Kalau baris SEKARANG tidak ada, berarti tidak ada yang memberi tahu jam penanya: pakai umur baris saja dan jangan menebak sekarang jam berapa.
 
 YANG BUKAN ALASAN UNTUK MENAMBAH BEAT
 - Supaya ketiganya kebagian bicara.

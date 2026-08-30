@@ -24,8 +24,10 @@
  * to end. The header's value is kept as the fallback for the `known: false`
  * arm, where it is strictly better than the server's UTC date.
  */
+import type { Locale } from '@/data/types';
 import { MAX_UTC_OFFSET_MINUTES, MIN_UTC_OFFSET_MINUTES } from '@/lib/analytics/utcoffset';
-import type { ChatClock, DayPart, Weekday } from './types';
+import { formatLocalDate } from '@/lib/i18n/format';
+import type { ChatClock, DayPart, KnownChatClock, Weekday } from './types';
 
 export type ResolveClockArgs = {
   /** From `chat_threads.utc_offset_minutes`, or a freshly parsed header. */
@@ -150,4 +152,93 @@ export function localDayDelta(from: string, to: string): number | null {
   const b = Date.parse(`${to}T00:00:00Z`);
   if (Number.isNaN(a) || Number.isNaN(b)) return null;
   return Math.round((b - a) / 86_400_000);
+}
+
+/**
+ * MODEL-FACING VOCABULARY, NEVER UI COPY (`LABELS`' rule in `prompt/build.ts`).
+ *
+ * **ONE TABLE FOR THE WHOLE RELEASE.** `<waktu>`, the director's `SEKARANG:` line and phase
+ * 7's `time_of_day` material notes all read it, which is the point: a second table is how
+ * one prompt ends up saying *"Monday morning"* on one line and *"siang"* on another. Phase
+ * 7's `WEEKDAY_WORDS_{ID,EN}` and `DAY_PART_WORDS_{ID,EN}` are cancelled in favour of it.
+ *
+ * Exported so `chatPromptVersion` can hash it: it is a **static layer** of the prompt, and a
+ * change to a weekday word is exactly what `llm_calls.prompt_version` exists to make visible.
+ * The rendered value is per-request and is NOT hashed.
+ *
+ * `weekdays` is indexed by `WEEKDAYS`' Sunday-first order, so it is read with
+ * `WEEKDAYS.indexOf(clock.weekday)` and never with a raw integer.
+ *
+ * `id` IS THE SOURCE AND THE DAY-PART BOUNDARIES ARE ITS OWN — dini hari, pagi, siang, sore,
+ * malam. English is given words that fit those hours rather than boundaries of its own, so
+ * one hour maps to one member in both locales and a token cannot mean two things per
+ * language.
+ *
+ * The month names come from `formatLocalDate`, which SPLITS the string rather than parsing
+ * it — the counterpart trap, and the reason a `local_date` never becomes a `Date`.
+ */
+export const CHAT_TIME_VOCAB: Record<
+  Locale,
+  { weekdays: readonly string[]; parts: Record<DayPart, string> }
+> = {
+  id: {
+    weekdays: ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'],
+    parts: {
+      morning: 'pagi',
+      midday: 'siang',
+      afternoon: 'sore',
+      evening: 'malam',
+      late: 'dini hari',
+    },
+  },
+  en: {
+    weekdays: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+    parts: {
+      morning: 'morning',
+      midday: 'the middle of the day',
+      afternoon: 'late afternoon',
+      evening: 'evening',
+      late: 'the small hours',
+    },
+  },
+};
+
+/**
+ * `14.05` / `14:05`. **24-HOUR IN BOTH LOCALES, AND ONLY THE SEPARATOR DIFFERS** —
+ * `formatTimeOfDay`'s measured finding in `i18n/format.ts`, reproduced by hand rather than
+ * reused, because that function hands a `Date` to `Intl` and lets it render in the RUNTIME's
+ * zone. We have an offset and no zone, so the runtime's zone is precisely what must not be
+ * consulted. **Do not "deduplicate" this into `formatTimeOfDay`.**
+ */
+function clockTime(clock: KnownChatClock, locale: Locale): string {
+  return locale === 'id' ? clock.localTime.replace(':', '.') : clock.localTime;
+}
+
+/**
+ * THE SENTENCE. `Jumat, 7 Agustus 2026, 14.05 (siang)`.
+ *
+ * **ONE PRODUCER FOR BOTH PROMPTS.** The voice wraps it in `<waktu>` and the director
+ * prefixes it with `SEKARANG:` / `NOW:`; neither builds its own. Two renderers would
+ * eventually disagree about what time it is inside one run, which is a worse bug than the
+ * one this phase is fixing.
+ *
+ * **IT TAKES A `KnownChatClock`**, so a caller cannot reach it without having branched on
+ * `clock.known` — which is the whole reason phase 1's type is a discriminated union rather
+ * than five nullable fields.
+ *
+ * **THE YEAR IS INCLUDED AND `<riwayat>`'s dates do not carry one.** Not a mismatch to tidy:
+ * `<riwayat>` names days inside a thirty-day window where the year is never in question, and
+ * this line is the anchor everything else is measured against.
+ *
+ * **DIGITS, DELIBERATELY, AND V3's RULE DOES NOT APPLY HERE.** V3 deleted counts from two
+ * prompts because *"a model cannot recite a count it was never given"* — the counts were
+ * evidence a reader would read out. A clock is not evidence, it is the frame, and the model
+ * has to compare it numerically to decide *tadi* from *nanti*. The rule against reciting it
+ * lives where it belongs: in the contract, which forbids reading the date out.
+ */
+export function renderNow(clock: KnownChatClock, locale: Locale): string {
+  const vocab = CHAT_TIME_VOCAB[locale];
+  const day = vocab.weekdays[WEEKDAYS.indexOf(clock.weekday)] ?? '';
+  const date = formatLocalDate(clock.localDate, locale, true);
+  return `${day}, ${date}, ${clockTime(clock, locale)} (${vocab.parts[clock.part]})`;
 }
