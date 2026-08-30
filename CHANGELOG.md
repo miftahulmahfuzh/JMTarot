@@ -5,6 +5,399 @@ All notable changes to JMTarot are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.9.0] - 2026-08-30
+
+**The room did not know what time it was, and it said so out loud in production.** Thessaly
+wrote *"jam 5 nanti"* at 08:39 WIB, three hours after five o'clock had gone past. Both chat
+prompt builders were fabricating the **server's** UTC day under a permission that held only
+*"while nothing renders a date to a person"* — and the moment a prompt states a clock, that
+permission is spent. `chat_threads.utc_offset_minutes` had existed since migration `0014`,
+folded in by `[R17]` for exactly this day, **and was read by nothing.** Nine phases across
+three requirements later, the room knows what time it is (R1), keeps notes on who it is
+talking to (R2), and opens the conversation far more often than it used to (R3).
+
+**R2 is the part nobody asked for and the part this release is judged on.** A model now
+distils durable facts about the querent out of the group chat — habits, tastes, the colleague
+they complain about — into a twenty-third table, and reads them back into every prompt through
+a sixth fence. **That is a dossier a language model wrote about a person, assembled out of a
+conversation they were having for another reason**, so the erasure path landed in phase 3,
+**before anything could generate a row**, and `/account` gained a section that shows every
+sentence of it with per-item deletion. The smallest honest version of storing this is: you can
+read it, and you can destroy it. `dismissed_ids` **stores hashes and never text**, which is
+what stops the delete button being a lie — the `chat_messages` that produced a fact are still
+there, so without a tombstone the next extraction puts it straight back.
+
+**Two production outages, and neither was anything this repository had deployed.** On
+2026-08-27 z.ai turned reasoning on for `glm-4.6` and **every reading went blank** — nothing
+had shipped for six days. `anthropic.ts` renders only text deltas, so thinking was discarded,
+and thinking is spent from the same `max_tokens` as the prose, which is 350–650 here. Measured
+on the live wire, same prompt: **552 thinking deltas and 97 text deltas by default, against 0
+and 132 with `thinking: { type: 'disabled' }`.** The same change took the moderation classifier
+with it — 66 truncated characters, unparseable as the JSON verdict, so `gate.ts` fell through
+to `onNoVerdict` and **every question failed OPEN, silently, with nothing alerting.** The
+second: `vercel.json` carried no `regions` key, so **every render in this project's entire life
+ran in Washington DC** against a Singapore database, two transpacific hops per query, while
+fourteen places in this repository said `sin1`. `DEPLOY-VERCEL.md` §6 is why — **it told
+somebody to click a control in a dashboard**, which leaves no artefact and fails nothing when
+skipped. It was skipped.
+
+**Four measurements this release re-ran, and three of them did not survive.** `--window-size=390`
+gives a ~500px layout on **Linux too**, so every *"verified at 390px"* claim ever made here from
+a screenshot was a wide page cropped to look narrow — it was never Windows and never a saved
+profile bound. The moderation classifier's famous 903ms p95 re-ran at **2864ms at n=20 and
+4508ms at n=42**, printing the probe's own `D8 PREMISE FAILS`, and the probe **was never
+measuring production in the first place**: it runs from a working tree, WSL → z.ai over a
+consumer link, and the gap is widest in the tail, which is the only part a timeout ever meets.
+Four files still said Upstash was in Tokyo while CLAUDE.md said all five were fixed. **Nothing
+was changed on the classifier evidence** — wrong path, and both ends of the distribution moved
+in opposite directions.
+
+**MINOR, and the diff argues it rather than the commit subjects.** Thirty-eight commits, one new
+table, two migrations, a fourteenth `LLMOp`, an eighth kill switch, two new prompt fences, two
+new `MaterialKind` values, a delete route, a retry route and three account-memory routes.
+Nothing shipped breaks. **`EVENT_NAMES` went 76 → 78 and there is no headroom left** — 78 names
+against a 78 bound, and `[R1]`'s ritual was performed for the third and fourth time. Twenty-two
+tables to **twenty-three**; prompt fences eight to **ten**; kill switches seven to **eight**;
+`LLMOp` thirteen to **fourteen**, five of which now have no querent behind them. **No new
+dependency.** 3942 unit tests across 204 files; 728 integration across 50 — both re-measured for
+this tag rather than copied from a commit message.
+
+### Added
+
+- **`src/lib/chat/clock.ts` — THE ONE CLOCK MODULE for the release**, and phases 2, 7 and 8 all
+  resolve through it. `resolveChatClock`, `WEEKDAYS`, `DAY_PARTS`, `dayPartOf`, `weekdayOf`,
+  `localDayDelta`, `CHAT_TIME_VOCAB` and `renderNow` — **one producer, because two renderers
+  would eventually disagree about what time it is inside a single run.** `ChatClock` is a
+  discriminated union on `known` threaded through `DirectorInput`, `VoiceInput`, `AssembleArgs`
+  and `ChatContext` as a **required** field, so the compiler names every construction site.
+- **`src/lib/analytics/utcoffset.ts` and the `x-jm-utc-offset` header.** **Absent stays `null`
+  and never becomes `0`** — zero is UTC, a place people live, and a parse that coerced would
+  tell three readers it is 01:39 while the querent is having breakfast. Its own test found the
+  correction: `-date.getTimezoneOffset()` yields `-0` in UTC, the one value `SHAPE` refuses,
+  **invisibly, since `String(-0)` is `'0'`** — and a stored `-0` would have made London rewrite
+  its offset on every badge poll for ever. Normalised at the producer.
+- **`<waktu>` in the voice's user turn and `SEKARANG:` / `NOW:` at the head of the director's
+  header.** Verified live: at 14.05 WIB the English readers answer with *"You ran at five this
+  morning"* and Margaret opens *"a Friday afternoon like this one"*. **Both worked examples
+  spell their numbers as WORDS**, so the contract cannot hand a model a figure to copy into a
+  bubble, and `ageBucket` learned the calendar behind an optional span — `pagi tadi`, `semalam`,
+  `dini hari tadi`, every phrase a word, and **`kemarin`, not `kelmarin`, which is Malay and on
+  the grep.**
+- **`user_memory`, migration `0017`, and the twenty-third table.** **The payload is a list of
+  addressable items, never a prose blob**, and three downstream requirements each force that
+  independently. `id` is `sha256(kind + US + normalize(text))` truncated to twelve hex —
+  **content-derived as a contract rather than a convenience: a random id would mint a new one on
+  every regeneration and the querent's deletion would survive exactly until the next
+  extraction.**
+- **`src/lib/memory/profile/{prompt,generate,types}.ts` — the extractor, the fourteenth `LLMOp`
+  and `PROFILE_MEMORY_ENABLED`.** One `profile_memory` call per completed chat run whose
+  transcript has moved past `PROFILE_MEMORY_MIN_AGE_SECONDS`. **Not folded into `chat_turn`, on
+  `chat_plan` vs `chat_turn`'s own argument** — a very large prompt with a large structured reply
+  averaged against a two-sentence bubble makes both figures meaningless — and **an op is what the
+  call IS, not why it happened**, which is the rule that kept a proactive turn a `chat_turn`.
+  Nothing it produces is ever spoken.
+- **A third shape for a kill switch, and it is why `flags.ts`'s header was rewritten.**
+  **SAFE and NECESSARY are two independent questions the first two generators happened to answer
+  the same way.** `profileMemoryInputHash` moves on the querent's next sentence, so storing a
+  fallback would be safe — but nothing 500s on a missing row, and **there is nothing honest to
+  write**: there is no template version of *"usually has nasi padang for dinner"*, and `/account`
+  labels this row *what the room believes about you*. **Absence is the honest form of "we could
+  not write a memory"; a stored empty list under a current hash is a CLAIM.**
+- **`<ingatan>`, the sixth fenced block, sitting with the person and behind their own answers.**
+  The assembler flattens `user_memory` to `string[]` before the prompt layer sees it, so
+  `build.ts` never learns that table has an `input_hash`. **The director gets none of it** —
+  `instruction()` renders `beat.angle` unfenced inside the one block the contract calls a
+  command, so a director that could read the memory could route a remembered fact around the
+  fence through the one field designed to cross it. **And there is deliberately NO proper-name
+  ban over it**: `<jawaban>`'s ban rests on a published promise in an onboarding hint, nothing
+  promises that about a name the querent said out loud in the room, and a ban would refuse
+  *"gimana si bonjeng, marah2 lagi ga dia?"* — **the sentence this release exists to produce.**
+- **`memory_verbatim_ngram`, the fourth refusal to override the accept bias.** `MEMORY_NGRAM` is
+  8 where `NGRAM` is 6, recorded as a guess. **Phase 6 puts these notes on `/account` and names
+  them in `/privacy`, so a bubble reciting one is the product demonstrating that it keeps a
+  file** — which is why "do not read it out" had to become enforcement rather than hope.
+- **`/account`'s memory section, `GET`/`DELETE /api/account/memory`, `DELETE
+  /api/account/memory/[item]`, and `/privacy` subclause 2.8 in both locales.** Per-item deletion
+  and a two-step forget-everything. **NO EDIT CONTROL, deliberately** — V8's L13 reversal was
+  about text the querent *wrote*; a note here is a sentence a model wrote *about* them, and
+  rewriting one is dictating a prompt, which needs W7's gate, a `source` flag the extractor
+  respects and a length cap, all owned elsewhere. **The correction on offer is deletion.**
+- **`profile` and `time_of_day`, taking `MaterialKind` from six to eight.** **`ProfileMaterial`
+  has no `text` field, and that is the phase rather than a limitation**: the `BAHAN:` line sits
+  above `<obrolan>` and outside every fence, and `user_memory` is model prose rebuilt
+  continuously from whatever the querent types — unlimited attempts at an unfenced line, where
+  the Lotus summary is one attempt from six fixed answers. The fact reaches the **voice** through
+  `<ingatan>`. **`time_of_day` is LAST in `MATERIAL_ORDER` on a structural argument**: its key is
+  fresh in every part of every day and the ladder stops at the first unused key, so anywhere but
+  last it starves everything below it.
+- **`/history/[id]` gained `Coba ulang`, `POST /api/reading/retry/[id]` and `retryable.ts`.**
+  **Retry is `body IS NULL`, never a status list**, so a `partial` reading — which has prose
+  somebody already read — is never retryable, and **the guard lives in `refillReading`'s WHERE
+  clause**, which is what makes a double-submit and a race safe. A retry **never moves
+  `readings.locale`**, so the route splits `readLocale` from `viewLocale` and sends
+  `x-reading-locale`; `refillView` returns `as-written` on a language mismatch and never
+  `original`, which is `ReadingView`'s rule 4 enforced by the caller that would otherwise breach
+  it.
+- **Swipe left on a `/history` row to delete, `DELETE /api/history/[id]`, and migration `0016`.**
+  A pure state machine in `src/lib/history/swipe.ts`, a confirmation sheet, and **the row is
+  removed only on a 2xx — a confirmed deletion, never an optimistic one.** `softDeleteReading` is
+  **one transaction that revokes the share links, clears the day summaries that named the
+  reading, flags the cards, then flags the reading, in that order** — and **the summary clear is
+  load-bearing, because `isStale` never fires on a source id that has gone**, so the read filter
+  alone would leave a reader's paragraph standing for ever. Sixteen `isNull(...deletedAt)` read
+  filters across five query modules, inside the existing `and(...)` and never an `exists`.
+- **`tools/media/` — a phone-width capture harness, and the three measurements that make it
+  one.** `Emulation.setDeviceMetricsOverride` gives **exactly 390 with `pointer: coarse`**, which
+  `.claude/skills/test-prod-using-headless-chrome/SKILL.md` says is unreachable. **A
+  `Page.captureScreenshot` poll loop SILENTLY EATS TAPS** — same scene, same card, loop running
+  → `0 / 3 KARTU`, loop stopped → `1 / 3`, while a typed `halo` landed in both, because a
+  screenshot forces a compositor frame and touch hit-testing needs the same compositor while key
+  events do not. **The first hero recording was a GIF of the fan refusing to respond, with
+  nothing logged.** And **an Emulation override belongs to the CDP session that set it**, so one
+  take spanning a `goto` produced 390px frames before it and 500px frames after, in one
+  directory. Hence: `goto` re-applies, `rec` discards mismatched frames out loud, and `gif.py`
+  **refuses a directory of mixed sizes rather than scaling two layouts into one tidy GIF.** No
+  new dependency — Node 24's global `WebSocket` for CDP, Pillow for the GIFs.
+- **Eighteen captures in `docs/media/`, 7.6MB**, all of the running app at a genuine 390×844 at
+  2×. **Every reading, chat turn and translation in them was generated at the moment of capture**
+  against a real Postgres and real z.ai calls. `chat.gif` is the one thing not at real speed —
+  2×, **and its caption says so, because a capture that no longer runs at real time has to
+  disclose it where it is shown.**
+- **A `glm-5.3` row in `prices.ts`, before the model is switched on.** **A model with no row here
+  is an `unpricedCall` on `/admin/tokens`**, so shipping a cutover without it would make the
+  dashboard silently under-report from the first call. Zero for the same reason as every row above
+  it; `effectiveFrom` is today rather than backdated, because an earlier date would claim
+  knowledge of a price nobody looked up. **It is also on the right side of the ~February 2027
+  cliff, which `glm-4.6` is not.**
+
+### Changed
+
+- **`"regions": ["sin1"]` is in `vercel.json`, and the dashboard was never the mechanism.**
+  `DEPLOY-VERCEL.md` §6 now names the file, and `sweep.contract.test.ts` asserts the key so
+  deleting it is red — **which is the part the dashboard could never do.** **Every latency figure
+  in this repository predating 2026-08-19 was measured on the Virginia stack**, and that is
+  recorded in the notes with the rule to re-measure before tightening any timeout derived from
+  one, rather than deleted.
+- **`inQuietHours` shipped DEAD in v0.7.0 and is live from this release.** `[R17]` ruled Option A
+  because sources 1 and 2 only fire while the querent is in the app and source 3's quiet hours
+  **were** its schedule — **and both halves of that expired here**, because the nudge now runs
+  twice. **A schedule stops being the mechanism the moment there is more than one of them.**
+  `[R17]` folded the offset column into `0014` so that ruling the other way later would be one
+  line rather than a migration: **it was one line.** **A null offset means NOT QUIET, never
+  blocked** — mint-blocking on an unknown would silence the feature for everybody whose browser
+  has not reported yet, and it is what makes the change a no-op for every row without an offset.
+- **The cadence retune, which is a RULING and not a measurement, with every number still labelled
+  a guess.** Gap 10800 → 3600, cap 2 → 5, TTL 48 → 24, fan-out 8 → 20, plus a morning cron at
+  `0 1 * * *` (08:00 WIB) — **the only way a Monday-morning greeting reaches a querent who is not
+  already in the app.** **`maxPerDay`'s arithmetic was REDONE rather than copied**: a proactive
+  run is 2–4 beats by rule 11, not the eight-beat cap, so five runs is still the ~20-bubble bound
+  v0.7.0 defended — and that premise holds **only** because `time_of_day` is capped at one run per
+  local day in `detectTimeOfDay`.
+- **`CHAT_MAX_BEATS` 6 → 8, and — the finding phase 9 turns on — the worked examples stopped
+  teaching two.** 2026-08-28 raised the cap and rewrote rule 1 while **leaving both examples
+  answering with two beats and saying so in prose**, and `system.id.ts`'s own header ranks the
+  examples above the rules: the model was shown two and told four. **A cap change is FOUR edits —
+  the number, the rule that spends it, every rule that constrains it, and every worked example
+  that answers with a count.** Two ceilings would otherwise have silently capped every run at one
+  beat, neither in a file anybody would have opened: **`PLAN_MAX_TOKENS` 400 → 900** (a truncated
+  sheet is `unparseable`, which is `planFallback`, which is exactly one beat) and **`MAX_MEMO`
+  16 → 32** (a miss is a refusal, so an evicted guard is a lost bubble out of exactly the longest
+  runs). **`CHAT_LENGTH_BUDGET` does not move: the room gets louder by BEATS, never by WORDS.**
+- **The base contract gained a licence to joke and to back another reader up, and each of the six
+  reader blocks gained a reader-to-reader worked exchange** — the one place the three voices
+  actually collapsed. `REPAIR_WORDS` renders `C-R7`'s retry reason as a sentence in the model's
+  language instead of a raw English enum member; **the accept-bias edit was made in the retry
+  rather than in `validate.ts`**, whose refusal list was re-examined and deliberately not
+  loosened.
+- **`advance()` became a wrapper over `advanceOnce()`**, so *"a run just finished"* is asked in
+  one place. Signature and every return value unchanged.
+- **`ChatButton` was sending no `x-jm-local-date` at all**, so every proactive tick from `/`,
+  `/[reader]`, `/account` and `/history` **between midnight and 07:00 WIB was booked on
+  yesterday** — the day the daily cap and the birthday detector key on. Pinned at source level so
+  it cannot return.
+- **`context.contract.test.ts`'s "`getUserMemory` is called from exactly one file" fence was
+  WIDENED TO THREE NAMED FILES rather than relaxed**, plus a new assertion that neither proactive
+  caller assigns a `text:` property anywhere — the cheap grep under the type-level guarantee.
+- **`/admin/chat`'s beat histogram bucketed `least(..., 4)` through two cap raises**, so **the
+  release's own scorecard under-reported every run past four.** Now 8, in the SQL, `BEAT_BUCKETS`,
+  the label and the test, with `beatFold`'s mean still flagged a lower bound.
+- **The trash control sits 8px off the row, not flush against it.** Reported on a real phone; the
+  gap was zero, and the two read as one welded object where every other pair of controls on that
+  screen is separated. 8px is `DateFilter.module.css`'s `.strip` gap — the distance between
+  `Hari ini` and `25 Agustus`, the only other row of controls there. **Padding on the tray, never
+  a narrower tray**: the 88px must stay equal to `REVEAL_WIDTH`, which is the distance the slider
+  travels, and shrinking it is the units bug that block's own header warns about.
+- **`README.md` was rewritten around the captures rather than patched.** It described an app that
+  stopped existing in July — *"deliberately not built yet: onboarding … and reading history"*,
+  both shipped; *"not yet verified on real hardware"*, closed on 2026-08-09 — and still said the
+  card artwork carries its own frame, numeral and title, **which the regenerated deck does not.**
+  Patching would have left screenshots sitting next to sentences they disprove.
+- **CLAUDE.md's third cut, and its result is a REFUSAL worth more than the saving.** 146,694 →
+  143,236 bytes against an estimate of 20–25k. Four rewritten sections gave 4.3k and stubbing the
+  eight stable workstreams gave 1k more, **because the 2026-07-29 cut had already reduced them —
+  and V2 came out LONGER and was reverted byte-for-byte.** **There is no cheap 20k in that file,
+  and the only mechanism that works is net-neutral editing: a ruling that adds a rule compresses
+  or moves one out in the same commit.** Every rewrite was checked mechanically — the heading set
+  byte-identical, every backticked identifier searched for in the new text — **which found four
+  rules genuinely dropped, all restored.** The size line now says to measure with `wc -c`, because
+  Python's `len()` reads ~700 lower on the same file and that is exactly the mismatch that makes
+  the next person think they have room they do not.
+- **`docs/workstream-notes.md` gained a Part III**, holding the third cut's prior text verbatim —
+  **moved by script rather than retyped**, because Part II's promise that *nothing was deleted
+  from the project's record* is not something a hand-copied snapshot can make.
+
+### Fixed
+
+- **Every reading came back blank, and nothing had been deployed for six days.** `thinking: {
+  type: 'disabled' }` on both call paths. **Deliberately not an environment variable, on
+  `CHAT_PLANNER_MODEL`'s rule** — its only effect would be letting somebody turn it back on at
+  2am and never notice.
+- **The moderation classifier failed OPEN for the same reason and was the quieter half.**
+  `glm-4.5-flash` at 350 tokens returned 66 truncated characters, unparseable as the JSON
+  verdict, so **every question passed the gate with nothing alerting.**
+- **The choice marker turned up on the LAST line, where nothing was looking — and it had been
+  shipped and unobserved since 2026-07-29.** Found by taking a reading, not by a test:
+  `PILIHAN: aku ambil` arrived as the final line of a `spread3` for a question that offered
+  nothing to choose between, and `CHOICE_RULE_ID` forbids both independently. `splitChoiceMarker`
+  only ever examined offset 0, so **the line was not protocol as far as the code was concerned:
+  it rendered as the querent's own reading and `persistReading` stored it in `readings.body`** —
+  the failure `choice.ts`'s header calls INVISIBLE, because no event fires when nothing happened.
+  **The two branches are deliberately asymmetric**: leading strips unconditionally, trailing
+  strips only when the candidate passes `validateChoice`, because **`Pilihan: tetap di sini.` is
+  an ordinary Indonesian sentence and deleting a closing paragraph to hide eight characters is
+  strictly worse than the bug.** Verified with the documented instrument against the documented
+  baseline — 18 live readings, **12 markers, 12 of 12 parsed at offset 0, zero leaked**, and 7
+  choice violations against a recorded 9/8/4, **inside its own range, so this change did not move
+  it.**
+- **The Insight button refused `chat_turn` ten presses running, and pressing again could not
+  help.** It was not the model's habit: **`validateInsight` refused any `_` anywhere in the
+  body**, while `panels.ts` puts `chat_plan`, `chat_turn`, `blog_format` and `llm_calls.user_id`
+  into the notes of the token and cost panels — and rule 2 asks the model to cite evidence out of
+  that block with technical terms staying English. **So *"panggilan chat_turn naik"* obeys every
+  rule in the prompt and reported as markdown, deterministically, for the whole of A7.** The rule
+  is now positional: an underscore between word characters is an identifier, anywhere else it is
+  emphasis. **It generalises, so a fifteenth op cannot bring the refusal back.**
+- **A negative-example retry inside one press.** On a shape refusal `generateInsight` calls once
+  more with the rejected body fenced in `<contoh_salah>`. **Nothing is stored and the rejected
+  text never leaves the server** — round-tripping it through the browser was declined because it
+  relaxes `route.ts`'s rule that nothing a browser posted reaches a prompt. **`insightInputHash`
+  must not see the negative example, and a test asserts it**: otherwise a rescued insight stores a
+  hash that never matches the next page load and **the cache inverts into one model call per
+  view.** No retry on `ceiling` or `failed` — neither produced text, and a ceiling retry spends
+  quota the limiter has just refused.
+- **Nobody writes *"lo belum jawab pertanyaan aku"*.** Indonesian has two pronoun sets and a
+  speaker picks one; Thessaly mixed them inside a single bubble in production. **The ban alone
+  would have made the model pick one set and hold it for a whole conversation — flattening
+  exactly the register the room exists for** — so the licence is stated beside it: a reader may
+  drift between sets **across** messages and may not mix them **within** one.
+  `mixesPronounRegisterId` is smoke-only and **run over ONE bubble, never the joined run**,
+  because the tic, Malay and source-tell greps all join every bubble and doing that here reports
+  the licensed drift as the defect. **The `-ku`/`-mu` clitics are deliberately absent** —
+  `\p{L}+ku` also matches `berlaku` and `buku`, **and an oracle that fails on correct output is
+  one somebody switches off.**
+- **`runChat`'s `CROSSOVER` used a bare `includes` where `runVoices` used `\b…\b`**, so Margaret
+  writing *"masih"* failed for *"sih"*. Now word-bounded.
+- **`CHAT_MAX_TOKENS = 90` was the length control, not a runaway guard.** Its *"roughly double
+  Margaret's words"* arithmetic was done in English at ~1.4 tokens/word while `id` runs 2.2–3.1,
+  **so a compliant bubble was cut mid-word at thirteen words.**
+- **Four files still said Upstash was in Tokyo, and CLAUDE.md said all five were fixed.** Six were
+  live. **Do not trust a sentence in this repository that says a correction is complete — say
+  where it landed, because a tally is exactly what nobody re-runs.**
+- **A 1-in-3 test flake**, fixed alongside the region and Tokyo corrections.
+- **A stale assertion in `context.integration.test.ts`** that phase 2 made red on `main`:
+  `<waktu>` is the first block of the user turn now, by design.
+- **`package-lock.json` and `package.json` carry the release version.**
+
+### Removed
+
+- **`feat/ios` is deleted, and its four references now name the commit `7fe0249`.** It is a strict
+  ancestor of `main`, so deleting the branch removed a pointer and not one byte of history — and
+  **naming the commit is the more durable form, not a downgrade**: an ancestor of `main` can never
+  be garbage-collected and `git show 7fe0249:<path>` works for ever, where a branch is one
+  `git push --delete` from gone. `git branch feat/ios 7fe0249` restores it exactly.
+- **`.worktrees/admin-range`**, which held 24KB of stale `.next/dev` cache from a worktree git no
+  longer had registered.
+- **`profileKindOf()` was not written.** Its `other` fallback defended a case the writer refuses:
+  phase 4's parser drops an element whose `kind` is outside the set and phases 5 and 6 drop it on
+  read, so **a drifted kind costs the item uniformly, everywhere, and a mapper here would be the
+  one surface disagreeing.**
+- **A `CHAT_QUIET_*` third variable, refused.** Setting both hours equal is the documented off
+  switch. **`resolveQuietWindow` falls back to the DEFAULT for each key and never to `0`** —
+  `Number('') === 0` and `.env.example` ships both keys empty, so the naive `Number(raw)` turns a
+  copied example file into a window opening at midnight.
+- **Two of eleven planned message keys, dropped rather than raising the catalog ceiling.** `id`
+  was at 22,389 bytes with 611 free under the 23,000 cap — **not the 21,161 that `prose.test.ts`'s
+  header still quotes** — and the block as planned cost ~680 and would have breached. It fits at
+  **id 22,950 (50 free) and en 22,609 (391 free)** because two keys were reused and four values
+  shortened with every claim intact. **The rule does not change: shorten the copy, never raise the
+  ceiling.**
+
+### Security
+
+- **The erasure path landed in phase 3, before anything could generate a row**, and it **amends
+  `delete.ts`'s foreign-key rule in the header rather than quietly.** `user_memory.user_id`
+  cascades, so by the letter of that rule it needs no line in the soft-delete transaction. **It
+  gets one anyway: the foreign key answers "does it survive", not "is this the thing they
+  meant."** It costs the thirty-day restore nothing — **derived-and-regenerable is a third
+  category, and it is what decides the case** — and it is a REDACTION, keeping the tombstones so
+  a day-three restore does not resurrect what was individually deleted. **`input_hash` is blanked
+  in the same statement**; `''` is a reserved never-matches value, and forgetting it would leave
+  the extractor reporting `unchanged` for ever.
+- **`waktu` and `ingatan` joined `DELIMITER` in `sanitize.ts`, taking the fence list to ten.**
+  Every byte of the clock block is code-derived, **which is exactly why**: the builder that writes
+  a fence strips its material, so `</waktu>` cannot be typed into the room to forge the frame.
+- **`DELETE /api/history/[id]` returns 204 with no body for all four outcomes, so the route is not
+  an oracle** — `/api/auth/handoff`'s rule, applied to a resource whose existence is itself a
+  fact about the querent.
+- **GATE 5 exempts `source === 'reading'`, and the exemption lives in the PREDICATE, not in
+  `mint.ts`, so `npm test` can see it.** Somebody who takes a reading at 02:00 is awake, in the
+  app, and has just done a discrete thing with a subject. **A tick is a page load and is not
+  that.**
+- **`user_memory` items are read through `isUserMemoryItem` in all three places** — the prompt,
+  `/account` and the proactive detector. **A third, looser narrower would point a reader at a fact
+  `<ingatan>` filtered out and `/account` never listed**, which is the one shape of this feature
+  that cannot be allowed: a note the querent cannot see and therefore cannot delete.
+- **`/privacy` clause 8 now claims the notes are erased in the same transaction as the account**,
+  and the chat's first-open notice names them. **A clause that describes a table is a clause that
+  has to be edited when the table arrives**, which is the half of this that nobody re-reads and
+  everybody relies on.
+
+### Known gaps at this tag
+
+- **The memory USE RATE is lower than R2's plan expected, and the notes record why it is the
+  fixture transcript rather than the contract.** The blind read was 3 of 3 in both locales with
+  one unattributed use of a memory-only fact (*"bonjeng"*) appearing in no other block — **one
+  run is not proof a prompt binds; the mechanical check is what makes the next run answer it.**
+- **The cadence retune is a ruling and every number in it is still a guess** — the gap, the cap,
+  the TTL, the fan-out and `MEMORY_NGRAM = 8`. **`/admin/chat`'s reply-rate panel is the only
+  continuous instrument**, and its denominator is runs whose 24-hour window has closed.
+- **Deriving each cron candidate's true calendar day from their stored offset was declined again
+  and is recorded again.** The morning slot fires at one UTC hour for everybody.
+- **The 8px trash gap was NOT measured in a browser.** There is no Chrome in this image with
+  `tools/e2e/setup.sh` unrun, loop 4 covers public pages and `/history` is gated. **A fixed-width
+  absolute box plus a padding has no layout negotiation in it, but that is reasoning rather than a
+  measurement — the phone is the instrument.**
+- **The retry route's 200 path is unmeasured locally**, because the local `LLM_API_KEY` is expired.
+- **`glm-5.3` is priced and not switched on.** It reasons by default too, **so it would not have
+  fixed the blank readings**, and the cutover still needs `npm run probe:usage` and the blind read
+  as the gate.
+- **The moderation timeout was left alone on evidence that failed.** `MODERATION_TIMEOUT_MS` stays
+  1500 and `MODERATION_MODEL` stays `glm-4.5-flash`: the probe measures the wrong path, its own
+  header forbids nudging the timeout, and **a classifier timeout on a blocklist-clean question
+  fails open — a rate to measure, not an outage to react to.** The production instrument is
+  `llm_calls.total_ms` for `op = 'moderation'`, whose tail is censored by the timeout, **so count
+  rows at or near it rather than taking a percentile.**
+- **`EVENT_NAMES` has no headroom: 78 names against a 78 bound.** The next release folds or raises
+  the ceiling, and `[R1]`'s ritual has now been performed four times.
+- **Everything v0.8.0 left open is still open**, except the two `/account` items this release
+  closed: touch behaviour, safe-area insets and Add to Home Screen are still unverified on
+  hardware; the voices still invent an occasional specific; `recurring` still does not reliably
+  land; `'persona'` is still a live `share_links` union value resolving to null; `share.viewed`
+  has still not been observed firing; and the four launch blog rows keep their old hero `alt`.
+- **`npm run test:all` still fails ~12–22 of V9's limiter tests** — the harness race on the one
+  shared `serverless-redis-http`, not a regression. Run the two projects separately: `npm test`
+  passes **3942** across 204 files and `npm run test:integration` passes **728** across 50.
+
 ## [v0.8.0] - 2026-08-09
 
 **The installed app could never sign in, and this is the release that measured why.** For
@@ -2672,6 +3065,7 @@ app as it now stands. The iOS tree is preserved on `feat/ios` and
 - Two superseded design exports; the Clickable export is the single visual
   reference. Both remain in history at `d7fdd89`.
 
+[v0.9.0]: https://github.com/miftahulmahfuzh/JMTarot/releases/tag/v0.9.0
 [v0.8.0]: https://github.com/miftahulmahfuzh/JMTarot/releases/tag/v0.8.0
 [v0.7.0]: https://github.com/miftahulmahfuzh/JMTarot/releases/tag/v0.7.0
 [v0.6.0]: https://github.com/miftahulmahfuzh/JMTarot/releases/tag/v0.6.0
