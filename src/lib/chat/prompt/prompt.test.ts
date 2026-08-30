@@ -312,19 +312,32 @@ describe('the three chat voices', () => {
   });
 
   /**
-   * `[F3-21]`. **SIX ANCHOR WORDS, EACH IN ITS OWN BLOCK AND IN NONE OF THE OTHER
-   * FIVE.** This is the enforcement mechanism `## Localization` rule 3 asks for: an
+   * `[F3-21]`. **AN ANCHOR WORD PER EXCHANGE, EACH IN ITS OWN BLOCK AND IN NONE OF THE
+   * OTHERS.** This is the enforcement mechanism `## Localization` rule 3 asks for: an
    * English example about an unsigned contract was produced by translating, and a
    * reviewer can see it in five seconds without reading a word of either language.
    */
   it('writes the English examples on different material from the Indonesian ones', () => {
+    /*
+     * **TWELVE SINCE 2026-08-30, BECAUSE EACH BLOCK NOW CARRIES TWO WORKED EXCHANGES.**
+     * The second one shows the reader ANSWERING ANOTHER READER, which is the mechanic R3
+     * is measured on and the one place the three voices actually collapse -- and a second
+     * example produced by translating the first is exactly the failure this check exists
+     * to catch, one exchange further in.
+     */
     const ANCHORS: Array<[(typeof LOCALES)[number], ReaderId, string]> = [
       ['id', 'thessaly', 'kontrak'],
+      ['id', 'thessaly', 'kosan'],
       ['id', 'margaret', 'foto'],
+      ['id', 'margaret', 'payung'],
       ['id', 'adrian', 'baca'],
+      ['id', 'adrian', 'mie'],
       ['en', 'thessaly', 'deposit'],
+      ['en', 'thessaly', 'gym'],
       ['en', 'margaret', 'letter'],
+      ['en', 'margaret', 'voicemail'],
       ['en', 'adrian', 'birthday'],
+      ['en', 'adrian', 'playlist'],
     ];
 
     for (const [locale, reader, anchor] of ANCHORS) {
@@ -388,6 +401,14 @@ describe('the three chat voices', () => {
    * writes none and Adrian writes several, in the very lines the model is told to copy
    * the rhythm of. The smoke script FAILS on `adrian === 0` or `margaret > 0` over real
    * output; if the examples broke that rule they would be teaching the failure.
+   *
+   * **THE SLICE COVERS EVERY SPEAKER IN HER EXAMPLE SECTION, NOT ONLY HER LINES, AND
+   * SINCE 2026-08-30 THERE ARE TWO SECTIONS TO GET RIGHT.** `example()` runs from the
+   * first `AN EXAMPLE` to the end of the block, so Thessaly's and Adrian's lines inside
+   * Margaret's block are counted too. That is why the Adrian line in her first exchange
+   * reads *"what stopped you"* and the one in her second reads *"not what i said"* --
+   * both deliberately contraction-free. **Anybody adding a line to Margaret's block owes
+   * it the same discipline, whoever is speaking.**
    */
   it('gives Margaret no contractions in her English example and Adrian several', () => {
     const example = (reader: ReaderId) => {
@@ -406,6 +427,51 @@ describe('the three chat voices', () => {
    * means the director is not really deciding**, and a reader who believes every
    * message must be answered is the other half of that.
    */
+  /**
+   * **R3, 2026-08-30.** The two things the naturalness card asked for that the contract
+   * had no line for: readers taking each other's SIDE (as distinct from disagreeing with
+   * each other, which it already licensed) and being allowed to be funny. Asserted
+   * separately, each by its own phrase, because each is separately deletable -- and the
+   * first reads like a restatement of the disagreement rule to somebody tidying, when it
+   * is the opposite of it.
+   */
+  it('licenses backing another reader up, and licenses a joke', () => {
+    expect(contract('id', 'adrian')).toContain('KAMU JUGA BOLEH MEMBELA MEREKA');
+    expect(contract('id', 'adrian')).toContain('BOLEH BERCANDA');
+    expect(contract('en', 'adrian')).toContain('YOU MAY ALSO TAKE THEIR SIDE');
+    expect(contract('en', 'adrian')).toContain('JOKES ARE FINE');
+  });
+
+  /**
+   * **THE ANTI-PANEL RULE.** A beat aimed at another reader that is written *about* them
+   * to the querent is the shape that makes a long run read as a panel -- and the longer
+   * runs `CHAT_MAX_BEATS = 8` licenses are exactly where it shows up. The director says
+   * who the beat is for; this is the sentence that makes the voice write to them.
+   */
+  it('tells a reader answering a reader to write TO them, not about them', () => {
+    expect(contract('id', 'margaret')).toContain('tulis kepada DIA');
+    expect(contract('en', 'margaret')).toContain('write TO them');
+  });
+
+  /**
+   * All six reader blocks now carry TWO worked exchanges, and the second is always the
+   * reader-to-reader one. Asserted as a count rather than by phrase, because the failure
+   * mode is somebody deleting the second example while tidying and nothing else noticing.
+   */
+  it('gives every reader block two worked exchanges', () => {
+    for (const locale of LOCALES) {
+      for (const reader of READER_IDS) {
+        const block = chatReaderPrompt(reader, locale);
+        const marker = locale === 'id' ? /CONTOH/g : /EXAMPLE/g;
+        expect({ locale, reader, n: (block.match(marker) ?? []).length }).toEqual({
+          locale,
+          reader,
+          n: 2,
+        });
+      }
+    }
+  });
+
   it('tells every reader that silence and brevity are normal', () => {
     expect(chatReaderPrompt('thessaly', 'id')).toContain('Diam itu wajar di grup');
     expect(chatReaderPrompt('thessaly', 'en')).toContain('Saying nothing is normal in a group');
@@ -914,7 +980,9 @@ describe('buildChatPrompt — the block order and the instruction', () => {
     });
     expect(first.user).not.toContain('PERCOBAAN KEDUA');
     expect(second.user).toContain('PERCOBAAN KEDUA');
-    expect(second.user).toContain('too_long');
+    /* The reason arrives as a sentence in the model's language, never as the raw token. */
+    expect(second.user).toContain('terlalu panjang');
+    expect(second.user).not.toContain('too_long');
   });
 
   /**

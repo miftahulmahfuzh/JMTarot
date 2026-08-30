@@ -168,10 +168,12 @@ export type BeatFold = {
   /** The `0` bucket over all terminal runs. **`null` for an empty range**, because a
    *  zero silence rate is the finding and must never be manufactured. */
   silence: number | null;
-  /** **A LOWER BOUND IF THE CAP EVER RISES.** The top bucket is `4+`, and this treats
-   *  it as exactly 4 — exact while `CHAT_MAX_BEATS` is 4, which is what `[R19]` set it
-   *  to. The mean is offered only as a companion to the distribution, never instead of
-   *  it (roadmap §6.1's own wording). */
+  /** **A LOWER BOUND, AND IT STAYS FLAGGED AS ONE.** The top bucket is `8+` since
+   *  2026-08-30 and this treats it as exactly 8 — exact only while `CHAT_MAX_BEATS` is
+   *  8. **Widening the bucket did not make the mean exact; it made it exact until the
+   *  next raise**, and deleting this flag along with the widening is how it went stale
+   *  the first time (it read `4+` through two cap raises). The mean is offered only as a
+   *  companion to the distribution, never instead of it (roadmap §6.1's own wording). */
   mean: number | null;
 };
 

@@ -2042,3 +2042,83 @@ and leave everything else in place: the detectors are never reached, the keys ar
 and `material.test.ts`'s `MATERIAL_ORDER === KINDS` assertion is the one line that then needs
 relaxing. That is the cheapest kill switch available and it needs no deploy-time flag —
 `CHAT_PROACTIVE_ENABLED=0` already stops all unprompted runs, which is the real one.
+
+---
+
+## Implementation round 1 — 2026-08-30
+
+Written while building the phase against the tree as phases 1–6 actually left it. Every
+deviation from the body above is here, with what it cost and what the alternative was.
+**Where this section and the body disagree, this section is what shipped.**
+
+### 1. The narrower is `isUserMemoryItem`, not a structural read
+
+The reconciliation (Requires → Phase 3) ruled that `detectProfile` *"narrows STRUCTURALLY
+and applies no regular expression"*, on the stated ground that importing
+`USER_MEMORY_ITEM_ID_RE` *"would make the fixtures red for a reason that is not about this
+phase."* **That ground is spent, and the ruling is reversed here.**
+
+Phases 5 and 6 both landed on `isUserMemoryItem` as the one narrower over `user_memory.items`
+— `context.ts:280` before an item reaches `<ingatan>`, `memoryView.ts:113` before it reaches
+`/account` — and **phase 6 reversed its own plan's instruction to duplicate the regex**, in
+its own header, citing this in those words: *"it makes what the querent reads and what the
+readers were told the same set, which is the one property this whole surface exists to
+provide. A looser narrower here would list a line the prompt never sees; a stricter one would
+hide a line the prompt does see."*
+
+A third, looser narrower in this phase breaks that sentence from the other end: the director
+would be cast on a subject the voice's `<ingatan>` filtered out and `/account` never listed —
+**a run about a fact nobody downstream can see**, which is precisely the failure
+`profileMaterial`'s re-read (§ "Both rehydrate from the key alone") was built to prevent, one
+step earlier in the pipeline.
+
+The `:` check the reconciliation wanted is not dropped, it is strengthened:
+`USER_MEMORY_ITEM_ID_RE` is `/^[0-9a-f]{12}$/`, so an id that could make
+`profile:<id>:<month>` ambiguous is mechanically impossible rather than refused by an
+`includes(':')` somebody could delete.
+
+The cost is exactly the one the reconciler named and it is paid in the test fixtures: they
+carry real twelve-hex ids (`f00d…`, `b04d…`) instead of readable `i-food`. A constant beside
+them says which is which.
+
+*Rejected:* structural in `detect.ts` and `isUserMemoryItem` in `brief.ts` — the worst of
+both, since a run would mint and then silently lose its `BAHAN:` line at plan time.
+
+### 2. The clock's own tests go to `clock.test.ts`
+
+Step 8 lists a `describe('the pure time vocabulary')` block in `material.test.ts` covering
+`weekdayOf`, `dayPartOf` and `resolveChatClock`. **Reconciliation ruling 1 moved all three to
+`@/lib/chat/clock`, so their tests move with them** — `clock.test.ts` already tests
+`weekdayOf`, and a leap-day oracle filed under *materials* is a test the next person looking
+for it will not find. The Sakamoto cases, the 4000-day `Date` oracle and the malformed-string
+refusal are added there.
+
+`material.test.ts` keeps what is this phase's: `shapeOf`, `timeOfDayMaterial`, the two
+`materialKey` arms, the two `describeMaterial` arms, `MATERIAL_ORDER`'s two positions, the two
+note renderers — **and the composition test**, because *"the day and the hour come from ONE
+derivation"* is a claim about how this phase uses the clock rather than about the clock.
+
+### 3. `material.ts` imports two names, not five
+
+Step 1's import line names `DAY_PARTS, WEEKDAYS, dayPartOf, resolveChatClock, weekdayOf`.
+Only `DAY_PARTS` and `weekdayOf` are used in that file; `WEEKDAYS` is the notes' (they index
+`CHAT_TIME_VOCAB` with it) and `dayPartOf` / `resolveChatClock` are nobody's here. Step 10's
+sentinel comment is written against `weekdayOf` accordingly — the point it makes is unchanged
+and is the one that matters: **the sentinel greps this file's own source, so importing a
+module that constructs a `Date` is not what it forbids.**
+
+### 4. Corrections to code the plan could not compile
+
+Transcription-level, listed so a reviewer diffing against the body does not read them as
+drift: `usedTimeOfDayToday` takes the handle first (the body's call site omitted `db`);
+`partOf` is `dayPartOf` everywhere; the note-distinctness test maps `kind`, not the cancelled
+`topic`; `USER_MEMORY_KINDS` and `WEEKDAYS` are imported from their real modules rather than
+from `./material`; `putMemory`'s rows are `UserMemoryItem[]` and carry `lastSeen`, which
+`isUserMemoryItem` requires; the M8 integration overrides pass `clock:
+resolveChatClock({ offsetMinutes: 420, now })` rather than the cancelled `utcOffsetMinutes`.
+
+The **Verification** section's two expected `BAHAN:` lines were written against the cancelled
+`PROFILE_TOPICS` and read `[topic=food]` / *"kebiasaan makan penanya"*. Under ruling 4 the
+token is `UserMemoryKind`, so the profile line reads
+`profile — hal yang sudah diketahui ruangan ini tentang penanya: apa yang disukai penanya
+[kind=taste]`. The `time_of_day` line is as written.

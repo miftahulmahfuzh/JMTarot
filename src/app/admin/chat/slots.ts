@@ -105,10 +105,15 @@ export const INTENT_ORDER = [
 ] as const;
 
 /**
- * The beat-count buckets, `0` through `4+`. Declared rather than derived from the query
+ * The beat-count buckets, `0` through `8+`. Declared rather than derived from the query
  * so a bucket with no runs still gets a row: **a histogram missing its `0` bar is the
  * one shape this page must never render**, because a zero silence rate is the finding
  * (`C-R6`: *"a rate of zero means the director is not really deciding"*) and an absent
  * bar reads as no data.
+ *
+ * **THROUGH `8` SINCE 2026-08-30.** It stopped at `4` while `CHAT_MAX_BEATS` went to 6
+ * and then 8, so the panel folded every long run into one bar. **This list and
+ * `beatHistogram`'s `least(..., 8)` are one edit; changing either alone silently drops
+ * rows or renders empty bars for buckets the query can never fill.**
  */
-export const BEAT_BUCKETS = [0, 1, 2, 3, 4] as const;
+export const BEAT_BUCKETS = [0, 1, 2, 3, 4, 5, 6, 7, 8] as const;

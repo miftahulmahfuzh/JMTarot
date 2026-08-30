@@ -80,11 +80,26 @@ export type PlanInput = {
 };
 
 /**
- * A runaway guard, and not the length control — `INSIGHT_MAX_TOKENS`'s rule. Four beats of
- * JSON with `MAX_ANGLE_CHARS` angles is roughly 180 tokens; this refuses an essay and never
- * a valid four-beat plan.
+ * A runaway guard, and not the length control — `INSIGHT_MAX_TOKENS`'s rule.
+ *
+ * **900 SINCE 2026-08-30, AND THIS IS A REQUIRED EDIT RATHER THAN A GENEROUS ONE.** It was
+ * 400, sized in its own words as *"four beats of JSON with `MAX_ANGLE_CHARS` angles is
+ * roughly 180 tokens"*. `CHAT_MAX_BEATS` is now EIGHT, and one beat of Indonesian JSON with
+ * a 90-character angle runs 45–55 tokens, so an eight-beat sheet is 400–450 before the
+ * envelope.
+ *
+ * **THE FAILURE MODE IS THE REASON THIS PARAGRAPH EXISTS.** A reply cut at the ceiling is
+ * not a short plan; it is invalid JSON. `checkPlan` returns `unparseable`, `plan.ts` falls
+ * through to `planFallback`, and `[F2-13]` makes that **exactly one beat**. So a director
+ * asked for eight beats and given room for four would produce ONE — and the symptom on the
+ * page is *"the prompt rewrite did not work"*, in a file nobody would open. **A cap on
+ * beats and a cap on output tokens are the same edit; grep for the second whenever the
+ * first moves.**
+ *
+ * Roughly double an eight-beat sheet, on `CHAT_MAX_TOKENS`' relationship to its own budget:
+ * generous enough that the model finishes the object, tiny in absolute terms.
  */
-export const PLAN_MAX_TOKENS = 400;
+export const PLAN_MAX_TOKENS = 900;
 
 /** The trigger, as a phrase. **A closed token rendered as prose**, never the raw value. */
 const TRIGGER_WORD: Record<Locale, Record<RunTrigger, string>> = {

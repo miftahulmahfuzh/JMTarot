@@ -1,5 +1,5 @@
 /**
- * THE SIX DETECTORS. *"Is there anything worth speaking up about?"*
+ * THE EIGHT DETECTORS. *"Is there anything worth speaking up about?"*
  *
  * ── HANDLE FIRST, THOUGH THIS IS NOT `queries/**` ─────────────────────────
  *
@@ -43,7 +43,7 @@
  */
 import 'server-only';
 
-import { and, desc, eq, gt, gte, isNotNull, isNull, lt, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, gte, isNotNull, isNull, like, lt, ne, sql } from 'drizzle-orm';
 
 import type { Locale, ReaderId, ServiceId, YesNo } from '@/data/types';
 import {
@@ -56,13 +56,17 @@ import {
   readings,
   users,
 } from '@/lib/db/schema';
+import { getUserMemory } from '@/lib/db/queries/memory';
 import type { DbOrTx } from '@/lib/db/types';
 import { firstPassingWindow } from '@/lib/memory/frequency';
 import { arcanaFor } from '@/lib/numerology';
+import { isUserMemoryItem } from '@/lib/memory/profile/types';
 import { frequencyMechanic } from '@/lib/memory/shadow';
+import type { ChatClock } from '../types';
 import {
   MATERIAL_ORDER,
   materialKey,
+  timeOfDayMaterial,
   type Material,
   type MaterialKind,
   type OccasionKind,
@@ -110,6 +114,26 @@ export type DetectArgs = {
   birthDate: string | null;
   /** `users.last_seen_at`. */
   lastSeenAt: Date | null;
+  /**
+   * The querent's clock (phase 1), resolved ONCE in `mint.ts` from
+   * `chat_threads.utc_offset_minutes`. **REQUIRED**, so a construction site cannot forget
+   * it and quietly lose M8.
+   *
+   * **THIS DOES NOT REPLACE `localDate`, AND THE TWO ARE DELIBERATELY BOTH HERE.**
+   * `localDate` stays the CALLER's `'YYYY-MM-DD'` string and the birthday, anniversary and
+   * profile detectors keep slicing it, unchanged. Only `detectTimeOfDay` reads
+   * `clock.localDate`, and only because **the cron has no client**: it passes
+   * `utcDateString()`, and at 23:30 UTC a Jakarta querent's caller-shaped day is *yesterday*
+   * while their clock says it is the following morning. This is the one material whose
+   * entire content is which day it is.
+   *
+   * **`known: false` IS A CORRECT OUTCOME AND NEVER AN ERROR.** It costs exactly one
+   * material and no other detector notices. An ice-breaker whose whole content is *"it is
+   * Monday morning where you are"* is a false statement when we do not know where you are,
+   * and being confidently wrong about the clock is the bug R1 exists to delete rather than
+   * to move.
+   */
+  clock: ChatClock;
   /** Source 1 only. `selectReadingMaterial` sets it; the ladder never does. */
   restrictReadingId?: string;
 };
@@ -166,9 +190,11 @@ const DETECTORS: Record<MaterialKind, Detector> = {
   occasion: detectOccasion,
   reading: detectReading,
   unanswered: detectUnanswered,
+  profile: detectProfile,
   recurring: detectRecurring,
   orphan: detectOrphan,
   lotus: detectLotus,
+  time_of_day: detectTimeOfDay,
 };
 
 // ---------------------------------------------------------------------------
@@ -528,6 +554,142 @@ async function detectLotus(db: DbOrTx, args: DetectArgs): Promise<Material | nul
   if (!latest || latest.cleared) return null;
 
   return { kind: 'lotus', summary, updatedAtIso: lotus.updatedAt.toISOString() };
+}
+
+// ---------------------------------------------------------------------------
+// M7 — something the room already knows about the querent
+// ---------------------------------------------------------------------------
+
+/**
+ * A defensive bound on how much of a jsonb payload this walks. Phase 4 caps the list at
+ * `USER_MEMORY_MAX_ITEMS` (32) in code rather than with a `CHECK`, so a runaway or
+ * hand-written row must not turn a page view into a linear scan.
+ */
+const MAX_MEMORY_ITEMS_SCANNED = 64;
+
+/**
+ * The first remembered item whose key is unused **this month**.
+ *
+ * ── WHY THE DETECTOR FILTERS AND DOES NOT LEAVE IT TO `selectMaterial` ─────
+ *
+ * `selectMaterial` checks **one** candidate per kind and falls through on a used key. With
+ * fifteen remembered items that would mean the whole kind losing its turn because the first
+ * item happened to be spent — and then losing it again tomorrow, for as long as the list
+ * kept starting with the same row. So the month's used keys are read once and the walk stops
+ * at the first item that is free. `materialKeyUsed`'s probe still runs afterwards and
+ * `chat_runs_user_material_uq` is still what arbitrates (§4.5).
+ *
+ * ── STORED ORDER, AND CORRECTNESS DOES NOT DEPEND ON IT ───────────────────
+ *
+ * The walk is in whatever order the extractor stored. If a future extraction reorders the
+ * array the choice changes and nothing else does: the key check is what stops a repeat, not
+ * the position.
+ *
+ * ── THE NARROWER IS `isUserMemoryItem`, AND THAT IS LOAD-BEARING ──────────
+ *
+ * **This is the same predicate `context.ts` filters `<ingatan>` with and `memoryView.ts`
+ * filters `/account` with, and using a third looser one here would break the property both
+ * of those exist to provide:** the director would be cast on a subject the voice cannot see
+ * and the querent cannot delete. `memoryView.ts`'s header states it — *"a looser narrower
+ * would list a line the prompt never sees"* — and this is that sentence from the other end.
+ * It also settles the key's grammar mechanically: `USER_MEMORY_ITEM_ID_RE` is twelve
+ * lowercase hex, so an id can never contain the `:` that would make `profile:<id>:<month>`
+ * ambiguous for `brief.ts` one file over.
+ *
+ * **NOT ONE BYTE OF `item.text` LEAVES THIS FUNCTION.** It is read only to establish that
+ * the item is real; `ProfileMaterial` has nowhere to put it.
+ */
+async function detectProfile(db: DbOrTx, args: DetectArgs): Promise<Material | null> {
+  const month = args.localDate.slice(0, 7);
+  if (!/^\d{4}-\d{2}$/.test(month)) return null;
+
+  const memory = await getUserMemory(db, args.userId);
+  const items: unknown[] = Array.isArray(memory?.items) ? [...memory.items] : [];
+  if (items.length === 0) return null;
+
+  const used = await usedProfileKeys(db, args.userId, month);
+
+  for (const raw of items.slice(0, MAX_MEMORY_ITEMS_SCANNED)) {
+    if (!isUserMemoryItem(raw)) continue;
+    if (raw.text.trim() === '') continue;
+    if (used.has(`profile:${raw.id}:${month}`)) continue;
+    return { kind: 'profile', itemId: raw.id, itemKind: raw.kind, month };
+  }
+  return null;
+}
+
+/**
+ * Every `profile:` key this querent has spent in the given month.
+ *
+ * The `LIKE` pattern is built from a `YYYY-MM` slice that has already passed a regex, so it
+ * carries no user input and no `LIKE` metacharacter. It is an equality on `user_id` and a
+ * prefix on `material_key`, which is the leading edge of `chat_runs_user_material_uq`.
+ */
+async function usedProfileKeys(
+  db: DbOrTx,
+  userId: string,
+  month: string,
+): Promise<ReadonlySet<string>> {
+  const rows = await db
+    .select({ key: chatRuns.materialKey })
+    .from(chatRuns)
+    .where(and(eq(chatRuns.userId, userId), like(chatRuns.materialKey, `profile:%:${month}`)));
+  return new Set(rows.map((r) => r.key).filter((k): k is string => k !== null));
+}
+
+// ---------------------------------------------------------------------------
+// M8 — what time it is where the querent is
+// ---------------------------------------------------------------------------
+
+/**
+ * **THE ONLY DETECTOR THAT RUNS NO QUERY OF ITS OWN BEYOND ITS BRAKE**, which is what makes
+ * it affordable at the bottom of a ladder that is now eight deep: it is reached only when
+ * the seven above it found nothing.
+ *
+ * **THE DAY AND THE HOUR COME FROM ONE DERIVATION AND NEVER FROM TWO SOURCES.** Mixing
+ * `args.localDate` (the caller's string, `utcDateString()` on the cron) with an
+ * offset-derived hour ships *"Monday morning"* stamped Sunday for every Jakarta querent
+ * between midnight and 07:00 WIB — `local_date`'s trap arriving on the one material whose
+ * entire content is which day it is. `resolveChatClock` is that one derivation, and
+ * `mint.ts` performs it once.
+ *
+ * **IT COVERS EVERY HOUR, `late` INCLUDED, AND IMPLEMENTS NO QUIET HOURS.** Whether a
+ * reader may speak at 03:00 is `eligibility.ts`'s gate. A detector that silently returned
+ * null in the small hours would be that gate hidden in a file the operator cannot switch
+ * off, and *"belum tidur?"* is a real thing a friend says at one in the morning.
+ */
+async function detectTimeOfDay(db: DbOrTx, args: DetectArgs): Promise<Material | null> {
+  const clock = args.clock;
+  /* No offset reported yet: no time material, never an error. The production default. */
+  if (!clock.known) return null;
+  /*
+   * **ONE `tod:` RUN PER QUERENT PER LOCAL DAY** (reconciliation ruling 5).
+   * `MATERIAL_ORDER` places this kind last so unlimited supply cannot STARVE the ladder,
+   * **but ranking is not volume** — and phase 8 raises the daily cap to five on the argument
+   * that *"the cap is almost never the binding gate, `no_material` is"*, which a material
+   * available in every part of every day falsifies. This restores that premise: the ladder
+   * can still speak five times on a day it has five distinct things to say, and at most one
+   * of them is the calendar. **Do not remove it without moving phase 8's number.**
+   *
+   * `usedProfileKeys`' probe, applied to a prefix instead of an id. `selectMaterial`'s own
+   * `materialKeyUsed` would only catch the same PART of the same day; this catches any.
+   */
+  if (await usedTimeOfDayToday(db, args.userId, clock.localDate)) return null;
+  return timeOfDayMaterial(clock.localDate, clock.part);
+}
+
+/** Has any part of this local day already been spent on a `tod:` run? */
+async function usedTimeOfDayToday(
+  db: DbOrTx,
+  userId: string,
+  localDate: string,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: chatRuns.id })
+    .from(chatRuns)
+    .where(and(eq(chatRuns.userId, userId), like(chatRuns.materialKey, `tod:${localDate}:%`)))
+    .limit(1);
+  return !!row;
 }
 
 // ---------------------------------------------------------------------------

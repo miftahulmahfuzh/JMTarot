@@ -189,10 +189,48 @@ describe('the profile memory (R2)', () => {
     expect(context).toMatch(/forVoice \? getUserMemory\(/);
   });
 
-  /** `getUserMemory` is called from exactly one file under `src/lib/chat/`, like `getAnswers`. */
-  it('calls getUserMemory from exactly one file, and that file is context.ts', () => {
+  /**
+   * **THE CALLERS ARE THREE AND THEY ARE NAMED, AND R3 IS WHY THE LIST GREW FROM ONE.**
+   *
+   * This read *"exactly one file, like `getAnswers`"* while R2 was the only consumer. R3's
+   * `profile` material needs the row too — `detect.ts` to find an item whose key is free
+   * this month, `brief.ts` to re-read it at plan time so a line the querent deleted on
+   * `/account` is gone from the material and not merely blocked from being minted again.
+   *
+   * **WHAT THE FENCE IS ACTUALLY FOR SURVIVES THE WIDENING INTACT: the memory PROSE reaches
+   * the voice and never the director.** Those two callers read `item.text` to establish that
+   * an item is real and drop it; `ProfileMaterial` has no field to put it in, and
+   * `material.test.ts` asserts that key set exactly. The list is spelled out rather than
+   * relaxed to a glob so that a **fourth** caller is a red test and a decision, which is what
+   * this assertion was worth in the first place.
+   */
+  it('calls getUserMemory from three named files and no others', () => {
     const callers = SOURCES.filter((s) => calls(s.text, 'getUserMemory')).map((s) => s.path);
-    expect(callers).toEqual(['src/lib/chat/context.ts']);
+    expect([...callers].sort()).toEqual([
+      'src/lib/chat/context.ts',
+      'src/lib/chat/proactive/brief.ts',
+      'src/lib/chat/proactive/detect.ts',
+    ]);
+  });
+
+  /**
+   * **AND THE TWO PROACTIVE CALLERS CARRY NO SENTENCE OUT.** The `BAHAN:` line sits in
+   * `assemble.ts`'s header, above `<obrolan>` and outside every fence, which is exactly where
+   * `build.ts`'s rule says untrusted text may not go — and `user_memory` is model prose
+   * rebuilt continuously from whatever the querent types, so it is unlimited attempts at that
+   * line where the Lotus summary is one.
+   *
+   * The type is the real enforcement (there is nowhere to put the text). This is the cheap
+   * grep underneath it: neither file may assign a `text:` property at all, so a
+   * `ProfileMaterial` that grew one, or a `facts: { text }`, fails here as well.
+   */
+  it('lets no proactive caller assign the remembered sentence anywhere', () => {
+    for (const path of ['src/lib/chat/proactive/detect.ts', 'src/lib/chat/proactive/brief.ts']) {
+      const code = read(path)
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/^\s*\/\/.*$/gm, '');
+      expect({ path, assigns: /\btext\s*:/.test(code) }).toEqual({ path, assigns: false });
+    }
   });
 
   /**

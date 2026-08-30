@@ -179,3 +179,79 @@ describe('renderNow', () => {
     }
   });
 });
+
+/**
+ * **PHASE 7 IS `weekdayOf`'s FIRST REAL CONSUMER**, and it reaches it from a bare
+ * `'YYYY-MM-DD'` string with no offset in hand: `brief.ts` rehydrates a `tod:<date>:<part>`
+ * key at plan time, hours after the mint. So the depth lives here, with the function,
+ * rather than in `material.test.ts` with the material — reconciliation ruling 1 moved the
+ * calendar into this module and its tests move with it.
+ */
+describe('weekdayOf — the calendar phase 7 rehydrates from', () => {
+  it('derives a weekday without ever touching a `Date`', () => {
+    /*
+     * The birthday detector's discipline: `getMonth()` on a server in UTC wishes a Jakarta
+     * querent a happy birthday a day early, and the same trap eats a weekday on the one
+     * material whose entire content is which day it is. Sakamoto's algorithm is arithmetic
+     * over three integers and has no timezone to be wrong in.
+     */
+    expect(weekdayOf('2026-08-30')).toBe('sun');
+    expect(weekdayOf('2026-08-31')).toBe('mon');
+    expect(weekdayOf('2026-08-09')).toBe('sun');
+    /* Leap days, because February is where a hand-rolled calendar breaks. */
+    expect(weekdayOf('2024-02-29')).toBe('thu');
+    expect(weekdayOf('2000-02-29')).toBe('tue');
+    expect(weekdayOf('1900-03-01')).toBe('thu');
+  });
+
+  it('agrees with `Date` across a long stretch, which is the only honest oracle', () => {
+    /* A `Date` is fine HERE and banned in `material.ts`; a test is where the two meet. */
+    for (let i = 0; i < 4000; i += 7) {
+      const d = new Date(Date.UTC(2024, 0, 1) + i * 86_400_000);
+      const iso = d.toISOString().slice(0, 10);
+      expect({ iso, got: weekdayOf(iso) }).toEqual({ iso, got: WEEKDAYS[d.getUTCDay()] });
+    }
+  });
+
+  it('refuses a malformed day rather than throwing on a prompt path', () => {
+    for (const bad of ['', '2026-8-9', 'yesterday', '2026-13-01', '2026-01-00']) {
+      expect({ bad, got: weekdayOf(bad) }).toEqual({ bad, got: null });
+    }
+  });
+
+  /**
+   * **THE BUG PHASE 7's `time_of_day` EXISTS NOT TO REPRODUCE.** At 23:30 UTC a Jakarta
+   * querent is at 06:30 the NEXT morning, and the cron would otherwise pair that hour with
+   * `utcDateString()`'s yesterday — shipping *"Monday morning"* stamped Sunday. What is
+   * asserted here is the composition `detectTimeOfDay` depends on: one derivation answers
+   * both the day and the part, so they cannot come from different places.
+   */
+  it('reads the querent’s own day and part from ONE derivation', () => {
+    const at = (iso: string, off: number | null) =>
+      resolveChatClock({ offsetMinutes: off, now: new Date(iso) });
+
+    const jakarta = at('2026-08-30T23:30:00.000Z', 420);
+    expect(jakarta.known && { date: jakarta.localDate, part: jakarta.part }).toEqual({
+      date: '2026-08-31',
+      part: 'morning',
+    });
+    expect(jakarta.known && weekdayOf(jakarta.localDate)).toBe('mon');
+
+    const utc = at('2026-08-30T23:30:00.000Z', 0);
+    expect(utc.known && { date: utc.localDate, part: utc.part }).toEqual({
+      date: '2026-08-30',
+      part: 'late',
+    });
+
+    /* West of Greenwich the day goes the other way. */
+    const ny = at('2026-08-31T02:00:00.000Z', -300);
+    expect(ny.known && { date: ny.localDate, part: ny.part }).toEqual({
+      date: '2026-08-30',
+      part: 'evening',
+    });
+
+    /* A nonsense offset degrades to `known: false`, so no time material is minted. */
+    expect(at('2026-08-30T23:30:00.000Z', 5000).known).toBe(false);
+    expect(at('2026-08-30T23:30:00.000Z', null).known).toBe(false);
+  });
+});

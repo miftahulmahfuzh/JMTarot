@@ -35,16 +35,20 @@ import 'server-only';
 import { and, eq } from 'drizzle-orm';
 
 import type { Locale, ReaderId, ServiceId, YesNo } from '@/data/types';
+import { getUserMemory } from '@/lib/db/queries/memory';
 import { chatMessages, chatRuns, lotusAvatars, readings } from '@/lib/db/schema';
 import type { DbOrTx } from '@/lib/db/types';
 import { firstPassingWindow } from '@/lib/memory/frequency';
+import { isUserMemoryItem } from '@/lib/memory/profile/types';
 import { frequencyMechanic } from '@/lib/memory/shadow';
 import { VERDICT_LADDER, type WindowKey } from '@/lib/memory/windows';
+import type { DayPart } from '../types';
 import { logChatFailure } from '../log';
 import { cardsFor } from './detect';
 import {
   describeMaterial,
   materialLine,
+  timeOfDayMaterial,
   type Material,
   type OccasionKind,
 } from './material';
@@ -111,6 +115,10 @@ async function rehydrate(
       return occasionMaterial(rest);
     case 'lotus':
       return lotusMaterial(db, userId, locale);
+    case 'profile':
+      return profileMaterial(db, userId, rest);
+    case 'tod':
+      return timeOfDayFromKey(rest);
     default:
       return null;
   }
@@ -268,4 +276,64 @@ async function lotusMaterial(
   const summary = row?.summary?.[locale]?.trim();
   if (!row || !summary) return null;
   return { kind: 'lotus', summary, updatedAtIso: row.updatedAt.toISOString() };
+}
+
+/**
+ * `profile:<itemId>:<YYYY-MM>`.
+ *
+ * **THE ITEM IS RE-READ RATHER THAN TRUSTED TO THE KEY**, which is `lotusMaterial`'s
+ * argument and buys one property this release needs: **a memory line the querent deleted on
+ * `/account` between the mint and the plan is gone from the material at plan time**, not
+ * merely blocked from being minted again. Phase 5's `<ingatan>` will have lost it too — both
+ * filter through `isUserMemoryItem` over the same column — so a run that still named the
+ * subject would be pointing a reader at a fact they can no longer see.
+ *
+ * **SPLIT FROM THE RIGHT.** The month contains no `:` and `USER_MEMORY_ITEM_ID_RE` makes an
+ * id that does impossible, so `lastIndexOf` is the split that cannot be confused by a future
+ * extractor with a different id scheme.
+ *
+ * **AND THE TEXT STILL DOES NOT CROSS.** It is read here only to establish that the item is
+ * real, exactly as in `detectProfile`; `ProfileMaterial` has no field for it.
+ */
+async function profileMaterial(
+  db: DbOrTx,
+  userId: string,
+  rest: string,
+): Promise<Material | null> {
+  const cut = rest.lastIndexOf(':');
+  if (cut < 0) return null;
+  const itemId = rest.slice(0, cut);
+  const month = rest.slice(cut + 1);
+  if (itemId === '' || !/^\d{4}-\d{2}$/.test(month)) return null;
+
+  const memory = await getUserMemory(db, userId);
+  const items: unknown[] = Array.isArray(memory?.items) ? [...memory.items] : [];
+
+  for (const raw of items) {
+    if (!isUserMemoryItem(raw) || raw.id !== itemId) continue;
+    if (raw.text.trim() === '') return null;
+    return { kind: 'profile', itemId, itemKind: raw.kind, month };
+  }
+  return null;
+}
+
+/**
+ * `tod:<YYYY-MM-DD>:<part>`. **The second material that needs no query** —
+ * `occasionMaterial`'s shape, and for the same reason: the key carries the whole fact.
+ *
+ * **AND IT REBUILDS THROUGH `timeOfDayMaterial`, NOT BY HAND.** The weekday and the shape
+ * are derived rather than stored, so deriving them a second way here is two chances for the
+ * plan to disagree with the mint about which day it is — which is the failure this file's
+ * header names: *a run must not change what it is about between being minted and being
+ * planned.*
+ *
+ * **THE CLOCK IS NOT CONSULTED.** A run minted on Sunday afternoon and planned on Monday
+ * morning is still a run about Sunday afternoon; re-deriving from `now` would silently make
+ * it a different run. `lotusMaterial` re-reads because the Lotus is a fact that moves; **a
+ * moment does not move.**
+ */
+function timeOfDayFromKey(rest: string): Material | null {
+  const cut = rest.lastIndexOf(':');
+  if (cut < 0) return null;
+  return timeOfDayMaterial(rest.slice(0, cut), rest.slice(cut + 1) as DayPart);
 }

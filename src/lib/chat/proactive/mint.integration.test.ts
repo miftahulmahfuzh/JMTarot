@@ -36,6 +36,9 @@ beforeEach(() => {
   delete process.env.CHAT_PROACTIVE_ENABLED;
   delete process.env.CHAT_ENABLED;
   delete process.env.CHAT_PROACTIVE_MAX_PER_DAY;
+  /* The defaults (22 -> 7) are what this file asserts, so a local .env must not win. */
+  delete process.env.CHAT_QUIET_FROM_HOUR;
+  delete process.env.CHAT_QUIET_TO_HOUR;
 });
 
 async function makeUser(tx: Tx | Db): Promise<string> {
@@ -207,6 +210,63 @@ describe('mintProactiveRun', () => {
       expect(
         await mintProactiveRun({ userId, source: 'reading', localDate: TODAY, readingId, handle: tx }),
       ).toEqual({ minted: false, reason: 'flag_off' });
+    }));
+
+  it('refuses a tick inside the querent\u2019s own night and lets a reading through ([R17] reversed)', () =>
+    withRollback(async (tx) => {
+      const userId = await makeUser(tx);
+      const readingId = await makeReading(tx, userId);
+      /*
+       * **THE OFFSET IS READ OFF THE THREAD ROW, WHICH IS WHY THIS WORKS FOR THE CRON.**
+       * `[R17]` folded `utc_offset_minutes` into `0014` for exactly this call.
+       */
+      await upsertThread(tx, userId, { utcOffsetMinutes: 420 });
+
+      /* 18:30Z is 01:30 the next morning in Jakarta \u2014 inside the default 22 -> 7. */
+      const night = new Date('2026-08-07T18:30:00.000Z');
+      const tick = await mintProactiveRun({
+        userId,
+        source: 'tick',
+        localDate: TODAY,
+        now: night,
+        handle: tx,
+      });
+      expect(tick).toEqual({ minted: false, reason: 'quiet_hours' });
+
+      /* **NOTHING IS WRITTEN.** The refusal happens in the probe, before detection. */
+      expect(await runsOf(tx, userId)).toHaveLength(0);
+      expect((await threadOf(tx, userId))?.proactiveCountToday).toBe(0);
+
+      /*
+       * **AND THE READING PATH IS EXEMPT.** No `now` is passed, because the exemption is
+       * what is being asserted and not the hour: a querent who just finished a reading is
+       * awake whatever the clock says.
+       */
+      const reading = await mintProactiveRun({
+        userId,
+        source: 'reading',
+        localDate: TODAY,
+        readingId,
+        handle: tx,
+      });
+      expect(reading).toMatchObject({ minted: true, trigger: 'reading_completed' });
+    }));
+
+  it('treats an unreported offset as awake, so nothing regresses before the header lands', () =>
+    withRollback(async (tx) => {
+      const userId = await makeUser(tx);
+      const readingId = await makeReading(tx, userId);
+      /* No `upsertThread` call: `utc_offset_minutes` is NULL, which is every row today. */
+      const night = new Date('2026-08-07T18:30:00.000Z');
+      const result = await mintProactiveRun({
+        userId,
+        source: 'reading',
+        localDate: TODAY,
+        readingId,
+        now: night,
+        handle: tx,
+      });
+      expect(result).toMatchObject({ minted: true });
     }));
 });
 

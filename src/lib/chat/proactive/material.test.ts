@@ -11,6 +11,8 @@ import { describe, expect, it } from 'vitest';
 import { LOCALES } from '@/lib/i18n/locale';
 import { MALAY } from '@/lib/copy/vocab';
 import { THERAPY_EN } from '@/lib/copy/vocab';
+import { USER_MEMORY_KINDS } from '@/lib/memory/profile/types';
+import { DAY_PARTS, WEEKDAYS } from '../clock';
 import {
   describeMaterial,
   materialKey,
@@ -18,10 +20,17 @@ import {
   materialReplyTo,
   MATERIAL_ORDER,
   renderCards,
+  shapeOf,
+  timeOfDayMaterial,
   type Material,
   type MaterialKind,
 } from './material';
 import { MATERIAL_NOTES } from './notes';
+import { PROFILE_SUBJECT_EN } from './notes.en';
+import { PROFILE_SUBJECT_ID } from './notes.id';
+
+/** `USER_MEMORY_ITEM_ID_RE`'s shape — twelve lowercase hex, so it can hold no `:`. */
+const ITEM_ID = 'f00d5a1ad00d';
 
 /** One fixture per kind, so every table below can be walked exhaustively. */
 const FIXTURES: Record<MaterialKind, Material> = {
@@ -74,12 +83,21 @@ const FIXTURES: Record<MaterialKind, Material> = {
     summary: 'orang yang menahan banyak hal sendirian',
     updatedAtIso: '2026-08-07T04:00:00.000Z',
   },
+  profile: { kind: 'profile', itemId: ITEM_ID, itemKind: 'taste', month: '2026-08' },
+  time_of_day: {
+    kind: 'time_of_day',
+    /* 2026-08-09 is a Sunday. The querent's own example. */
+    localDate: '2026-08-09',
+    weekday: 'sun',
+    part: 'afternoon',
+    shape: 'weekend_close',
+  },
 };
 
 const KINDS = Object.keys(FIXTURES) as MaterialKind[];
 
 describe('the closed set', () => {
-  it('orders the six exactly as §4.2 argues, and covers every kind', () => {
+  it('orders the eight exactly as §4.2 argues, and covers every kind', () => {
     /*
      * **A FIXED ORDER, NOT A SCORE.** A score is a number somebody tunes, a tuned number
      * needs a corpus, and there is no corpus. The order encodes three judgements: an
@@ -91,9 +109,11 @@ describe('the closed set', () => {
       'occasion',
       'reading',
       'unanswered',
+      'profile',
       'recurring',
       'orphan',
       'lotus',
+      'time_of_day',
     ]);
     expect([...MATERIAL_ORDER].sort()).toEqual([...KINDS].sort());
   });
@@ -153,7 +173,7 @@ describe('materialReplyTo (C-D11)', () => {
      */
     expect(materialReplyTo(FIXTURES.unanswered)).toBe('22222222-2222-4222-8222-222222222222');
     expect(materialReplyTo(FIXTURES.orphan)).toBe('33333333-3333-4333-8333-333333333333');
-    for (const kind of ['reading', 'recurring', 'occasion', 'lotus'] as const) {
+    for (const kind of ['reading', 'recurring', 'occasion', 'lotus', 'profile', 'time_of_day'] as const) {
       expect(materialReplyTo(FIXTURES[kind])).toBeNull();
     }
   });
@@ -336,5 +356,166 @@ describe('the note tables', () => {
         }
       }
     }
+  });
+});
+
+describe('the two R3 kinds', () => {
+  it('puts `time_of_day` LAST, because it is the one material with unlimited supply', () => {
+    /*
+     * Its key is fresh in every part of every day, and `selectMaterial` walks this list
+     * lazily and stops at the first unused key. **A material with unlimited supply placed
+     * anywhere but last starves everything below it** and the ladder stops being a ranking
+     * and becomes a monopoly. Asserted as an index rather than in prose, because that is
+     * the property a reorder would break.
+     */
+    expect(MATERIAL_ORDER[MATERIAL_ORDER.length - 1]).toBe('time_of_day');
+  });
+
+  it('puts `profile` above `recurring`: their life beats their deck', () => {
+    expect(MATERIAL_ORDER.indexOf('profile')).toBeLessThan(MATERIAL_ORDER.indexOf('recurring'));
+    /* And below `unanswered`, because a question decays and a habit does not. */
+    expect(MATERIAL_ORDER.indexOf('unanswered')).toBeLessThan(MATERIAL_ORDER.indexOf('profile'));
+  });
+
+  it('keys the day AND the part, so a Monday morning expires by Monday evening', () => {
+    expect(materialKey(FIXTURES.time_of_day)).toBe('tod:2026-08-09:afternoon');
+    const evening: Material = {
+      ...(FIXTURES.time_of_day as Extract<Material, { kind: 'time_of_day' }>),
+      part: 'evening',
+    };
+    expect(materialKey(evening)).not.toBe(materialKey(FIXTURES.time_of_day));
+    /* And a week later is a different key, which is what stops `tod:monday-morning`'s
+     * once-in-a-lifetime failure. */
+    const nextWeek = timeOfDayMaterial('2026-08-16', 'afternoon');
+    expect(nextWeek).not.toBeNull();
+    expect(materialKey(nextWeek as Material)).toBe('tod:2026-08-16:afternoon');
+  });
+
+  it('keys a remembered fact by the ITEM and the MONTH', () => {
+    expect(materialKey(FIXTURES.profile)).toBe(`profile:${ITEM_ID}:2026-08`);
+    const nextMonth: Material = {
+      ...(FIXTURES.profile as Extract<Material, { kind: 'profile' }>),
+      month: '2026-09',
+    };
+    expect(materialKey(nextMonth)).not.toBe(materialKey(FIXTURES.profile));
+  });
+
+  it('GIVES `ProfileMaterial` NOWHERE TO PUT THE REMEMBERED SENTENCE', () => {
+    /*
+     * **The whole seam, as one assertion.** The `BAHAN:` line sits in the director's
+     * UNFENCED header, and `user_memory` is model prose distilled from whatever the querent
+     * types — an unlimited number of attempts at that line, where the Lotus summary (which
+     * its note DOES interpolate) is one attempt from six fixed answers.
+     *
+     * So the type carries no text, `describeMaterial` cannot leak what the object does not
+     * hold, and the sentence reaches the reader through phase 5's fenced `<ingatan>`
+     * instead. **If this assertion is edited to admit a `text` field, the fence is gone.**
+     */
+    expect(Object.keys(FIXTURES.profile).sort()).toEqual(['itemId', 'itemKind', 'kind', 'month']);
+    for (const locale of LOCALES) {
+      const brief = describeMaterial(FIXTURES.profile, locale);
+      expect(Object.keys(brief.facts)).toEqual(['kind']);
+      expect(USER_MEMORY_KINDS).toContain(brief.facts.kind);
+      /* The month is a date the model could recite, for no reader's benefit. */
+      expect(materialLine(brief)).not.toContain('2026-08');
+    }
+  });
+
+  it('hands the director three closed tokens for the clock and no date', () => {
+    for (const locale of LOCALES) {
+      const brief = describeMaterial(FIXTURES.time_of_day, locale);
+      expect(Object.keys(brief.facts).sort()).toEqual(['part', 'shape', 'weekday']);
+      /* **THE DATE IS IN THE KEY AND OUT OF THE PROMPT.** A reader reciting the date at
+       * somebody who already knows what day it is is the register `C-N1b` forbids. */
+      expect(materialLine(brief)).not.toContain('2026-08-09');
+    }
+  });
+
+  it('names every kind and every part distinctly, in both locales', () => {
+    for (const locale of LOCALES) {
+      const subjects = USER_MEMORY_KINDS.map((itemKind) =>
+        MATERIAL_NOTES[locale].profile({ kind: 'profile', itemId: ITEM_ID, itemKind, month: '2026-08' }),
+      );
+      expect(new Set(subjects).size, `${locale}/kinds`).toBe(USER_MEMORY_KINDS.length);
+
+      const parts = DAY_PARTS.map((part) =>
+        MATERIAL_NOTES[locale].time_of_day({
+          kind: 'time_of_day',
+          localDate: '2026-08-12',
+          weekday: 'wed',
+          part,
+          shape: 'ordinary',
+        }),
+      );
+      expect(new Set(parts).size, `${locale}/parts`).toBe(DAY_PARTS.length);
+    }
+  });
+
+  it('keeps the whole subject table clean, not just the kind the fixture happens to use', () => {
+    /*
+     * The greps above walk `FIXTURES`, which is one `profile` fixture and therefore one of
+     * seven subjects. These tables are prompt prose a model reads and paraphrases, so all
+     * seven are checked in the language whose list is written for it.
+     */
+    const id = Object.values(PROFILE_SUBJECT_ID).join(' ').toLowerCase();
+    for (const word of MALAY) {
+      expect({ word, present: new RegExp(`\\b${word}\\b`).test(id) }).toEqual({
+        word,
+        present: false,
+      });
+    }
+    const en = Object.values(PROFILE_SUBJECT_EN).join(' ').toLowerCase();
+    for (const word of THERAPY_EN) {
+      expect({ word, present: en.includes(word) }).toEqual({ word, present: false });
+    }
+  });
+
+  it('shapes the two days the querent’s own examples name', () => {
+    /*
+     * **THE JUDGEMENT IS CODE'S, NOT THE MODEL'S** — `effectiveYesNo()`'s rule. Order
+     * matters inside `shapeOf`: Monday morning is `week_start` before anything else, and
+     * Sunday afternoon is `weekend_close` before it is `weekend`, because *"the weekend is
+     * nearly over"* is the thing worth speaking about and *"it is the weekend"* is not.
+     */
+    /* "njir, udah senin aja. mager ga lu ngantor?" — Monday morning to noon. */
+    expect(shapeOf('mon', 'morning')).toBe('week_start');
+    expect(shapeOf('mon', 'midday')).toBe('week_start');
+    expect(shapeOf('mon', 'evening')).toBe('ordinary');
+    /* "kamu weekend ini kemana aja?" — Sunday afternoon. */
+    expect(shapeOf('sun', 'afternoon')).toBe('weekend_close');
+    expect(shapeOf('sun', 'evening')).toBe('weekend_close');
+    expect(shapeOf('sun', 'morning')).toBe('weekend');
+    expect(shapeOf('sat', 'evening')).toBe('weekend');
+    expect(shapeOf('wed', 'morning')).toBe('ordinary');
+  });
+
+  it('refuses a malformed day or an unknown part rather than throwing on a prompt path', () => {
+    /* `brief.ts`'s rule: a key it cannot read is a run it cannot describe, not one it
+     * should fail — and `timeOfDayFromKey` is the caller that depends on it. */
+    expect(timeOfDayMaterial('nonsense', 'morning')).toBeNull();
+    expect(timeOfDayMaterial('2026-8-9', 'morning')).toBeNull();
+    expect(timeOfDayMaterial('2026-08-09', 'teatime' as never)).toBeNull();
+  });
+
+  it('derives the weekday and the shape rather than storing them', () => {
+    /*
+     * **ONE CONSTRUCTOR, CALLED BY BOTH `detect.ts` AND `brief.ts`.** The mint and the plan
+     * are hours apart and the plan rebuilds from `material_key` alone; two independent
+     * derivations are two chances for a run to change what it is about in between.
+     */
+    expect(timeOfDayMaterial('2026-08-31', 'morning')).toEqual({
+      kind: 'time_of_day',
+      localDate: '2026-08-31',
+      weekday: 'mon',
+      part: 'morning',
+      shape: 'week_start',
+    });
+    /* And the note reads it back through the ONE word table (`CHAT_TIME_VOCAB`), so this
+     * material and phase 2's `<waktu>` block cannot name the same day two ways. */
+    const note = MATERIAL_NOTES.id.time_of_day(
+      timeOfDayMaterial('2026-08-09', 'afternoon') as Extract<Material, { kind: 'time_of_day' }>,
+    );
+    expect(note).toContain('Minggu sore');
+    expect(WEEKDAYS).toContain('sun');
   });
 });

@@ -39,6 +39,38 @@ import type { ChatLengthBudget } from '@/lib/prompt/budget';
  * **THE TWO FUNCTIONS LOOK ALIKE ENOUGH THAT SOMEBODY WILL WANT TO MAKE THEM
  * CONSISTENT. Do not.**
  *
+ * ── 2026-08-30: THE LIST WAS RE-EXAMINED FOR R3 AND DELIBERATELY NOT LOOSENED ─
+ *
+ * The naturalness card raised `CHAT_MAX_BEATS` to eight, which roughly doubles the number
+ * of bubbles a run puts through this function, and the obvious response is to loosen
+ * something so fewer are lost. **Nothing was loosened, for three reasons worth writing
+ * down because the next session will have the same instinct.**
+ *
+ *  1. **The one refusal with a measurement behind it has already been paid.** `en`'s
+ *     `too_long` cost two bubbles across three release-gate runs and was fixed at the
+ *     source, in `CHAT_LENGTH_BUDGET` (24 -> 27). Nothing else has ever been observed
+ *     refusing correct output.
+ *  2. **The override-the-bias refusals point the wrong way to relax.** `banned_word`,
+ *     `answer_name_leak`, `verbatim_ngram` and `memory_verbatim_ngram` are what keep a
+ *     published promise mechanical, and the same release gives the readers a STORED
+ *     MODEL-WRITTEN MEMORY of the person (`<ingatan>`). Weakening a surveillance check in
+ *     the release that adds a memory is exactly backwards. `source_tell` in particular
+ *     stays: *"you said earlier"* about a message visible in `<obrolan>` reads as natural
+ *     and this function cannot tell it from the same phrase about a stored answer, and the
+ *     version that guessed would be guessing about the sentence this whole release exists
+ *     to prevent.
+ *  3. **The cheaper win was the RETRY rather than the threshold.** `C-R7` gives every turn
+ *     one repair attempt, and the repair line was handing the model a raw
+ *     `TurnRejectReason` — an English enum member, in an Indonesian prompt. `build.ts`'s
+ *     `REPAIR_WORDS` now renders it as a sentence, which is `TRIGGER_WORD`'s and
+ *     `INTENT_WORDS`' own rule (*a closed token rendered as prose, never the raw value*).
+ *     **A second attempt that understands why it failed is a bubble kept, and a bubble kept
+ *     is the room staying loud** — the same objective, reached without touching a refusal.
+ *
+ * **The instrument, if this is ever revisited:** `npm run smoke -- --chat` prints every
+ * double refusal with its reason and FAILS the run. Move a threshold on that, not on this
+ * paragraph.
+ *
  * ── FOUR REFUSALS OVERRIDE THE ACCEPT BIAS, AND ONLY FOUR ──────────────────
  *
  * `banned_word`, `answer_name_leak`, `verbatim_ngram` and `memory_verbatim_ngram`. Their

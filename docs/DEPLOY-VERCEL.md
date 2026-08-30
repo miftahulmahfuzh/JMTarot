@@ -566,7 +566,7 @@ not the order the features were built in and not the order they appear in
 
 | # | Variable | Volume | What a querent loses |
 |---|----------|--------|----------------------|
-| 0 | `CHAT_PROACTIVE_ENABLED=0` | **2–5 calls per unprompted run, up to twice per querent per day, with nobody waiting** | Nothing they asked for. A posted message still gets answered; the readers just stop speaking first. |
+| 0 | `CHAT_PROACTIVE_ENABLED=0` | **2–5 calls per unprompted run, up to five times per querent per day, with nobody waiting** | Nothing they asked for. A posted message still gets answered; the readers just stop speaking first. |
 | 0a | `PROFILE_MEMORY_ENABLED=0` | **one call per completed chat run whose transcript moved, nobody waiting** | Nothing today. Every fact the room already remembers still reaches every prompt; the readers just stop learning new ones. Nothing backfills, so facts stated during the outage are lost for good unless the querent says them again. |
 | 0b | `CHAT_ENABLED=0` | **2–5 calls per posted message** | The room still opens and every past message still renders; the composer is disabled with one line of copy. |
 | 1 | `GIST_ENABLED=0` | **one call per reading** | Nothing they can see today. A future reading will not call back to one taken during the outage. |
@@ -663,35 +663,52 @@ above. Nothing needs backfilling:
 - **Chat runs do not backfill and do not need to.** A run minted while
   `CHAT_ENABLED` was off was never minted at all; a run that was shed mid-flight is
   still sitting there `pending` or `running` and the next visit picks it up, unless
-  the nightly nudge has aged it out at `PROACTIVE_RUN_TTL_HOURS` (48). **That TTL is
+  the nudge cron has aged it out at `PROACTIVE_RUN_TTL_HOURS` (24). **That TTL is
   the thing to think about before a long outage**: a week of shedding would
   otherwise deliver week-old greetings the moment the ceiling cleared.
 
-### The two cron jobs, and the second one is the nudge
+### The three cron jobs, and two of them are the nudge
 
-`vercel.json` schedules two, and **Vercel cron schedules are always UTC**:
+`vercel.json` schedules three, and **Vercel cron schedules are always UTC**:
 
 | Path | Schedule | WIB | What |
 |---|---|---|---|
 | `/api/cron/sweep` | `17 3 * * *` | 10:17 | The five retention deletes, plus the size probe and the ceiling report |
-| `/api/cron/nudge` | `0 12 * * *` | 19:00–19:59 | Ages out stale chat runs, then mints and warms up to `NUDGE_MAX_USERS` unprompted runs |
+| `/api/cron/nudge?slot=pagi` | `0 1 * * *` | 08:00–08:59 | Ages out stale chat runs, then mints and warms up to `NUDGE_MAX_USERS` unprompted runs |
+| `/api/cron/nudge?slot=malam` | `0 12 * * *` | 19:00–19:59 | The same job, in the evening |
 
-**Both authenticate with the same `CRON_SECRET` and both 503 without it.** One
-secret, deliberately: a second is a second thing to rotate and a second thing to
+**All three authenticate with the same `CRON_SECRET` and all three 503 without it.**
+One secret, deliberately: a second is a second thing to rotate and a second thing to
 have unset.
 
 **Hobby allows 100 cron jobs per project**, verified 2026-08-07 against
 `vercel.com/docs/cron-jobs/usage-and-pricing` and the changelog entry *"Cron jobs
 now support 100 per project on every plan"* (2026-01-20) — minimum interval once
-per day, scheduling precision ±59 minutes. Older notes in this repo said the
-allowance was small and the nudge might have to fold into the sweep; **it does not,
-and the fold is not designed.**
+per day, scheduling precision ±59 minutes. **That once-per-day minimum is why a
+louder cadence needed a second entry rather than a shorter schedule.**
 
-**`0 12` IS NOT NOON.** It is evening in Jakarta, which is the hour a person
-actually messages you, and it is the one line that changes if the quiet-hours
-question is ever revisited — there is no quiet-hours predicate, by ruling, because
-the other two proactive sources only fire while the querent is demonstrably in the
-app and this one's schedule *is* the mechanism.
+**`0 12` IS STILL NOT NOON**, and `0 1` is not one in the morning: the first is
+19:00 in Jakarta and the second is 08:00, which are the two hours a person
+actually messages you.
+
+**THE MORNING SLOT IS NEW IN THIS RELEASE AND IT IS ONLY SAFE BECAUSE QUIET HOURS
+ARE LIVE.** 01:00 UTC is 08:00 in Jakarta and 02:00 in Berlin. Until 2026-08-30
+there was no quiet-hours predicate — by ruling, because the other two proactive
+sources only fire while the querent is demonstrably in the app and this one's
+single schedule *was* the mechanism. **A schedule stops being the mechanism the
+moment there is more than one of them**, so `CHAT_QUIET_FROM_HOUR` /
+`CHAT_QUIET_TO_HOUR` (defaults 22 and 7, in the querent's own zone, read off
+`chat_threads.utc_offset_minutes`) now refuse a nudge that would land at night.
+**A querent whose browser has never reported an offset is treated as awake** —
+never blocked on an unknown — so the morning slot can still reach somebody at a
+bad hour if we have never seen their clock. The instrument is
+`chat.proactive_skipped` with `reason: 'quiet_hours'`; if that rate is high the
+window is too wide, and the fix is `CHAT_QUIET_TO_HOUR`, one variable.
+
+**The `slot` query parameter is a log label and nothing else.** No branch reads
+it. If a deploy is ever rejected for it, drop it from both entries: the two jobs
+become identical apart from their schedules and the only thing lost is being able
+to tell them apart in the log.
 
 **Its log line is `[cron] nudge`** and it reports counts and never rows:
 `candidates`, `minted`, `advanced`, `abandoned`, `skipped`, `failures`. Zeroes

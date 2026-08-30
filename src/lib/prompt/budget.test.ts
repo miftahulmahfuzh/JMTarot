@@ -120,14 +120,30 @@ describe('chatBudgetFor', () => {
 
 describe('CHAT_MAX_TOKENS', () => {
   /**
-   * A runaway guard at roughly triple her 31 words, the same relationship
-   * `MAX_TOKENS.spread3` and `PERSONA_MAX_TOKENS` have to their ceilings — generous
-   * enough that a model finishes its sentence, tiny in absolute terms because `C-D6`
-   * makes the chat's call budget scarce.
+   * **THE PROPERTY, NOT THE NUMBER (rewritten 2026-08-30).** The old test asserted `90`
+   * against `maxWords * 2` under a title saying *"roughly double"* and a docblock saying
+   * *"roughly triple"* — 90 is neither, and **the assertion passed while the constant was
+   * silently acting as the length control.** A `--chat` run stored a Margaret bubble cut
+   * mid-WORD at `out=90`, thirteen words into a thirty-one-word ceiling.
+   *
+   * What has to be true is that this ceiling **cannot bind before the WORD ceiling does**,
+   * because `validateTurn`'s `too_long` refuses an over-long bubble and `C-R7` retries it,
+   * while a bubble truncated here arrives short and is never refused. So the check is: a
+   * beat writing TWO bubbles at the longest resolved ceiling, in the SOURCE locale, at the
+   * measured Indonesian token cost, still fits.
+   *
+   * **`ID_TOKENS_PER_WORD` IS A MEASUREMENT AND NOT A CONSTANT OF NATURE** — 2.2–3.1 over
+   * one `glm-5.2` run, taken at the top of the range. Re-measure it from `llm_calls`
+   * output tokens on a provider or model change; `npm run probe:usage` is the instrument
+   * for what a provider reports.
    */
-  it('is a runaway guard at roughly double the longest ceiling', () => {
-    expect(CHAT_MAX_TOKENS).toBe(90);
-    expect(CHAT_MAX_TOKENS).toBeGreaterThan(chatBudgetFor('id', 'margaret').maxWords * 2);
+  it('cannot bind before the word ceiling, at two bubbles in the source locale', () => {
+    const ID_TOKENS_PER_WORD = 3.1;
+    const longest = Math.max(...READER_IDS.map((r) => chatBudgetFor('id', r).maxWords));
+    const worstCase = longest * ID_TOKENS_PER_WORD * 2;
+    expect({ longest, fits: CHAT_MAX_TOKENS >= worstCase }).toEqual({ longest, fits: true });
+    /* And still tiny in absolute terms -- `C-D6` makes the chat's call budget scarce. */
+    expect(CHAT_MAX_TOKENS).toBeLessThan(300);
   });
 });
 

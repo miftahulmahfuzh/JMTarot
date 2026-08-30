@@ -101,11 +101,13 @@ describe('beatFold -- the silence rate', () => {
     const fold = beatFold([
       { bucket: 1, runs: 6 },
       { bucket: 3, runs: 2 },
+      /* The top bucket, `8+`, which the panel could not render at all until 2026-08-30. */
+      { bucket: 8, runs: 1 },
     ]);
-    expect(fold.buckets.map((b) => b.bucket)).toEqual([0, 1, 2, 3, 4]);
-    expect(fold.buckets.map((b) => b.runs)).toEqual([0, 6, 0, 2, 0]);
+    expect(fold.buckets.map((b) => b.bucket)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(fold.buckets.map((b) => b.runs)).toEqual([0, 6, 0, 2, 0, 0, 0, 0, 1]);
     expect(fold.silence).toBe(0);
-    expect(fold.total).toBe(8);
+    expect(fold.total).toBe(9);
   });
 
   it('computes the silence rate over terminal runs', () => {

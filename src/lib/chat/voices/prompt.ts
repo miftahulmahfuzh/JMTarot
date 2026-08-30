@@ -58,10 +58,17 @@ type TurnGuards = Pick<
 >;
 
 /**
- * Bounded, because a lambda lives longer than a run. Four beats is `CHAT_MAX_BEATS`, and a
- * handful of runs' worth is all a warm instance can be mid-flight on.
+ * Bounded, because a lambda lives longer than a run. **32 SINCE 2026-08-30**, and the
+ * comment it replaces was already stale twice over: it read *"Four beats is
+ * `CHAT_MAX_BEATS`"* while the cap was six, and the cap is now EIGHT.
+ *
+ * The key is `runId:beatIndex`, so one run occupies as many entries as it has beats. A
+ * miss is a **refusal** by design — see the header — so an evicted entry is a silently
+ * lost bubble, and losing bubbles out of the longest runs is precisely the failure the
+ * 2026-08-30 cap change exists to prevent. 32 is four full runs' worth of guards on one
+ * warm instance.
  */
-const MAX_MEMO = 16;
+const MAX_MEMO = 32;
 const GUARDS = new Map<string, { guards: TurnGuards; lastReason: TurnRejectReason | null }>();
 
 function keyOf(input: VoiceInput): string {

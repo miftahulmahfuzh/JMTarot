@@ -1028,18 +1028,18 @@ feels.** Every trade below is traded in their favour, including the ones that lo
 infrastructure.
 
 - **A RUN IS THE UNIT, NOT A REQUEST.** One trigger produces one `chat_runs` row, which
-  produces 1–4 bubbles from 1–3 readers. The director writes a **beat sheet**; the voices
+  produces 1–8 bubbles from 1–3 readers. The director writes a **beat sheet**; the voices
   execute it **one beat per `POST /api/chat/advance`**. **An abandoned run and a proactive run
   are the same object** (`C-D7`), which is why proactivity needed triggers rather than a second
   pipeline: a design in which unprompted messages have their own route, table or renderer is
   wrong.
 - **A TURN IS BUFFERED AND DELIVERED WHOLE, NEVER STREAMED** (`C-D3`) — naturalness, not
   performance: watching Adrian type character by character is a chatbot tell. It also buys
-  validation before display and one code path for turns nobody is watching.
+  validation before display and one path for turns nobody is watching.
   **`ReadingView`'s streaming machinery is not reused and must not be.**
-- **CHAT CALLS ARE `deferred`, AND THAT IS A PROMISE TO THE READING** (`C-D6`). A run is 2–5
-  calls and sixty would exhaust the whole five-hour quota, so when the two compete the reading
-  wins. **`LLM_WINDOW_CHAT_CEILING` is the chat's own sub-budget**, peeked before the fleet
+- **CHAT CALLS ARE `deferred`, AND THAT IS A PROMISE TO THE READING** (`C-D6`). A run is 2–9
+  calls and thirty would exhaust the whole five-hour quota, so when the two compete the reading
+  wins. **`LLM_WINDOW_CHAT_CEILING` is the chat's sub-budget**, peeked before the fleet
   ceiling and defaulting to half of it. **A shed beat is not an error** — the run stays
   `running` and the next visit delivers it.
 - **THE READERS SEE THE SIX RAW ONBOARDING ANSWERS, AND THIS AMENDS `A5` BY NAME** (`C-D8`,
@@ -1055,21 +1055,20 @@ infrastructure.
   where the querent can see the original. The chrome still follows `t()`; a bubble carries its
   own `lang` and the page does not.
 - **CODE DERIVES THE ADDRESS FORMS AND THE MODEL PICKS ONE FROM THE LIST** (`C-D10`) —
-  `effectiveYesNo()`'s and `validateChoice`'s rule in a third place. `address.ts` is PURE and a
-  LEAF; **the full nickname is always candidate zero**, and **an empty candidate list is a
-  correct outcome, never an error.**
+  `effectiveYesNo()`'s and `validateChoice`'s rule again. `address.ts` is PURE and a LEAF;
+  **the full nickname is always candidate zero**, and **an empty candidate list is a correct
+  outcome, never an error.**
 - **THERE IS NO ERROR BUBBLE. A FAILURE IS SILENCE** (`C-R7`), and **a zero-beat plan is valid
   and desirable** (`C-R6`). The two are indistinguishable from inside the room and are told
-  apart only on `/admin/chat`'s health panel. **A silence rate of zero is not good news** — it
-  means the director always answers, which is not what a group chat does.
+  apart only on `/admin/chat`'s health panel. **A silence rate of zero is not good news**: the
+  director always answers, which is not what a group chat does.
 - **`/chat` IS GATED AND `isPublic()` MUST NEVER LEARN IT** (`C-D12`) — `/history`'s sentence
-  for a stronger reason, because this room contains the six answers spoken aloud. **`/en/chat`
-  404s**, per contract G2.
+  for a stronger reason: this room contains the six answers spoken aloud. **`/en/chat` 404s**,
+  per contract G2.
 - **A POSTED MESSAGE GOES THROUGH THE W7 GATE AND A REFUSAL IS NEVER IN A READER'S VOICE**
   (`C-D13`). `RefusalNotice`, not a bubble: a reader who refuses you is a friend who refuses
   you. **The classifier is not "tightened" for this surface** — grief, illness and a
-  frightening partner are what the room is for — and **a reader's own output is not
-  classified.**
+  frightening partner are what the room is for — and **a reader's output is not classified.**
 - **`chat_messages.body` IS TEXT A PERSON TYPED, IN PLAINTEXT** (`C-D20`) —
   `readings.question`'s neighbour in every privacy commitment. **Never log a driver error from
   any path that runs a chat query**, `events.props` carries a length and never a body, and
@@ -1077,7 +1076,7 @@ infrastructure.
 - **THE UNREAD DOT IS LIT BY A STORED BUBBLE AND NEVER BY A PENDING RUN** (`[R6]`, correcting
   `C-D7`). `GET /api/chat/state` returns the count and the pending flag as **two fields**: the
   count drives the dot, the flag drives the warm. A dot lit by a pending run leads the querent
-  to a room with nothing new in it.
+  to an empty room.
 - **`CHAT_MODEL` DEFAULTS TO `glm-5.2` AND IS ONE VARIABLE FOR THE DIRECTOR AND THE VOICES**
   (`C-D4`, `ADMIN_MODEL`'s shape). It points *away* from `LLM_MODEL` for the opposite reason
   `ADMIN_MODEL` does: everything on this surface is in a reader's voice. **The chat is, by
@@ -1088,39 +1087,42 @@ infrastructure.
   `chat_turn` and what made it proactive is `chat_runs.trigger`. **`llm_calls.reading_id` is
   NULL for both** (`[R8]`) — `readingCostsFor` folds every `reading_id`-bearing row with no
   `op` predicate, so a non-null there silently inflates the cost of the reading that triggered
-  the conversation. **FOUR of the thirteen ops have no querent behind them — `insight`,
+  the conversation. **FOUR of the thirteen ops have no querent behind them: `insight`,
   `blog_format`, `chat_plan`, `chat_turn` — and `src/lib/admin/ops.ts` IS THE MACHINE-CHECKED
   LIST**, with a compile guard so a fourteenth is an error until somebody classifies it.
-  Written because the same rule was stated in prose four times and **three of the four were
-  stale**; do not restate the count anywhere else.
+  **Do not restate the count anywhere else** — it was stated in prose four times and three of
+  the four went stale.
 - **TWO NEW FLAGS, FIVE BECOMES SEVEN** (`C-D15`): `CHAT_ENABLED` and
   `CHAT_PROACTIVE_ENABLED`, on `ANALYTICS_ENABLED`'s rule. **Off gates the model call, never
   the cached read** — the room still opens and every past message still renders.
 - **`/admin/chat` MEASURES AND NEVER RESTRAINS.** No pause button, no ceiling editor. Its one
   `Hero` is the proactive reply rate, **whose denominator is runs whose 24-hour window has
-  CLOSED** — including the open ones makes the release's own scorecard fall every time somebody
-  picks a range ending today. `/admin/users/[id]` shows **counts and no text** (`[R15]`),
-  because `A-D16`'s audited reveal was built for a thing you read one of. **A histogram there
+  CLOSED** — including the open ones makes the release's own scorecard fall whenever somebody
+  picks a range ending today. `/admin/users/[id]` shows **counts and no text** (`[R15]`):
+  `A-D16`'s audited reveal was built for a thing you read one of. **A histogram there
   is `InlineBars`, never `StackedBar`:** `stackSegments` normalises every row to 100% of its
   own total, so a one-segment row is always full width and the distribution encodes nothing —
   which also makes `chat.cast`'s bar LENGTHS meaningless, so compare the numbers at the row
   ends.
 - **NOTHING IN THE COMPOSER MAY BE `white-space: nowrap`, AND `min-width: 0` BELONGS ON EVERY
   BOX BETWEEN ITS TEXT AND THE SHELL** (2026-08-09, the first querent-reported bug of the
-  release, confirmed fixed on iOS Safari). `nowrap` makes an element's MIN-content width its
-  MAX-content width, and the composer is the only part of the room that does not scroll
-  horizontally, so that minimum reaches `.shell`'s auto-sized grid track and `overflow: hidden`
-  eats `Kirim` off the edge. **`overflow-wrap: anywhere` is the load-bearing declaration and
-  `break-word` is NOT a substitute** — only `anywhere` changes min-content. The CSS argument is
-  spec-correct and **loop 4 measured it green at 320 and was right about Chrome**, so
-  `replyPreview` also cuts the stub to eight words. The in-bubble quote never had the bug while
-  its comment claimed the two *"read as one mechanic"* — **a comment claiming two things are one
-  mechanic is the first place to look.**
+  release). `nowrap` makes an element's MIN-content width its MAX-content width; the composer
+  is the only part of the room that does not scroll horizontally, so that minimum reaches
+  `.shell`'s grid track and `overflow: hidden` eats `Kirim` off the edge.
+  **`overflow-wrap: anywhere` is the load-bearing declaration and `break-word` is NOT a
+  substitute** — only `anywhere` changes min-content; `replyPreview` also cuts the stub to
+  eight words. The in-bubble quote never had the bug while its comment claimed the two *"read
+  as one mechanic"* — **a comment claiming two things are one mechanic is the first place to
+  look.**
 - **`100dvh` cannot see the software keyboard, so `.room` carries `--kb-inset` from
   `keyboardInset.ts` — a MARGIN, never a height**, so it can only shorten the room and `0px` is
-  the layout that shipped. iOS shrinks the visual viewport and leaves the layout viewport alone.
-  **No report has ever turned out to be about this**; do not read its presence as evidence it
-  was needed, and do not stack a third explanation on it.
+  the layout that shipped.
+- **THE ROOM KNOWS WHAT TIME IT IS AND WHAT IT HAS LEARNED, AND BOTH ARE ONE FENCED BLOCK
+  EACH.** `<waktu>` for the voice and `SEKARANG:` for the director, from
+  `chat_threads.utc_offset_minutes` through `chat/clock.ts`; `<ingatan>` from `user_memory`,
+  which a model writes, the querent can read and delete on `/account`, and `/privacy` names.
+  There is still no clock on a transcript line and no digit in an age bucket, and a reader
+  still never says HOW they know.
 
 **Verify it with the blind read, not with a test.** `npm run smoke -- --chat` and
 `npm run smoke -- --chat --proactive` print an exchange with the names covered; if you cannot

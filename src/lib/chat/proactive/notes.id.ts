@@ -23,7 +23,38 @@
  * **Indonesian, never Malay.** The smoke script greps the eleven, and these lines are
  * inside a prompt the model may echo the vocabulary of.
  */
+import type { UserMemoryKind } from '@/lib/memory/profile/types';
+import { CHAT_TIME_VOCAB, WEEKDAYS } from '../clock';
 import type { MaterialNotes } from './notes';
+
+/**
+ * What a remembered fact is ABOUT, as a subject and never as a fact.
+ *
+ * Every line here names a topic; **none of them says anything the room actually knows.**
+ * That is the seam: the sentence itself lives in phase 5's fenced `<ingatan>`, in front of
+ * the reader who has to say it.
+ *
+ * Keyed by phase 3's `UserMemoryKind` — **one vocabulary, and it is the one persisted in
+ * `user_memory.items`** (reconciliation ruling 4). A second closed set describing the same
+ * item is two sets that drift.
+ */
+export const PROFILE_SUBJECT_ID: Record<UserMemoryKind, string> = {
+  habit: 'rutinitas harian penanya',
+  taste: 'apa yang disukai penanya',
+  person: 'orang-orang di sekitar penanya',
+  situation: 'hal yang sedang berjalan di hidup penanya',
+  place: 'tempat yang sering didatangi penanya',
+  trait: 'bagaimana penanya menggambarkan dirinya',
+  other: 'sesuatu tentang penanya',
+};
+
+/*
+ * **THE DAY WORDS ARE NOT DECLARED HERE.** `CHAT_TIME_VOCAB` in `@/lib/chat/clock` is the
+ * one table for the release (reconciliation ruling 3): phase 2's `<waktu>` block states the
+ * querent's weekday and hour to the voices and this note states it to the director, and two
+ * independent lists is how one run says *"Monday morning"* on one line and *"siang"* on
+ * another — which reads to a model as two claims about the same clock.
+ */
 
 export const MATERIAL_NOTES_ID: MaterialNotes = {
   /*
@@ -80,4 +111,42 @@ export const MATERIAL_NOTES_ID: MaterialNotes = {
 
   lotus: (m) =>
     `hal baru sejak ruangan ini terakhir bicara: gambaran diri penanya berubah — ${m.summary}`,
+
+  /*
+   * **THE SUBJECT AND NOT THE FACT.** `ProfileMaterial` carries no text, so this line
+   * cannot carry one either — and that is the point rather than a limitation. The director
+   * casts on the subject; the reader who speaks reads the sentence itself out of the fenced
+   * `<ingatan>` block and says it in their own words.
+   *
+   * *"sudah diketahui"* rather than *"catatan"* or *"data"*: a note that names a record is
+   * a note a model will paraphrase as *"di catatanku tertulis…"*, and `C-D8`'s ban on
+   * saying HOW you know is the difference between *"nasi padang lagi kan?"* and
+   * surveillance.
+   */
+  profile: (m) =>
+    `hal yang sudah diketahui ruangan ini tentang penanya: ${PROFILE_SUBJECT_ID[m.itemKind]}`,
+
+  /*
+   * **THE CLOCK AS A SUBJECT, NOT AS A GREETING.** The note states where in the week and
+   * the day the querent is and stops; *"njir, udah senin aja"* is a sentence Adrian writes,
+   * not one this table hands to three readers at once (`[F5-9]`).
+   *
+   * The second clause is the one piece of ladder state a note carries anywhere, and it
+   * earns its place: this material is LAST in `MATERIAL_ORDER` precisely because it is what
+   * is left when nothing happened, and a director told only *"it is Sunday afternoon"* will
+   * hunt the transcript for a pretext to speak. Saying there is no other reason is what
+   * licenses an opener.
+   */
+  time_of_day: (m) => {
+    const when = `${CHAT_TIME_VOCAB.id.weekdays[WEEKDAYS.indexOf(m.weekday)]} ${CHAT_TIME_VOCAB.id.parts[m.part]}`;
+    const shape =
+      m.shape === 'week_start'
+        ? ', awal minggu kerja'
+        : m.shape === 'weekend_close'
+          ? ', akhir pekan hampir habis'
+          : m.shape === 'weekend'
+            ? ', akhir pekan'
+            : '';
+    return `jam setempat penanya: ${when}${shape}; belum ada bahan lain di ruangan ini`;
+  },
 };

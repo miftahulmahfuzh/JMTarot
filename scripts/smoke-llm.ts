@@ -2105,6 +2105,31 @@ async function runPersona(locales: Locale[]) {
 const CHAT_BREVITY_FLOOR = 6;
 
 /**
+ * **THE TWO FLOORS THE 2026-08-30 REWRITE LEFT BEHIND, AND THEY ARE FLOORS RATHER THAN
+ * BANDS ON PURPOSE.**
+ *
+ * `runDirector`'s lever panel is PRINTED and never failed, on a stated ruling: *"targets
+ * for F7's panels, not thresholds anything enforces … a number outside the band is a
+ * reason to read the prompt, never a reason to add a clamp."* **That ruling is intact and
+ * these do not violate it**, because neither is a band. Each can only fire when the phase
+ * demonstrably did nothing at all:
+ *
+ *  - `CHAT_MIN_LONG_RUN_BEATS` — if NO run in the whole set exceeds two beats, rule 1 and
+ *    rule 11 did not land, and no amount of reading the prose will tell you that faster
+ *    than one line.
+ *  - `CHAT_MIN_READER_DIRECTED` — if NOT ONE beat in the whole set names another reader in
+ *    `to`, the mechanic the release is measured on did not ship. **This is a count over the
+ *    whole run and never a rate**, for the reason the lever panel already states: the prose
+ *    answers another reader far more often than `to` says, so a rate here would be a number
+ *    to tune the prompt against, which is what the panel forbids.
+ *
+ * Correct output cannot trip either. A room that genuinely had nothing to say all day
+ * would, and that is worth a FAIL you can read and dismiss.
+ */
+const CHAT_MIN_LONG_RUN_BEATS = 2;
+const CHAT_MIN_READER_DIRECTED = 1;
+
+/**
  * Margaret's mean sentence must be this much longer than Thessaly's.
  *
  * **IT SHIPPED AT 1.25 AND THE FIRST THREE RUNS PUT IT BACK AT 1.5** (§17 item 5, open
@@ -2122,9 +2147,14 @@ const CHAT_BREVITY_FLOOR = 6;
 const CHAT_SENTENCE_RATIO = 1.5;
 
 /**
- * The scripted conversation. **EIGHT MESSAGES PER LOCALE, EACH PROBING SOMETHING THE
+ * The scripted conversation. **ELEVEN MESSAGES PER LOCALE, EACH PROBING SOMETHING THE
  * RELEASE IS JUDGED ON**, and `en` is REWRITTEN rather than translated
  * (`## Localization` rule 3) so the two halves probe different failures.
+ *
+ * **THE LAST TWO BEFORE THE ENDING ARE R3's, ADDED 2026-08-30**: whether the three sound
+ * like people who know each other, and whether anybody takes anybody's side. Neither is
+ * greppable — they are there to be READ in the transcript, which is why the blind read
+ * grew two questions in the same commit.
  */
 const CHAT_SCRIPT: Record<Locale, Array<{ text: string; probes: string }>> = {
   id: [
@@ -2153,6 +2183,14 @@ const CHAT_SCRIPT: Record<Locale, Array<{ text: string; probes: string }>> = {
         'THE CLOCK PROBE (R1). It is 14.0x WIB. Two different five-o-clocks and a lunch: ' +
         'any reader writing "jam 5 nanti" has reproduced the 2026-08-30 production bug.',
     },
+    {
+      text: 'btw kalian bertiga akrab ngga sih sebenernya',
+      probes: 'R3 -- THE ROOM PROBE. Do they talk to EACH OTHER, or is it three answers aimed at me?',
+    },
+    {
+      text: 'thessaly galak amat sih orangnya',
+      probes: 'R3 -- THE SUPPORT PROBE. Does anybody DEFEND her? Does she take it without sulking?',
+    },
     { text: 'iya deh', probes: 'THE ENDING PROBE. Does the room know to let it stop? (C-R6)' },
   ],
   en: [
@@ -2175,46 +2213,96 @@ const CHAT_SCRIPT: Record<Locale, Array<{ text: string; probes: string }>> = {
         'THE CLOCK PROBE (R1). It is early afternoon. "your run later at five" is the bug; ' +
         'so is answering about the run when the reading was about lunch.',
     },
+    {
+      text: 'do the three of you actually get on',
+      probes: 'R3 -- THE ROOM PROBE',
+    },
+    {
+      text: 'thessaly is a bit harsh honestly',
+      probes: 'R3 -- THE SUPPORT PROBE',
+    },
     { text: 'fair enough', probes: 'THE ENDING PROBE' },
   ],
 };
 
 /**
- * The canned beat sheets, one per user message: `[1] [1] [2] [1] [1] [3] [1] [2] [0]`.
+ * The canned beat sheets, one per user message:
+ * `[1] [4] [2] [1] [1] [5] [2] [2] [3] [3] [0]` — **24 beats over eleven messages, up from
+ * 10 over nine (2026-08-30).**
  *
- * **THE DIRECTOR IS NOT CALLED.** `--chat --director` would be F2's flag and F2's cost;
- * this run is about the VOICES, and chaining a planner call in would make a voice failure
- * indistinguishable from a planning failure — `runPersona`'s reason for not chaining the
- * Lotus, one workstream over.
+ * **THE DIRECTOR IS NOT CALLED**, exactly as before: `--chat --director` is F2's flag and
+ * F2's cost, and chaining a planner call in would make a voice failure indistinguishable
+ * from a planning failure. **Which is precisely why these sheets had to be rewritten by
+ * hand when `CHAT_MAX_BEATS` moved.** A canned sheet is a claim about what the director
+ * will produce; leaving it at one and two beats would have measured the new voices under
+ * the old cadence and reported nothing.
  *
- * The last sheet is EMPTY, deliberately: `C-R6` says a plan of length zero is valid and
- * desirable, and the run has to be able to show that the room can let a conversation stop.
+ * Eight of the twenty-four beats set `to` to another reader. That is not a measurement — it
+ * is my sheet, not the model's — and the runner prints it as such. **The measurement of
+ * whether the DIRECTOR aims beats at readers is `--chat --director` and
+ * `--chat --proactive`, and since 2026-08-30 both are part of the gate.**
+ *
+ * The last sheet is EMPTY, deliberately and unchanged: `C-R6` says a plan of length zero is
+ * valid and desirable, and the run has to be able to show that the room can let a
+ * conversation stop. **A louder room is not a room that always answers.**
  */
 const CHAT_SHEETS: Array<Array<{ reader: ReaderId; to: 'user' | ReaderId; intent: string; angle: string | null; replyToPrevious?: boolean }>> = [
+  /* halo -- one small beat. */
   [{ reader: 'adrian', to: 'user', intent: 'react', angle: null }],
-  [{ reader: 'thessaly', to: 'user', intent: 'ask', angle: 'how long it has been like this' }],
+  /* the ordinary one -- the new four-beat shape, two of them reader-directed. */
+  [
+    { reader: 'thessaly', to: 'user', intent: 'ask', angle: 'how long it has been like this' },
+    { reader: 'adrian', to: 'thessaly', intent: 'tease', angle: null, replyToPrevious: true },
+    { reader: 'margaret', to: 'user', intent: 'answer', angle: null },
+    { reader: 'thessaly', to: 'margaret', intent: 'agree', angle: null, replyToPrevious: true },
+  ],
+  /* the grandmother -- rule 10 territory. TWO beats and no tease, on purpose. */
   [
     { reader: 'margaret', to: 'user', intent: 'answer', angle: null },
     { reader: 'adrian', to: 'user', intent: 'ask', angle: null },
   ],
+  /* the surveillance probe. */
   [{ reader: 'thessaly', to: 'user', intent: 'answer', angle: null }],
+  /* wkwk -- brevity. */
   [{ reader: 'adrian', to: 'user', intent: 'react', angle: null }],
+  /* resign or not -- the long one. */
   [
     { reader: 'thessaly', to: 'user', intent: 'answer', angle: 'the deadline' },
     { reader: 'adrian', to: 'thessaly', intent: 'push_back', angle: null, replyToPrevious: true },
     { reader: 'margaret', to: 'user', intent: 'agree', angle: null },
+    { reader: 'adrian', to: 'margaret', intent: 'agree', angle: null, replyToPrevious: true },
+    { reader: 'thessaly', to: 'user', intent: 'ask', angle: null },
   ],
-  [{ reader: 'margaret', to: 'adrian', intent: 'push_back', angle: null, replyToPrevious: true }],
+  /* directed at Margaret. */
+  [
+    { reader: 'margaret', to: 'adrian', intent: 'push_back', angle: null, replyToPrevious: true },
+    { reader: 'adrian', to: 'margaret', intent: 'react', angle: null, replyToPrevious: true },
+  ],
   /*
-   * **BOTH ANGLES ARE NULL, DELIBERATELY.** An angle naming the clock would hand the model
-   * the answer, and what is being measured is whether it derives *tadi* from `<waktu>` on
-   * its own. Two beats so the second can disagree with the first about which five o'clock
-   * was meant.
+   * PHASE 2's CLOCK PROBE, AND IT IS NOT TOUCHED BY THE CADENCE REWRITE. **BOTH ANGLES ARE
+   * NULL, DELIBERATELY.** An angle naming the clock would hand the model the answer, and
+   * what is being measured is whether it derives *tadi* from `<waktu>` on its own. Two
+   * beats so the second can disagree with the first about which five o'clock was meant --
+   * **lengthening this run would dilute R1's only instrument in the gate**, so it stays at
+   * two while everything around it grew.
    */
   [
     { reader: 'thessaly', to: 'user', intent: 'answer', angle: null },
     { reader: 'adrian', to: 'user', intent: 'react', angle: null },
   ],
+  /* R3 -- the room probe. */
+  [
+    { reader: 'adrian', to: 'user', intent: 'answer', angle: null },
+    { reader: 'thessaly', to: 'adrian', intent: 'tease', angle: null, replyToPrevious: true },
+    { reader: 'margaret', to: 'user', intent: 'agree', angle: null },
+  ],
+  /* R3 -- the support probe. Margaret defends Thessaly; Adrian backs Margaret. */
+  [
+    { reader: 'margaret', to: 'user', intent: 'push_back', angle: null },
+    { reader: 'adrian', to: 'margaret', intent: 'agree', angle: null, replyToPrevious: true },
+    { reader: 'thessaly', to: 'user', intent: 'react', angle: null },
+  ],
+  /* the ending. C-R6. */
   [],
 ];
 
@@ -2580,22 +2668,32 @@ async function runChat(locales: Locale[], proactive: boolean) {
     }
 
     /* The smoke-only half of §7: stylistic tells rather than violations. */
+    /* The smoke-only half of §7: stylistic tells rather than violations. **THE BUBBLE IS
+     * NAMED SINCE 2026-08-30**: at 24 beats a bare phrase is a needle in a haystack, and a
+     * check nobody can act on is a check somebody deletes. */
+    const say = (kind: string, phrase: string, hit?: { author: string; body: string }) =>
+      problems.push(
+        `[${locale}] ${kind}: "${phrase}"` +
+          (hit ? ` -- ${hit.author}: ${JSON.stringify(hit.body.slice(0, 80))}` : ''),
+      );
+
     for (const tic of locale === 'id' ? CHAT_TICS_ID : CHAT_TICS_EN) {
-      if (lower.includes(tic)) problems.push(`[${locale}] REGISTER: "${tic}"`);
+      const hit = spoken.find((s) => s.body.toLowerCase().includes(tic));
+      if (hit) say('REGISTER', tic, hit);
     }
     for (const opener of locale === 'id' ? CHAT_OPENERS_ID : CHAT_OPENERS_EN) {
-      if (spoken.some((s) => s.body.toLowerCase().startsWith(opener))) {
-        problems.push(`[${locale}] REGISTER: a bubble opened with "${opener}"`);
-      }
+      const hit = spoken.find((s) => s.body.toLowerCase().startsWith(opener));
+      if (hit) say('REGISTER (opener)', opener, hit);
     }
     for (const closer of locale === 'id' ? CHAT_CLOSERS_ID : CHAT_CLOSERS_EN) {
-      if (lower.includes(closer)) problems.push(`[${locale}] REGISTER: a bubble closed with "${closer}"`);
+      const hit = spoken.find((s) => s.body.toLowerCase().includes(closer));
+      if (hit) say('REGISTER (closer)', closer, hit);
     }
     if (locale === 'id') {
       for (const word of MALAY) {
-        if (new RegExp(`\\b${word}\\b`, 'i').test(joined)) {
-          problems.push(`[${locale}] MALAY: "${word}"`);
-        }
+        const re = new RegExp(`\\b${word}\\b`, 'i');
+        const hit = spoken.find((s) => re.test(s.body));
+        if (hit) say('MALAY', word, hit);
       }
       /*
        * PER BUBBLE, NOT OVER `joined`. A reader may be "lo"/"gue" in one message and
@@ -2638,13 +2736,40 @@ async function runChat(locales: Locale[], proactive: boolean) {
         '(band: under ~15% the readers are not asking, over ~50% it is an interrogation)\n',
     );
 
+    /*
+     * `R3`. **PRINTED AND EXPLICITLY NOT A MEASUREMENT.** `--chat` drives CANNED sheets, so
+     * this number is a property of `CHAT_SHEETS` and not of the model. It is here so the
+     * reader of the transcript knows how many of these bubbles were WRITTEN as an answer to
+     * another reader — which is the thing to hold in mind while judging whether they read
+     * that way. The measurement of the director's own aim is `--chat --director`.
+     */
+    const directedBeats = CHAT_SHEETS.flat().filter((b) => b.to !== 'user').length;
+    process.stdout.write(
+      `[cast ${locale}] ${directedBeats} of ${CHAT_SHEETS.flat().length} canned beats aim at another reader ` +
+        '(a property of the fixture, NOT of the model -- see --chat --director)\n',
+    );
+
     /* THE THREE VOICE PROXIES (`C-N1f`), over each reader's own bubbles joined. */
     const byReader = (id: ReaderId) => spoken.filter((s) => s.author === id).map((s) => s.body).join(' ');
     for (const readerId of ['thessaly', 'margaret', 'adrian'] as ReaderId[]) {
       const text = byReader(readerId);
       if (!text) continue;
       for (const word of CROSSOVER[locale][readerId]) {
-        if (text.toLowerCase().includes(word.toLowerCase())) {
+        /*
+         * **WORD-BOUNDED SINCE 2026-08-30, AND IT WAS A BARE `includes` BEFORE.** Margaret
+         * wrote *"tempat yang masih ada untuk pulang"* and this FAILED her for `sih` —
+         * `masih` and `kasih` are two of the commonest words in Indonesian, so the false
+         * positive was always one bubble away and the longer runs of this release found it.
+         * `runVoices`' own crossover check has always used `\b…\b`; **the two are the same
+         * check and must stay spelled the same way.** `namesIn`'s rule: a false violation
+         * costs correct output, and here it costs the operator's trust in the strongest
+         * voice signal the gate has. `!` is not a word, so it keeps the plain test.
+         */
+        const hit =
+          word === '!'
+            ? text.includes('!')
+            : new RegExp(`\\b${word}\\b`, 'i').test(text);
+        if (hit) {
           problems.push(`[${locale}] CROSSOVER: ${readerId} used "${word}", which is their own forbidden vocabulary`);
         }
       }
@@ -2764,19 +2889,29 @@ function chatBlindPrint(
       (proactive
         ? '\n  2. DOES THIS SOUND LIKE SOMEBODY THOUGHT OF YOU, OR LIKE A CRON JOB?\n' +
           '       a. Is it ABOUT something, or is it "hai, apa kabar?" (C-N2e)\n' +
-          '       b. Does it open a conversation, or close one?\n'
+          '       b. Does it open a conversation, or close one?\n' +
+          '       c. Did a SECOND reader pick it up, or did one reader post a notice and\n' +
+          '          the room go quiet? An announcement is not a room (rule 11, 2026-08-30).\n'
         : '\n  2. READ IT AGAIN AND ANSWER: WOULD A PERSON SEND THIS?\n' +
-          '     Three specific things, because "does it feel natural" is not a question\n' +
-          '     anyone can answer cold:\n' +
+          '     Five specific things, because "does it feel natural" is not a question\n' +
+          '     anyone can answer cold. The last two are R3\'s and are new on 2026-08-30.\n' +
           '       a. Did any reader deliver a PARAGRAPH? One is too many.\n' +
           '       b. Did any reader SUMMARISE the querent back at themselves before\n' +
           '          answering? That is the most bot-like move available and no grep\n' +
           '          can see it.\n' +
           '       c. Did the room ever GO QUIET, or does every message get answered by\n' +
-          '          somebody? A room where every message is answered is a focus group.\n') +
+          '          somebody? A room where every message is answered is a focus group,\n' +
+          '          and a LONGER run is not a licence to answer everything.\n' +
+          '       d. Did they talk TO EACH OTHER, or is every line aimed at the querent\n' +
+          '          with another reader\'s name in it? "He is right though" said to the\n' +
+          '          querent is a panel; said to him it is a room.\n' +
+          '       e. Did anybody make a JOKE, and did anybody BACK ANOTHER READER UP?\n' +
+          '          Both are licensed now and neither is greppable. If the answer to\n' +
+          '          either is no across a whole run, the fix is the base contract and\n' +
+          '          the reader blocks -- never the validator.\n') +
       `\n  The querent is ${nickname} and their messages are NOT covered -- they are the\n` +
-      '  scaffolding. Write the answers, the shortness distribution and the overlap\n' +
-      '  number into docs/workstream-notes.md under "## The group chat (F3)".\n',
+      '  scaffolding. Write the answers, the shortness distribution, the cadence line and\n' +
+      '  the overlap number into docs/workstream-notes.md under "## The group chat".\n',
   );
 
   process.stdout.write('\n'.repeat(40));
@@ -2878,6 +3013,12 @@ async function runDirector(locales: Locale[], withVoices = false) {
   const RAW_ANSWERS = ANSWERS.map((a) => a.text);
   /** User lines and GENERATED bubbles only — never the canned ones (see below). */
   const conversations: Record<string, Array<{ author: string; body: string }>> = {};
+  /*
+   * **FUNCTION SCOPE, BESIDE `conversations` AND NOT BESIDE `sheets`** — `sheets` is
+   * re-declared inside the per-locale loop, so a `problems` array there would be thrown
+   * away with it and the two floors below would never be printed for the first locale.
+   */
+  const problems: string[] = [];
 
   const caps = planCaps();
   process.stdout.write(
@@ -3168,7 +3309,12 @@ async function runDirector(locales: Locale[], withVoices = false) {
     const runs = sheets.length;
     const silent = sheets.filter((s) => s.beats === 0).length;
     const beats = sheets.reduce((n, s) => n + s.beats, 0);
-    const spread = [1, 2, 3, 4].map(
+    const longest = sheets.reduce((n, s) => Math.max(n, s.beats), 0);
+    const directed = sheets.reduce((n, s) => n + s.readerDirected, 0);
+    /* **DERIVED FROM THE CAP SINCE 2026-08-30.** It was the literal `[1, 2, 3, 4]`, which
+     * was exact at `CHAT_MAX_BEATS = 4` and blind past four at 6 and at 8. Grep for the
+     * number, not for the phrase. */
+    const spread = Array.from({ length: caps.maxBeats }, (_, i) => i + 1).map(
       (n) => `${n}: ${sheets.filter((s) => s.beats === n).length}`,
     );
     const withLead = sheets.filter((s) => s.followedLead !== null);
@@ -3177,17 +3323,62 @@ async function runDirector(locales: Locale[], withVoices = false) {
     process.stdout.write(
       `\n${'-'.repeat(70)}\nDIRECTOR LEVERS -- ${locale}\n${'-'.repeat(70)}\n` +
         `  silence rate       ${pct(silent, runs)}  (${silent}/${runs})  target 10-25%; 0% is a help desk, >40% has stopped reading\n` +
-        `  cast size          ${spread.join('  ')}  over ${runs - silent} speaking runs (target 1:45 2:35 3:15 4:5)\n` +
-        `  reader-directed    ${pct(sheets.reduce((n, s) => n + s.readerDirected, 0), beats)} of ${beats} beats set to=<reader>, ${sheets.reduce((n, s) => n + s.readerQuotes, 0)} quote one\n` +
+        `  cast size          ${spread.join('  ')}  over ${runs - silent} speaking runs\n` +
+        `                     TARGETS MOVED WITH THE CAP (2026-08-30): the old 1:45 2:35 3:15 4:5\n` +
+        `                     described a four-beat world. The shape to want now is a HUMP around\n` +
+        `                     four with a real tail at one and at ${caps.maxBeats} -- the MIX is the\n` +
+        `                     finding, not the mean.\n` +
+        `  longest run        ${longest} beats  (cap ${caps.maxBeats})\n` +
+        `  reader-directed    ${pct(directed, beats)} of ${beats} beats set to=<reader>, ${sheets.reduce((n, s) => n + s.readerQuotes, 0)} quote one\n` +
         `                     A FLOOR, NOT A RATE -- the prose answers another reader far more often\n` +
         `                     than \`to\` says, and a quote of a sibling beat is impossible by design.\n` +
         `                     DO NOT TUNE THE PROMPT AGAINST THIS. Read the bubbles instead.\n` +
         `  ask rate           ${pct(sheets.filter((s) => s.asks > 0).length, runs)} of runs  target 25-35%; 0% and C-N1d did not ship\n` +
         `  old quotes         ${sheets.reduce((n, s) => n + s.oldReplies, 0)} of ${beats} beats  (>15% and the room is stuck: fix rule 8, not the cap)\n` +
         `  fallback rate      ${pct(sheets.filter((s) => s.source === 'fallback').length, runs)}  ANY of these is a prompt problem, not a validator problem\n` +
-        `  affinity followed  ${pct(withLead.filter((s) => s.followedLead).length, withLead.length)} of ${withLead.length} runs with a lead  (100% is a switchboard; 0% means the hint is noise)\n`,
+        `  affinity followed  ${pct(withLead.filter((s) => s.followedLead).length, withLead.length)} of ${withLead.length} runs with a lead  (100% is a switchboard; 0% means the hint is noise)\n` +
+        `                     EXPECT FEWER RUNS WITH A LEAD AT ALL SINCE 2026-08-30: an eight-beat\n` +
+        `                     run leaves all three readers in \`recentlySpoke\`, so affinityFor's\n` +
+        `                     demotion fires whenever two readers match and \`lead\` goes null more\n` +
+        `                     often. That is the demotion working, not the lexicon failing.\n`,
     );
+
+    /*
+     * **KESENYAPAN NOL BUKAN KABAR BAIK, AND IT IS A WARN RATHER THAN A FAIL.** The levers
+     * are PRINTED by a stated ruling and this does not reverse it — a rate outside a band
+     * is still not an error. But the 2026-08-30 rewrite pushes in exactly one direction,
+     * and the property it is most likely to break is the one the release was told to keep,
+     * so it gets a line nobody can scroll past.
+     */
+    if (silent === 0 && runs > 0) {
+      process.stdout.write(
+        '\n  WARN  SILENCE RATE IS ZERO. C-R6 says a zero-beat plan is valid and desirable, and\n' +
+          '        a director that always answers is not a group chat. The script includes an\n' +
+          '        ENDING PROBE whose correct answer is `beats: []`; if that run spoke, rule 6\n' +
+          '        lost to rule 1 and rule 6 is where to look.\n',
+      );
+    }
+
+    /* THE TWO FLOORS. Neither can fire on correct output; both fire when the rewrite did
+     * nothing at all. See CHAT_MIN_LONG_RUN_BEATS. */
+    if (longest <= CHAT_MIN_LONG_RUN_BEATS) {
+      problems.push(
+        `[${locale}] CADENCE: the longest run in the whole set is ${longest} beats against a cap of ` +
+          `${caps.maxBeats}. Rule 1 did not land -- check PLAN_MAX_TOKENS before the prose.`,
+      );
+    }
+    if (directed < CHAT_MIN_READER_DIRECTED) {
+      problems.push(
+        `[${locale}] CAST: not one beat in ${beats} names another reader in \`to\`. The mechanic R3 is ` +
+          'measured on did not ship.',
+      );
+    }
   }
+
+  process.stdout.write(`\n${'-'.repeat(70)}\nDIRECTOR CHECKS\n${'-'.repeat(70)}\n`);
+  if (problems.length === 0) process.stdout.write('all clean\n');
+  else for (const pr of problems) process.stdout.write(`FAIL  ${pr}\n`);
+  if (problems.length > 0) process.exitCode = 1;
 
   process.stdout.write(
     `\n${'-'.repeat(70)}\nHOW TO READ THE SHEETS ABOVE (§15.4)\n${'-'.repeat(70)}\n` +
@@ -3324,6 +3515,13 @@ async function runProactive(locales: Locale[]) {
     process.stdout.write(`\n${'#'.repeat(70)}\nPROACTIVE -- ${locale}\n${'#'.repeat(70)}\n`);
     const spoken: Array<{ author: string; body: string; words: number }> = [];
     const transcript: Array<{ author: string; body: string }> = [];
+    /*
+     * Rule 11's cadence, **per locale and not per function**: `materialKey` is function
+     * scope, and declaring these beside it would merge the two locales' cadences into one
+     * line and make `longest` say nothing about either.
+     */
+    const runBeats: number[] = [];
+    let runDirected = 0;
     let runNo = 0;
 
     for (const fixture of proactiveFixtures(locale)) {
@@ -3441,6 +3639,12 @@ async function runProactive(locales: Locale[]) {
         );
         continue;
       }
+
+      /* **AFTER the two `continue`s, on purpose.** A refused plan and a zero-beat plan are
+       * already reported by their own FAILs; counting them here would drag `longest` down
+       * and make the cadence line describe the failures rather than the runs. */
+      runBeats.push(checked.beats.length);
+      runDirected += checked.beats.filter((b) => b.to !== 'user').length;
 
       const runBubbles: string[] = [];
       for (const [beatIndex, beat] of checked.beats.entries()) {
@@ -3581,6 +3785,30 @@ async function runProactive(locales: Locale[]) {
           `[${locale}] SHORTNESS: mean ${mean.toFixed(1)} words is over the ${budget.maxWords} ceiling`,
         );
       }
+    }
+
+    /*
+     * **RULE 11's OWN MEASUREMENT.** It said *"satu beat, kadang dua"* until 2026-08-30,
+     * which directly contradicted the card that asked for a much more proactive room; it
+     * now says two to four. These two lines are how a future session finds out whether the
+     * new sentence is doing anything, and they are floors rather than bands for the reason
+     * `CHAT_MIN_LONG_RUN_BEATS` gives.
+     */
+    const longestProactive = runBeats.reduce((n, b) => Math.max(n, b), 0);
+    const totalProactive = runBeats.reduce((a, b) => a + b, 0);
+    process.stdout.write(
+      `[cadence ${locale}] beats per run ${runBeats.join(' ')}  longest=${longestProactive} ` +
+        `(cap ${caps.maxBeats}; rule 11 asks for two to four)\n` +
+        `[cast ${locale}] ${runDirected} of ${totalProactive} beats aim at another reader\n`,
+    );
+    if (longestProactive <= CHAT_MIN_LONG_RUN_BEATS) {
+      problems.push(
+        `[${locale}] CADENCE: no proactive run got past ${longestProactive} beats. Rule 11's rewrite ` +
+          'did not land, and an unprompted run that is one reader speaking alone is an announcement.',
+      );
+    }
+    if (runDirected < CHAT_MIN_READER_DIRECTED) {
+      problems.push(`[${locale}] CAST: not one proactive beat names another reader in \`to\`.`);
     }
   }
 

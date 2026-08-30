@@ -77,13 +77,21 @@ export type ThreadState = {
 };
 
 /**
- * §5, Option B's shape. **`[R17]` ruled Option A — no local quiet hours — so this is
- * `null` on every call today** and `inQuietHours` ships dead.
+ * §5, Option B's shape — **AND IT IS LIVE SINCE 2026-08-30, WHICH REVERSES `[R17]`.**
  *
- * It is written, exported and unit-tested anyway because that is what makes the other
- * ruling a one-line change rather than a design: `chat_threads.utc_offset_minutes` is
- * already in `0014` (§2.3) for the same reason, and `'quiet_hours'` is already a
- * `chat.proactive_skipped` reason.
+ * `[R17]` ruled Option A: no local quiet hours, on the argument that sources 1 and 2
+ * only fire while the querent is demonstrably in the app and **source 3's quiet hours
+ * ARE its schedule** — one cron, at one carefully chosen hour. That argument was correct
+ * and it has expired, for two reasons that landed in the same release:
+ *
+ *   - **THE SCHEDULE IS NO LONGER ONE HOUR.** `vercel.json` now runs the nudge twice, so
+ *     "the schedule is the mechanism" stops being a true sentence about it.
+ *   - **THE CADENCE IS LOUDER.** The gap is one hour and the cap is five, so a tick at
+ *     03:00 is no longer a once-in-a-blue-moon event bounded by a three-hour silence.
+ *
+ * The reversal is recorded in `docs/workstream-notes.md` rather than by deleting
+ * `[R17]`'s argument, and it cost one line plus a resolver because `[R17]` folded
+ * `chat_threads.utc_offset_minutes` into `0014` for exactly this day.
  */
 export type QuietHours = {
   /** Inclusive local hour the quiet window opens, 0–23. */
@@ -93,6 +101,49 @@ export type QuietHours = {
   /** The querent's offset from UTC in minutes, or null when nobody has told us. */
   offsetMinutes: number | null;
 };
+
+/** 22:00 local. The hour after which an unprompted message reads as an alarm. */
+export const DEFAULT_QUIET_FROM_HOUR = 22;
+
+/**
+ * 07:00 local, exclusive. **The known cost is the 05:00 runner** — the querent whose
+ * transcript motivated R1 is up for subuh and runs at five — and the escape hatch is one
+ * variable rather than a code change: `CHAT_QUIET_TO_HOUR=5`.
+ */
+export const DEFAULT_QUIET_TO_HOUR = 7;
+
+/**
+ * Turn two raw environment strings and an offset into a window. **PURE — the caller
+ * reads `process.env`, this does not** (`[F5-2]`).
+ *
+ * **EVERY BAD VALUE FALLS BACK TO THE DEFAULT FOR ITS OWN VARIABLE, NEVER TO `0`.**
+ * `Number('') === 0`, and `.env.example` ships both keys with empty values, so the naive
+ * `Number(raw)` a reasonable person writes turns a copied `.env.example` into a quiet
+ * window that opens at midnight. `auth/ttl.ts`'s rule with a sharper edge: here the
+ * wrong fallback does not merely disable a feature, it invents a policy nobody chose.
+ *
+ * **SETTING BOTH TO THE SAME HOUR DISABLES QUIET HOURS**, because a non-wrapping window
+ * of zero length matches no hour at all. That is the documented off switch and it needs
+ * no third variable.
+ */
+export function resolveQuietWindow(
+  fromRaw: string | undefined,
+  toRaw: string | undefined,
+  offsetMinutes: number | null,
+): QuietHours {
+  return {
+    fromHour: quietHourOr(fromRaw, DEFAULT_QUIET_FROM_HOUR),
+    toHour: quietHourOr(toRaw, DEFAULT_QUIET_TO_HOUR),
+    offsetMinutes,
+  };
+}
+
+/** An integer hour in 0–23, or the fallback. Nothing else is accepted. */
+function quietHourOr(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 0 && n <= 23 ? n : fallback;
+}
 
 export type EligibilityRefusal =
   | 'flag_off'
@@ -132,19 +183,30 @@ export type EligibilityInput = {
   materialKind: MaterialKind | null;
   minGapSeconds: number;
   maxPerDay: number;
-  /** §5. `null` under Option A, which is every call today. */
+  /**
+   * §5. **NON-NULL ON EVERY CALL SINCE 2026-08-30** (`[R17]` reversed). Resolved by the
+   * caller from `CHAT_QUIET_{FROM,TO}_HOUR` and `chat_threads.utc_offset_minutes`, which
+   * is why the offset arrives here rather than on `ThreadState`: the predicate is asked
+   * *"is this hour quiet"*, never *"what timezone is this person in"*.
+   */
   quietHours: QuietHours | null;
   /** Injected. `[F5-2]`. */
   now: Date;
 };
 
 /**
- * Is `now` inside the querent's quiet window? **Dead under `[R17]` and tested anyway.**
+ * Is `now` inside the querent's quiet window? **LIVE since 2026-08-30; it shipped dead
+ * under `[R17]` and was unit-tested anyway, which is why turning it on was one line.**
  *
  * A null offset means nobody has told us the querent's zone, and the answer is **false**
  * — never mint-blocking on an unknown. The alternative (*"do not mint"*) silences the
- * feature for everybody until F4 ships a header and every querent returns, which is a
- * bigger outage than the thing it prevents.
+ * feature for everybody whose browser has not reported yet, which is a bigger outage
+ * than the thing it prevents. **That is the safe direction and it must survive any
+ * future edit to this function.**
+ *
+ * The arithmetic is untouched from the dead version and its tests are untouched with it:
+ * a window that wraps midnight (22 → 7) is the normal case, so it is the branch written
+ * out rather than the one forgotten.
  */
 export function inQuietHours(now: Date, quiet: QuietHours): boolean {
   if (quiet.offsetMinutes === null) return false;
@@ -208,8 +270,26 @@ export function checkEligibility(input: EligibilityInput): Eligibility {
     return { ok: false, reason: 'never_opened' };
   }
 
-  /* 5. §5. Dead under `[R17]`; `quietHours` is null on every call today. */
-  if (input.quietHours && inQuietHours(input.now, input.quietHours)) {
+  /*
+   * 5. §5, and **`[R17]`'s Option A is reversed here.** A room that messages somebody at
+   *    3 a.m. loses them, and until this release the only thing standing between a
+   *    querent and that message was the nudge cron's single well-chosen hour — which
+   *    stopped being the mechanism the moment there were two slots and a one-hour gap.
+   *
+   *    **IT IS SKIPPED ENTIRELY FOR A FINISHED READING, WHICH IS GATE 6's EXEMPTION AND
+   *    GATE 6's ARGUMENT.** Somebody who takes a reading at 02:00 is awake, in the app,
+   *    and has just done a discrete thing with a subject; refusing Adrian's reaction to
+   *    it because of the hour is the feature not working. A TICK is not that: it is a
+   *    page load, and the querent who opened `/history` at 3 a.m. did not ask three
+   *    readers to start a conversation.
+   *
+   *    A null offset means **not quiet** (see `inQuietHours`) — never blocked.
+   */
+  if (
+    input.source !== 'reading' &&
+    input.quietHours &&
+    inQuietHours(input.now, input.quietHours)
+  ) {
     return { ok: false, reason: 'quiet_hours' };
   }
 

@@ -4,8 +4,18 @@
  * ── WHY THE CHAT NEEDS ITS OWN SUB-BUDGET AT ALL (`C-D6` consequence 2) ────
  *
  * `LLM_WINDOW_CALL_CEILING` is **280 model calls per rolling five hours,
- * fleet-wide.** A chat run is 2–5 calls. **Sixty chat runs exhaust the entire app's
- * five-hour quota** — and the next thing to be refused would be somebody's reading.
+ * fleet-wide.** **A chat run is 2–9 calls since 2026-08-30** — one `chat_plan` plus one
+ * `chat_turn` per beat, at `CHAT_MAX_BEATS = 8` — where it was 2–5 at a four-beat cap.
+ * **Roughly THIRTY chat runs now exhaust the entire app's five-hour quota**, where the
+ * figure this paragraph carried was sixty; the next thing to be refused would be somebody's
+ * reading.
+ *
+ * **THAT MAKES THIS FILE MORE LOAD-BEARING, NOT LESS, AND IT IS WHY THE NATURALNESS
+ * RULING DID NOT REACH IT.** *"i don't care about glm 5.3 token consumption"* is a ruling
+ * about spend; `C-D6` is a ruling about **who is shed first when the quota runs out**, and
+ * the answer stays "the chat". `LLM_WINDOW_CHAT_CEILING` and `callClass: 'deferred'` are
+ * unchanged, deliberately: a louder room that can take a querent's reading away from them
+ * is not the room that was asked for.
  *
  * `callClass: 'deferred'` already says the reading wins (see `chatCall`'s tier in
  * `direct/plan.ts` and `voices/turn.ts`), but `deferred` is a fleet-wide tier and not

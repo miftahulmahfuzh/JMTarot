@@ -320,6 +320,29 @@ export type ChatLengthBudget = {
  * more, shorter words; the ratio the header names is real and points this way.
  * **Nothing about the `id` band is a reason to touch it, and scaling it "to match"
  * would be exactly the unevidenced half this note refuses.**
+ *
+ * ── THE ROOM GETS LOUDER BY BEATS, NEVER BY WORDS (2026-08-30) ─────────────
+ *
+ * The naturalness card asked for jokes, insight, mutual support and *"whatever means
+ * necessary"*, under a ruling that says to spend tokens freely — and the obvious place to
+ * spend them is here. **It was refused, deliberately, and this paragraph is the record.**
+ *
+ *  1. **A longer bubble is the chatbot tell this budget exists to prevent.** `C-D19` and
+ *     `[F3-25]`: three readers each delivering a paragraph is the named worst outcome, and
+ *     `--chat`'s brevity floor is the only check in this repository that FAILS on output
+ *     being consistently too long rather than once. Raising `maxWords` would move that
+ *     floor's ceiling and switch the instrument off in the same commit.
+ *  2. **`CHAT_MAX_BEATS` is the correct lever and it moved instead**, 6 -> 8. Eight
+ *     twenty-four-word bubbles is far more room than four thirty-six-word ones AND it is
+ *     more people, which is the actual ask.
+ *  3. **The last movement here was evidenced and this one would not be.** `en` went 24 ->
+ *     27 on six measured Margaret bubbles and two lost to `too_long`; there is no
+ *     equivalent measurement for 2026-08-30, and this file's own rule is that a band moves
+ *     once, on evidence, written into `docs/workstream-notes.md`.
+ *
+ * **If a future run shows bubbles being refused `too_long` at a rate that costs the room
+ * its beats, that is the evidence — move `en` or `id` then, one at a time, and never
+ * "to match".**
  */
 export const CHAT_LENGTH_BUDGET: Record<Locale, ChatLengthBudget> = {
   id: { maxWords: 24, minWords: 0, maxChars: 260 },
@@ -357,10 +380,34 @@ export function chatBudgetFor(locale: Locale, reader: ReaderId): ChatLengthBudge
  * The output ceiling for one `chat_turn` call. `MAX_TOKENS`' relationship to
  * `LENGTH_BUDGET`, in the chat: **a runaway guard, not the length control.**
  *
- * Roughly double Margaret's 29 words. Deliberately generous relative to the target so
- * a model finishes its sentence rather than being cut mid-clause — the
- * `gpt-5.6-luna` blank-reading failure is what a tight output ceiling buys — and
- * deliberately tiny in absolute terms, because `C-D6` makes the chat's call budget
- * scarce and the output half is the only half this layer controls.
+ * Deliberately generous relative to the target so a model finishes its sentence rather
+ * than being cut mid-clause — the `gpt-5.6-luna` blank-reading failure is what a tight
+ * output ceiling buys — and deliberately tiny in absolute terms, because `C-D6` makes the
+ * chat's call budget scarce and the output half is the only half this layer controls.
+ *
+ * ── 220 SINCE 2026-08-30. IT WAS 90, AND 90 WAS THE LENGTH CONTROL ────────
+ *
+ * **THE "ROUGHLY DOUBLE MARGARET'S WORDS" ARITHMETIC WAS DONE IN ENGLISH AND IS FALSE IN
+ * INDONESIAN, WHICH IS THE SOURCE LOCALE.** English runs about 1.4 tokens to the word, so
+ * Margaret's resolved `en` ceiling of 35 words is ~49 tokens and 90 genuinely was double.
+ * **`id` runs 2.2–3.1 tokens to the word on `glm-5.2`** (measured over one `--chat` run:
+ * 15w/33t, 8w/18t, 17w/52t), so her resolved `id` ceiling of 31 words is 68–96 tokens —
+ * **at or above the old ceiling for ONE bubble, and `[R19]` lets a beat write TWO.**
+ *
+ * **IT WAS CAUGHT BY OUTPUT, NOT BY READING.** The 2026-08-30 naturalness rewrite told
+ * Margaret to stay long even when she agrees, and the very next run stored
+ * *"…karena dua hal yang kat"* — `out=90`, cut mid-WORD, at THIRTEEN words against a
+ * thirty-one-word ceiling. Adrian's next beat then joked about her being cut off, so the
+ * defect propagated into the room as content.
+ *
+ * **AND A TOKEN CEILING IS STRICTLY WORSE THAN A WORD CEILING, WHICH IS THE WHOLE POINT.**
+ * `validateTurn`'s `too_long` refuses an over-long bubble and `C-R7` retries it; a bubble
+ * cut here is never refused, because it arrives short. **The word ceiling is the length
+ * control and it works; this number must never be close enough to bind before it.**
+ *
+ * 220 is two full-ceiling `id` Margaret bubbles (~192) plus headroom, and still under a
+ * quarter of `PLAN_MAX_TOKENS`. **`PLAN_MAX_TOKENS`' rule, in a second place: a cap on
+ * length and a cap on output tokens are the same edit — grep for the second whenever the
+ * first moves**, and 2026-08-30 moved both.
  */
-export const CHAT_MAX_TOKENS = 90;
+export const CHAT_MAX_TOKENS = 220;
