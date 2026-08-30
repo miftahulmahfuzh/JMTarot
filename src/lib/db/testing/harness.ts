@@ -99,6 +99,12 @@ export async function withRollback(fn: (tx: Tx) => Promise<void>): Promise<void>
  * than a reconciliation. `CASCADE` would reach `chat_messages` and `chat_runs` from
  * `chat_threads`, and all three are named anyway for the same reason the blog pair
  * is. The list stays exhaustive by intent.
+ *
+ * **TWENTY BECAME TWENTY-ONE WITH R2's `0017`**, same procedure, same commit.
+ * `user_memory` cascades from `users` and is named anyway. **`admin_insights`
+ * (`0013`) and `auth_handoffs` (`0015`) are still MISSING from this list** --
+ * a pre-existing gap, named here rather than fixed by a phase that owns neither,
+ * so that "was it forgotten?" stays answerable.
  */
 export async function resetDb(): Promise<void> {
   await testDb.execute(sql`
@@ -107,7 +113,8 @@ export async function resetDb(): Promise<void> {
                    moderation_flags, frequency_verdicts, translations,
                    share_links, personas, admin_access_log, llm_calls,
                    blog_posts, blog_post_locales,
-                   chat_threads, chat_messages, chat_runs
+                   chat_threads, chat_messages, chat_runs,
+                   user_memory
     RESTART IDENTITY CASCADE`);
 }
 

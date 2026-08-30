@@ -76,6 +76,20 @@ import type { Block } from '@/content/types';
  * (`types.contract.test.ts` is the fence).
  */
 import type { BeatIntent, BeatSheet, ChatAuthor, RunStatus, RunTrigger } from '@/lib/chat/types';
+/**
+ * R2's `user_memory.items` and `.dismissed_ids`. **A TYPE-ONLY IMPORT OF A LEAF**, on
+ * exactly the argument the two imports above make: `src/lib/memory/profile/types.ts`
+ * has ZERO imports -- not "few", none -- so it cannot depend on `schema.ts` and the
+ * narrowing rule at the top of this file is satisfied by construction.
+ * `types.contract.test.ts` is the fence, and it asserts the import list is empty
+ * rather than merely clean.
+ *
+ * The shape lives THERE rather than here for a second reason this file cannot
+ * satisfy: phase 6 renders an item in a client component, and
+ * `clientBoundary.test.ts` forbids any `@/lib/db/` specifier in a client file with a
+ * regex that does not know the `type` keyword.
+ */
+import type { UserMemoryItem } from '@/lib/memory/profile/types';
 
 /** Every timestamp in this schema. timestamptz, UTC, never a bare `timestamp`. */
 const tsCol = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
@@ -2159,6 +2173,163 @@ export const authHandoffs = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// user_memory  (v0.8.0 / R2)
+// ---------------------------------------------------------------------------
+
+/**
+ * WHAT THE ROOM HAS LEARNED ABOUT THE QUERENT, WRITTEN BY A MODEL.
+ *
+ * **THIS IS THE STRONGEST PRIVACY CLAIM IN THIS DATABASE AND IT IS A DIFFERENT
+ * CLAIM FROM EVERY OTHER ONE.** `readings.question` and `chat_messages.body` are
+ * text the querent TYPED; `onboarding_answers.answer_text` is encrypted and
+ * fenced by `C-D8`'s five conditions. `items` is a model's INFERENCES ABOUT A
+ * REAL PERSON, distilled from a conversation they were having for another
+ * reason, stored so that it can be spoken back at them later. Nothing else here
+ * is that. Three consequences follow and none of them is optional:
+ *
+ *  1. **A reader may use it and may never say how they know** (`C-D8`,
+ *     invariant 4). *"nasi padang lagi kan?"* is a friend; *"you told me on the
+ *     9th"* is surveillance. Phase 5 renders `text` and nothing else -- no id,
+ *     no kind, no date -- and that is why an item carries no timestamp the model
+ *     can see.
+ *  2. **The querent can read every line and delete any of them**, which is what
+ *     `id` and `dismissed_ids` exist for, and which is what phase 6 builds.
+ *  3. **It is emptied at the SOFT delete**, not thirty days later at the
+ *     cascade. `delete.ts`'s header carries that ruling and the amendment it
+ *     makes to that file's own foreign-key rule.
+ *
+ * A NEW TABLE, NOT A WIDENING OF `personas`, and `personas`' own header makes
+ * the same distinction one release earlier. A persona is generated ONCE from a
+ * rite the querent walked through, is shown to them as the product, is written
+ * in a locale and is translated on demand. This is a LIST that grows every time
+ * they talk, has no locale at all, is never translated (`C-D9`), and is read
+ * into a prompt rather than onto a page. Merging them would give one row two
+ * lifecycles, two erasure duties and one `input_hash` serving two things that
+ * move at different speeds.
+ *
+ * **`user_memory` IS SINGULAR AGAINST THIS FILE'S PLURAL CONVENTION, AND THAT IS
+ * DELIBERATE.** The row is not one memory, it is THE memory -- a mass noun.
+ * `user_memories` would read as one row per remembered fact, which is exactly
+ * the shape this table is not: the facts live inside `items`, and the row is per
+ * user.
+ *
+ * ONE ROW PER USER, so `user_id` IS the primary key and there is no `id` column
+ * -- the exception `profiles`, `lotus_avatars`, `personas` and `chat_threads`
+ * all take, for the reason `chat_threads` states: a surrogate key on a table
+ * whose natural key is already a uuid buys nothing and costs a second unique
+ * index.
+ *
+ * **THERE IS NO `locale` COLUMN AND `input_hash` MUST NEVER CARRY ONE**
+ * (`personas`' rule, for a stronger reason). A locale here would make tapping
+ * `EN` regenerate the memory and replace what the querent just read, and `C-D9`
+ * plus this workstream's own scope put translating it out of scope entirely. One
+ * row serves both locales; an English-UI querent may read an Indonesian line on
+ * `/account`, and the fix for that is a translation, never a regeneration.
+ */
+export const userMemory = pgTable(
+  'user_memory',
+  {
+    userId: uuid('user_id')
+      .primaryKey()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /**
+     * The list. At most `USER_MEMORY_MAX_ITEMS`, capped IN CODE by the generator
+     * and not by a `CHECK`: the extractor must never throw (`generatePersona`'s
+     * rule), and a constraint that refuses a 33rd item would turn a model being
+     * chatty into a row that silently fails to exist.
+     *
+     * **AN ARRAY OF ADDRESSABLE ITEMS AND NOT ONE PROSE BLOB.** Three things
+     * force it and a blob satisfies none: phase 6's per-item deletion, phase 7's
+     * `material_key` of `profile:<id>` which must rehydrate the text at plan
+     * time from the key alone, and `chat_runs_user_material_uq`, which is what
+     * stops the same opener firing twice and which keys on that string.
+     *
+     * `$type<>` IS AN ASSERTION THE DRIVER IS NOT OBLIGED TO HONOUR
+     * (`answersUpdatedAt`'s lesson). Every consumer that RENDERS an item filters
+     * it through `isUserMemoryItem`.
+     */
+    items: jsonb('items').$type<UserMemoryItem[]>().notNull(),
+    /**
+     * **THE TOMBSTONES, AND WITHOUT THEM THE DELETE BUTTON IS A LIE.**
+     * `lotus_avatars.input_hash`'s argument, arriving in a worse shape: the
+     * querent deletes *"suka nasi padang"*, the `chat_messages` rows that
+     * produced it CASCADE rather than being cleared and are therefore still
+     * there, and the next extraction puts the fact straight back. Only a
+     * tombstone survives that, and only a content-derived `id` can be matched by
+     * one -- which is why `UserMemoryItem.id` is a hash and not a random value.
+     *
+     * **HASHES, NEVER THE TEXT.** A dismissal list holding the sentences
+     * somebody deleted would be worse than not offering deletion at all. The
+     * exact cost is that a REWORDED restatement hashes differently and can come
+     * back; that is the extractor's problem to mitigate, not a reason to store
+     * the words.
+     *
+     * **NO ORDER IS PROMISED AND NO CAP IS APPLIED.** `dismissUserMemoryItems`
+     * aggregates with `distinct`, so the array is value-ordered and set-like.
+     * Every entry is put here by a human tapping a control, so the column is
+     * bounded by human effort at twelve bytes an entry -- unlike `items`, which
+     * a model writes and which is capped.
+     *
+     * **NOTHING BUT `dismissUserMemoryItems` WRITES IT.** `upsertUserMemory`
+     * does not name the column at all, so the extractor cannot clobber a
+     * refusal, and `redactUserMemory` deliberately KEEPS it so the thirty-day
+     * restore does not resurrect facts the querent individually deleted.
+     */
+    dismissedIds: jsonb('dismissed_ids')
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    /**
+     * SHA-256 over whatever the extractor read, plus `USER_MEMORY_SOURCE_VERSION`.
+     * **LOCALE-FREE, see this table's header.** Whether it MOVES as the querent
+     * talks (persona-shaped, so a flagged-off generation heals) or is STATIC
+     * (lotus-shaped, so a flagged-off generation must write nothing) is phase 4's
+     * decision; this column supports either.
+     *
+     * **THE EMPTY STRING IS A RESERVED VALUE MEANING "NEVER MATCHES."**
+     * `redactUserMemory` writes it, and a staleness check that treated `''` as an
+     * ordinary hash would leave an erased-then-restored account with an empty
+     * memory that can never refill.
+     */
+    inputHash: text('input_hash').notNull(),
+    /** Bump to force every memory to be rebuilt. `lotus_avatars`' rule. */
+    sourceVersion: integer('source_version').notNull(),
+    /** Which model wrote the current items. `'fallback'` if a template ever does. */
+    model: text('model').notNull(),
+    promptVersion: text('prompt_version').notNull(),
+    createdAt: tsCol('created_at').notNull().defaultNow(),
+    /**
+     * **SET BY HAND IN EVERY UPSERT.** `$onUpdate()` applies to `db.update()`
+     * only and does NOT fire inside `onConflictDoUpdate`. `personas`' header
+     * says the same thing and for this table the column is load-bearing twice:
+     * it is the comparand for phase 4's staleness (so a frozen column means the
+     * memory never regenerates) and it is the only column that says when the
+     * current list was produced.
+     */
+    updatedAt: tsCol('updated_at')
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    /**
+     * **THE PAYLOAD IS A LIST, AS A DATABASE FACT RATHER THAN A TYPESCRIPT
+     * HOPE.** `$type<>` is an assertion; this is a constraint. Both columns are
+     * written from model output or from a route body, and an object where an
+     * array belongs would break every `jsonb_array_elements` in
+     * `queries/memory.ts` with a runtime error at the worst moment.
+     *
+     * **NEITHER CHECK INVOLVES A COLUMN CARRYING `ON DELETE SET NULL`**
+     * (`F1-D7`, `[R7]`). `user_id` cascades, and a CHECK on a `set null` column
+     * fires DURING the delete and aborts the erasure -- A1's `23502` lesson.
+     * There is no such column here and there must not be one added.
+     */
+    check('user_memory_items_array_ck', sql`jsonb_typeof(${t.items}) = 'array'`),
+    check('user_memory_dismissed_array_ck', sql`jsonb_typeof(${t.dismissedIds}) = 'array'`),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Row types
 //
 // `X` is what a select returns; `NewX` is what an insert accepts (columns with
@@ -2216,3 +2387,6 @@ export type ChatRun = typeof chatRuns.$inferSelect;
 export type NewChatRun = typeof chatRuns.$inferInsert;
 export type AuthHandoff = typeof authHandoffs.$inferSelect;
 export type NewAuthHandoff = typeof authHandoffs.$inferInsert;
+/** `UserMemory`, singular, though the table is too: one row is one person's memory. */
+export type UserMemory = typeof userMemory.$inferSelect;
+export type NewUserMemory = typeof userMemory.$inferInsert;

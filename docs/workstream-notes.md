@@ -13026,3 +13026,53 @@ offset the server does not have, which is the only shape of test that can see it
 (Jakarta `+420`), while the browser's `Date.prototype.getTimezoneOffset()` returns `-420`. A sign
 error renders a clock fourteen hours out, and every rule downstream then works perfectly against
 a wrong number.
+
+## `user_memory`, and the third category in `delete.ts`'s asymmetry (2026-08-30, R2)
+
+`src/lib/account/delete.ts`'s header has stated one rule since V8: *"the asymmetry with
+`moderation_flags` IS the asymmetry in the foreign keys: `set null` outlives the account,
+`cascade` does not."* It decided two cases correctly and was quoted a third time by
+`F1-D10` to keep the whole group chat out of the erasure transaction. R2's `user_memory`
+is the first case it decides **wrongly**, and the amendment is recorded here rather than
+performed quietly in a header nobody diffs.
+
+**The foreign key answers "does it survive". It does not answer "is this the thing they
+meant."** Every cascading table this rule has been applied to holds either text the
+querent typed — `chat_messages.body`, `readings.question`,
+`onboarding_answers.answer_text` — or prose about a *reading*. `user_memory.items` is a
+model's inferences **about a person**, assembled from a conversation they were having for
+another reason, stored so a reader can use it on them later. It is the only row in this
+database of which that is true, and it is precisely what somebody means when they press
+*delete my account*. Thirty more days of it is `moderation_flags`' risk wearing a
+different foreign key.
+
+**What actually decides the case is a third category the header now names:
+DERIVED-AND-REGENERABLE.** `clearFreeTextAnswers()` is absent from that transaction
+because `onboarding_answers` is the *only copy* of text a person typed, and clearing it
+would break the thirty-day restore the confirmation copy promises. `user_memory` has no
+such property: every input is `chat_messages` and `readings`, both of which cascade and
+therefore **survive** the soft delete, and the extractor is idempotent — so a querent who
+signs back in on day 29 has the room's memory rebuilt on the next run. **Clearing it costs
+the restore nothing, which is what makes it cheap enough to do at all.** That is the test
+to apply to the next table somebody wants to add here, not the foreign key.
+
+**It is a REDACTION and not a DELETE, and `dismissed_ids` is what makes that necessary.**
+Emptying the row leaves the tombstones — opaque twelve-character hashes of items the
+querent individually deleted, carrying no text and able only to *prevent* a write.
+Dropping the row would take them too, so an erase-then-restore on day three would
+resurrect exactly the facts the querent had deleted one at a time. `input_hash` is blanked
+in the same statement and `''` is a reserved never-matches value: an emptied list beside a
+matching hash means the extractor reports `unchanged` and never writes again — the feature
+dead after any erasure, with nothing logged.
+
+**It does not license adding `personas`.** `personas.body` is also model-written prose
+about the person and it stays out of that transaction: it is distilled from a rite the
+querent walked through, it is shown *to* them on `/account` as the product, and it is not
+assembled from a conversation they were having for another reason. Somebody will notice
+the resemblance and want symmetry; changing it is a ruling, not a tidy-up.
+
+**Where it is enforced:** `redactUserMemory` in `src/lib/db/queries/memory.ts`, called from
+`deleteAccount`'s transaction between `redactForUser` and the flag.
+`delete.integration.test.ts` proves the same-transaction property with a trigger and pins
+the statement ORDER on the source, so a refactor into three awaited helpers fails there
+and is sent here.

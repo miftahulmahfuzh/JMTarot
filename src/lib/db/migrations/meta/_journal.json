@@ -120,6 +120,13 @@
       "when": 1787907933271,
       "tag": "0016_v14-readings-soft-delete",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1788063879598,
+      "tag": "0017_r2-user-memory",
+      "breakpoints": true
     }
   ]
 }
