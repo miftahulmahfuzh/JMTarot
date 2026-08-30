@@ -136,7 +136,7 @@ describe('vercel.json', () => {
     expect(config.crons).toContainEqual({ path: '/api/cron/sweep', schedule: '17 3 * * *' });
   });
 
-  it('schedules the sweep as ONE job, and v0.7.0 adds a SECOND job that is not it', () => {
+  it('schedules the sweep as ONE job, and the two that are not it are the nudge', () => {
     /*
      * §7.8's rule is unchanged: **one job, five deletes.** Five separate entries for the
      * five deletes would be five things to notice have stopped working. This case used to
@@ -153,11 +153,24 @@ describe('vercel.json', () => {
      * **`0 12 * * *` IS 19:00 WIB, NOT NOON** (`[R4]`): Vercel cron schedules are always
      * UTC, the same fact that makes the sweep's `17 3` a mid-morning job rather than the
      * 3am the v0.7.0 roadmap built an argument on.
+     *
+     * **THE NUDGE BECAME TWO ENTRIES ON 2026-08-30** (R3 phase 8). `0 1` UTC is 08:00 WIB
+     * and is the only way a morning greeting reaches a querent who is not already in the
+     * app; the once-per-day minimum interval is why it is a second entry rather than a
+     * shorter schedule. **It is only payable because `[R17]`'s Option A was reversed in
+     * the same release** — a schedule stops being the quiet-hours mechanism the moment
+     * there is more than one of them, so `eligibility.ts`'s gate 5 now carries it.
+     *
+     * **The `?slot=` suffix is a LOG LABEL and no branch reads it** (`slotOf` in the nudge
+     * route). It is asserted here because it is also what makes the two entries distinct
+     * paths; if a deploy is ever rejected for it, both entries take the bare path and this
+     * assertion comes down with them.
      */
     expect(config.crons.filter((c: { path: string }) => c.path === '/api/cron/sweep')).toHaveLength(1);
     expect(config.crons).toEqual([
       { path: '/api/cron/sweep', schedule: '17 3 * * *' },
-      { path: '/api/cron/nudge', schedule: '0 12 * * *' },
+      { path: '/api/cron/nudge?slot=pagi', schedule: '0 1 * * *' },
+      { path: '/api/cron/nudge?slot=malam', schedule: '0 12 * * *' },
     ]);
   });
 

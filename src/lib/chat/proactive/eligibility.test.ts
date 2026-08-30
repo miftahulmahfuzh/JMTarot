@@ -13,8 +13,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   checkEligibility,
+  DEFAULT_QUIET_FROM_HOUR,
+  DEFAULT_QUIET_TO_HOUR,
   inQuietHours,
   REFUSAL_ORDER,
+  resolveQuietWindow,
   type EligibilityInput,
   type ThreadState,
 } from './eligibility';
@@ -234,7 +237,7 @@ describe('the trigger a mint writes (§6.2)', () => {
   });
 });
 
-describe('inQuietHours (§5, dead under [R17] and tested anyway)', () => {
+describe('inQuietHours (§5, LIVE since 2026-08-30 — [R17] reversed)', () => {
   it('answers false when nobody has told us the zone', () => {
     /*
      * The only alternative — *"do not mint"* — silences the feature for everybody until
@@ -284,5 +287,93 @@ describe('the clock is injected and nothing here reads one', () => {
     const future = checkEligibility(input({ now: new Date('2027-01-01T00:00:00.000Z') }));
     expect(past.ok).toBe(true);
     expect(future.ok).toBe(true);
+  });
+});
+
+describe('the quiet-hours gate ([R17] reversed, 2026-08-30)', () => {
+  /** 22:00 -> 07:00 in Jakarta. 18:30Z is 01:30 the next morning there. */
+  const WIB = 7 * 60;
+  const NIGHT = new Date('2026-08-07T18:30:00.000Z');
+  const window = { fromHour: 22, toHour: 7, offsetMinutes: WIB };
+
+  it('refuses a tick and the cron at 01:30 local', () => {
+    expect(refusal({ source: 'tick', quietHours: window, now: NIGHT })).toBe('quiet_hours');
+    /* The cron needs an opened room to get past gate 4. The fixture has one. */
+    expect(refusal({ source: 'cron', quietHours: window, now: NIGHT })).toBe('quiet_hours');
+  });
+
+  it('exempts a finished reading, which is gate 6’s exemption and gate 6’s argument', () => {
+    /*
+     * Somebody who takes a reading at 01:30 is awake, in the app, and has just done a
+     * discrete thing with a subject. **A tick is a page load and is not that.**
+     */
+    expect(refusal({ source: 'reading', quietHours: window, now: NIGHT })).toBeNull();
+  });
+
+  it('lets everything through in the daytime', () => {
+    /* 05:00Z is 12:00 WIB. Nothing about that hour is quiet. */
+    const noon = new Date('2026-08-07T05:00:00.000Z');
+    for (const source of ['tick', 'cron', 'reading'] as const) {
+      expect(refusal({ source, quietHours: window, now: noon })).toBeNull();
+    }
+  });
+
+  it('treats an unknown offset as AWAKE, never as blocked', () => {
+    /*
+     * **The safe direction, and it must survive every future edit.** Mint-blocking on an
+     * unknown silences the feature for everybody whose browser has not reported yet.
+     */
+    const unknown = { fromHour: 22, toHour: 7, offsetMinutes: null };
+    expect(refusal({ source: 'tick', quietHours: unknown, now: NIGHT })).toBeNull();
+  });
+
+  it('refuses BEFORE the gap, and leaves REFUSAL_ORDER alone', () => {
+    /*
+     * A room that is both inside the gap and inside the window answers `quiet_hours`,
+     * because gate 5 is above gate 6 — and `no_material` is still last, which is the
+     * only ordering property `mint.ts`'s probe depends on.
+     */
+    const busy = thread({ lastReaderMessageAt: new Date(NIGHT.getTime() - 60_000) });
+    expect(refusal({ source: 'tick', thread: busy, quietHours: window, now: NIGHT })).toBe(
+      'quiet_hours',
+    );
+    expect(REFUSAL_ORDER[REFUSAL_ORDER.length - 1]).toBe('no_material');
+  });
+});
+
+describe('resolveQuietWindow (PURE, and every bad value falls back to its OWN default)', () => {
+  it('defaults to 22 -> 7 when nothing is set', () => {
+    expect(resolveQuietWindow(undefined, undefined, 420)).toEqual({
+      fromHour: DEFAULT_QUIET_FROM_HOUR,
+      toHour: DEFAULT_QUIET_TO_HOUR,
+      offsetMinutes: 420,
+    });
+  });
+
+  it('treats an EMPTY STRING as unset, because `Number("")` is 0', () => {
+    /*
+     * `.env.example` ships both keys empty, so the naive `Number(raw)` turns a copied
+     * example file into a quiet window opening at midnight. **This is the assertion that
+     * stops somebody "simplifying" the guard away.**
+     */
+    expect(resolveQuietWindow('', '  ', null)).toEqual({
+      fromHour: 22,
+      toHour: 7,
+      offsetMinutes: null,
+    });
+  });
+
+  it('refuses a non-integer, a negative and anything past 23', () => {
+    for (const bad of ['x', '7.5', '-1', '24', '100', 'NaN']) {
+      expect(resolveQuietWindow(bad, bad, 0)).toEqual({ fromHour: 22, toHour: 7, offsetMinutes: 0 });
+    }
+  });
+
+  it('accepts the edges, and equal hours are the documented OFF switch', () => {
+    expect(resolveQuietWindow('0', '23', 0)).toMatchObject({ fromHour: 0, toHour: 23 });
+    /* A non-wrapping window of zero length matches no hour at all. */
+    const off = resolveQuietWindow('0', '0', 420);
+    expect(inQuietHours(new Date('2026-08-07T18:30:00.000Z'), off)).toBe(false);
+    expect(inQuietHours(new Date('2026-08-07T05:00:00.000Z'), off)).toBe(false);
   });
 });

@@ -7,7 +7,11 @@
       "schedule": "17 3 * * *"
     },
     {
-      "path": "/api/cron/nudge",
+      "path": "/api/cron/nudge?slot=pagi",
+      "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/nudge?slot=malam",
       "schedule": "0 12 * * *"
     }
   ]

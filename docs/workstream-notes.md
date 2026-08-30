@@ -13288,3 +13288,98 @@ Margaret bubble truncated mid-word at the token ceiling (*"seberapa jauh Mifta b
 and an `id` Adrian bubble inventing a habit the prompt does not carry (*"biasanya jadi hantu
 malam"*). Neither is `<ingatan>`-derived — the second is the *"jangan menebak"* rule losing
 to Adrian's register, which is `validate.ts`'s accept bias by design.
+
+---
+
+## `[R17]` reversed — real quiet hours, and a louder cadence (2026-08-30, R3 phase 8)
+
+**`inQuietHours` shipped DEAD in v0.7.0 and is live from this release.** `[R17]` Q2 ruled Option A
+— *no local quiet hours* — and the argument was correct when it was made, so it is quoted here
+rather than deleted:
+
+> Sources 1 and 2 only fire when the querent is demonstrably in the app, and source 3 is a UTC cron
+> whose schedule (`0 12 * * *` = 19:00 WIB) **is** the mechanism.
+
+`[R17]` also folded `chat_threads.utc_offset_minutes` into migration `0014` *"so that ruling the
+other way later is one line rather than a migration"*. **It was one line.** That is the part worth
+learning from: a column nobody reads costs nothing, and the ruling it anticipated arrived one
+release later.
+
+### What made the argument expire
+
+Two things, in the same release, and **neither of them is "we changed our minds"**:
+
+1. **The schedule stopped being one hour.** `vercel.json` now runs `/api/cron/nudge` twice — 08:00
+   and 19:00 WIB — because R3's own worked example (*"njir, udah senin aja. mager ga lu ngantor?"*)
+   is a thing you say before noon, and with a single evening slot the cron could never say it to a
+   querent who is not already in the app. **A schedule stops being the quiet-hours mechanism the
+   moment there is more than one of them**, and 01:00 UTC is 02:00 in Berlin.
+2. **The cadence got loud enough that "they are in the app" stopped covering it.** The silence gap
+   fell from three hours to one and the daily cap rose from two to five, under Miftah's ruling
+   (*"i want the readers to be much more PROACTIVE"*). At three hours and two runs a day, a 3 a.m.
+   tick was a rarity the gap itself throttled; at one hour and five it is not.
+
+### What the gate does, exactly
+
+- **It exempts `source === 'reading'`, which is gate 6's exemption and gate 6's argument** — a
+  querent who takes a reading at 02:00 is awake, in the app, and has just done a discrete thing
+  with a subject. **A tick is not that**: it is a page load, and somebody who opened `/history` at
+  3 a.m. did not ask three readers to start a conversation. The exemption lives in the **predicate**
+  and not in `mint.ts`, because `[F5-2]`'s justification is that every branch is enumerated in
+  `npm test` with a fake clock, and an exemption applied by the caller is one no test at that
+  boundary can see.
+- **A null offset means NOT QUIET, never blocked.** The alternative silences the feature for
+  everybody whose browser has not reported yet, which is a bigger outage than the thing it
+  prevents. It is also what makes this release a no-op for every existing row until the offset
+  lands.
+- **`REFUSAL_ORDER` did not move.** `no_material` is still last, so `mint.ts`'s
+  probe-with-`hasMaterial:true` optimisation — pay for detection only when nothing else refuses —
+  is untouched.
+- **`resolveQuietWindow` falls back to the DEFAULT for each key, never to `0`.** `Number('') === 0`
+  and `.env.example` ships both keys empty, so the naive `Number(raw)` a reasonable person writes
+  turns a copied `.env.example` into a quiet window opening at midnight. `auth/ttl.ts`'s rule with
+  a sharper edge: the wrong fallback here does not disable a feature, it invents a policy nobody
+  chose.
+- **Both hours equal disables it.** A non-wrapping window of zero length matches no hour, so there
+  is no third variable and no `CHAT_QUIET_ENABLED`.
+
+### The numbers that moved, and the one instrument that can move them back
+
+| Knob | Was | Is | Why it was payable |
+|---|---|---|---|
+| `CHAT_PROACTIVE_MIN_GAP_SECONDS` | 10800 (3h) | 3600 (1h) | The *"twenty minutes reads as a machine"* lower bound has not moved; three hours was carrying the whole burden of not being obnoxious, and quiet hours carry half of it now |
+| `CHAT_PROACTIVE_MAX_PER_DAY` | 2 | 5 | **The cap is almost never the binding gate — `no_material` is.** One material per run and a spent `material_key` is spent for ever, so five means *up to* five on a day the ladder has five distinct things to say. **RECONCILED: that premise is only true because phase 7's `time_of_day` is capped at one run per local day** (`usedTimeOfDayToday`) — without it `tod:` has unlimited supply and the sentence above is false, which is conflict #14. Read `maxPerDay`'s doc comment before moving this number |
+| `PROACTIVE_RUN_TTL_HOURS` | 48 | 24 | The material got day-shaped; a time-anchored greeting delivered a day late is R1's bug arriving through the back door |
+| `NUDGE_MAX_USERS` | 8 | 20 | **The old number conflated two limits.** 45s of wall clock bounds the *warm* and enforces itself; a mint is ~100ms, so twenty mints cost ~2s and the same ~7 warms still happen. The rest stay `pending` and the next tick delivers them |
+
+**Every one of these is still a guess with an argument, and the instrument is still `C-N2f`'s
+proactive reply rate on `/admin/chat` over weeks.** Nothing here was measured; a ruling was
+applied. `[F5-Q1]` and `[F5-Q2]`'s *"labelled a guess"* convention is kept rather than quietly
+upgraded to a finding.
+
+### The one thing that was re-examined and deliberately NOT changed
+
+**The cron still passes `utcDateString(now)` as every candidate's `localDate`**, though the offset
+would now let it compute each querent's true day. `nudgeCandidates` selects on that same
+`localDate` (`proactive_count_date is distinct from :localDate or proactive_count_today = 0`), so
+deriving a different day inside `mintProactiveRun` would let the mint stamp a day the selector did
+not select on: **it would trade a bounded overcount of one for an undercount that silences the
+feature**, which is the wrong direction. The honest version moves the selector and the mint in one
+change. Declined again, recorded again — `route.ts`'s comment carries the same paragraph.
+
+### And `chat.proactive_skipped`'s `quiet_hours` row is kept on purpose
+
+§18's fold-by-dropping argument keeps `open_run` and `gap` out of `ALWAYS_RECORDED` because they
+refuse the majority of *all* ticks, all day. `quiet_hours` refuses only ticks fired between 22:00
+and 07:00 in the querent's own zone, and `ChatButton` has no polling loop — one fetch on mount, one
+on `visibilitychange` — so the volume is bounded by night-time app opens. **It is also the only
+instrument the window has**: drop the row and a window that is too wide looks exactly like a
+querent with nothing to talk about.
+
+### Where this section sits, and why not where the plan said
+
+Phase 8's plan named an insertion point inside F5 (line 11351, before *"The `BAHAN` rule"*). It is
+appended at the end instead, because **every sibling phase of this plan set appended** — R1's
+sections, R2's phases 3, 4 and 5 all sit at the tail in date order — and a 2026-08-30 section
+dropped into v0.7.0 material would be the only one out of sequence. The reconciler's instruction
+was *"order them"*, and this is the order the file already had.

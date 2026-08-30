@@ -1187,9 +1187,12 @@ export type EventMap = {
    * that did not happen cannot be a prop on an event that only exists when one did,
    * which is why this survived the fold that killed `chat.proactive_minted`.
    *
-   * Both unions closed. `reason: 'quiet_hours'` is present because `[R17]` ruled
-   * Option A — no local quiet hours — and folded `utc_offset_minutes` into `0014` so
-   * that ruling the other way later is one line. **It is never emitted today.**
+   * Both unions closed. `reason: 'quiet_hours'` was present-but-dead when this was
+   * written, because `[R17]` ruled Option A — no local quiet hours — and folded
+   * `utc_offset_minutes` into `0014` so that ruling the other way later was one line.
+   * **It was ruled the other way on 2026-08-30 and this reason is now emitted**: from
+   * the cron always, and from a tick that fired inside the querent's own 22:00–07:00.
+   * **A high rate here means the quiet window is too wide, not that the gate is broken.**
    */
   'chat.proactive_skipped':    { source: 'reading_completed' | 'idle_nudge' | 'unanswered' | 'cron';
                                  reason: 'no_material' | 'throttled' | 'too_soon'

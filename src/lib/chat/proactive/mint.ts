@@ -51,57 +51,105 @@ import {
 } from './detect';
 import {
   checkEligibility,
+  resolveQuietWindow,
   type EligibilityRefusal,
   type ProactiveSource,
   type ProactiveTrigger,
+  type QuietHours,
 } from './eligibility';
 import { materialKey, materialReplyTo, type Material, type MaterialKind } from './material';
 
 export { nudgeCandidates };
 
 /**
- * **THREE HOURS.** How quiet the room must be before a reader speaks unprompted.
+ * **ONE HOUR, SINCE 2026-08-30. IT WAS THREE.** How quiet the room must be before a
+ * reader speaks unprompted.
  *
- * The argument, not the number (§6.3):
+ * **THE CHANGE IS A RULING, NOT A MEASUREMENT**, and the old argument is kept rather
+ * than deleted because three of its four legs still hold:
  *
- *   - **The lower bound is what reads as a machine.** A room that pings you twenty
- *     minutes after the last message, unprompted, is a notification engine. There is no
- *     version of *"Adrian thought of you"* that is true twenty minutes after Adrian last
- *     spoke.
- *   - **The upper bound is the cron.** A gap of 24 hours would make the daily job the
- *     only source that ever fires, which is the design the roadmap calls wrong.
- *   - **Three hours is the shortest interval over which *"it has gone quiet"* is a true
- *     statement about a group chat.**
- *   - **It is not the reading path's gate** (`[F5-12]`), which is what stops this number
- *     having to be short.
+ *   - **The lower bound is still what reads as a machine.** *"There is no version of
+ *     'Adrian thought of you' that is true twenty minutes after Adrian last spoke."*
+ *     True at twenty minutes; not true at an hour, which is an ordinary interval between
+ *     two messages from a friend who was doing something else.
+ *   - **The upper bound is still the cron.** Unchanged.
+ *   - **It is still not the reading path's gate** (`[F5-12]`), which is what stops this
+ *     number having to be short.
+ *   - **What changed is the third leg.** *"Three hours is the shortest interval over
+ *     which 'it has gone quiet' is a true statement about a group chat"* was written
+ *     when a proactive run could land at any hour of the night. Quiet hours are live
+ *     now, so the interval no longer has to carry the whole burden of not being
+ *     obnoxious — and Miftah's ruling is explicit: *much more proactive.*
  *
- * **AND IT IS A GUESS, LABELLED ONE.** `PERSONA_MIN_AGE_SECONDS=3600`'s precedent,
- * recorded rather than hidden: the only instrument that can move it is `C-N2f`'s reply
- * rate over weeks on a real phone. **Measure before moving it.**
+ * **AND IT IS STILL A GUESS, STILL LABELLED ONE.** `PERSONA_MIN_AGE_SECONDS=3600`'s
+ * precedent. The only instrument that can move it is `C-N2f`'s proactive reply rate on
+ * `/admin/chat` over weeks. **Measure before moving it.**
  */
 export function minGapSeconds(): number {
   const raw = Number(process.env.CHAT_PROACTIVE_MIN_GAP_SECONDS);
-  return Number.isFinite(raw) && raw > 0 ? raw : 10_800;
+  return Number.isFinite(raw) && raw > 0 ? raw : 3_600;
 }
 
 /**
- * **TWO PER QUERENT PER THEIR CALENDAR DAY** (§6.4).
+ * **FIVE PER QUERENT PER THEIR CALENDAR DAY, SINCE 2026-08-30. IT WAS TWO.**
  *
- *   - **1 is a newsletter.** One message a day, at roughly the same time, from the same
- *     cron, is a scheduled broadcast and reads as one.
- *   - **3 or more is a notification machine.** A run is 1–4 messages from 1–3 readers,
- *     so three runs is up to twelve unprompted bubbles in a day. Twelve is how you get
- *     muted, and there is no mute in this app short of not opening it — which is the
- *     metric the release is judged by.
- *   - **2 gives the day a shape** without being able to become a stream.
+ * The v0.7.0 argument — *"1 is a newsletter, 3 or more is a notification machine"* — was
+ * written **before Miftah ruled**, and it is kept here rather than deleted because its
+ * arithmetic is still the thing to watch. **THE ARITHMETIC HAS BEEN REDONE FOR THIS
+ * RELEASE AND THE ANSWER IS THE SAME NUMBER:** `CHAT_MAX_BEATS` is 8 now, but that
+ * ceiling is for a run the querent triggered — a PROACTIVE run is two to four beats by
+ * `system.{id,en}.ts` rule 11, so five runs is a theoretical **twenty** unprompted
+ * bubbles in a day, which is exactly the bound v0.7.0 defended.
  *
- * A number variable **falls back rather than becoming zero** (`auth/ttl.ts`,
- * `meter.ts`): a cap of `0` would silence the feature completely, which is a typo taking
- * half the release down.
+ * **THAT MAKES RULE 11's BEAT RANGE LOAD-BEARING FOR VOLUME AND NOT ONLY FOR TONE.** If a
+ * later session lets a proactive run reach the full eight-beat cap, the worst case here
+ * doubles to forty and this number must come down in the same commit.
+ *
+ * **THREE THINGS MAKE FIVE PAYABLE WHERE THREE WAS NOT:**
+ *
+ *   - **THE CAP IS ALMOST NEVER THE BINDING GATE — `no_material` IS.** `C-N2e`: a
+ *     trigger with no material does not fire, one material per run, and a spent
+ *     `material_key` is spent for that querent for ever. Raising the cap does not
+ *     produce five runs; it produces *up to* five **on a day the ladder has five
+ *     distinct things to say**, which is rare and is exactly the day worth speaking on.
+ *     **THIS IS TRUE ONLY BECAUSE `time_of_day` IS CAPPED AT ONE RUN PER LOCAL DAY** in
+ *     `detectTimeOfDay` (F7). That kind's key is fresh in every part of every day, so
+ *     without the brake it alone would supply every one of the five and `no_material`
+ *     would never fire again. **Do not raise this number without checking that brake, and
+ *     do not remove that brake without lowering this number.**
+ *   - **QUIET HOURS ARE LIVE.** The twenty-bubble worst case is now compressed into the
+ *     waking window rather than smeared across the night, which is the difference
+ *     between a busy friend and an alarm clock.
+ *   - **THE RULING.** *"i want the readers to be much more PROACTIVE ... keep coming
+ *     back to the chat group as often as possible."*
+ *
+ * A number variable **falls back rather than becoming zero** (`auth/ttl.ts`, `meter.ts`):
+ * a cap of `0` would silence the feature completely, which is a typo taking half the
+ * release down.
  */
 export function maxPerDay(): number {
   const raw = Number(process.env.CHAT_PROACTIVE_MAX_PER_DAY);
-  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 2;
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 5;
+}
+
+/**
+ * The querent's quiet window, resolved AT CALL TIME from the environment and the offset
+ * their browser last reported.
+ *
+ * **READ AT CALL TIME, NEVER AT MODULE SCOPE**, for the reason the flags are: a
+ * module-scope `const` is inlined by the bundler and freezes the build-time value, and
+ * the whole point of these two keys is that an operator can narrow the window from the
+ * Vercel dashboard when a querent says the readers woke them up.
+ *
+ * The parsing, the fallbacks and the disable-by-equal-hours escape hatch are
+ * `resolveQuietWindow`'s, in the pure module, where the tests are.
+ */
+export function quietHoursFor(offsetMinutes: number | null): QuietHours {
+  return resolveQuietWindow(
+    process.env.CHAT_QUIET_FROM_HOUR,
+    process.env.CHAT_QUIET_TO_HOUR,
+    offsetMinutes,
+  );
 }
 
 /** Why a mint did not happen. The eight refusals plus the four this module can add. */
@@ -196,8 +244,22 @@ export async function mintProactiveRun(input: MintInput): Promise<MintResult> {
       enabled,
       minGapSeconds: minGapSeconds(),
       maxPerDay: maxPerDay(),
-      /* §5, Option A (`[R17]`). The predicate takes the input and ships it dead. */
-      quietHours: null,
+      /*
+       * §5, and **`[R17]`'s Option A is reversed** (2026-08-30). The offset is read off
+       * the thread row rather than off a header, which is what makes this work for the
+       * cron — the one source with no client and therefore no `x-jm-local-date` — and it
+       * is the reason `[R17]` folded `utc_offset_minutes` into `0014` in the first place.
+       *
+       * **NULL IS NORMAL AND MEANS NOT QUIET.** A querent whose browser has not reported
+       * an offset yet behaves exactly as they did before this line existed.
+       *
+       * **THE WINDOW IS SUPPLIED FOR EVERY SOURCE, INCLUDING `reading`.** The exemption
+       * lives in the predicate (gate 5), not here, so that `npm test` can see it —
+       * `[F5-2]`'s rule that a heuristic's every branch is enumerated with a fake clock.
+       *
+       * **PHASE 7's LOCAL, REUSED.** One thread row, one offset, one clock per mint.
+       */
+      quietHours: quietHoursFor(utcOffsetMinutes),
       now,
     };
 
@@ -397,7 +459,22 @@ const EVENT_REASON: Record<MintRefusal, SkipReason | null> = {
   failed: null,
 };
 
-/** Refusals worth a row from a per-page-view source. The cron records all of them. */
+/**
+ * Refusals worth a row from a per-page-view source. The cron records all of them.
+ *
+ * **`quiet_hours` STAYS IN THIS SET NOW THAT IT CAN ACTUALLY FIRE, AND THAT IS A
+ * DELIBERATE EXCEPTION TO THE ARGUMENT THAT KEEPS `open_run` AND `gap` OUT** (§18).
+ * Those two refuse the *overwhelming majority of all ticks, all day*, which is an
+ * `events` row per page view of the app against a 180-day TTL on Neon free's 0.5 GB.
+ * `quiet_hours` refuses only ticks fired **between 22:00 and 07:00 in the querent's own
+ * zone**, and `ChatButton` has no polling loop — one fetch on mount, one on
+ * `visibilitychange` — so the volume is bounded by night-time app opens rather than by
+ * page views.
+ *
+ * **AND IT IS THE ONLY INSTRUMENT THE WINDOW HAS.** If the rate is high the window is
+ * too wide and `CHAT_QUIET_TO_HOUR` should come down; drop the row and there is nothing
+ * to read but a silence that looks identical to `no_material`.
+ */
 const ALWAYS_RECORDED: ReadonlySet<MintRefusal> = new Set<MintRefusal>([
   'flag_off',
   'quiet_hours',

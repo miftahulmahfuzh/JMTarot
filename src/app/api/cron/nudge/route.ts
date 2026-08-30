@@ -10,16 +10,34 @@
  * minimum interval once per day, per-hour precision (±59 min).** The fold into
  * `/api/cron/sweep` does not happen and is not designed (`[R3]`).
  *
- * **AND `0 12 * * *` IS 19:00–19:59 WIB, NOT NOON.** Vercel cron schedules are **always
- * UTC** (`[R4]`) — the same fact that makes `sweep`'s `17 3 * * *` 10:17 WIB rather than
- * the 3am the roadmap built an argument on. Evening, after work, the hour a person
- * actually messages you. **Written down because the next session to read `0 12` will
- * otherwise "fix" it to noon.**
+ * ── TWO SLOTS, BOTH UTC, AND `0 12` IS STILL NOT NOON ─────────────────────
  *
- * It is deliberately far from the sweep's slot so the two never share a warm lambda or a
- * Neon wake-up, and **it is the one line that changes if the quiet-hours ruling is ever
- * revisited** — `[R17]` took Option A, and §5's whole argument is that source 3's quiet
- * hours *are* its schedule.
+ * Vercel cron schedules are **always UTC** (`[R4]`) — the same fact that makes `sweep`'s
+ * `17 3 * * *` 10:17 WIB rather than the 3am the roadmap built an argument on.
+ *
+ *   `0 12 * * *`  ->  19:00–19:59 WIB, evening, after work.  `?slot=malam`
+ *   `0  1 * * *`  ->  08:00–08:59 WIB, morning, on the way in.  `?slot=pagi`
+ *
+ * **THE MORNING SLOT IS R3's, AND IT IS THE ONLY WAY A MONDAY-MORNING GREETING CAN REACH
+ * SOMEBODY WHO IS NOT ALREADY IN THE APP.** The brief's own worked example is *"njir,
+ * udah senin aja. mager ga lu ngantor?"*, which is a thing you say before noon; with one
+ * evening slot the cron could never say it to a dormant querent, and the tick only fires
+ * for somebody who has already opened the app.
+ *
+ * **AND IT IS ONLY PAYABLE BECAUSE QUIET HOURS ARE LIVE** (`[R17]` reversed, 2026-08-30).
+ * 01:00 UTC is 08:00 in Jakarta and 02:00 in Berlin, so a second fixed hour would have
+ * been a message in the middle of the night for anyone outside the zone the schedule was
+ * chosen for. `eligibility.ts`'s gate 5 is what makes the hour safe for every querent
+ * whose browser has reported an offset — **and it is exactly the reason a schedule stops
+ * being the quiet-hours mechanism the moment there is more than one of them.**
+ *
+ * **THE `slot` QUERY PARAMETER IS A LOG LABEL AND NOTHING ELSE.** No branch reads it, so
+ * the two invocations are byte-identical in behaviour; it exists so `[cron] nudge` can be
+ * told apart in the log, and it makes the two entries distinct paths. If the platform
+ * ever strips or refuses it, both entries fall back to a `null` slot and the only thing
+ * lost is the label.
+ *
+ * A run minted here has nobody present to warm it, which is what phase 3 below is for.
  *
  * ── THE THREE PHASES, AND THE ORDER IS THE ARGUMENT (§3) ──────────────────
  *
@@ -37,11 +55,16 @@
  * ── THE FAN-OUT IS BOUNDED, AND THE SUCCESSOR IS NAMED RATHER THAN INVENTED ──
  *
  * A `chat_plan` is a large prompt and a tiny reply; a `chat_turn` is a large prompt and a
- * two-sentence reply. Budget ~6s each against a 45s wall clock inside the 60s ceiling, so
- * `NUDGE_MAX_USERS = 8` is **derived rather than guessed**. At a scale where 8 is too few
- * the fix is **not a bigger number** — it is that the cron mints only and a queue drains
- * it, which is a v0.8.0 mechanism named here so nobody invents it in an emergency
- * (`[F5-Q5]`). The current scale is a consent screen in Testing mode with two accounts.
+ * two-sentence reply, ~6s each against the 45s wall clock inside the 60s ceiling — which
+ * bounds **phase 3, the warm**, and enforces itself in the loop below.
+ *
+ * **`NUDGE_MAX_USERS` IS 20 SINCE 2026-08-30 AND IT BOUNDS THE MINT, NOT THE WARM.** The
+ * old 8 conflated the two; a mint is ~100ms, so twenty cost ~2s and the same ~7 warms
+ * still happen. See `maxUsers()` for the whole re-derivation. At a scale where twenty is
+ * too few the fix is **still not a bigger number** — it is that the cron mints only and a
+ * queue drains it, which is a v0.8.0 mechanism named here so nobody invents it in an
+ * emergency (`[F5-Q5]`). The current scale is a consent screen in Testing mode with two
+ * accounts.
  */
 import { NextResponse } from 'next/server';
 
@@ -68,8 +91,20 @@ const WALL_CLOCK_BUDGET_MS = 45_000;
 /**
  * **THE BACKLOG BOUND** (`[F5-5]`). Under quota pressure the app accumulates pending runs
  * rather than losing them (`C-D6` consequence 3) — the single best argument for the run
- * engine — but a week of pressure would otherwise deliver seven-day-old greetings the
- * moment the ceiling clears, which is worse than never having spoken.
+ * engine — but a backlog delivered late is worse than never having spoken.
+ *
+ * **TWENTY-FOUR HOURS SINCE 2026-08-30. IT WAS FORTY-EIGHT**, and the reason it came down
+ * is that the material got day-shaped. A `reading` follow-up is still roughly true two
+ * days later; *"udah senin aja"* delivered on Wednesday is not, and a time-anchored
+ * greeting arriving a day late is the exact failure R1 exists to prevent, arriving
+ * through the back door. One day is also the interval over which the cron itself is
+ * guaranteed to have run — twice, now — so nothing is aged out that was never offered a
+ * second chance to be warmed.
+ *
+ * The cost is real and is recorded: a quota outage longer than a day now loses the runs
+ * it sheds instead of holding them. **That is the right trade for a run nobody was
+ * waiting for and the wrong one for a reading**, which is why it applies here and to
+ * nothing else.
  *
  * Falls back rather than becoming zero, per `auth/ttl.ts`: a TTL of `0` would abandon
  * every run the instant it was minted, and the symptom is a chat that silently never
@@ -77,13 +112,46 @@ const WALL_CLOCK_BUDGET_MS = 45_000;
  */
 function runTtlHours(): number {
   const raw = Number(process.env.PROACTIVE_RUN_TTL_HOURS);
-  return Number.isFinite(raw) && raw > 0 ? raw : 48;
+  return Number.isFinite(raw) && raw > 0 ? raw : 24;
 }
 
-/** How many querents one invocation will mint AND warm. Derived in the header. */
+/**
+ * How many querents one invocation will **mint** for. Twenty since 2026-08-30; it was
+ * eight.
+ *
+ * **THE OLD NUMBER CONFLATED TWO DIFFERENT LIMITS AND THE RE-DERIVATION IS THE POINT.**
+ * Eight came from *"~6s per model call against a 45s wall clock"* — but that budget bounds
+ * **phase 3, the warm**, and it already enforces itself: the loop checks
+ * `WALL_CLOCK_BUDGET_MS` before every `advance` and stops advancing while it keeps
+ * minting. A mint is three indexed reads and one transaction, ~100ms, so twenty of them
+ * is ~2s of the invocation and leaves the rest of the budget for warms exactly as before.
+ *
+ * **THE CONSEQUENCE, STATED:** roughly seven of the twenty get a bubble tonight and the
+ * rest stay `pending` — which the route's phase-3 comment already calls the correct
+ * outcome, because *"a run that was minted and not warmed is not lost"* and the querent's
+ * next tick warms it. Minting for more people than can be warmed is strictly better than
+ * minting for fewer, since an unminted run is gone until the material is found again.
+ *
+ * At a scale where twenty is too few the fix is **still not a bigger number** — it is
+ * that the cron mints only and a queue drains it, a v0.8.0 mechanism named here so nobody
+ * invents it in an emergency (`[F5-Q5]`).
+ */
 function maxUsers(): number {
   const raw = Number(process.env.NUDGE_MAX_USERS);
-  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 8;
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 20;
+}
+
+/** The two scheduled slots. A LOG LABEL, closed, and no branch reads it. */
+type NudgeSlot = 'pagi' | 'malam';
+
+/**
+ * **A CLOSED SET, NEVER THE RAW STRING.** This value goes into `console.log`, and the
+ * route is reachable by anybody holding `CRON_SECRET`; free text from a query parameter
+ * in a log line is the same class of thing `sanitizeProps` refuses in `events.props`.
+ */
+function slotOf(request: Request): NudgeSlot | null {
+  const raw = new URL(request.url).searchParams.get('slot');
+  return raw === 'pagi' || raw === 'malam' ? raw : null;
 }
 
 /**
@@ -122,6 +190,9 @@ export async function GET(request: Request) {
   const denied = await authorize(request);
   if (denied) return denied;
 
+  /* A label for the log, resolved once. No branch below reads it. */
+  const slot = slotOf(request);
+
   const startedAt = Date.now();
   const { db } = await import('@/lib/db/client');
   const now = new Date();
@@ -134,13 +205,25 @@ export async function GET(request: Request) {
    * UTC+7, between 00:00 and 07:00 WIB the cron's UTC date is still *yesterday*, so if
    * `proactive_count_date` already reads today-in-WIB the counter resets and grants **one
    * extra** run. **The failure is a bounded overcount of one, never an undercount that
-   * silences the feature** — which is the safe direction, and one the schedule makes
-   * almost unreachable: `0 12 * * *` UTC is 19:00 WIB, the same calendar day in both
+   * silences the feature** — which is the safe direction, and one both schedules avoid:
+   * `0 12` UTC is 19:00 WIB and `0 1` UTC is 08:00 WIB, the same calendar day in both
    * zones.
    *
-   * The alternative — reading each candidate's last-known `local_date` off their most
-   * recent `readings` row — is one query per candidate inside a fan-out, to buy a
-   * correction to a case the schedule already avoids. Declined, and recorded.
+   * **RE-EXAMINED 2026-08-30, WHEN `chat_threads.utc_offset_minutes` STOPPED BEING NULL,
+   * AND THE ANSWER IS STILL NO.** The offset would let this route compute each
+   * candidate's true day — but `localDate` is also `nudgeCandidates`' own selection
+   * predicate (`proactive_count_date is distinct from :localDate or
+   * proactive_count_today = 0`), so deriving a different day inside `mintProactiveRun`
+   * would let the mint stamp a day the selector did not select on. **That trades a
+   * bounded overcount of one for an undercount that silences the feature**, which is the
+   * wrong direction, and the whole correction is to a case the schedules already avoid.
+   * The honest version is to derive the day in `nudgeCandidates` and the mint together,
+   * in one change, once offset coverage is high enough to be worth it. Declined again,
+   * and recorded again.
+   *
+   * **QUIET HOURS DO NOT HAVE THIS PROBLEM AND ARE NOT AFFECTED BY IT.** They ask what
+   * *hour* it is, not what day, and `mintProactiveRun` reads the offset off the thread
+   * row it is already loading.
    */
   const localDate = utcDateString(now);
 
@@ -232,7 +315,7 @@ export async function GET(request: Request) {
     }
   }
 
-  const body = { ...result, generating, localDate, failures, ms: Date.now() - startedAt };
+  const body = { ...result, slot, generating, localDate, failures, ms: Date.now() - startedAt };
 
   /*
    * **COUNTS, NEVER ROWS.** The response goes into a Vercel cron log, which is a place the
