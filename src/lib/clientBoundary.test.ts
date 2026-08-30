@@ -450,6 +450,47 @@ describe('the client boundary', () => {
   });
 
   /*
+   * R2's task. `src/lib/account/` now holds THREE modules with three different
+   * boundaries: `grace.ts` is a LEAF that `DeleteAccount.tsx` legitimately imports,
+   * `memoryView.ts` is pure and is imported by both a route and a client component,
+   * and `delete.ts` reaches `@/lib/db/queries/share` and performs the whole account
+   * erasure. A directory glob would fail on the first two; naming the third is the
+   * `@/lib/share/links` shape, and the value of the fence is that it says WHY.
+   */
+  it('lets no client component import the account deleter', () => {
+    for (const file of CLIENT) {
+      const offending = importsOf(file.source).filter((spec) => spec === '@/lib/account/delete');
+      expect({ [file.path]: offending }).toEqual({ [file.path]: [] });
+    }
+  });
+
+  it('keeps `@/lib/account/memoryView` pure, so its client import stays earned', () => {
+    /*
+     * The other half of the rule, asserted on the SOURCE with comments stripped --
+     * `sanitize`, `persona/lines` and `share/slug` all use this shape, for the lesson
+     * `queries/contract.test.ts` records: a rule that fires on the prose describing
+     * the rule is a rule people delete.
+     *
+     * The moment somebody imports `UserMemory` from `@/lib/db/schema` here "so the
+     * types line up", the client fence above stops protecting anything and the
+     * structural read that makes this module's list agree with phase 5's prompt is
+     * gone with it. `@/lib/memory/profile/types` is the ONE import it may hold, and
+     * it is the exception phase 4's fence already names.
+     */
+    const raw = readFileSync(join(ROOT, 'lib/account/memoryView.ts'), 'utf8');
+    const code = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    for (const sentinel of ["import 'server-only'", 'process.env', '@/lib/db/', 'next/']) {
+      expect({ sentinel, present: code.includes(sentinel) }).toEqual({
+        sentinel,
+        present: false,
+      });
+    }
+    expect(importsOf(code)).toEqual(['@/lib/memory/profile/types']);
+    // The stripper must not have eaten the code it is checking.
+    expect(code).toContain('export function memoryItems');
+  });
+
+  /*
    * S4, v0.4.0. **`src/content/**` IS TENS OF THOUSANDS OF WORDS OF PROSE PER
    * LOCALE** and roadmap §5 rule 1 fences it from client components. A client
    * component importing a lore document serialises the whole document into the RSC

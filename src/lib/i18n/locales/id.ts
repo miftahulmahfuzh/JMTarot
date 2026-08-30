@@ -640,9 +640,30 @@ const id = {
    * points at the document. **If it ever grows an "I agree" button it has become the
    * modal this ruling refused.**
    */
+  /*
+   * ── AMENDED FOR R2, AND THE OLD TEXT IS KEPT HERE RATHER THAN DELETED ──────
+   *
+   * It read: *"Di ruang ini ketiga pembaca bisa melihat jawaban awalmu, bacaanmu,
+   * dan obrolan ini sendiri — supaya mereka menjawab kamu, bukan orang umum."*
+   *
+   * **THAT SENTENCE ENUMERATES WHAT THE READERS SEE, AND THE ENUMERATION BECAME
+   * INCOMPLETE THE DAY R2 SHIPPED.** The readers now also keep notes — written by a
+   * model, out of this room, kept after the conversation scrolls away. A list that
+   * names three sources and omits the fourth is worse than a list that never
+   * existed, because a reader who checked it once will not check it again.
+   *
+   * **THIS IS THE LOAD-BEARING HALF OF THE PAIR, EXACTLY AS `C-D8` FOUND FOR THE
+   * ONBOARDING HINTS.** Amending `/privacy` clause 2.8 was necessary and is not
+   * sufficient: nobody re-reads `/privacy`, and everybody reads this. Where to look
+   * is in the same sentence, because the control is on a page they can reach.
+   *
+   * **IT IS STILL A NOTICE AND NOT A CONSENT MODAL.** If it ever grows an "I agree"
+   * button it has become the modal the original ruling refused.
+   */
   'chat.first_open.notice':
     'Di ruang ini ketiga pembaca bisa melihat jawaban awalmu, bacaanmu, dan obrolan ' +
-    'ini sendiri — supaya mereka menjawab kamu, bukan orang umum.',
+    'ini sendiri. Mereka juga mencatat hal tentangmu — bisa kamu baca dan hapus di ' +
+    'halaman Dirimu.',
   'chat.first_open.link': 'Selengkapnya',
 
   /*
@@ -1181,6 +1202,61 @@ const id = {
   // Said out loud because nobody would guess either half.
   'account.answers.note':
     'Mengubah atau menghapus satu jawaban langsung menulis ulang apa yang dibaca pembacamu. Teratai Batinmu menyusul saat kamu membuka halaman ini lagi.',
+
+  // ==========================================================================
+  // R2 — what the room has noted about the querent, on `/account`.
+  //
+  // **THIS IS A DISCLOSURE BLOCK, NOT A FEATURE BLOCK, AND THE REGISTER IS
+  // DIFFERENT BECAUSE OF IT.** Every other heading on this page is possessive and
+  // slightly mystical -- `Kartumu`, `Jalanmu`, `Teratai Batin`, `Jawabanmu`. This
+  // one says plainly what it is, because the querent is being told that a machine
+  // has been writing about them and the one thing that copy must not do is sound
+  // charming about it.
+  //
+  // `account.memory.hint` IS THE LOAD-BEARING STRING, and it is `C-D8`'s finding
+  // applied a second time: **nobody re-reads `/privacy`; everybody reads the hint
+  // in front of them.** It states three things and must keep stating all three --
+  // a model wrote it, it came from what you type in the group, and it can be
+  // wrong. **It must never be softened into "untuk menyesuaikan pengalamanmu"**:
+  // that is the sentence this project exists not to write, and it is why clause
+  // 2.2 of `/privacy` quotes the hardest onboarding question word for word instead
+  // of calling it "refleksi pribadi tertentu".
+  //
+  // NO EDIT COPY, DELIBERATELY. V8's L13 reversal made the six answers editable
+  // because they are the querent's own words; a note here is a sentence a machine
+  // wrote ABOUT them, and offering to rewrite it would be offering to dictate what
+  // three readers believe about you, straight into a prompt. The correction on
+  // offer is deletion.
+  //
+  // TWO KEYS THIS BLOCK ASKED FOR ARE NOT HERE, AND THE REUSE IS THE POINT:
+  // `account.facts.cancel` is the second step's `Batal` and
+  // `history.item.delete.working` is its `Menghapus…`. `/account` already reuses
+  // `history.home`, and a second string for one control is how two screens come to
+  // disagree about what `Batal` is called.
+  //
+  // **THE CEILING IS ALL BUT SPENT, AND THIS IS THE WRITTEN ANSWER
+  // `prose.test.ts`'s HEADER ASKS THE WORKSTREAM THAT MEETS IT FOR.** Measured
+  // 2026-08-30: `id` was at 22,389 bytes with 611 free under the 23,000 ceiling --
+  // NOT the 21,161 that test's header still quotes, which predates phases 1-5. This
+  // block as first drafted cost ~680 and would have BREACHED. It fits because two
+  // keys were dropped for the reuse above and four values were shortened with every
+  // claim kept, landing `id` at **22,950 -- 50 bytes free**, `en` at 22,609.
+  //
+  // So phase 7 and anything after it must budget BEFORE writing copy, and the rule
+  // does not change: **shorten the copy, never raise the ceiling.** The one string
+  // here that may NOT be shortened at the cost of a claim is `account.memory.hint`.
+  // ==========================================================================
+  'account.memory.heading': 'Catatan tentangmu',
+  'account.memory.hint':
+    'Ditulis model bahasa dari yang kamu ketik di grup, bukan olehmu. Bisa keliru, bisa kamu hapus.',
+  'account.memory.reveal': 'Lihat catatannya',
+  'account.memory.loading': 'Membuka…',
+  'account.memory.empty': 'Belum ada catatan.',
+  'account.memory.failed': 'Belum bisa dibuka. Coba lagi.',
+  'account.memory.itemAria': 'Hapus catatan: {text}',
+  'account.memory.remove': 'Hapus',
+  'account.memory.forgetAll': 'Lupakan semuanya',
+  'account.memory.forgetAllConfirm': 'Ya, lupakan semuanya',
 
   // ==========================================================================
   // V8 — account deletion (VD13). The copy for a control `/privacy` §8 has

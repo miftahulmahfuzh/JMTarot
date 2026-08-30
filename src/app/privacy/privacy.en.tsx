@@ -205,6 +205,45 @@ export function PrivacyEn({ effective }: { effective: string }) {
             <Link href="#8">clause 8</Link>.
           </P>
         </SubClause>
+
+        {/*
+          2.8 — R2. The SAME ANCHOR SET as the Indonesian document or
+          `legal.test.ts` goes red, which is what makes "both locales" mechanical.
+          The prose is written rather than translated (S-D6's habit); every claim is
+          the same claim, including the uncomfortable one about a note being right.
+        */}
+        <SubClause id="2-8" n="2.8" title="Notes a machine writes about you">
+          <Callout>
+            <P>
+              <strong>
+                The readers keep notes about you, and a language model writes them &mdash; not
+                you, and not a person
+              </strong>
+              . They are made from what you type in the chat, and they outlast the conversation
+              itself.
+            </P>
+          </Callout>
+          <P>
+            They are short sentences about your habits, what you like and do not like, and what
+            is going on in your life &mdash; the things that let &ldquo;how have you been&rdquo;
+            carry on from last time instead of starting from nothing. Stored as written,
+            unencrypted, exactly like your own messages.
+          </P>
+          <P>
+            <strong>A note can be wrong.</strong>{' '}A machine is inferring, and an inference is
+            sometimes mistaken &mdash; and sometimes uncomfortably accurate. Both are reasons you
+            should be able to see them.
+          </P>
+          <P>
+            You can read every one of them and delete them, one at a time or all at once, on the{' '}
+            <strong>About You</strong> page. Anything you delete is not read by the readers in the
+            next conversation, and is not written back later. There is no way to get it back.
+          </P>
+          <P>
+            No human reads them, and they are not translated. See{' '}
+            <Link href="#3-1">clause 3.1</Link>.
+          </P>
+        </SubClause>
       </Clause>
 
       <Clause id="3" n="3." title="Why we use each of these">
@@ -214,6 +253,7 @@ export function PrivacyEn({ effective }: { effective: string }) {
             'The opening answers: so a reading sounds like it is for you rather than for anybody.',
             'Readings: so the app remembers what you have already asked.',
             'The group chat: so the readers answer you, this person, and not a generic one — which is the only reason they see your opening answers as written in there.',
+            'The notes about you: so the next conversation carries on from your life instead of starting from nothing each time.',
             'Analytics: so we know what is broken and what is used.',
             'Moderation: so a wrong refusal can be found and fixed.',
             'Running the Service: so breakage can be fixed, a request about your own data can be answered, and the Terms can be enforced.',
@@ -417,6 +457,11 @@ export function PrivacyEn({ effective }: { effective: string }) {
               the next stretch of the conversation.
             </>,
             <>
+              <strong>The notes about you: for the life of your account</strong>, with no
+              automatic sweep. You are what deletes them &mdash; one at a time or all at once,
+              on the About You page.
+            </>,
+            <>
               Analytics records: <strong>{RETENTION.eventsDays} days</strong>, then deleted.
             </>,
             <>
@@ -449,6 +494,7 @@ export function PrivacyEn({ effective }: { effective: string }) {
           items={[
             'Skip any opening question.',
             'Clear a single answer later, without deleting your account.',
+            'Read and delete the notes a machine writes about you, one at a time or all at once, without deleting your account.',
             'Change the app&rsquo;s language whenever you like.',
             <>
               Turn a share link off, from the same reading you made it on.{' '}
@@ -464,7 +510,9 @@ export function PrivacyEn({ effective }: { effective: string }) {
           When you ask us to delete it, the account stops working immediately and your data becomes
           unreachable through the app. The text of any refused question is{' '}
           <strong>redacted at that moment</strong>, without waiting for the{' '}
-          {RETENTION.moderationQuestionDays}-day schedule.
+          {RETENTION.moderationQuestionDays}-day schedule, and{' '}
+          <strong>the notes a machine wrote about you are erased at that moment too</strong>{' '}
+          &mdash; not in {RETENTION.erasureGraceDays}{' '}days, but in the same transaction.
         </P>
         <P>
           <strong>Within {RETENTION.erasureGraceDays} days</strong>{' '}the real deletion runs: your

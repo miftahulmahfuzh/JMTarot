@@ -392,6 +392,86 @@ describe('the privacy policy', () => {
     });
   });
 
+  /*
+   * ── R2: THE MACHINE-WRITTEN NOTES ──────────────────────────────────────────
+   *
+   * **THE FIRST THING IN THIS DATABASE THAT A MACHINE WROTE ABOUT A PERSON.**
+   * Everything clause 2 described before it is text the querent typed. A policy
+   * that folded these into 2.7's "the group chat" would be describing a room that
+   * forgets, which is the property this workstream removed.
+   *
+   * Three claims are asserted because each is one somebody would soften: WHO wrote
+   * it, that it can be WRONG, and WHERE the control is. The last is the one that
+   * turns the clause from a disclosure into a promise the code has to keep --
+   * `/privacy` promising per-answer clearing that nobody could perform is the exact
+   * mistake `/account` exists to have ended.
+   */
+  describe('the machine-written notes (R2)', () => {
+    it('gives the notes their own subclause in BOTH locales', () => {
+      expect(anchorsIn(PRIVACY_HTML['privacy.id'])).toContain('2-8');
+      expect(anchorsIn(PRIVACY_HTML['privacy.en'])).toContain('2-8');
+    });
+
+    it('says a MODEL wrote them, not the querent and not a person', () => {
+      expect(PRIVACY['privacy.id']).toContain('model bahasa');
+      expect(PRIVACY['privacy.en']).toMatch(/a language model writes them/i);
+    });
+
+    it('says they are built from what the querent types in the room', () => {
+      expect(PRIVACY['privacy.id']).toContain('dari apa yang kamu ketik di ruang obrolan');
+      expect(PRIVACY['privacy.en']).toMatch(/from what you type in the chat/i);
+    });
+
+    it('admits a note can be wrong', () => {
+      // The least comfortable sentence in the clause and the one most likely to be
+      // cut, on the `refused question` precedent one describe up. It is also the
+      // whole reason the delete control exists.
+      expect(PRIVACY['privacy.id']).toContain('bisa saja keliru');
+      expect(PRIVACY['privacy.en']).toMatch(/A note can be wrong/i);
+    });
+
+    it('names the page where they can be read and deleted', () => {
+      // A policy describing a control nobody can perform is the mistake `/account`
+      // was built to end. `AccountMemory` is what makes this sentence true.
+      expect(PRIVACY['privacy.id']).toContain('Dirimu');
+      expect(PRIVACY['privacy.en']).toContain('About You');
+    });
+
+    it('says the erasure happens in the same transaction, not on the 30-day clock', () => {
+      /*
+       * **THIS IS A CLAIM ABOUT PHASE 3's CODE AND IT IS TRUE**: `deleteAccount()`
+       * calls `redactUserMemory(tx, userId)` inside the transaction that sets
+       * `deleted_at`. If that ever moves to the hard delete's cascade -- which is
+       * what `chat_messages` does, to keep the thirty-day restore meaningful -- this
+       * sentence becomes a false statement in a legal document and must revert with
+       * it. That is what this assertion is here to force.
+       */
+      expect(PRIVACY['privacy.id']).toContain('di transaksi yang sama');
+      expect(PRIVACY['privacy.en']).toContain('in the same transaction');
+    });
+
+    it('never says the notes personalise anything', () => {
+      /*
+       * **THE SENTENCE THIS PROJECT EXISTS NOT TO WRITE.** Clause 2.2 quotes the
+       * hardest onboarding question word for word rather than calling it "certain
+       * personal reflections", for the same reason.
+       */
+      for (const [name, text] of Object.entries(PRIVACY)) {
+        for (const phrase of [
+          'menyesuaikan pengalaman',
+          'personalise your experience',
+          'personalize your experience',
+        ]) {
+          expect({ name, phrase, present: text.includes(phrase) }).toEqual({
+            name,
+            phrase,
+            present: false,
+          });
+        }
+      }
+    });
+  });
+
   it('says readings are NOT on the analytics clock, in those words', () => {
     // Reconciliation §7.9b asks for both facts stated explicitly rather than one
     // retention period implied to cover everything.

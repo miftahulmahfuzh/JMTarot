@@ -234,6 +234,54 @@ export function PrivacyId({ effective }: { effective: string }) {
             <Link href="#8">klausul 8</Link>.
           </P>
         </SubClause>
+
+        {/*
+          2.8 — R2. **A NEW ANCHOR IS FREE; RENUMBERING IS NOT** (the T&C precedent:
+          a refusal renders `/terms#6-2`), so this is appended after 2.7 rather than
+          inserted anywhere earlier. `legal.test.ts` asserts the two documents
+          declare the SAME anchor set, so the English document gains `2-8` in the
+          same commit or that test goes red.
+
+          **THIS IS THE FIRST THING IN THIS DATABASE THAT A MACHINE WROTE ABOUT A
+          PERSON**, and clause 2's other subclauses are all about text the querent
+          typed. So the clause leads with authorship, states plainly that it can be
+          wrong, and names the page where it can be read and deleted -- because a
+          policy describing a control nobody can perform is the exact mistake
+          `/account` made for a release and that clause 2.2 has promised twice.
+        */}
+        <SubClause id="2-8" n="2.8" title="Catatan yang ditulis mesin tentangmu">
+          <Callout>
+            <P>
+              <strong>
+                Para pembaca menyimpan catatan tentangmu, dan yang menulisnya adalah model
+                bahasa &mdash; bukan kamu, dan bukan manusia
+              </strong>
+              . Catatan itu dibuat dari apa yang kamu ketik di ruang obrolan, dan tetap ada
+              setelah percakapannya sendiri lewat.
+            </P>
+          </Callout>
+          <P>
+            Isinya kalimat-kalimat pendek tentang kebiasaanmu, hal yang kamu suka atau tidak,
+            dan apa yang sedang terjadi di hidupmu &mdash; hal-hal yang membuat pertanyaan
+            &ldquo;gimana kabarmu&rdquo; berlanjut dari yang terakhir, bukan mulai dari nol
+            setiap kali. Disimpan apa adanya, tanpa enkripsi, sama seperti pesanmu sendiri.
+          </P>
+          <P>
+            <strong>Catatan itu bisa saja keliru.</strong>{' '}Mesin menyimpulkan, dan
+            kesimpulannya kadang salah &mdash; kadang juga terlalu tepat. Keduanya alasan
+            kenapa kamu harus bisa melihatnya.
+          </P>
+          <P>
+            Kamu bisa membaca semuanya dan menghapusnya, satu per satu atau sekaligus, di
+            halaman <strong>Dirimu</strong>. Yang kamu hapus tidak ikut dibaca para pembaca
+            pada percakapan berikutnya, dan tidak ditulis ulang belakangan. Tidak ada cara
+            mengembalikannya.
+          </P>
+          <P>
+            Tidak ada manusia yang membacanya, dan catatannya tidak diterjemahkan. Lihat{' '}
+            <Link href="#3-1">klausul 3.1</Link>.
+          </P>
+        </SubClause>
       </Clause>
 
       <Clause id="3" n="3." title="Kenapa kami memakainya">
@@ -243,6 +291,7 @@ export function PrivacyId({ effective }: { effective: string }) {
             'Jawaban awal: supaya bacaanmu terasa ditujukan kepadamu dan bukan kepada orang umum.',
             'Bacaan: supaya aplikasi ini mengingat apa yang sudah kamu tanyakan.',
             'Ruang obrolan: supaya para pembaca menjawab kamu, orang ini, dan bukan orang umum — itulah satu-satunya alasan mereka melihat jawaban awalmu apa adanya di sana.',
+            'Catatan tentangmu: supaya percakapan berikutnya nyambung dengan hidupmu dan tidak mulai dari nol setiap kali.',
             'Analitik: supaya kami tahu bagian mana yang rusak dan bagian mana yang dipakai.',
             'Moderasi: supaya penolakan yang keliru bisa ditemukan dan diperbaiki.',
             'Pengelolaan Layanan: supaya kerusakan bisa diperbaiki, permintaanmu tentang datamu bisa dijawab, dan Syarat & Ketentuan bisa ditegakkan.',
@@ -486,6 +535,11 @@ export function PrivacyId({ effective }: { effective: string }) {
               untuk percakapan berikutnya.
             </>,
             <>
+              <strong>Catatan tentangmu: selama akunmu ada</strong>, tanpa penyapuan otomatis.
+              Yang menghapusnya adalah kamu &mdash; satu per satu atau sekaligus, di halaman
+              Dirimu.
+            </>,
+            <>
               Catatan analitik: <strong>{RETENTION.eventsDays} hari</strong>, lalu dihapus.
             </>,
             <>
@@ -519,6 +573,7 @@ export function PrivacyId({ effective }: { effective: string }) {
           items={[
             'Melewati pertanyaan awal mana pun.',
             'Menghapus satu jawaban belakangan, tanpa menghapus akun.',
+            'Membaca dan menghapus catatan yang ditulis mesin tentangmu, satu per satu atau sekaligus, tanpa menghapus akun.',
             'Mengganti bahasa aplikasi kapan saja.',
             <>
               Mematikan tautan bagikan, dari bacaan yang sama tempat kamu membuatnya.{' '}
@@ -535,7 +590,9 @@ export function PrivacyId({ effective }: { effective: string }) {
           Saat kamu meminta penghapusan, akunmu langsung berhenti bekerja dan datamu tidak lagi bisa
           dijangkau lewat aplikasi. Teks pertanyaan yang pernah ditolak{' '}
           <strong>dihapus saat itu juga</strong>, tanpa menunggu jangka waktu{' '}
-          {RETENTION.moderationQuestionDays}{' '}hari.
+          {RETENTION.moderationQuestionDays}{' '}hari, dan{' '}
+          <strong>catatan yang ditulis mesin tentangmu juga dihapus saat itu juga</strong>{' '}
+          &mdash; bukan dalam {RETENTION.erasureGraceDays}{' '}hari, melainkan di transaksi yang sama.
         </P>
         <P>
           <strong>Dalam {RETENTION.erasureGraceDays} hari</strong>{' '}berikutnya, penghapusan
