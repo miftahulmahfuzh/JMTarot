@@ -32,6 +32,7 @@ import { db } from '@/lib/db/client';
 import { readingWithCards } from '@/lib/db/queries/history';
 import { getProfile } from '@/lib/db/queries/profile';
 import { getTranslation } from '@/lib/db/queries/translations';
+import { localeSwitcherEnabled } from '@/lib/i18n/resolve';
 import { getLocale, getT } from '@/lib/i18n/t';
 import { logHistoryFailure } from '@/app/api/history/log';
 import { HistoryDetail } from './HistoryDetail';
@@ -146,7 +147,18 @@ export default async function HistoryDetailPage({
       <Link href="/history" className={styles.back}>
         {t('history.detail.back')}
       </Link>
-      <HistoryDetail reading={reading} cachedTranslation={cached} nickname={nickname} />
+      <HistoryDetail
+        reading={reading}
+        cachedTranslation={cached}
+        nickname={nickname}
+        /*
+         * RESOLVED HERE, ON THE SERVER, AS A PROP. `LOCALE_SWITCHER` carries no
+         * `NEXT_PUBLIC_` prefix, so reading it inside `HistoryDetail` -- a client
+         * component -- yields `undefined` and silently hides the row. Every other
+         * mount of the account control does exactly this.
+         */
+        showLanguage={localeSwitcherEnabled()}
+      />
     </main>
   );
 }

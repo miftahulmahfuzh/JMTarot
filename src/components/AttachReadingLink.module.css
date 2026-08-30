@@ -1,17 +1,32 @@
 /*
  * *Bahas di grup*, under a finished reading.
  *
- * NO NEW HEX, NO NEW FONT SIZE, NO NEW CURVE. `.action` is `ShareFooter.module.css`'s
- * `.action` declaration for declaration, and that is the point rather than a copy:
- * the two controls are siblings under one reading, so they have to look like siblings.
+ * NO NEW HEX, NO NEW FONT SIZE, NO NEW CURVE. `.action` WAS `ShareFooter.module.css`'s
+ * `.action` declaration for declaration, because the two controls were siblings under
+ * one reading and had to look like siblings. **THAT SOURCE NO LONGER EXISTS: on
+ * 2026-08-30 `ShareFooter`'s trigger became an icon and both of its rules were
+ * deleted.** The declarations that stayed are unchanged; the colours below now come
+ * from `ShareFooter.module.css`'s `.primary` instead, which is the sheet's own filled
+ * control and the only other place this app fills with `--gold-wash`.
  *
- * ── SECONDARY, AND `ShareFooter`'s CONTROL IS TOO. NEITHER MAY BE FILLED ────────
+ * ── IT IS THE FILLED ONE NOW (2026-08-30, Miftah's ruling) ──────────────────
  *
- * `--gold-wash` is `.primary`'s fill inside the share SHEET, where it is the one
- * action on screen. Out here **gold means "a card goes here"** on the draw screen, and
- * two filled gold buttons under a reading is two primaries — so both of these are an
- * outline and a label. If a future release wants one of them emphasised, that is a
- * decision about which, made once, in both files.
+ * This block used to say that neither this control nor `ShareFooter`'s may be
+ * filled, because *two filled gold buttons under a reading is two primaries* -- and
+ * it ended by saying that if a release ever wanted one of them emphasised, that was
+ * *"a decision about which, made once, in both files."* **This is that decision, and
+ * `Bahas di grup` is the one**: the group is this product's edge and it is the one
+ * control here that opens something the querent cannot get anywhere else.
+ *
+ * **THE OLD PREMISE IS GONE RATHER THAN OVERRULED, WHICH IS WHY THIS IS SAFE.**
+ * `Bagikan` is no longer a button with a word in it -- it is one of three icons in
+ * `ReadingActions`'s row, below this control. There are not two primaries under a
+ * reading; there is one, and a row of chrome.
+ *
+ * The fill is `ShareFooter`'s `.primary` pair, token for token: `--gold-wash` over
+ * `--gold-border` in `--gold-text`, lifting to `--gold-wash-strong` / `--gold-pale`.
+ * NO NEW HEX. It is deliberately NOT `--gold` itself: gold at full strength means
+ * "a card goes here" on the draw screen and nothing else in this app fills with it.
  *
  * ── THE HAIRLINE, AND THE SECOND ONE THAT IS NOT F6's TO REMOVE ────────────────
  *
@@ -25,12 +40,14 @@
  * is `ShareFooter`'s `.footer` verbatim — the spacing above the group is unchanged
  * whichever control happens to be first.
  *
- * **`ShareFooter` THEN DRAWS ITS OWN, WHICH BECOMES A DIVIDER BETWEEN THE TWO
- * CONTROLS RATHER THAN A HEADER FOR THE GROUP.** That reads as two rows of one group,
- * which is what they are. It is stated rather than fixed because `ShareFooter` is not
- * F6's file (§6): collapsing the pair to one hairline means that component learning it
- * is not first, which is a prop and a decision about emphasis, in a commit that owns
- * both files. **Judge it on a phone (loop 6) before changing anything** — three
+ * **`ReadingActions`'s `.row` THEN DRAWS ITS OWN, WHICH BECOMES A DIVIDER BETWEEN THE
+ * TWO CONTROLS RATHER THAN A HEADER FOR THE GROUP.** That reads as two rows of one
+ * group, which is what they are. **The component that draws that second hairline was
+ * `ShareFooter` until 2026-08-30 and this sentence named it; the hairline moved with
+ * the trigger into `ReadingActions.module.css` and the name is corrected rather than
+ * left standing.** It is still stated rather than fixed: collapsing the pair to one
+ * hairline is a decision about emphasis, and this release spent its one such decision
+ * on the fill above. **Judge it on a phone (loop 6) before changing anything** — three
  * hairlines inside 60px is the kind of thing only hardware answers.
  */
 
@@ -44,29 +61,30 @@
   border-top: 1px solid var(--gold-hairline);
 }
 
-/* `ShareFooter.module.css`'s `.action`, declaration for declaration. The 44px
-   minimum is the iOS target floor -- `PublicShare`'s 36px is a known defect and is
-   not the thing to copy. */
+/* Filled, and the ONE emphasised control under a reading. The 44px minimum is the
+   iOS target floor -- `PublicShare`'s 36px is a known defect and is not the thing to
+   copy. */
 .action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-height: 44px;
   padding: 12px 28px;
-  border: 1px solid var(--gold-hairline);
+  border: 1px solid var(--gold-border);
   border-radius: var(--radius-chip);
-  background: transparent;
+  background: var(--gold-wash);
   font-family: var(--font-display), serif;
   font-size: var(--fs-eyebrow);
   letter-spacing: var(--ls-button);
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--gold-text);
   text-decoration: none;
   cursor: pointer;
 }
 
 .action:hover {
-  color: var(--gold-lift);
+  background: var(--gold-wash-strong);
+  color: var(--gold-pale);
   border-color: var(--gold-border);
 }
 

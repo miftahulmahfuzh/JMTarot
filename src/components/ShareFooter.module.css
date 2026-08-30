@@ -12,10 +12,15 @@
  *   AccountButton      800    (chrome, under any overlay)
  *   CardDetail         900    (content overlay)
  *   AccountMenu       1000    (chrome overlay, above both)
- *   ShareFooter's sheet 1000  (the same rung as AccountMenu, and it cannot
- *                              collide: the account button is not mounted on the
- *                              draw screen at all, and the two sheets are opened
- *                              from different screens)
+ *   ShareFooter's sheet 1000  (the same rung as AccountMenu, and since 2026-08-30
+ *                              the two ARE opened from the same screen -- both
+ *                              triggers sit in `ReadingActions`'s row. They still
+ *                              cannot collide: each is rendered only while its own
+ *                              `open` state is true, and neither trigger is reachable
+ *                              behind the other's scrim, which covers the viewport.
+ *                              **The old reason -- "the account button is not mounted
+ *                              on the draw screen at all" -- is now FALSE and is
+ *                              corrected rather than left standing.**)
  *
  * **THE PREVIEW CONTAINS A `CardDetail`, WHICH SITS AT 900 -- BELOW THIS SHEET.**
  * That is why the preview's cards are not tappable: `ReadingView` renders tap
@@ -24,39 +29,22 @@
  * rather than leaving it as a mystery bug.
  */
 
-.footer {
-  display: flex;
-  justify-content: center;
-  margin-top: 22px;
-  padding-top: 18px;
-  border-top: 1px solid var(--gold-hairline);
-}
-
-.action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 44px;
-  padding: 12px 28px;
-  border: 1px solid var(--gold-hairline);
-  border-radius: var(--radius-chip);
-  background: transparent;
-  font-family: var(--font-display), serif;
-  font-size: var(--fs-eyebrow);
-  letter-spacing: var(--ls-button);
-  text-transform: uppercase;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.action:hover {
-  color: var(--gold-lift);
-  border-color: var(--gold-border);
-}
-
-.action:focus-visible {
-  outline: 2px solid var(--gold-border);
-  outline-offset: 2px;
+/*
+ * ── THE TRIGGER LEFT THIS FILE (2026-08-30) ────────────────────────────────
+ *
+ * `.footer` (the hairline) and `.action` (the outlined `BAGIKAN` chip) are DELETED.
+ * The control is now an icon in `ReadingActions`'s row, which owns both the hairline
+ * and the circle -- see `ReadingActions.module.css`. Deleted rather than left behind
+ * as dead rules, because a `.footer` still sitting here is what somebody re-mounts a
+ * second share control from.
+ *
+ * `.mark` is what replaced them, and it is the ONLY thing this file still says about
+ * the trigger: the glyph's own dimensions. `LotusMark.module.css` is the precedent --
+ * a mark owns its size and the button owns everything else.
+ */
+.mark {
+  width: 22px;
+  height: 22px;
 }
 
 /* --- The sheet ------------------------------------------------------------ */

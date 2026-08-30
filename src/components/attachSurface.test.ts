@@ -78,7 +78,14 @@ describe('the two controls (F6 tasks 6 and 7)', () => {
       "reading.status === 'done' && finished.current && finished.current.id !== 'unknown'",
     );
     const control = src.indexOf('<AttachReadingLink');
-    const share = src.indexOf('<ShareFooter');
+    /*
+     * **`<ReadingActions` SINCE 2026-08-30, AND THE ASSERTION IS UNCHANGED IN WHAT IT
+     * MEANS.** The share control stopped being a `<ShareFooter>` element on this screen
+     * and became one icon inside the action row, which is what this screen now mounts.
+     * The rule it pins -- the private action above the public one -- is the same rule,
+     * and it would have gone green-and-blind on a name that no longer appears here.
+     */
+    const share = src.indexOf('<ReadingActions');
 
     expect(guard).toBeGreaterThan(-1);
     expect(control).toBeGreaterThan(guard);
@@ -118,7 +125,8 @@ describe('the two controls (F6 tasks 6 and 7)', () => {
      * here to catch.
      */
     expect(src).toMatch(/attachable\(view\)\s*\?/);
-    expect(src.indexOf('<AttachReadingLink')).toBeLessThan(src.indexOf('<ShareFooter'));
+    // `<ReadingActions` since 2026-08-30; see the draw screen's test for the rename.
+    expect(src.indexOf('<AttachReadingLink')).toBeLessThan(src.indexOf('<ReadingActions'));
   });
 
   it('navigates and never posts (F6-4)', () => {
@@ -315,8 +323,24 @@ describe('[F6-11] /chat gains no share surface, and the attachment is not one', 
    * checklist rather than a paragraph, so it can be reviewed rather than believed.
    */
   it('mounts no share control anywhere in the chat tree', () => {
+    /**
+     * **ONE NAMED EXCEPTION, AND IT IS NOT IN THE CHAT TREE (2026-08-30).**
+     * `components/ReadingActions.tsx` is the action row under a FINISHED READING on
+     * `/[reader]/[service]` and `/history/[id]`; it mounts `ShareFooter` because that
+     * is what it is for. The prefix above was written to reach `ReadingAttachment.tsx`
+     * and catches it by accident.
+     *
+     * **NAMED RATHER THAN NARROWED**, so the sweep still fails on any OTHER new
+     * `Chat*` / `Reading*` / `Staged*` component that grows a share control -- which is
+     * the whole assertion. A file added to this list is a file somebody has to argue
+     * for in review.
+     */
+    const NOT_CHAT = ['components/ReadingActions.tsx'];
     for (const f of FILES.filter(
-      (x) => x.path.startsWith('app/chat/') || /^components\/(Chat|Reading|Staged)\w+\.tsx$/.test(x.path),
+      (x) =>
+        !NOT_CHAT.includes(x.path) &&
+        (x.path.startsWith('app/chat/') ||
+          /^components\/(Chat|Reading|Staged)\w+\.tsx$/.test(x.path)),
     )) {
       const shares = /<ShareFooter|<PublicShare|<TryItYourself/.test(f.source);
       expect({ path: f.path, shares }).toEqual({ path: f.path, shares: false });

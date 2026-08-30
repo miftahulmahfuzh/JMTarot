@@ -6,8 +6,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AttachReadingLink } from '@/components/AttachReadingLink';
 import { CardDetail } from '@/components/CardDetail';
 import { Fan } from '@/components/Fan';
+import { ReadingActions } from '@/components/ReadingActions';
 import { ReadingPanel, type ReadingState } from '@/components/ReadingPanel';
-import { ShareFooter } from '@/components/ShareFooter';
 import { Slots } from '@/components/Slots';
 import { CARDS, effectiveYesNo, shuffleDeck } from '@/data/deck';
 import { splitChoiceMarker, validateChoice } from '@/lib/reading/choice';
@@ -752,51 +752,69 @@ export function Draw({
           (§2.3, `[F6-12]`).
         */}
         <AttachReadingLink readingId={finished.current.id} from="draw" />
-        <ShareFooter
-          entity="reading"
-          entityId={finished.current.id}
-          preview={{
-            id: finished.current.id,
-            readerId: reader.id,
-            serviceId: service.id,
-            localDate: finished.current.localDate,
-            createdAtIso: finished.current.atIso,
-            locale: t.locale,
-            status: 'ok',
+        {/*
+          2026-08-30. THE SAME SHARE SHEET, NOW ONE ICON IN A ROW OF THREE.
+
+          **`showLanguage` IS NOT PASSED AND MUST NOT BE**, so this file does not
+          acquire a `localeSwitcherEnabled()` prop it could only ever pass as `false`.
+          `ReadingActions` suppresses the Language row for `surface === 'draw'` in
+          code -- roadmap §7 trap 4, whose whole point is that `readings.locale` is
+          permanent and `router.refresh()` keeps the finished prose in state. See that
+          component's header, and `accountSurface.test.ts` for the assertion.
+
+          The row inherits this block's three clauses exactly. A Home tap unmounts
+          `Draw`, which aborts an in-flight reading and records
+          `reading.aborted { reason: 'user' }` -- so a row one character wider than
+          `status === 'done'` is a button that destroys the thing it sits under.
+        */}
+        <ReadingActions
+          surface="draw"
+          share={{
+            entity: 'reading',
+            entityId: finished.current.id,
+            preview: {
+              id: finished.current.id,
+              readerId: reader.id,
+              serviceId: service.id,
+              localDate: finished.current.localDate,
+              createdAtIso: finished.current.atIso,
+              locale: t.locale,
+              status: 'ok',
+              /*
+               * DERIVED WITH THE SAME PURE FUNCTION THE SERVER USES, not guessed and
+               * not parsed out of the prose. `effectiveYesNo` is what stored
+               * `readings.verdict` at draw time, including the reversal flip, so the
+               * preview and the public page cannot disagree -- and `null` for every
+               * service that is not `yesno`, which is what the column holds.
+               */
+              verdict: verdictFor(service, finished.current.cards),
+              question: finished.current.question,
+              /*
+               * LIFTED OFF THE STREAM AND NOT DERIVED, which is the one asymmetry with
+               * `verdict` directly above. There is no pure function of the cards that
+               * yields `ayam`: the option is a word out of this querent's question and
+               * only the model chose between them. Already validated against the
+               * question when it was captured.
+               */
+              choice: finished.current.choice,
+              body: reading.text,
+              sharedAt: null,
+              cards: finished.current.cards.map((d, i) => ({
+                cardId: d.card.id,
+                reversed: d.reversed,
+                position: i,
+              })),
+            },
             /*
-             * DERIVED WITH THE SAME PURE FUNCTION THE SERVER USES, not guessed and
-             * not parsed out of the prose. `effectiveYesNo` is what stored
-             * `readings.verdict` at draw time, including the reversal flip, so the
-             * preview and the public page cannot disagree -- and `null` for every
-             * service that is not `yesno`, which is what the column holds.
+             * `{ kind: 'original' }` AND NOT A GUESS. A reading generated on this
+             * screen came out in `t.locale` -- the language the querent is reading
+             * right now -- so the pin will equal the source, there is nothing to
+             * translate and nothing to look up. `previewReadingView` maps this to
+             * `as-written`, which is exactly what the public page will render.
              */
-            verdict: verdictFor(service, finished.current.cards),
-            question: finished.current.question,
-            /*
-             * LIFTED OFF THE STREAM AND NOT DERIVED, which is the one asymmetry with
-             * `verdict` directly above. There is no pure function of the cards that
-             * yields `ayam`: the option is a word out of this querent's question and
-             * only the model chose between them. Already validated against the
-             * question when it was captured.
-             */
-            choice: finished.current.choice,
-            body: reading.text,
-            sharedAt: null,
-            cards: finished.current.cards.map((d, i) => ({
-              cardId: d.card.id,
-              reversed: d.reversed,
-              position: i,
-            })),
+            prose: { kind: 'original' },
+            nickname,
           }}
-          /*
-           * `{ kind: 'original' }` AND NOT A GUESS. A reading generated on this
-           * screen came out in `t.locale` -- the language the querent is reading
-           * right now -- so the pin will equal the source, there is nothing to
-           * translate and nothing to look up. `previewReadingView` maps this to
-           * `as-written`, which is exactly what the public page will render.
-           */
-          prose={{ kind: 'original' }}
-          nickname={nickname}
         />
         </>
       ) : null}
