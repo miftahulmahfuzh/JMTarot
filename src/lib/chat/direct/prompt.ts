@@ -105,14 +105,17 @@ export async function buildPlanPrompt(input: DirectorInput): Promise<CompletionP
     runId: null,
     replyToMessageId: null,
     /*
-     * **THE QUERENT'S CALENDAR DAY IS NOT ON THIS PATH, AND ITS ONE USE TOLERATES THAT.**
-     * `DirectorInput` carries no `localDate` — `advance` is driven by a client that sends
-     * none — and the only thing the assembler does with it is compute the floor of a
-     * thirty-day reading lookback. A day of error at the edge of that window costs at most
-     * one reading the director only reads a reader id off. **Anything that RENDERS a date to
-     * a person must not do this** (`local_date`'s trap); nothing here does.
+     * **THE QUERENT'S REAL CLOCK, AND THIS LINE USED TO BE A FABRICATION** (R1).
+     * It read `new Date().toISOString().slice(0, 10)` — the SERVER's UTC day —
+     * under a permission that said *"anything that RENDERS a date to a person
+     * must not do this; nothing here does."* Phase 2 makes the director's header
+     * line state the querent's weekday and time, so something does, and the
+     * permission is spent. `advance()` resolves this once per request from
+     * `chat_threads.utc_offset_minutes`; when no browser has ever reported one it
+     * is `known: false` and carries the same UTC day this line used to invent,
+     * which is why the change cannot regress the lookback it used to feed.
      */
-    localDate: new Date().toISOString().slice(0, 10),
+    clock: input.clock,
   });
 
   const window = buildWindow({

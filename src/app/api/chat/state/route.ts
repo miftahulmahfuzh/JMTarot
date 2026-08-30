@@ -38,13 +38,20 @@
 import { NextResponse, after } from 'next/server';
 
 import { LOCAL_DATE_HEADER, parseLocalDate } from '@/lib/analytics/localdate';
+import { UTC_OFFSET_HEADER, parseUtcOffset } from '@/lib/analytics/utcoffset';
 import { requireUser } from '@/lib/auth/server';
 import { beatsRemaining } from '@/lib/chat/types';
 import type { ChatStateReply } from '@/lib/chat/types';
 import { logChatFailure } from '@/lib/chat/log';
 import { proactiveTick } from '@/lib/chat/run';
 import { db } from '@/lib/db/client';
-import { activeRunFor, getThread, lastMessageAt, unreadCount } from '@/lib/db/queries/chat';
+import {
+  activeRunFor,
+  getThread,
+  lastMessageAt,
+  unreadCount,
+  upsertThread,
+} from '@/lib/db/queries/chat';
 import { getLocale } from '@/lib/i18n/t';
 import { chatEnabled, chatProactiveEnabled } from '@/lib/llm/flags';
 import { hit } from '@/lib/ratelimit';
@@ -122,14 +129,49 @@ export async function GET(request: Request) {
    * The route is complete and inert until then, which is deliberate: the alternative is
    * F5 editing a route file F1 owns.
    */
-  if (chatProactiveEnabled()) {
+  /*
+   * **THE QUERENT'S CLOCK, WRITTEN ONLY WHEN IT MOVED** (R1). `getThread` has already
+   * run above, so the comparison costs nothing and the write happens on a first
+   * poll, on a DST change and on a flight — not on every badge fetch from four
+   * pages. **This is the busiest route in the app and it stays a read.**
+   *
+   * It is `null` when the header was absent or refused, and the key is then never
+   * written: **absent means "do not touch", never "unset"** — one old tab must not
+   * be able to erase what every other tab reports.
+   *
+   * This is bookkeeping the querent did not ask for, which this route's header
+   * already permits in `after()`. It is not a fact claiming the querent LOOKED,
+   * which is the thing `F1-D3` forbids here.
+   */
+  const offset = parseUtcOffset(request.headers.get(UTC_OFFSET_HEADER)).offsetMinutes;
+  const movedOffset =
+    offset !== null && offset !== (thread?.utcOffsetMinutes ?? null) ? offset : null;
+  const tick = chatProactiveEnabled();
+
+  if (movedOffset !== null || tick) {
     const localDate = parseLocalDate(request.headers.get(LOCAL_DATE_HEADER)).date;
     const locale = await getLocale();
+    /*
+     * **ONE `after()`, TWO STEPS, IN ORDER.** Next makes no promise that two
+     * separately registered callbacks run in sequence, and the order matters: the
+     * proactive tick is where a run is minted, and phase 8's quiet-hours gate reads
+     * the very column the first step writes. Two `after()`s would be a race that is
+     * green on every machine that runs them fast enough.
+     */
     after(async () => {
-      try {
-        await proactiveTick({ userId: user.id, locale, localDate });
-      } catch (err) {
-        logChatFailure('state.tick', err, { user: user.id });
+      if (movedOffset !== null) {
+        try {
+          await upsertThread(db, user.id, { utcOffsetMinutes: movedOffset });
+        } catch (err) {
+          logChatFailure('state.offset', err, { user: user.id });
+        }
+      }
+      if (tick) {
+        try {
+          await proactiveTick({ userId: user.id, locale, localDate });
+        } catch (err) {
+          logChatFailure('state.tick', err, { user: user.id });
+        }
       }
     });
   }

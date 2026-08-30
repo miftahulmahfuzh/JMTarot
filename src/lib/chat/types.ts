@@ -303,6 +303,70 @@ export type ChatMessagesReply = {
 // The three interfaces F2 and F3 implement. `run.ts` calls them; nothing else does.
 // ---------------------------------------------------------------------------
 
+/**
+ * **A STRING TOKEN, NOT `getUTCDay()`'s INTEGER** (reconciliation, round 1). Phase 7 puts a
+ * weekday inside a `material_key` and inside `describeMaterial`'s `facts`, and both are
+ * persisted surfaces where a closed token is the contract and an integer is a magic number
+ * nobody can rename later. Sunday-first, so `WEEKDAYS[getUTCDay()]` in `clock.ts` is the
+ * only place the two representations meet.
+ */
+export type Weekday = 'sun' | 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat';
+
+/**
+ * The five parts of a day, tiling all twenty-four hours. **The boundaries are phase 7's**
+ * (`morning` 05–10, `midday` 11–14, `afternoon` 15–17, `evening` 18–21, `late` 22–04) for
+ * two reasons: these five tokens are persisted inside a `tod:` `material_key`, and `late`
+ * starting at 22 makes phase 8's default quiet window (22–07) agree with the vocabulary by
+ * construction rather than by coincidence. `id` is the source language and the English
+ * words in `CHAT_TIME_VOCAB` are a rewrite of these divisions, never a second scheme.
+ */
+export type DayPart = 'morning' | 'midday' | 'afternoon' | 'evening' | 'late';
+
+/**
+ * WHAT TIME IT IS FOR THE QUERENT. Resolved once per run by `./clock.ts`.
+ *
+ * **A DISCRIMINATED UNION RATHER THAN FIVE NULLABLE FIELDS, BECAUSE THE UNKNOWN
+ * CASE IS A REAL CASE AND MUST NOT BE PAPERED OVER.** `chat_threads.utc_offset_minutes`
+ * is nullable: a querent whose only client is an old bundle, and every row that
+ * predates this release, has no offset at all. With `known: false` the room is
+ * exactly as timeless as it was before this phase -- which is a degradation, not
+ * a bug -- and a consumer cannot reach `localTime` without saying which case it
+ * is handling. **`offsetMinutes: 0` is UTC and is `known: true`;** absent is the
+ * other arm. See `@/lib/analytics/utcoffset`'s header for why that distinction
+ * is the whole design.
+ *
+ * `localDate` is present in BOTH arms because every consumer needs it -- it is
+ * the floor of the thirty-day reading lookback -- and it is a `'YYYY-MM-DD'`
+ * STRING, never a `Date` (`local_date`'s trap, `[F1-21]`).
+ */
+export type ChatClock =
+  | {
+      known: true;
+      /** Minutes EAST of UTC. Jakarta `+420`. */
+      offsetMinutes: number;
+      /** The querent's calendar day, `'YYYY-MM-DD'`. Derived from the offset. */
+      localDate: string;
+      /** The querent's wall clock, `'HH:MM'`, 24-hour. */
+      localTime: string;
+      weekday: Weekday;
+      /** Which of the five parts of the day this hour falls in. `dayPartOf(hour)`. */
+      part: DayPart;
+      /** Minutes since the querent's local midnight, `0`–`1439`. */
+      minutesOfDay: number;
+    }
+  | {
+      known: false;
+      offsetMinutes: null;
+      /** The client's own day if one arrived, else the server's UTC date. */
+      localDate: string;
+    };
+
+/**
+ * A clock that is known. **Phase 2's `AgeSpan` and phase 7's `TimeOfDayMaterial` both need to
+ * name one**, and `Extract` is how they do it without either file re-declaring the shape.
+ */
+export type KnownChatClock = Extract<ChatClock, { known: true }>;
+
 export type DirectorInput = {
   runId: string;
   userId: string;
@@ -311,6 +375,16 @@ export type DirectorInput = {
   triggerReadingId: string | null;
   /** The querent's default, per `C-D9`'s fallback. The director may override it. */
   fallbackLocale: Locale;
+  /**
+   * WHAT TIME IT IS FOR THE QUERENT, resolved by the engine from
+   * `chat_threads.utc_offset_minutes` (R1).
+   *
+   * **REQUIRED, AND THAT IS DELIBERATE.** An optional clock is a clock somebody
+   * forgets to pass on the one path that needed it; the compiler naming every
+   * construction site is the point. Phase 1 threads it and renders nothing with
+   * it — the director's header line is phase 2's.
+   */
+  clock: ChatClock;
 };
 
 export type DirectorResult = {
@@ -339,6 +413,8 @@ export type VoiceInput = {
   /** `C-R5`: every beat sees every earlier beat of its own run, as ACTUAL PROSE. */
   runSoFar: ChatMessageDto[];
   attempt: 1 | 2;
+  /** WHAT TIME IT IS FOR THE QUERENT (R1). `DirectorInput.clock`'s rules verbatim. */
+  clock: ChatClock;
 };
 
 export type VoiceResult =

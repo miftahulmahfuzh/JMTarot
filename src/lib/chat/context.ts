@@ -10,6 +10,7 @@ import type { Locale } from '@/data/types';
 import { attachmentBlock } from './attachmentBlock';
 import { addressForms } from './address';
 import { chatAnswersEnabled } from './model';
+import type { ChatClock } from './types';
 import { listMessages, messagesForRun } from '@/lib/db/queries/chat';
 import { readingWithCards, recallableReadings } from '@/lib/db/queries/history';
 import { readLotusBlock } from '@/lib/db/queries/lotus';
@@ -219,8 +220,17 @@ export type AssembleArgs = {
   runId: string | null;
   /** The message a beat is pointed at (`C-D11`). */
   replyToMessageId: string | null;
-  /** The querent's calendar day, from the client. **NEVER a `Date`.** */
-  localDate: string;
+  /**
+   * WHAT TIME IT IS FOR THE QUERENT (R1). **This replaced a bare `localDate`**,
+   * and the replacement is the point: the two builders that call this used to
+   * fabricate `new Date().toISOString().slice(0, 10)` here, which was tolerable
+   * only while its single use was the floor of a thirty-day lookback and
+   * **nothing rendered a date to a person.** Phase 2 renders one, so the
+   * permission expired and the value is now the querent's real day.
+   *
+   * `clock.localDate` is still a `'YYYY-MM-DD'` STRING and still never a `Date`.
+   */
+  clock: ChatClock;
 };
 
 /**
@@ -261,7 +271,7 @@ export async function assembleChatContext(db: DbOrTx, args: AssembleArgs): Promi
     recallableReadings(db, {
       userId,
       limit: readingsWanted,
-      sinceLocalDate: shiftLocalDate(args.localDate, lookback),
+      sinceLocalDate: shiftLocalDate(args.clock.localDate, lookback),
     }).catch(() => []),
     listMessages(db, userId, { limit: Math.min(messagesWanted, 50) }).catch(() => ({
       messages: [],
@@ -329,6 +339,10 @@ export async function assembleChatContext(db: DbOrTx, args: AssembleArgs): Promi
   return {
     profile,
     locale,
+    /* **DECLARED HERE, RENDERED IN PHASE 2.** `buildChatPrompt` is the only
+     * consumer of a `ChatContext` (`[F3-5]`), so the clock reaches the prompt
+     * layer by riding the object that already carries everything else. */
+    clock: args.clock,
     nickname,
     /* `[F3-2]`: an empty derived list is correct, and an absent nickname yields none. */
     addressForms: forVoice && nickname ? addressForms(nickname) : nickname ? [nickname] : [],

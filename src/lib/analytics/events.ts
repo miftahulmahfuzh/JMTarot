@@ -1054,7 +1054,28 @@ export type EventMap = {
                                  reply_to: boolean;
                                  attached_from: 'history' | 'draw' | null;
                                  reading_id: string | null;
-                                 minted_run: boolean };
+                                 minted_run: boolean;
+                                 /**
+                                  * R1. Whether the querent's browser reported a
+                                  * usable UTC offset on this post, and if not, why
+                                  * — `analytics.local_date_fallback`'s reason union
+                                  * verbatim. **A CLOSED TOKEN AND NEVER THE
+                                  * RECEIVED STRING**: the received value is a
+                                  * diagnostic for one broken client, and rule 1
+                                  * says no free text.
+                                  *
+                                  * **FOLDED RATHER THAN SPENT AS A NAME.** A
+                                  * `analytics.utc_offset_fallback` event would fire
+                                  * from a handler that is already pushing a
+                                  * buffered scalar with every fact it needs, which
+                                  * is the exact objection that killed
+                                  * `chat.attachment_added`. A steady rate above
+                                  * zero here means a client shipped without the
+                                  * header and the room has gone timeless for those
+                                  * querents — silently, because a timeless room
+                                  * looks exactly like the one v0.7.0 shipped.
+                                  */
+                                 clock: 'client' | 'absent' | 'malformed' | 'out_of_range' };
 
   /**
    * The director answered. **THE RELEASE'S OWN SCORECARD LIVES IN THESE PROPS.**

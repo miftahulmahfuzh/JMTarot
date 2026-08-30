@@ -257,6 +257,27 @@ describe('every fetch is bounded, and the COUNT is asserted (F4-11)', () => {
     expect(count(src, /new AbortController\(\)/g)).toBe(1);
     expect(count(src, /signal:/g)).toBe(1);
   });
+
+  /**
+   * **THE DEFECT R1 FOUND, ASSERTED SO IT CANNOT RETURN.** This component shipped
+   * sending `x-jm-session` alone, and `/api/chat/state` runs the proactive tick in
+   * its `after()` — keyed on `proactive_count_date`, the querent's own calendar
+   * day. Without the header the route fell back to the server's UTC date, so every
+   * tick from these four pages between midnight and 07:00 WIB was booked on
+   * yesterday. `ChatRoom` sent it all along, which is exactly why nobody saw it.
+   */
+  it('sends all three clock headers on its one fetch (R1)', () => {
+    const src = stripComments(file('components/ChatButton.tsx'));
+    expect(src).toContain('[SESSION_HEADER]: getSessionId()');
+    expect(src).toContain('[LOCAL_DATE_HEADER]: todayKey()');
+    expect(src).toContain('[UTC_OFFSET_HEADER]: String(localUtcOffsetMinutes())');
+  });
+
+  /** `F4-15` for the second clock read, in the component that has no state to seed. */
+  it('reads neither clock during render', () => {
+    const src = stripComments(file('components/ChatButton.tsx'));
+    expect(src).not.toMatch(/useState\(\s*\(\)\s*=>\s*(todayKey|localUtcOffsetMinutes)/);
+  });
 });
 
 describe('the room’s React traps, asserted at source level', () => {

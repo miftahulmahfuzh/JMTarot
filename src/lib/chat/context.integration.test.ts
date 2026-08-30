@@ -2,6 +2,7 @@ import { config } from 'dotenv';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { ONBOARDING_MAX_ANSWER_CHARS } from '@/data/onboarding';
+import { resolveChatClock } from '@/lib/chat/clock';
 import { assembleChatContext } from '@/lib/chat/context';
 import { buildChatPrompt } from '@/lib/chat/prompt/build';
 import type { Beat } from '@/lib/chat/types';
@@ -77,6 +78,13 @@ const BEAT: Beat = {
 
 const TODAY = '2026-08-07';
 
+/**
+ * R1. The clock the assembler now takes instead of a bare `localDate`. Pinned to
+ * Jakarta at 14:05 on `TODAY`, so `clock.localDate === TODAY` and the thirty-day
+ * lookback floor every assertion below depends on does not move.
+ */
+const CLOCK = resolveChatClock({ offsetMinutes: 420, now: new Date(`${TODAY}T07:05:00.000Z`) });
+
 function prompt(ctx: Awaited<ReturnType<typeof assembleChatContext>>) {
   return buildChatPrompt({
     ctx,
@@ -99,7 +107,7 @@ describe('assembleChatContext', () => {
         profile: 'voice',
         runId: null,
         replyToMessageId: null,
-        localDate: TODAY,
+        clock: CLOCK,
       });
 
       expect(ctx.answers.map((a) => a.key).sort()).toEqual([
@@ -125,7 +133,7 @@ describe('assembleChatContext', () => {
         profile: 'voice',
         runId: null,
         replyToMessageId: null,
-        localDate: TODAY,
+        clock: CLOCK,
       });
 
       expect(ctx.answers.map((a) => a.key)).not.toContain('most_loved');
@@ -148,7 +156,7 @@ describe('assembleChatContext', () => {
         profile: 'director',
         runId: null,
         replyToMessageId: null,
-        localDate: TODAY,
+        clock: CLOCK,
       });
 
       expect(ctx.answers).toEqual([]);
@@ -171,7 +179,7 @@ describe('assembleChatContext', () => {
           profile: 'voice',
           runId: null,
           replyToMessageId: null,
-          localDate: TODAY,
+          clock: CLOCK,
         });
         expect(ctx.answers).toEqual([]);
         expect(ctx.nickname).toBe('Mifta');
@@ -192,7 +200,7 @@ describe('assembleChatContext', () => {
         profile: 'voice',
         runId: null,
         replyToMessageId: null,
-        localDate: TODAY,
+        clock: CLOCK,
       });
       expect(ctx.addressForms).toEqual(['Mifta', 'Mif', 'Ta']);
       expect(prompt(ctx).user).toContain('Mifta, Mif, Ta');
@@ -251,7 +259,7 @@ describe('assembleChatContext', () => {
         profile: 'voice',
         runId: run!.id,
         replyToMessageId: first!.id,
-        localDate: TODAY,
+        clock: CLOCK,
       });
 
       expect(ctx.messages.map((m) => m.body)).toEqual([
@@ -287,7 +295,7 @@ describe('assembleChatContext', () => {
         profile: 'voice',
         runId: null,
         replyToMessageId: null,
-        localDate: TODAY,
+        clock: CLOCK,
       });
       /* The ROW is verbatim — that is C-D20 — and the PROMPT is fenced. */
       expect(ctx.messages[0].body).toContain('</obrolan>');
@@ -335,7 +343,7 @@ describe('assembleChatContext', () => {
         profile: 'voice',
         runId: null,
         replyToMessageId: null,
-        localDate: TODAY,
+        clock: CLOCK,
       });
 
       expect(ctx.readings.map((r) => r.localDate)).toEqual(['2026-08-01']);
@@ -357,7 +365,7 @@ describe('assembleChatContext', () => {
         profile: 'voice',
         runId: null,
         replyToMessageId: null,
-        localDate: TODAY,
+        clock: CLOCK,
       });
 
       expect(ctx.nickname).toBeNull();
@@ -385,7 +393,7 @@ describe('assembleChatContext', () => {
         profile: 'voice',
         runId: null,
         replyToMessageId: null,
-        localDate: TODAY,
+        clock: CLOCK,
       });
       expect(ctx.answers.map((a) => a.key)).not.toContain('willow_wish');
     }));

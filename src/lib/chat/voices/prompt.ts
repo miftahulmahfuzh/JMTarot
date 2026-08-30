@@ -79,14 +79,14 @@ export async function buildTurnPrompt(
     runId: input.runId,
     replyToMessageId: input.beat.replyTo,
     /*
-     * **THE QUERENT'S CALENDAR DAY IS NOT ON THIS PATH, AND ITS ONE USE TOLERATES THAT.**
-     * `VoiceInput` carries no `localDate` — `advance` is driven by a client that sends
-     * none — and the only thing the assembler does with it is compute the floor of a
-     * thirty-day reading lookback. A day of error at the edge of a thirty-day window costs
-     * one reading in the `<riwayat>` block at worst. **Anything that RENDERS a date to a
-     * person must not do this** (`local_date`'s trap); nothing here does.
+     * **THE QUERENT'S REAL CLOCK, AND THIS LINE USED TO BE A FABRICATION** (R1).
+     * The deleted comment permitted the server's UTC day *"because nothing here
+     * RENDERS a date to a person"*. This is the file whose output said *"jam 5
+     * nanti"* at 08:39 — the reader had a transcript in which the newest message
+     * is "just now" and a number `5`, and no position for either. Phase 2 gives
+     * the voice a `<waktu>` block; this gives it something true to put in it.
      */
-    localDate: new Date().toISOString().slice(0, 10),
+    clock: input.clock,
   });
 
   remember(keyOf(input), {

@@ -10,7 +10,7 @@ import type { ChatLengthBudget } from '@/lib/prompt/budget';
 import { CHAT_MAX_TOKENS } from '@/lib/prompt/budget';
 import { stripUntrusted } from '@/lib/prompt/sanitize';
 import type { CompletionPrompt } from '@/lib/llm/types';
-import type { ChatAuthor, Beat, BeatIntent } from '../types';
+import type { ChatAuthor, Beat, BeatIntent, ChatClock } from '../types';
 import { chatBaseContract } from './base';
 import { chatReaderPrompt } from './readers';
 
@@ -68,6 +68,17 @@ export type ChatTranscriptEntry = {
 export type ChatContext = {
   profile: ContextProfile;
   locale: Locale;
+  /**
+   * WHAT TIME IT IS FOR THE QUERENT (R1). **DECLARED IN PHASE 1, RENDERED IN
+   * PHASE 2** — nothing in this file reads it yet, deliberately, so that the
+   * transport lands with no prompt-output change to confound the blind read.
+   *
+   * `known: false` is the honest answer for a querent whose browser has never
+   * reported an offset, and the block that renders this must be absent then
+   * rather than falling back to UTC: a reader stating the wrong hour with
+   * confidence is worse than the timeless room v0.7.0 shipped.
+   */
+  clock: ChatClock;
   nickname: string | null;
   /** `addressForms(nickname)`, verbatim. Empty is legitimate (`[F3-2]`). */
   addressForms: string[];

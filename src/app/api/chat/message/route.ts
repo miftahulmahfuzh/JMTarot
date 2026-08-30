@@ -44,6 +44,7 @@ import {
   parseLocalDate,
   validSessionId,
 } from '@/lib/analytics/localdate';
+import { UTC_OFFSET_HEADER, parseUtcOffset } from '@/lib/analytics/utcoffset';
 import { track, withAnalytics, type AnalyticsContext } from '@/lib/analytics/track';
 import { requireUser } from '@/lib/auth/server';
 import { ATTACHABLE_STATUSES } from '@/lib/chat/attachmentView';
@@ -207,6 +208,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'unavailable' }, { status: 500 });
   }
 
+  /*
+   * **THE QUERENT'S CLOCK, ON THE ONE ROUTE THAT IS ALREADY WRITING** (R1).
+   * Parsed here rather than inside `context()` because it is wanted twice: once as
+   * a column and once as a closed token on `chat.message_sent`.
+   */
+  const clock = parseUtcOffset(request.headers.get(UTC_OFFSET_HEADER));
+
   const ctx = await context(request, user.id, locale);
 
   return withAnalytics(ctx, async () => {
@@ -312,7 +320,18 @@ export async function POST(request: Request) {
           clientKey: input.client_key ?? null,
         });
 
-        await upsertThread(tx, user.id, { lastUserMessageAt: new Date() });
+        /*
+         * **THE OFFSET RIDES THE TOUCH THAT WAS ALREADY HAPPENING**, and the key is
+         * OMITTED rather than set to null when the header was absent or refused:
+         * `ThreadTouch` is spread into both halves of the upsert, so writing
+         * `utcOffsetMinutes: null` on every post would let one old tab erase the
+         * offset every other tab reports. **Absent means "do not touch", never
+         * "unset".**
+         */
+        await upsertThread(tx, user.id, {
+          lastUserMessageAt: new Date(),
+          ...(clock.offsetMinutes !== null ? { utcOffsetMinutes: clock.offsetMinutes } : {}),
+        });
 
         /*
          * **SEAM `S5`, AND F5 OWNS THE RULE** (`[F5-14]`, F5 §9.4). If the querent has
@@ -361,6 +380,13 @@ export async function POST(request: Request) {
         attached_from: input.attached_from ?? null,
         reading_id: input.attached_reading_id ?? null,
         minted_run: runId !== null,
+        /*
+         * R1's own diagnostic, on `analytics.local_date_fallback`'s pattern: a
+         * CLOSED token, never the received string, so a broken client is COUNTABLE
+         * rather than silent. **Folded onto an event this handler already fires**
+         * rather than spent as a new name — `events.ts`'s rule is to fold.
+         */
+        clock: clock.source === 'client' ? 'client' : clock.reason,
       });
 
       return NextResponse.json({ message, runId }, { headers: { 'cache-control': 'no-store' } });

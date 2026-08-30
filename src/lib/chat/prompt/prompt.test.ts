@@ -6,7 +6,8 @@ import type { ReaderId } from '@/data/types';
 import { EN_TICS, MALAY, THERAPY_EN, THERAPY_ID } from '@/lib/copy/vocab';
 import { LOCALES } from '@/lib/i18n/locale';
 import { CHAT_MAX_TOKENS, chatBudgetFor } from '@/lib/prompt/budget';
-import type { Beat } from '../types';
+import { resolveChatClock } from '../clock';
+import type { Beat, ChatClock } from '../types';
 import { CHAT_BASE, chatBaseContract } from './base';
 import { buildChatPrompt, chatPromptVersion, type ChatContext } from './build';
 import { CHAT_READER_PROMPTS, chatReaderPrompt } from './readers';
@@ -415,10 +416,17 @@ const BEAT: Beat = {
   angle: 'the unsigned contract',
 };
 
+/** Friday 7 August 2026, 14:05 WIB (`midday`) — the instant phase 2's assertions pin. */
+const CLOCK: ChatClock = resolveChatClock({
+  offsetMinutes: 420,
+  now: new Date('2026-08-07T07:05:00.000Z'),
+});
+
 function ctxFixture(over: Partial<ChatContext> = {}): ChatContext {
   return {
     profile: 'voice',
     locale: 'id',
+    clock: CLOCK,
     nickname: 'Mifta',
     addressForms: ['Mifta', 'Mif', 'Ta'],
     facts: [

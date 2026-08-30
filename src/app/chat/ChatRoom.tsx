@@ -11,6 +11,7 @@ import { RefusalNotice } from '@/components/RefusalNotice';
 import { StagedAttachment } from '@/components/StagedAttachment';
 import { READERS } from '@/data/readers';
 import { LOCAL_DATE_HEADER, SESSION_HEADER } from '@/lib/analytics/localdate';
+import { UTC_OFFSET_HEADER, localUtcOffsetMinutes } from '@/lib/analytics/utcoffset';
 import { getSessionId, track } from '@/lib/analytics/track.client';
 import type { ChatAttachments, StagedReading } from '@/lib/chat/attachmentView';
 import type {
@@ -271,6 +272,16 @@ export function ChatRoom({
       [SESSION_HEADER]: getSessionId(),
       // The querent's own calendar day, which the server cannot compute.
       [LOCAL_DATE_HEADER]: todayKey(),
+      /*
+       * R1. The querent's offset from UTC, which the server cannot compute either
+       * — and without which a reader says "jam 5 nanti" at 08:39.
+       *
+       * **READ HERE AND NOT IN STATE** (`F4-15`, `todayKey()`'s rule verbatim):
+       * this callback runs inside a fetch, never during render, so the server and
+       * the client never disagree about it in the markup. Seeding it into
+       * `useState` would be a hydration mismatch React cannot patch.
+       */
+      [UTC_OFFSET_HEADER]: String(localUtcOffsetMinutes()),
       ...(json ? { 'content-type': 'application/json' } : {}),
     }),
     [],

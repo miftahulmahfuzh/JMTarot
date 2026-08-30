@@ -59,6 +59,7 @@
 import { readFileSync } from 'node:fs';
 import { CARDS, effectiveYesNo } from '@/data/deck';
 import type { ReaderId, ServiceId, YesNo } from '@/data/types';
+import { resolveChatClock } from '@/lib/chat/clock';
 import { getProvider } from '@/lib/llm';
 import { resolveBaseUrl } from '@/lib/llm/openai';
 import { isLocale, LOCALES, type Locale } from '@/lib/i18n/locale';
@@ -71,8 +72,10 @@ import type { MemoryContext } from '@/lib/prompt/memory';
  *
  * `main()` imports most modules dynamically because `loadEnv()` has to run before
  * anything reads `process.env` at module scope -- `memory.ts` reads
- * `MEMORY_CHAIN_COUNT`, `summary.ts` reads `SUMMARY_MIN_AGE_SECONDS`. `@/data/deck`
- * and `@/lib/prompt/budget` read no environment at all (checked, not assumed), so
+ * `MEMORY_CHAIN_COUNT`, `summary.ts` reads `SUMMARY_MIN_AGE_SECONDS`. `@/data/deck`,
+ * `@/lib/prompt/budget` and (R1) `@/lib/chat/clock` read no environment at all
+ * -- checked, not assumed: the clock's only imports are `@/lib/chat/types` and
+ * `@/lib/analytics/utcoffset`, a leaf and a dependency-free file -- so
  * they can be imported normally, and `check()` can then reach them directly instead of
  * being handed them through a `deps` bag. That bag is what hid the `VERDICT_WORD`
  * reshape; the fewer things travelling through it, the better.
@@ -2197,6 +2200,21 @@ const CHAT_SHEETS: Array<Array<{ reader: ReaderId; to: 'user' | ReaderId; intent
 const CHAT_NICKNAME = 'Mifta';
 
 /**
+ * The fixture querent's clock: **Friday 7 August 2026, 14.05 WIB, `midday`.** +420 is WIB,
+ * which is where the reported bug happened; minutes EAST of UTC, so the browser's
+ * `getTimezoneOffset()` reports the negative of it.
+ *
+ * **ONE CONSTANT FOR THE WHOLE SCRIPT.** Phase 2 renders it into `<waktu>` and into the
+ * director's `SEKARANG:` line and passes it to both `buildWindow` calls; it declares no
+ * `CHAT_UTC_OFFSET_MINUTES` of its own, because two fixture clocks is how the director and
+ * the voice end up describing different afternoons in one printed run.
+ */
+const CHAT_CLOCK = resolveChatClock({
+  offsetMinutes: 420,
+  now: new Date('2026-08-07T07:05:00.000Z'),
+});
+
+/**
  * `LOTUS_FIXTURE`'s answers, VERBATIM — a proper name (`Sari`), a genuinely heavy
  * `worst_thing`, and a skipped `willow_wish`, so the name check, the quotation check and
  * `[F3-7]` are all exercised by the same fixture the Lotus run uses.
@@ -2234,6 +2252,12 @@ function chatFixtureContext(args: {
   return {
     profile: 'voice' as const,
     locale,
+    /*
+     * R1. **A FIXED CLOCK, LIKE EVERY OTHER FIXTURE HERE**, so two runs of the
+     * smoke script differ in the sheet and in nothing else. Phase 2 renders it;
+     * today it only has to exist.
+     */
+    clock: CHAT_CLOCK,
     nickname: args.nickname,
     addressForms: args.forms,
     facts: [
