@@ -534,8 +534,16 @@ export type EventMap = {
    * cardinality). It costs nothing to be exact, because the button is mounted
    * per page and each mounting page passes its own -- there is no pathname to
    * parse and no `/[reader]` to explode into three values.
+   *
+   * **SIX SINCE 2026-08-30, AND IT IS A WIDENING RATHER THAN A NEW NAME.**
+   * `ReadingActions` mounts the account control under a finished reading on the two
+   * screens that render one. `'draw'` is the post-reading draw screen -- never a
+   * streaming one, because the row is inside the host's `status === 'done'`
+   * condition -- and `'history_detail'` is `/history/[id]`. The name, the row shape
+   * and `sanitizeProps()` are untouched, so no historic row changes meaning.
    */
-  'account.opened':            { surface: 'reader_picker' | 'service_picker' | 'account' | 'history' };
+  'account.opened':            { surface: 'reader_picker' | 'service_picker' | 'account' | 'history'
+                                          | 'draw' | 'history_detail' };
   /*
    * V4 DECLARES THIS AND V8 FIRES IT, from `/account` via `TrackView`. Declared
    * here because V4 lands first and a forward declaration costs nothing, and

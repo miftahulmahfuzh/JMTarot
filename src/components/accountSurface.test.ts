@@ -36,29 +36,41 @@ const importers = (re: RegExp) =>
   FILES.filter((f) => re.test(f.source)).map((f) => f.path).sort();
 
 describe('the account button', () => {
-  const MOUNTS = importers(/from '@\/components\/AccountButton'/);
+  /**
+   * **TWO IMPORTS ARE A MOUNT SINCE 2026-08-30, AND MISSING THE SECOND WOULD HAVE
+   * MADE THIS FILE GREEN AND BLIND.** `ReadingActions` mounts `AccountButton` under a
+   * finished reading, so a page that imports the ROW mounts the BUTTON -- and the
+   * draw screen imports only the row. A denylist that follows one import edge is not
+   * a general solution; it is the one edge that exists, named, and it fails loudly if
+   * a third intermediary appears, because that intermediary's importers will not be
+   * on this list.
+   */
+  const DIRECT = importers(/from '@\/components\/AccountButton'/);
+  const VIA_ROW = importers(/from '@\/components\/ReadingActions'/);
+  const MOUNTS = [...new Set([...DIRECT, ...VIA_ROW])].sort();
 
   it('is mounted somewhere, so the denylist below is not vacuously passing', () => {
     expect(MOUNTS.length).toBeGreaterThanOrEqual(2);
   });
 
   /**
-   * **THE DRAW SCREEN IS THE IMPORTANT ENTRY** (roadmap §7 trap 4).
+   * **THE DRAW SCREEN LEFT THIS LIST ON 2026-08-30, AND THE REASON IT WAS ON IT IS
+   * STILL TRUE.** Roadmap §7 trap 4: a language flip after a reading -- `router.refresh()`
+   * keeps client state -- leaves the prose in one language and the chrome in another,
+   * and `readings.locale` is permanent.
    *
-   * A language flip mid-reading -- or after it, since `router.refresh()` keeps
-   * client state -- leaves the prose in one language and the chrome in another,
-   * and `readings.locale` records the language the prose came out in. The other
-   * menu items navigate away and abort the stream, and one of them ends the
-   * session. So the whole button is suppressed there, not just the Language row,
-   * and the suppression is the ABSENCE OF AN IMPORT rather than a runtime flag
-   * that can desync.
+   * What changed is which resolution is in force. `AccountButton`'s header rejected
+   * *"suppress only the Language row"* because a suppression that holds only WHILE
+   * STREAMING re-enables itself the instant the stream ends. `ReadingActions`
+   * suppresses it PERMANENTLY for `surface === 'draw'`, reads no streaming state, and
+   * is asserted by name in the next describe. **That assertion is now the load-bearing
+   * one; if it is ever deleted, put `app/[reader]/[service]/` back on this list.**
    *
    * The rest have no session by design (`isPublic()`), except `/s/` -- which has
    * no session BECAUSE IT IS A STRANGER'S PAGE (V7, VD9).
    */
-  it('is not mounted on the draw screen or on any page without a session', () => {
+  it('is not mounted on any page without a session', () => {
     const FORBIDDEN = [
-      'app/[reader]/[service]/', // THE DRAW SCREEN. See above.
       'app/login/',
       'app/terms/',
       'app/privacy/',
@@ -75,6 +87,41 @@ describe('the account button', () => {
         [prefix]: [],
       });
     }
+  });
+
+  /**
+   * The draw screen may reach the account control THROUGH THE ROW AND ONLY THROUGH
+   * IT. A direct import there would be the un-suppressed button, which is the bug the
+   * denylist above was written for.
+   */
+  it('never reaches the draw screen directly', () => {
+    expect(DIRECT.filter((p) => p.startsWith('app/[reader]/[service]/'))).toEqual([]);
+  });
+});
+
+describe('the reading action row', () => {
+  const SOURCE = FILES.find((f) => f.path === 'components/ReadingActions.tsx');
+
+  it('exists', () => {
+    expect(SOURCE).toBeDefined();
+  });
+
+  /**
+   * **ROADMAP §7 TRAP 4, AS AN ASSERTION.** This one line is the whole reason the
+   * account control is allowed on the draw screen at all. Deleting it is a two-token
+   * edit that looks like a simplification and strands a finished Indonesian reading
+   * under English chrome, with nothing on screen looking wrong.
+   */
+  it('suppresses the language row on the draw screen, in code', () => {
+    expect(SOURCE!.source).toMatch(/surface !== 'draw'/);
+  });
+
+  /** Both reading surfaces, and nothing else. R1b is half the requirement. */
+  it('is mounted on exactly the two screens that render a whole reading', () => {
+    expect(importers(/from '@\/components\/ReadingActions'/)).toEqual([
+      'app/[reader]/[service]/Draw.tsx',
+      'app/history/[id]/HistoryDetail.tsx',
+    ]);
   });
 });
 

@@ -39,9 +39,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { AttachReadingLink } from '@/components/AttachReadingLink';
+import { ReadingActions } from '@/components/ReadingActions';
 import { ReadingView, type ReadingProse, type ReadingViewData } from '@/components/ReadingView';
 import { RefusalNotice } from '@/components/RefusalNotice';
-import { ShareFooter } from '@/components/ShareFooter';
 import { LOCAL_DATE_HEADER, SESSION_HEADER } from '@/lib/analytics/localdate';
 import { getSessionId, track } from '@/lib/analytics/track.client';
 import { attachable } from '@/lib/chat/attachmentView';
@@ -54,21 +54,10 @@ import { isRetryable } from '@/lib/reading/retryable';
 import { todayKey } from '@/lib/storage';
 import type { Locale } from '@/data/types';
 
+import { refillView, type Refill } from './refillView';
 import styles from './HistoryDetail.module.css';
 
 /** What came back from `POST /api/reading/retry/<id>`, once the stream closed. */
-type Refill = {
-  text: string;
-  /**
-   * `readings.locale`, off `x-reading-locale` — the language the prose was
-   * GENERATED in, which a retry never moves. Defaulted to `reading.locale` when
-   * the header is absent or malformed, which is what the route's own comment
-   * tells every client to do.
-   */
-  locale: Locale;
-  choice: string | null;
-};
-
 type RetryState =
   | { kind: 'idle' }
   /** `painted` is true once prose is on screen, so the waiting label can go. */
@@ -88,6 +77,7 @@ export function HistoryDetail({
   reading,
   cachedTranslation,
   nickname,
+  showLanguage,
 }: {
   reading: ReadingViewData;
   /** Read on the server from `translations`, so a second view has no spinner. */
@@ -100,6 +90,18 @@ export function HistoryDetail({
    * it is already doing one primary-key read.
    */
   nickname: string | null;
+  /**
+   * `localeSwitcherEnabled()`, resolved by `page.tsx` -- a non-`NEXT_PUBLIC_`
+   * variable inlines as `undefined` in a client component, which is the trap
+   * `localeSwitcherEnabled()`'s own header records.
+   *
+   * **THIS SCREEN KEEPS THE LANGUAGE ROW AND THE DRAW SCREEN DOES NOT**, and the
+   * asymmetry is roadmap §7 trap 4: this page renders through `ReadingView`, whose
+   * rule 4 and `refillView`'s `shownProse` exist precisely to handle a viewer reading
+   * in a language the prose was not generated in. `Draw.tsx` holds finished prose in
+   * React state with no translation path, so the same flip there strands it.
+   */
+  showLanguage: boolean;
 }) {
   const t = useT();
   const router = useRouter();
@@ -546,27 +548,37 @@ export function HistoryDetail({
             shows a reading to three characters who already hold the querent's six
             onboarding answers; sharing puts it on the public internet (`[F6-11]`). They
             are adjacent on screen and must never converge.
+
+            **STILL TRUE AFTER 2026-08-30's ACTION ROW.** That row carries home, share
+            and the account control, and deliberately NOT a `ChatButton`: `C-D17` is
+            unchanged, and `Bahas di grup` directly above is this page's route into
+            the room -- now the filled control, which is the emphasis a second badge
+            would have competed with rather than added to.
           */}
           {attachable(view) ? (
             <AttachReadingLink readingId={view.id} from="history" />
           ) : null}
           {view.status === 'ok' && view.body !== null ? (
-            <ShareFooter
-              entity="reading"
-              entityId={view.id}
-              preview={view}
-              /*
-               * **THE SAME `prose` THIS COMPONENT IS RENDERING, and it is what makes
-               * the sheet's "exactly what they will see" true rather than nearly
-               * true.** Since design A the link pins the locale being read and the
-               * public page renders that translation, so a sheet given only
-               * `preview` would show `reading.body` -- the Indonesian source --
-               * under a link that will show English. `previewReadingView` maps the
-               * five states; this mount just has to be honest about which one it is
-               * in.
-               */
-              prose={shownProse}
-              nickname={nickname}
+            <ReadingActions
+              surface="history_detail"
+              showLanguage={showLanguage}
+              share={{
+                entity: 'reading',
+                entityId: view.id,
+                preview: view,
+                /*
+                 * **THE SAME `prose` THIS COMPONENT IS RENDERING, and it is what makes
+                 * the sheet's "exactly what they will see" true rather than nearly
+                 * true.** Since design A the link pins the locale being read and the
+                 * public page renders that translation, so a sheet given only
+                 * `preview` would show `reading.body` -- the Indonesian source --
+                 * under a link that will show English. `previewReadingView` maps the
+                 * five states; this mount just has to be honest about which one it is
+                 * in.
+                 */
+                prose: shownProse,
+                nickname,
+              }}
             />
           ) : null}
           {/*
@@ -626,57 +638,6 @@ export function HistoryDetail({
       />
     </>
   );
-}
-
-/**
- * THE REFILLED READING, AND THE PROSE DECISION THAT GOES WITH IT.
- *
- * **THIS FUNCTION IS WHERE `ReadingView`'s RULE 4 SURVIVES THE REFILL, AND IT IS
- * EXPORTED AND UNIT-TESTED FOR EXACTLY THAT REASON.** Rule 4 — never render
- * `reading.body` when `reading.locale` differs from the viewer's and no
- * translation was supplied — is the RENDERER's invariant rather than the
- * caller's discipline, and the refill is the one path that hands the renderer a
- * body the server did not send. A truth table in `HistoryDetail.test.ts` holds
- * it, because the component itself is unreachable from the unit project.
- *
- * ── WHY A COPY OF THE READING AND NOT JUST THE `prose` PROP ──────────────────
- *
- * `resolveProse` short-circuits to `{ kind: 'unavailable' }` whenever
- * `reading.body === null`, WHATEVER the caller passed — deliberately, so an
- * empty row can never be dressed up as prose. So a refill handed in through
- * `prose` alone paints nothing at all. The body has to move onto the reading.
- *
- * ── WHY `as-written` AND NEVER `original` ────────────────────────────────────
- *
- * On a language mismatch this returns V7's `{ kind: 'as-written' }`: a NAMED
- * decision to show the prose in the language it came out in, which `ReadingView`
- * renders with a `lang` attribute. It must NEVER return `{ kind: 'original' }` —
- * `resolveProse` treats that identically to an omitted prop, so it would put
- * Indonesian prose in the English app through the very function written to stop
- * that. It never returns `translated` either: nothing was translated.
- *
- * `status: 'ok'` on the copy is the same claim `Draw.tsx` makes when its stream
- * ends normally, and `attachable()` and `ShareFooter`'s condition both read it.
- * `choice` falls back to the stored one, so a refill that produced no marker
- * does not erase a verdict the row already carried.
- */
-export function refillView(
-  reading: ReadingViewData,
-  refill: Refill | null,
-  viewer: Locale,
-): { view: ReadingViewData; prose: ReadingProse | null } {
-  // IDENTITY, not a copy. Nothing has happened yet, so nothing should re-render.
-  if (refill === null) return { view: reading, prose: null };
-
-  const view: ReadingViewData = {
-    ...reading,
-    body: refill.text,
-    locale: refill.locale,
-    status: 'ok',
-    choice: refill.choice ?? reading.choice,
-  };
-
-  return { view, prose: refill.locale === viewer ? null : { kind: 'as-written' } };
 }
 
 /**

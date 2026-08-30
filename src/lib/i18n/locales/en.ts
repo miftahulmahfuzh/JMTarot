@@ -694,6 +694,8 @@ const en: Catalog = {
   'login.deleted.notice':
     'Your account is deleted. Sign in again within {days} days if you change your mind.',
 
+  /* Rewritten, not translated -- see the Indonesian for the rule it follows. */
+  'reading.actions.home.aria': 'Back to the readers',
   'reading.verdict.yes': 'Yes',
   'reading.verdict.no': 'No',
   'reading.verdict.maybe': 'Not yet clear',

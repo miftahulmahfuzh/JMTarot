@@ -1299,6 +1299,12 @@ const id = {
   'login.deleted.notice':
     'Akunmu sudah dihapus. Masuk lagi dalam {days} hari kalau kamu berubah pikiran.',
 
+  /*
+   * The home circle in `ReadingActions`. **IT NAMES THE DESTINATION, NOT THE GLYPH**
+   * -- "Beranda" tells a screen-reader user nothing about what is there, and what is
+   * there is the reader picker. Same rule as `chat.button.aria` ("Buka grup").
+   */
+  'reading.actions.home.aria': 'Kembali ke pilihan pembaca',
   'reading.verdict.yes': 'Ya',
   'reading.verdict.no': 'Tidak',
   'reading.verdict.maybe': 'Belum jelas',

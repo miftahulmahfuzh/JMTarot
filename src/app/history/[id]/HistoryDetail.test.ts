@@ -10,6 +10,12 @@
  * and the refill is the one path that hands the renderer a body the server did
  * not send; so the decision gets a truth table rather than the component's care.
  *
+ * **IT MOVED TO ITS OWN MODULE ON 2026-08-30 AND THIS IMPORT MOVED WITH IT.**
+ * `HistoryDetail.tsx` gained `ReadingActions`, which reaches `next-auth` through
+ * `AccountMenu`, and importing the component here died on `next/server`. See
+ * `refillView.ts`'s header -- the separation is the one this paragraph asked for,
+ * taken one file further.
+ *
  * **THE ASSERTIONS GO THROUGH THE REAL `resolveProse`, NOT THROUGH A RESTATEMENT
  * OF WHAT IT DOES.** A test asserting `{ kind: 'as-written' }` and stopping there
  * would pass even if `resolveProse` later stopped honouring that member; feeding
@@ -20,7 +26,7 @@ import { describe, expect, it } from 'vitest';
 
 import { resolveProse, type ReadingViewData } from '@/components/ReadingView';
 
-import { refillView } from './HistoryDetail';
+import { refillView } from './refillView';
 
 /**
  * A `failed` reading exactly as `readingWithCards` returns one: a real hand, a

@@ -157,9 +157,30 @@ export type ShareFooterProps = {
   prose: ReadingProse;
   /** For the "A reading for {nickname}" line, mirroring the public page's chrome. */
   nickname?: string | null;
+  /**
+   * **THE TRIGGER'S CLASS, AND IT IS REQUIRED (2026-08-30).**
+   *
+   * This component used to draw its own hairline and its own outlined `Bagikan`
+   * button. It is now an ICON in `ReadingActions`'s row, and the row owns the
+   * hairline and the circle -- one copy of eight declarations, handed to three
+   * controls, instead of a fourth stylesheet nobody remembers to keep in step.
+   *
+   * REQUIRED rather than optional because there is exactly one caller and a default
+   * would be a second, unreviewed appearance for the one control in this app that
+   * puts a page on the public internet. A future mount (`entity: 'persona'` on
+   * `/account`) brings its own class, or brings back a wrapper in its own commit.
+   */
+  className: string;
 };
 
-export function ShareFooter({ entity, entityId, preview, prose, nickname }: ShareFooterProps) {
+export function ShareFooter({
+  entity,
+  entityId,
+  preview,
+  prose,
+  nickname,
+  className,
+}: ShareFooterProps) {
   const t = useT();
   const viewing = useLocale();
   const [phase, setPhase] = useState<Phase>('idle');
@@ -230,14 +251,26 @@ export function ShareFooter({ entity, entityId, preview, prose, nickname }: Shar
   const open = phase !== 'idle';
 
   return (
-    <div className={styles.footer}>
+    /*
+      A FRAGMENT AND NOT A WRAPPER (2026-08-30). `ReadingActions`'s `.row` is the flex
+      container and this button is one of its three children; a `<div>` here would make
+      it one child holding one button, and the `gap` would space two things instead of
+      three. The hairline that used to live on `.footer` moved to `.row` with it.
+    */
+    <>
       <button
         ref={opener}
         type="button"
-        className={styles.action}
+        className={className}
+        /*
+          THE NAME MOVED FROM THE LABEL TO `aria-label` AND THE STRING DID NOT CHANGE.
+          `share.action` is still the one place `Bagikan` is written; a glyph with no
+          accessible name is a control a screen reader announces as "button".
+        */
+        aria-label={t('share.action')}
         onClick={() => void openSheet()}
       >
-        {t('share.action')}
+        <ShareMark />
       </button>
 
       {open ? (
@@ -395,7 +428,7 @@ export function ShareFooter({ entity, entityId, preview, prose, nickname }: Shar
           ) : null}
         </ShareSheet>
       ) : null}
-    </div>
+    </>
   );
 
   /**
@@ -843,5 +876,35 @@ function ShareSheet({
       </div>
     </div>,
     document.body,
+  );
+}
+
+/**
+ * A page leaving through the top of a tray -- the share glyph both platforms this
+ * app runs on already use, so it needs no label to be understood.
+ *
+ * Constructed exactly like `ChatMark` and `LotusMark`: `currentColor`, `aria-hidden`,
+ * `focusable="false"`, stroke 1.2, viewBox 24. **There is not a hex in this function**
+ * and the circle's own hover colours drive it.
+ */
+function ShareMark() {
+  return (
+    <svg
+      className={styles.mark}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      {/* The tray, open at the top. */}
+      <path d="M8.2 10.6H6.4C5.8 10.6 5.4 11 5.4 11.6V19C5.4 19.6 5.8 20 6.4 20H17.6C18.2 20 18.6 19.6 18.6 19V11.6C18.6 11 18.2 10.6 17.6 10.6H15.8" />
+      {/* The page, leaving. */}
+      <path d="M12 14.2V4.2" />
+      <path d="M8.6 7.6L12 4.2L15.4 7.6" />
+    </svg>
   );
 }

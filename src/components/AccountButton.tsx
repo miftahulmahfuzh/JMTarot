@@ -8,8 +8,22 @@ import { AccountMenu } from './AccountMenu';
 import { LotusMark } from './LotusMark';
 import styles from './AccountButton.module.css';
 
-/** Where the button was tapped from. Closed, because `account.opened.surface` is. */
-export type AccountSurface = 'reader_picker' | 'service_picker' | 'account' | 'history';
+/**
+ * Where the button was tapped from. Closed, because `account.opened.surface` is.
+ *
+ * **`'draw'` AND `'history_detail'` SINCE 2026-08-30**, when `ReadingActions` put an
+ * account control under a finished reading on both screens that render one. They are
+ * two values rather than one because a querent on the draw screen has just taken a
+ * reading and one on `/history/[id]` is looking one up, and folding them would make
+ * the only interesting comparison unaskable.
+ */
+export type AccountSurface =
+  | 'reader_picker'
+  | 'service_picker'
+  | 'account'
+  | 'history'
+  | 'draw'
+  | 'history_detail';
 
 /**
  * The circle, top right. V4's whole visible surface.
@@ -22,14 +36,28 @@ export type AccountSurface = 'reader_picker' | 'service_picker' | 'account' | 'h
  * or matching a middleware-forwarded pathname against a second copy of
  * `isPublic()` kept in step by hand.
  *
- * MOUNTING IT *IS* THE SESSION CHECK. `/`, `/[reader]`, `/account` and `/history`
- * are all outside `isPublic()`, so `src/middleware.ts` has already proved there
- * is a signed-in, onboarded user before any of them renders. This component
- * reads no session, takes no `Viewer` and needs no `ViewerProvider`.
+ * MOUNTING IT *IS* THE SESSION CHECK. `/`, `/[reader]`, `/account`, `/history` and
+ * -- since 2026-08-30, through `ReadingActions` -- `/[reader]/[service]` and
+ * `/history/[id]` are all outside `isPublic()`, so `src/middleware.ts` has already
+ * proved there is a signed-in, onboarded user before any of them renders. This
+ * component reads no session, takes no `Viewer` and needs no `ViewerProvider`.
  *
- * ── NOT ON THE DRAW SCREEN. NOT THE LANGUAGE ROW -- THE WHOLE BUTTON ─────────
+ * ── IT *IS* ON THE DRAW SCREEN SINCE 2026-08-30, AND THE ROW SUPPRESSES THE ──
+ * ── LANGUAGE ROW THERE. THE ARGUMENT BELOW IS WHY THAT IS THE ONLY SAFE SHAPE ─
  *
- * Roadmap §7 trap 4 offers two resolutions and this is the second one.
+ * **THE THREE NUMBERED POINTS ARE STILL TRUE AND ARE CORRECTED RATHER THAN
+ * DELETED.** What changed is which resolution is in force. This section used to say
+ * the WHOLE button was absent from `/[reader]/[service]`, enforced by the absence of
+ * an import; `ReadingActions` now mounts it there, inside the host's
+ * `status === 'done'` condition, with `surface !== 'draw'` killing the Language row
+ * PERMANENTLY -- which is a different thing from point 1's rejected "suppress it
+ * while streaming", and is the only reason the mount is allowed. Point 2 is answered
+ * by the host's condition (the row does not exist while a reading streams, so there
+ * is no one-tap exit to abort it) and point 3 by the suppression reading no streaming
+ * state at all. `accountSurface.test.ts` asserts both halves; **if that assertion is
+ * ever deleted, this button comes off the draw screen again.**
+ *
+ * Roadmap §7 trap 4 offers two resolutions and this was the second one.
  *
  *   1. `readings.locale` records the language the prose came out in, and the
  *      reading keeps it PERMANENTLY. Suppressing only the Language row while a
@@ -85,10 +113,28 @@ export type AccountSurface = 'reader_picker' | 'service_picker' | 'account' | 'h
 export function AccountButton({
   surface,
   showLanguage,
+  className,
 }: {
   surface: AccountSurface;
   /** `localeSwitcherEnabled()`, resolved by the mounting server page. See AccountMenu. */
   showLanguage: boolean;
+  /**
+   * **PLACEMENT, AND A CALLER THAT SUPPLIES IT TAKES OVER ALL OF IT (2026-08-30).**
+   *
+   * `styles.button` is the CORNER: `position: fixed`, the safe-area insets, the
+   * z-index rung. `ReadingActions` mounts this control in the page flow instead and
+   * hands in `.circle`, which is the same eight visual declarations with the four
+   * corner-specific ones removed.
+   *
+   * A `className` rather than a `placement: 'corner' | 'inline'` enum, because a
+   * second placement would need its own rules in THIS stylesheet -- and the row
+   * already defines them for the two other controls beside this one. One copy of the
+   * circle, in the file that draws the row.
+   *
+   * **A CALLER SUPPLYING THIS MUST KEEP THE 44px TARGET.** It is the only thing this
+   * component gives up by accepting the prop.
+   */
+  className?: string;
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -107,7 +153,7 @@ export function AccountButton({
       <button
         type="button"
         ref={buttonRef}
-        className={styles.button}
+        className={className ?? styles.button}
         aria-label={t('account.button.aria')}
         aria-haspopup="dialog"
         aria-expanded={open}

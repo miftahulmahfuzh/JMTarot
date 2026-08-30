@@ -1,0 +1,91 @@
+/*
+ * The action row under a finished reading (2026-08-30, Miftah's ruling).
+ *
+ * ── ONE COPY OF THE CIRCLE, HANDED TO THREE CONTROLS ────────────────────────
+ *
+ * `.circle` is the corner chrome's declarations with the four corner-specific ones
+ * -- `position`, `top`, `right`, `z-index` -- left out. It is defined ONCE here and
+ * passed to `ShareFooter` and `AccountButton` as a `className`, because the
+ * alternative is two more copies of the same eight lines in two more stylesheets
+ * with nothing holding them in agreement. `AccountButton.module.css` and
+ * `ChatButton.module.css` are already two copies and `chatSurface.test.ts` exists
+ * because of it.
+ *
+ * NO NEW HEX, NO NEW FONT SIZE, NO NEW CURVE. `--gold-wash` / `--gold-hairline` at
+ * rest and `--gold-wash-strong` / `--gold-border` lifted, which is the pair
+ * `AccountButton`, `ChatButton` and `CardDetail`'s `.close` all use.
+ *
+ * ── NOT FIXED, AND THAT IS THE WHOLE DIFFERENCE ─────────────────────────────
+ *
+ * `AccountButton.module.css` spends a paragraph on `position: fixed` resolving
+ * against a transformed ancestor rather than the viewport, and on adding
+ * `env(safe-area-inset-*)` back because <body>'s padding does nothing for a fixed
+ * element. **NONE OF THAT APPLIES HERE AND NONE OF IT IS COPIED.** This row is an
+ * ordinary flex child of the page's shell: it is inside <body>'s padding, it
+ * scrolls with the reading it belongs to, and the `.bleed` transform that would
+ * have trapped a fixed element is a sibling it is never inside.
+ *
+ * ── THE GAP IS `--corner-gap` ───────────────────────────────────────────────
+ *
+ * The same 8px that separates the account circle from the chat circle up in the
+ * corner. Three circles 8px apart is what the corner already looks like, which is
+ * what "the same theme buttons as our existing floating buttons" asks for.
+ */
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--corner-gap);
+  /*
+   * `ShareFooter`'s `.footer` VERBATIM, which is the block this row replaces -- so
+   * this phase moves nothing vertically and the whole of R2 is visible in phase 2's
+   * diff. **Phase 2 sets `margin-top: 0`** and `readingRhythm.test.ts` then pins the
+   * 18px against three other stylesheets.
+   */
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--gold-hairline);
+}
+
+.circle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* The iOS tap-target floor exactly, like both corner circles. `PublicShare`'s
+     36px is a known defect and is not the thing to copy. */
+  width: var(--corner-size);
+  height: var(--corner-size);
+  /* The row is centred, so nothing should ever stretch or shrink these. */
+  flex: 0 0 auto;
+  border-radius: 50%;
+  color: var(--gold-pale);
+  background: var(--gold-wash);
+  border: 1px solid var(--gold-hairline);
+  /* One of the three controls is an <a>. Without this the home circle carries an
+     underline the other two do not have. */
+  text-decoration: none;
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+}
+
+.circle:hover,
+.circle:focus-visible {
+  color: var(--gold-text);
+  background: var(--gold-wash-strong);
+  border-color: var(--gold-border);
+  outline: none;
+}
+
+/* The account circle sets `aria-expanded` while its menu is open. The corner
+   button lifts for it and so does this one, or the querent loses track of which
+   control opened the sheet in front of them. */
+.circle[aria-expanded='true'] {
+  color: var(--gold-text);
+  border-color: var(--gold-border);
+}
+
+.mark {
+  width: 22px;
+  height: 22px;
+}
