@@ -256,6 +256,7 @@ describe('the delimiter set', () => {
     ['sosok', 'V8: the persona block -- engine facts, closed values, the Lotus summary'],
     ['obrolan', 'v0.7.0: the chat transcript, the querent’s own sentences included'],
     ['lampiran', 'v0.7.0: an attached reading, rendered inline inside <obrolan>'],
+    ['waktu', 'R1: the clock at the head of a chat turn — code-derived, stripped anyway'],
   ] as const;
 
   for (const [tag, block] of FENCED) {

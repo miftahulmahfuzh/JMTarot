@@ -1680,17 +1680,22 @@ export const chatThreads = pgTable('chat_threads', {
   proactiveCountDate: dateCol('proactive_count_date'),
   /**
    * The querent's offset from UTC in minutes, as their browser last reported it.
+   * **Minutes EAST of UTC** — Jakarta is `+420`; see `@/lib/analytics/utcoffset`,
+   * which is the only thing that validates a value on the way in.
    *
-   * **FOLDED INTO `0014` THOUGH NOTHING READS IT YET** (`[R17]`, reconciliation
-   * §2.3). Miftah ruled Option A on quiet hours — *do nothing special* — because
-   * sources 1 and 2 only fire when the querent is demonstrably in the app and source
-   * 3 is a UTC cron whose schedule (`0 12 * * *` = 19:00 WIB) **is** the mechanism.
-   * The column lands anyway so that ruling the other way later is one line rather
-   * than a migration, and because `/api/cron/nudge` has no client and therefore no
-   * `x-jm-local-date` header — this is how it can know a querent's day at all.
+   * **FOLDED INTO `0014` BEFORE ANYTHING READ IT** (`[R17]`, reconciliation §2.3),
+   * so that ruling the other way on quiet hours later would be one line rather than
+   * a migration. **R1 IS THAT LINE AND THIS COLUMN IS NOW READ**, by
+   * `threadOffsetMinutes` in `queries/chat.ts`: the chat engine resolves the
+   * querent's wall clock from it once per advance, and `/api/cron/nudge` — which
+   * has no client and therefore no `x-jm-local-date` header — is the reason it had
+   * to be a column rather than a request field at all.
    *
-   * **A NULL COLUMN NOBODY READS COSTS NOTHING; A MIGRATION IN A LATER SESSION
-   * COSTS A MIGRATION**, and `0015` is reserved rather than available.
+   * **NULL IS NOT ZERO.** Zero is UTC, a place people live; null is a querent no
+   * browser has reported for, and the room is timeless for them rather than
+   * confidently seven hours wrong. `POST /api/chat/message` writes it inside the
+   * transaction it already opens and `GET /api/chat/state` writes it only when it
+   * has changed; neither ever writes null over a stored value.
    */
   utcOffsetMinutes: integer('utc_offset_minutes'),
   createdAt: tsCol('created_at').notNull().defaultNow(),

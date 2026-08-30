@@ -155,6 +155,39 @@ export async function getThread(db: DbOrTx, userId: string): Promise<ChatThread 
 }
 
 /**
+ * The querent's UTC offset, or null. **THE ONE READ R1 ADDED** (`[R17]`, closed).
+ *
+ * `[R17]` folded `utc_offset_minutes` into `0014` while nothing read it, so that
+ * ruling the other way later would be one line rather than a migration. This is
+ * that line.
+ *
+ * **NULL IS A FIRST-CLASS ANSWER AND NEVER ZERO** — no thread row, no offset
+ * ever reported, or a malformed header that was refused rather than coerced.
+ * `resolveChatClock` turns it into a `known: false` clock and the room is as
+ * timeless as it was before, which is a degradation rather than a wrong answer.
+ *
+ * Its own projection rather than `getThread`, because the engine calls it once
+ * per beat on the path of a model call: five columns this caller does not want
+ * is five columns crossing a Neon link in `sin1` for nothing.
+ *
+ * **AND `getThread`'s OWN `.select()` IS NOT NARROWED, DELIBERATELY.** Phases 7
+ * and 8 both read `thread?.utcOffsetMinutes` off it — the material detectors and
+ * the quiet-hours gate — and both state they compile on `main` because that
+ * projection is a bare `select()`. Adding a second, narrower reader is free;
+ * narrowing the existing one would break two later phases with a green
+ * typecheck in this one.
+ */
+export async function threadOffsetMinutes(db: DbOrTx, userId: string): Promise<number | null> {
+  if (!UUID_RE.test(userId)) return null;
+  const [row] = await db
+    .select({ utcOffsetMinutes: chatThreads.utcOffsetMinutes })
+    .from(chatThreads)
+    .where(eq(chatThreads.userId, userId))
+    .limit(1);
+  return row?.utcOffsetMinutes ?? null;
+}
+
+/**
  * What a caller may move on a thread. Every field optional; absent means untouched.
  *
  * **NOT `Partial<NewChatThread>`**, which would let a caller write `userId`,

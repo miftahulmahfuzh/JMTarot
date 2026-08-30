@@ -10,7 +10,8 @@ import type { ChatLengthBudget } from '@/lib/prompt/budget';
 import { CHAT_MAX_TOKENS } from '@/lib/prompt/budget';
 import { stripUntrusted } from '@/lib/prompt/sanitize';
 import type { CompletionPrompt } from '@/lib/llm/types';
-import type { ChatAuthor, Beat, BeatIntent } from '../types';
+import { CHAT_TIME_VOCAB, renderNow } from '../clock';
+import type { ChatAuthor, Beat, BeatIntent, ChatClock } from '../types';
 import { chatBaseContract } from './base';
 import { chatReaderPrompt } from './readers';
 
@@ -68,6 +69,17 @@ export type ChatTranscriptEntry = {
 export type ChatContext = {
   profile: ContextProfile;
   locale: Locale;
+  /**
+   * WHAT TIME IT IS FOR THE QUERENT (R1). **DECLARED IN PHASE 1, RENDERED IN
+   * PHASE 2** — nothing in this file reads it yet, deliberately, so that the
+   * transport lands with no prompt-output change to confound the blind read.
+   *
+   * `known: false` is the honest answer for a querent whose browser has never
+   * reported an offset, and the block that renders this must be absent then
+   * rather than falling back to UTC: a reader stating the wrong hour with
+   * confidence is worse than the timeless room v0.7.0 shipped.
+   */
+  clock: ChatClock;
   nickname: string | null;
   /** `addressForms(nickname)`, verbatim. Empty is legitimate (`[F3-2]`). */
   addressForms: string[];
@@ -100,7 +112,9 @@ export type ChatContext = {
  *
  * ── AND THE ORDER OF THE FENCED BLOCKS IS DOING WORK TOO ────────────────────
  *
- *   `<penanya>`   WHO. First, so it reads as background the conversation is laid over
+ *   `<waktu>`     WHEN. First, because it is the frame every other block is read inside.
+ *                 Stated once, as one fact, never stamped on a line (`[F2-16]` reason 1).
+ *   `<penanya>`   WHO. Then, so it reads as background the conversation is laid over
  *                 rather than as the subject. `build.ts`'s argument, verbatim.
  *   `<jawaban>`   WHAT THEY SAID. Detail about the person, sitting with the person.
  *   `<riwayat>`   WHAT THEY DREW. Between the person and the room, because it is
@@ -127,6 +141,7 @@ export type ChatContext = {
 const LABELS: Record<
   Locale,
   {
+    now: string;
     nickname: string;
     address: string;
     lifePath: string;
@@ -152,6 +167,7 @@ const LABELS: Record<
   }
 > = {
   id: {
+    now: 'Sekarang, di tempat orang itu:',
     nickname: 'Nama panggilan:',
     address: 'Sapaan yang boleh dipakai:',
     lifePath: 'Angka jalan hidup:',
@@ -176,6 +192,7 @@ const LABELS: Record<
     theQuerent: 'orang itu',
   },
   en: {
+    now: 'Where they are, it is now:',
     nickname: 'Nickname:',
     address: 'Forms you may use:',
     lifePath: 'Life path number:',
@@ -236,6 +253,52 @@ function displayName(entry: ChatTranscriptEntry, nickname: string | null, locale
 
 function cardName(cardId: number, reversed: boolean, locale: Locale): string {
   return `${CARDS[cardId]?.name ?? `#${cardId}`}${reversed ? LABELS[locale].reversed : ''}`;
+}
+
+/**
+ * `<waktu>` — WHAT TIME IT IS, WHERE THE QUERENT IS. **FIRST, AND THE FIRST BLOCK FOR A
+ * REASON.**
+ *
+ * `<penanya>` is first *"so it reads as background the conversation is laid over rather
+ * than as the subject"*. The clock is background to the background: it is the frame every
+ * other block is read inside, including `<penanya>` itself. So it goes above it, and
+ * `<obrolan>` stays last, nearest the instruction, exactly as `memory.ts`'s dilution
+ * argument requires.
+ *
+ * ── WHY THIS BLOCK EXISTS: THE BUG, VERBATIM ───────────────────────────────
+ *
+ * 2026-08-30T01:39:48Z, which is **08:39 WIB**. The room had agreed 05:00 was the querent's
+ * run time; the reading on the table was about lunch. Thessaly wrote *"makan tetap, mif.
+ * Perut kosong jam 5 nanti malah kepala pusing, lari gimana mau jalan."* Two errors in one
+ * bubble: **`nanti` about a time three hours and forty minutes past**, and **the wrong five
+ * o'clock**. Nothing in the prompt could have prevented either, because nothing in the
+ * prompt said what time it was — the newest transcript line is *"just now"*, the number `5`
+ * is a token, and `nanti` is the statistically ordinary continuation.
+ *
+ * ── ONE BLOCK, ONE FACT, AND NEVER A STAMP PER LINE ────────────────────────
+ *
+ * `[F2-16]` reason 1 survives the reversal intact: *a timestamp invites the model to
+ * mention it*, and *"seperti yang kamu bilang jam 14.22"* is the surveillance tell the
+ * contract already forbids by name. So the clock is stated once, as the frame, and the
+ * transcript keeps prose ages. `prompt.test.ts` still asserts no `[HH:MM]` appears on a
+ * transcript line.
+ *
+ * ── NULL RENDERS NOTHING ───────────────────────────────────────────────────
+ *
+ * A thread that predates Phase 1, or a querent whose client never reported an offset,
+ * gets no block. **Not a UTC clock, and not "waktu tidak diketahui"** — the first is the
+ * exact failure the old ruling feared, and the second is a fact the model will reason
+ * about and hedge around. `assemble.ts`'s silence rule.
+ *
+ * `stripUntrusted` is applied though every byte here is code-derived, because **the builder
+ * that writes a fence is the one that strips its material** (`buildLotusPrompt`'s
+ * precedent) and that invariant is worth more as a mechanical rule than as a case-by-case
+ * judgement. It is idempotent and costs nothing.
+ */
+function timeBlock(ctx: ChatContext): string {
+  if (!ctx.clock.known) return '';
+  const line = `${LABELS[ctx.locale].now} ${renderNow(ctx.clock, ctx.locale)}`;
+  return `<waktu>\n${stripUntrusted(line)}\n</waktu>`;
 }
 
 /**
@@ -317,14 +380,28 @@ function historyBlock(ctx: ChatContext): string {
 /**
  * How long ago, in the locale's own words.
  *
- * **NO CLOCK TIME, AND THAT IS A DIVERGENCE FROM THE PLAN'S §4.3 WITH A REASON.** The
- * plan renders `[14:02]`. **The server does not know the querent's timezone** — only
- * `local_date` does, and only because a client sends it (`C-N2d`, F5's quiet-hours
- * argument) — so a clock time in this prompt would be Jakarta's or the lambda's, and a
- * reader remarking that it is late at night to somebody eating lunch is worse than a
- * reader with no clock at all. **A relative age is true in every timezone**, and it is
- * also the thing the model actually needs: `C-D11`'s *"out of nowhere"* reply is about
- * an old message, not about 14:02.
+ * **NO CLOCK TIME ON A TRANSCRIPT LINE — AND THE REASON CHANGED WITHOUT THE RULE
+ * CHANGING.**
+ *
+ * This header used to say: *"THE SERVER DOES NOT KNOW THE QUERENT'S TIMEZONE — only
+ * `local_date` does, and only because a client sends it — so a clock time in this prompt
+ * would be Jakarta's or the lambda's, and a reader remarking that it is late at night to
+ * somebody eating lunch is worse than a reader with no clock at all."* **That premise is
+ * false as of 2026-08-30** and `<waktu>` above is the clock it said could not exist. The
+ * old argument is kept here and at length in `docs/workstream-notes.md` because it was
+ * correct about the world it was written in.
+ *
+ * **THE RULE SURVIVES ON ITS OTHER LEG**, which is `[F2-16]`'s reason 1: a timestamp on a
+ * line invites the model to quote it, and *"seperti yang kamu bilang jam 14.22"* is the
+ * surveillance tell the contract forbids by name. So the clock is stated ONCE, as a frame,
+ * and each line still carries a relative age — which is also the thing the model actually
+ * needs here, since `C-D11`'s *"out of nowhere"* reply is about an old message and not
+ * about 14:02.
+ *
+ * **DIGITS HERE ARE DURATIONS AND THEY STAY.** *3 jam lalu* is true under every offset and
+ * was never the problem; converting it to prose buckets would be `window.ts`'s job in
+ * `window.ts`'s file, and would change the shape the director's own window renders in.
+ * Nothing about this function moved in this phase, deliberately.
  */
 function ageLabel(fromIso: string, now: number, locale: Locale): string {
   const minutes = Math.max(0, Math.round((now - Date.parse(fromIso)) / 60000));
@@ -336,7 +413,14 @@ function ageLabel(fromIso: string, now: number, locale: Locale): string {
   return locale === 'id' ? `${days} hari lalu` : `${days} d ago`;
 }
 
-/** The same unit, as a gap between two messages: `--- 3 jam kemudian ---`. */
+/**
+ * The same unit, as a gap between two messages: `--- 3 jam kemudian ---`.
+ *
+ * **UNCHANGED BY THE CLOCK, AND IT IS THE ONE AGE THE VOICE ALREADY SAW.** A gap is a
+ * duration between two lines of the transcript, true in every zone, and it is rendered for
+ * both profiles. It was already the counterexample to *"the voice gets no ages"*, and it
+ * remains one.
+ */
 function gapLabel(minutes: number, locale: Locale): string {
   if (minutes < 60) return locale === 'id' ? `${minutes} menit` : `${minutes} minutes`;
   const hours = Math.round(minutes / 60);
@@ -493,6 +577,13 @@ export function chatPromptVersion(locale: Locale, self: ReaderId, budget: ChatLe
         chatReaderPrompt(self, locale),
         JSON.stringify(INTENT_WORDS[locale]),
         JSON.stringify(LABELS[locale]),
+        /*
+         * **THE WEEKDAY AND DAY-PART WORDS ARE A STATIC LAYER AND ARE HASHED; THE RENDERED
+         * CLOCK IS PER-REQUEST AND IS NOT.** Same rule as every block above: including a
+         * per-user value would turn the version into a per-row nonce and
+         * `group by prompt_version` would return one row per bubble.
+         */
+        JSON.stringify(CHAT_TIME_VOCAB[locale]),
       ].join('\0'),
     )
     .digest('hex');
@@ -526,6 +617,7 @@ export function buildChatPrompt(args: BuildChatPromptArgs): CompletionPrompt {
   const system = `${chatBaseContract(ctx.locale, budget, readerById(self)?.name ?? self)}\n\n${chatReaderPrompt(self, ctx.locale)}`;
 
   const user = [
+    timeBlock(ctx),
     personBlock(ctx),
     answerBlocks(ctx),
     historyBlock(ctx),

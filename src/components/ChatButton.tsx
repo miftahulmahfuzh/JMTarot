@@ -3,10 +3,12 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
-import { SESSION_HEADER } from '@/lib/analytics/localdate';
+import { LOCAL_DATE_HEADER, SESSION_HEADER } from '@/lib/analytics/localdate';
+import { UTC_OFFSET_HEADER, localUtcOffsetMinutes } from '@/lib/analytics/utcoffset';
 import { getSessionId } from '@/lib/analytics/track.client';
 import type { ChatStateReply } from '@/lib/chat/types';
 import { useT } from '@/lib/i18n/LocaleProvider';
+import { todayKey } from '@/lib/storage';
 import styles from './ChatButton.module.css';
 
 /** How long the badge's one fetch may take. Under `/api/chat/state`'s `maxDuration`
@@ -90,7 +92,25 @@ export function ChatButton() {
       const timer = setTimeout(() => controller.abort(), STATE_TIMEOUT_MS);
       try {
         const res = await fetch('/api/chat/state', {
-          headers: { [SESSION_HEADER]: getSessionId() },
+          /*
+           * **ALL THREE, AND THIS COMPONENT SENT ONLY THE FIRST UNTIL R1.** The
+           * proactive tick runs in this route's `after()`, and it is keyed on the
+           * querent's calendar day: `proactive_count_date` is the daily cap and F5's
+           * occasion detectors compare against it. With no `x-jm-local-date` the
+           * route fell back to the SERVER'S UTC date, so **every tick fired from `/`,
+           * `/[reader]`, `/account` and `/history` between midnight and 07:00 WIB was
+           * booked on yesterday** — a cap that resets seven hours early and a
+           * birthday that lands on the wrong day. `ChatRoom` always sent it, which is
+           * why the room looked correct and the four pages around it did not.
+           *
+           * **INSIDE THE EFFECT, NEVER DURING RENDER** (`F4-15`): both helpers read
+           * the device clock, and React cannot patch a hydration mismatch.
+           */
+          headers: {
+            [SESSION_HEADER]: getSessionId(),
+            [LOCAL_DATE_HEADER]: todayKey(),
+            [UTC_OFFSET_HEADER]: String(localUtcOffsetMinutes()),
+          },
           signal: controller.signal,
         });
         if (!res.ok) return;

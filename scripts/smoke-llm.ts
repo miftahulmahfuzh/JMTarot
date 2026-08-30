@@ -59,6 +59,7 @@
 import { readFileSync } from 'node:fs';
 import { CARDS, effectiveYesNo } from '@/data/deck';
 import type { ReaderId, ServiceId, YesNo } from '@/data/types';
+import { resolveChatClock } from '@/lib/chat/clock';
 import { getProvider } from '@/lib/llm';
 import { resolveBaseUrl } from '@/lib/llm/openai';
 import { isLocale, LOCALES, type Locale } from '@/lib/i18n/locale';
@@ -71,8 +72,10 @@ import type { MemoryContext } from '@/lib/prompt/memory';
  *
  * `main()` imports most modules dynamically because `loadEnv()` has to run before
  * anything reads `process.env` at module scope -- `memory.ts` reads
- * `MEMORY_CHAIN_COUNT`, `summary.ts` reads `SUMMARY_MIN_AGE_SECONDS`. `@/data/deck`
- * and `@/lib/prompt/budget` read no environment at all (checked, not assumed), so
+ * `MEMORY_CHAIN_COUNT`, `summary.ts` reads `SUMMARY_MIN_AGE_SECONDS`. `@/data/deck`,
+ * `@/lib/prompt/budget` and (R1) `@/lib/chat/clock` read no environment at all
+ * -- checked, not assumed: the clock's only imports are `@/lib/chat/types` and
+ * `@/lib/analytics/utcoffset`, a leaf and a dependency-free file -- so
  * they can be imported normally, and `check()` can then reach them directly instead of
  * being handed them through a `deps` bag. That bag is what hid the `VERDICT_WORD`
  * reshape; the fewer things travelling through it, the better.
@@ -2144,6 +2147,12 @@ const CHAT_SCRIPT: Record<Locale, Array<{ text: string; probes: string }>> = {
       text: '@margaret setuju sama adrian?',
       probes: 'THE READER-TO-READER PROBE. Does she answer HIM, using his actual words?',
     },
+    {
+      text: 'idealnya gue lari jam 5 pagi. tapi tadi kartunya bilang makan siang gue bakal jelek',
+      probes:
+        'THE CLOCK PROBE (R1). It is 14.0x WIB. Two different five-o-clocks and a lunch: ' +
+        'any reader writing "jam 5 nanti" has reproduced the 2026-08-30 production bug.',
+    },
     { text: 'iya deh', probes: 'THE ENDING PROBE. Does the room know to let it stop? (C-R6)' },
   ],
   en: [
@@ -2160,12 +2169,18 @@ const CHAT_SCRIPT: Record<Locale, Array<{ text: string; probes: string }>> = {
       text: 'do you actually agree with him, margaret',
       probes: 'THE READER-TO-READER PROBE',
     },
+    {
+      text: 'i normally run at five in the morning. but the cards said my lunch today would be bad',
+      probes:
+        'THE CLOCK PROBE (R1). It is early afternoon. "your run later at five" is the bug; ' +
+        'so is answering about the run when the reading was about lunch.',
+    },
     { text: 'fair enough', probes: 'THE ENDING PROBE' },
   ],
 };
 
 /**
- * The canned beat sheets, one per user message: `[1] [1] [2] [1] [1] [3] [1] [0]`.
+ * The canned beat sheets, one per user message: `[1] [1] [2] [1] [1] [3] [1] [2] [0]`.
  *
  * **THE DIRECTOR IS NOT CALLED.** `--chat --director` would be F2's flag and F2's cost;
  * this run is about the VOICES, and chaining a planner call in would make a voice failure
@@ -2190,11 +2205,36 @@ const CHAT_SHEETS: Array<Array<{ reader: ReaderId; to: 'user' | ReaderId; intent
     { reader: 'margaret', to: 'user', intent: 'agree', angle: null },
   ],
   [{ reader: 'margaret', to: 'adrian', intent: 'push_back', angle: null, replyToPrevious: true }],
+  /*
+   * **BOTH ANGLES ARE NULL, DELIBERATELY.** An angle naming the clock would hand the model
+   * the answer, and what is being measured is whether it derives *tadi* from `<waktu>` on
+   * its own. Two beats so the second can disagree with the first about which five o'clock
+   * was meant.
+   */
+  [
+    { reader: 'thessaly', to: 'user', intent: 'answer', angle: null },
+    { reader: 'adrian', to: 'user', intent: 'react', angle: null },
+  ],
   [],
 ];
 
 /** The fixture querent. `Mifta` is what `addressForms` derives `Mif` and `Ta` from. */
 const CHAT_NICKNAME = 'Mifta';
+
+/**
+ * The fixture querent's clock: **Friday 7 August 2026, 14.05 WIB, `midday`.** +420 is WIB,
+ * which is where the reported bug happened; minutes EAST of UTC, so the browser's
+ * `getTimezoneOffset()` reports the negative of it.
+ *
+ * **ONE CONSTANT FOR THE WHOLE SCRIPT.** Phase 2 renders it into `<waktu>` and into the
+ * director's `SEKARANG:` line and passes it to both `buildWindow` calls; it declares no
+ * `CHAT_UTC_OFFSET_MINUTES` of its own, because two fixture clocks is how the director and
+ * the voice end up describing different afternoons in one printed run.
+ */
+const CHAT_CLOCK = resolveChatClock({
+  offsetMinutes: 420,
+  now: new Date('2026-08-07T07:05:00.000Z'),
+});
 
 /**
  * `LOTUS_FIXTURE`'s answers, VERBATIM — a proper name (`Sari`), a genuinely heavy
@@ -2234,6 +2274,12 @@ function chatFixtureContext(args: {
   return {
     profile: 'voice' as const,
     locale,
+    /*
+     * R1. **A FIXED CLOCK, LIKE EVERY OTHER FIXTURE HERE**, so two runs of the
+     * smoke script differ in the sheet and in nothing else. Phase 2 renders it;
+     * today it only has to exist.
+     */
+    clock: CHAT_CLOCK,
     nickname: args.nickname,
     addressForms: args.forms,
     facts: [
@@ -2884,6 +2930,11 @@ async function runDirector(locales: Locale[], withVoices = false) {
         caps,
         triggerMessageId: triggerId,
         now: clock,
+        /* **ONE FIXTURE CLOCK FOR THE WHOLE SCRIPT** (phase 1's constant). A clock
+         * resolved from this run's own moving instant would print a director header
+         * hours away from the `<waktu>` block the voice prompts in the SAME run carry,
+         * which is the one thing a printed run must never show. */
+        clock: CHAT_CLOCK,
       });
       const cast = recentlySpoke(window);
       const affinity = affinityFor(line.body, locale, { recentlySpoke: cast });
@@ -2891,6 +2942,7 @@ async function runDirector(locales: Locale[], withVoices = false) {
         {
           trigger: 'user_message',
           fallbackLocale: locale,
+          clock: CHAT_CLOCK,
           window,
           affinity,
           awaiting: awaitingReader(window),
@@ -2915,6 +2967,18 @@ async function runDirector(locales: Locale[], withVoices = false) {
         trigger: 'user_message',
       });
       process.stdout.write(`\n--- ${no}. ${line.body}\n    (${line.probes})\n`);
+      /*
+       * **THE HEADER, PRINTED — R1's ONLY INSTRUMENT ON THE DIRECTOR SIDE.** The plan's
+       * verification says to read the `SEKARANG:` line above `PEMICU:`, and until this
+       * line existed the director runner printed the sheets and never the prompt, so
+       * that instruction could not be carried out at all. It is an INSTRUMENT, not a
+       * check: no threshold, no grep, nothing for phase 9's rewrite to keep in step.
+       * Read it for its SHAPE and its position, not for the hour — every clock in this
+       * script is the one `CHAT_CLOCK` fixture (14.05 WIB), on purpose.
+       */
+      process.stdout.write(
+        `    header| ${prompt.user.slice(0, prompt.user.indexOf('<obrolan>')).trim().split('\n').join('\n    header| ')}\n`,
+      );
 
       if (!checked.ok) {
         /* **A REFUSAL IS THE FALLBACK, AND THE FALLBACK IS NOT SILENCE** (`[F2-7]`). It is
@@ -3275,6 +3339,8 @@ async function runProactive(locales: Locale[]) {
          */
         triggerMessageId: brief.replyTo,
         now: clock,
+        /* The same one clock — see the director runner above. */
+        clock: CHAT_CLOCK,
       });
       const cast = recentlySpoke(window);
       const affinity = affinityFor('', locale, { recentlySpoke: cast });
@@ -3283,6 +3349,7 @@ async function runProactive(locales: Locale[]) {
         {
           trigger: fixture.trigger,
           fallbackLocale: locale,
+          clock: CHAT_CLOCK,
           window,
           affinity,
           awaiting: awaitingReader(window),

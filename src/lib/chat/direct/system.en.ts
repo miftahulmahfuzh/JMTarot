@@ -107,6 +107,7 @@ RULES
     - "reply" is null, UNLESS the MATERIAL names a message — a reader's question left hanging, or a message nobody replied to. Quoting an old message that has nothing to do with the MATERIAL makes the room feel stuck.
     - On a run like this, "beats":[] is NOT the answer. SILENCE IS ALLOWED is about a message that just arrived; nobody spoke here, so there is nothing you could decide not to reply to — and the system has already checked that the MATERIAL has something in it before waking you. One beat, sometimes two.
     - If there is no MATERIAL line, the querent has just sent something and every rule above applies as usual.
+12. THE CLOCK. The NOW line above the window gives the day and the time where the querent is. That is their clock -- not yours, and not the server's. Use it to judge whether the last line in the window is still warm or already stale, and whether something the querent mentioned has already gone past. Each line's age is written as words rather than figures -- do not do the arithmetic yourself, and NEVER copy a clock time or a date into an "angle". If there is no NOW line, nobody has told us the querent's clock: go by the ages alone and do not guess what time it is.
 
 WHAT IS NOT A REASON TO ADD A BEAT
 - So that all three get a turn.

@@ -5,7 +5,7 @@ export const MAX_QUESTION_LENGTH = 200;
  * EVERY DELIMITER THE PROMPT LAYER WRITES, in any casing, with whitespace
  * anywhere inside the tag and with attributes.
  *
- * Eight tags, because eight different blocks fence off user-derived text:
+ * Nine tags, because nine different blocks fence off user-derived text:
  *
  *   <pertanyaan>          the querent's question, in a reading's user turn
  *   <penanya>             the Lotus block, in a reading's user turn (W3 §9)
@@ -25,6 +25,12 @@ export const MAX_QUESTION_LENGTH = 200;
  *   <lampiran>            v0.7.0's attached reading, rendered INLINE inside
  *                         `<obrolan>` at its own message -- so it nests, and
  *                         it needs its own alternative anyway
+ *   <waktu>               R1's clock block, at the head of a chat turn's user
+ *                         turn. **Every byte of it is code-derived** -- which is
+ *                         exactly why it is here: the rule is that the builder
+ *                         that writes a fence strips its material, mechanically,
+ *                         so a querent typing `</waktu>` cannot forge the frame
+ *                         the whole of phase 2 rests on
  *
  * THE COUNT ABOVE AND THE ALTERNATION BELOW MUST AGREE, and `sanitize.test.ts`'s
  * `the delimiter set` block is what makes them. They had already drifted once --
@@ -39,7 +45,7 @@ export const MAX_QUESTION_LENGTH = 200;
  * THIS DOES NOT CONTRADICT RECONCILIATION R17. That resolution says the ENGLISH
  * prompt keeps `<pertanyaan>` rather than gaining an English-language tag -- one
  * token per purpose, across both locales, so there is one thing to strip and one
- * thing to test. These eight serve eight purposes and fence eight different
+ * thing to test. These nine serve nine purposes and fence nine different
  * blocks. What R17 warns against is doubling the surface for the SAME purpose,
  * and adding a locale variant of any of these would still be wrong.
  *
@@ -111,7 +117,7 @@ export const MAX_QUESTION_LENGTH = 200;
  * `>` and so cannot swallow arbitrary text between two unrelated tags.
  */
 const DELIMITER =
-  /<\s*\/?\s*(?:pertanyaan|penanya|jawaban|riwayat|terjemahan|sosok|obrolan|lampiran)(?:[^>]*)>/gi;
+  /<\s*\/?\s*(?:pertanyaan|penanya|jawaban|riwayat|terjemahan|sosok|obrolan|lampiran|waktu)(?:[^>]*)>/gi;
 
 /*
  * C0 and C1 control characters, minus the whitespace handled separately below.

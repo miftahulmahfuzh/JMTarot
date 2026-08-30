@@ -32,7 +32,8 @@
  */
 import type { Locale, ReaderId } from '@/data/types';
 import { stripUntrusted } from '@/lib/prompt/sanitize';
-import type { Beat, ChatAuthor } from '../types';
+import { localDayDelta, resolveChatClock } from '../clock';
+import type { Beat, ChatAuthor, ChatClock, DayPart, KnownChatClock } from '../types';
 import type { PlanCaps } from './caps';
 import type { Affinity, AffinityBucket } from './affinity';
 
@@ -41,7 +42,7 @@ export type WindowSource = {
   id: string;
   author: ChatAuthor;
   body: string;
-  /** ISO. Rendered as an AGE, never as a clock — see `ageBucket`. */
+  /** ISO. Rendered as an AGE — a prose bucket, never a timestamp. See `ageBucket`. */
   createdAt: string;
 };
 
@@ -60,32 +61,137 @@ export type WindowEntry = {
 };
 
 /**
- * `[F2-16]` AGES ARE PROSE BUCKETS, NEVER TIMESTAMPS, AND NO BUCKET NEEDS A TIMEZONE.
- *
- * Three reasons, each sufficient:
+ * `[F2-16]` AGES ARE PROSE BUCKETS, NEVER TIMESTAMPS. **THREE REASONS WERE GIVEN AND ONE
+ * OF THEM IS NOW FALSE. IT IS RECORDED HERE RATHER THAN DELETED.**
  *
  * 1. **A timestamp invites the model to mention it.** *"Seperti yang kamu bilang jam
- *    14.22"* is the surveillance tell `base.id.ts` already forbids in as many words —
- *    *"jangan menyebutkan bahwa kamu mengetahuinya"* — and it is precisely the line that
- *    turns uncanny into creepy. An angle is 90 characters and a timestamp fits inside it
- *    comfortably.
- * 2. **A bucket cannot be recited as a figure.** V3's rule, in a third place: the model
- *    cannot do date arithmetic it was never handed the inputs for. `window.test.ts`
- *    asserts **no bucket string contains a digit**.
- * 3. **The server does not know the querent's timezone.** Only `local_date` does, and
- *    only when a client sends one. **Every bucket below is computable from a duration
- *    alone** — which is why the list stops at *kemarin* and contains no *"pagi tadi"*, a
- *    phrase that would need a wall clock the server has not got.
+ *    14.22"* is the surveillance tell `base.id.ts` already forbids in as many words, and
+ *    an `angle` is 90 characters — a timestamp fits comfortably. **STILL TRUE, AND IT IS
+ *    NOW THE PRIMARY REASON.** It is why the clock is stated ONCE, in one line above the
+ *    window, and never stamped on a transcript line.
+ * 2. **A bucket cannot be recited as a figure.** V3's rule in a third place: the model
+ *    cannot do date arithmetic it was never handed the inputs for. **STILL TRUE, AND
+ *    `window.test.ts` STILL ASSERTS NO BUCKET STRING CONTAINS A DIGIT** — the assertion
+ *    was kept and extended to the clocked path rather than relaxed. Every phrase added
+ *    below is a word.
+ * 3. *"The server does not know the querent's timezone … which is why the list stops at
+ *    kemarin and contains no 'pagi tadi', a phrase that would need a wall clock the server
+ *    has not got."* **FALSE SINCE 2026-08-30.** The browser reports an offset,
+ *    `chat_threads.utc_offset_minutes` has held the column since `0014` (`[R17]` folded it
+ *    in *"so that ruling the other way later is one line rather than a migration"*), and
+ *    the wall clock this file now takes is that line being cashed. `docs/workstream-notes.md`
+ *    carries the reversal and the reported bug that forced it.
  *
- * A bucket is an ORDER OF MAGNITUDE and not a claim about a calendar; *kemarin* is kept
- * deliberately narrow (20–30 hours) because it is the one bucket a reader could repeat
- * to the querent as a fact.
+ * ── WHAT THE CLOCK BUYS, AND WHAT IT DOES NOT ──────────────────────────────
+ *
+ * With a clock, *kemarin* becomes a **derived calendar fact** rather than a 20–30 hour
+ * duration approximation — which removes the reason the old bucket was *"kept deliberately
+ * narrow … because it is the one bucket a reader could repeat to the querent as a fact"*.
+ * A reader repeating it is now repeating something true.
+ *
+ * **IT DOES NOT FIX THE REPORTED BUG BY ITSELF.** *"Perut kosong jam 5 nanti"* at 08:39
+ * was a clock time named INSIDE a message, not the age of one; the fix for that is the
+ * `<waktu>` block and the contract's `WAKTU:` section. This is the second-order half: a
+ * director that can tell *pagi tadi* from *beberapa jam lalu* stops treating a nine-hour-old
+ * line as fresh.
+ *
+ * ── AND `pagi tadi` IS INDONESIAN. `kelmarin` IS MALAY AND IS ON THE GREP ──
+ *
+ * `MALAY` in `src/lib/copy/vocab.ts` lists `kelmarin`. Every phrase below was checked
+ * against that list; this is the single most likely place in the release for a Malay word
+ * to arrive, because the vocabulary of *yesterday* and *this morning* is where the two
+ * languages sit closest.
  */
-export function ageBucket(minutes: number, locale: Locale): string {
+
+/** Two known clocks: when the message was written, and when now is. Both or neither. */
+export type AgeSpan = { at: KnownChatClock; now: KnownChatClock } | null;
+
+/**
+ * Same local day, a part of it that has already passed. **NO MEMBER IS NULL**, and the
+ * unreachable cases are handled where they belong: `anchoredBucket` returns null when the
+ * message and now are in the SAME part, which is what the old `night: null` was standing in
+ * for under a different set of boundaries.
+ *
+ * Keyed on the five parts `@/lib/chat/types`' `DayPart` declares — phase 7's, because those
+ * five tokens are persisted inside a `tod:` `material_key`.
+ */
+const EARLIER_TODAY: Record<Locale, Record<DayPart, string>> = {
+  id: {
+    morning: 'pagi tadi',
+    midday: 'siang tadi',
+    afternoon: 'sore tadi',
+    evening: 'tadi malam',
+    late: 'dini hari tadi',
+  },
+  en: {
+    morning: 'earlier this morning',
+    midday: 'earlier today',
+    afternoon: 'this afternoon',
+    evening: 'earlier this evening',
+    late: 'in the small hours',
+  },
+};
+
+/**
+ * The previous local day. Two phrases only: the evening of it, and the rest of it.
+ * *semalam* is Indonesian for *last night*; **`kelmarin` is the Malay word and is on the
+ * grep**, so the plain form here is `kemarin`.
+ */
+const YESTERDAY: Record<Locale, { evening: string; plain: string }> = {
+  id: { evening: 'semalam', plain: 'kemarin' },
+  en: { evening: 'last night', plain: 'yesterday' },
+};
+
+/**
+ * The calendar-anchored bucket, or null to fall through to the duration ladder.
+ *
+ * **NULL IS THE COMMON ANSWER AND THE LADDER IS NOT A FALLBACK FOR FAILURE.** Same day and
+ * the same part of it (*an hour ago, still morning*) has no calendar phrase that says
+ * anything a duration does not, and two days back has no phrase at all.
+ */
+function anchoredBucket(
+  span: { at: KnownChatClock; now: KnownChatClock },
+  locale: Locale,
+): string | null {
+  const delta = localDayDelta(span.at.localDate, span.now.localDate);
+  if (delta === null || delta < 0) return null;
+  if (delta === 0) {
+    /* Still inside the same part of the day: a duration says more than a name does. */
+    if (span.at.part === span.now.part) return null;
+    return EARLIER_TODAY[locale][span.at.part];
+  }
+  if (delta === 1) {
+    /* The evening AND the small hours of yesterday both read as *semalam*. */
+    return span.at.part === 'evening' || span.at.part === 'late'
+      ? YESTERDAY[locale].evening
+      : YESTERDAY[locale].plain;
+  }
+  return null;
+}
+
+/**
+ * How old a line is, in the locale's own words.
+ *
+ * **THE FIRST TWO RUNGS ARE UNCONDITIONAL AND THE CLOCK CANNOT OVERRIDE THEM.** *baru
+ * saja* and *beberapa menit lalu* are true in every calendar and are the two the director
+ * acts on most; routing them through day-part arithmetic could only make them worse.
+ * Above 45 minutes the calendar knows more than the duration does, so it wins when it has
+ * something to say.
+ *
+ * `span` is OPTIONAL and defaults to null, which is the pre-clock behaviour byte for byte.
+ * Every existing caller and every existing assertion is unaffected.
+ */
+export function ageBucket(minutes: number, locale: Locale, span: AgeSpan = null): string {
   const hours = minutes / 60;
   const days = hours / 24;
   if (minutes < 2) return locale === 'id' ? 'baru saja' : 'just now';
   if (minutes < 45) return locale === 'id' ? 'beberapa menit lalu' : 'a few minutes ago';
+
+  if (span !== null) {
+    const anchored = anchoredBucket(span, locale);
+    if (anchored !== null) return anchored;
+  }
+
   if (hours < 2.5) return locale === 'id' ? 'sekitar sejam lalu' : 'about an hour ago';
   if (hours < 20) return locale === 'id' ? 'beberapa jam lalu' : 'a few hours ago';
   if (hours < 30) return locale === 'id' ? 'kemarin' : 'yesterday';
@@ -156,8 +262,21 @@ export function buildWindow(args: {
   /** Never truncated: it is the thing being answered. */
   triggerMessageId: string | null;
   now: number;
+  /**
+   * The querent's clock, resolved once per advance in `run.ts` (phase 1).
+   *
+   * **OPTIONAL, AND THE DEFAULT IS THE PRE-CLOCK BEHAVIOUR.** Twelve fixtures across
+   * `window.test.ts`, `system.test.ts` and `validate.test.ts` build these args, and making
+   * it required would edit all twelve for no signal. The wiring is asserted instead, on
+   * the source, in `direct/contract.test.ts` — this codebase's idiom for exactly this.
+   *
+   * A `known: false` clock behaves exactly as an absent one: the duration ladder answers.
+   */
+  clock?: ChatClock;
 }): WindowEntry[] {
   const { locale, caps, triggerMessageId, now } = args;
+  const offsetMinutes = args.clock?.known ? args.clock.offsetMinutes : null;
+  const nowClock = resolveChatClock({ offsetMinutes, now: new Date(now) });
 
   const ordered = [...args.messages]
     .sort(
@@ -172,7 +291,26 @@ export function buildWindow(args: {
       isTrigger || clean.length <= caps.windowBodyChars
         ? clean
         : `${clean.slice(0, caps.windowBodyChars)}…`;
-    const ageMinutes = Math.max(0, Math.round((now - Date.parse(m.createdAt)) / 60000));
+    const at = Date.parse(m.createdAt);
+    const ageMinutes = Math.max(0, Math.round((now - at) / 60000));
+
+    /*
+     * Both clocks or neither. A message whose `created_at` does not parse gets no span and
+     * falls to the duration ladder, which is what it did before there was a clock at all.
+     *
+     * **THE `Number.isNaN` GUARD IS LOAD-BEARING AND THE PLAN'S SUBSTITUTION TABLE DID NOT
+     * NAME IT.** The cancelled `wallClockAt` returned `null` on a bad instant; phase 1's
+     * `resolveChatClock` deliberately does NOT — it falls back to the real now rather than
+     * throw inside `advance()`. Without this line an unparseable `created_at` would be
+     * clocked at today and could render a confident *pagi tadi* on a row whose age is
+     * unknown, which is worse than the *lama sekali* it fell to before there was a clock.
+     */
+    const atClock =
+      offsetMinutes === null || Number.isNaN(at)
+        ? null
+        : resolveChatClock({ offsetMinutes, now: new Date(at) });
+    const span: AgeSpan =
+      nowClock.known && atClock !== null && atClock.known ? { at: atClock, now: nowClock } : null;
 
     const laterOtherSide = ordered
       .slice(index + 1)
@@ -183,7 +321,7 @@ export function buildWindow(args: {
       id: m.id,
       author: m.author,
       body,
-      ageLabel: ageBucket(ageMinutes, locale),
+      ageLabel: ageBucket(ageMinutes, locale, span),
       ageMinutes,
       unanswered:
         !isTrigger &&

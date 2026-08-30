@@ -65,17 +65,26 @@ import {
   messagesForRun,
   releaseLease,
   runExistsForReading,
+  threadOffsetMinutes,
   writeBeatSheet,
   type ClaimedRun,
 } from '@/lib/db/queries/chat';
 import type { DbOrTx } from '@/lib/db/types';
 import { chatEnabled, chatProactiveEnabled } from '@/lib/llm/flags';
+import { resolveChatClock } from './clock';
 import { plan } from './direct/plan';
 import { nextAction } from './machine';
 import { logChatFailure } from './log';
 import { pace } from './voices/pace';
 import { speak } from './voices/turn';
-import type { AdvanceReply, Beat, BeatSheet, ChatMessageDto, RunTrigger } from './types';
+import type {
+  AdvanceReply,
+  Beat,
+  BeatSheet,
+  ChatClock,
+  ChatMessageDto,
+  RunTrigger,
+} from './types';
 
 /** `[F1-3]`. Long enough that a slow beat does not lose its own lease under
  *  `maxDuration = 60`; short enough that a dead lambda does not lock the room past a
@@ -223,6 +232,30 @@ export async function advance(args: { userId: string; locale: Locale }): Promise
    */
   if (!run) return { state: 'idle', runId: null, done: true };
 
+  /*
+   * **THE CLOCK, READ FROM THE THREAD RATHER THAN FROM THIS REQUEST'S HEADERS** (R1).
+   *
+   * One indexed primary-key read per advance, against a request that is about to
+   * spend two to five seconds in a model call — so the cost is noise, and what it
+   * buys is that **the cron, the idle tick and the browser all get their clock the
+   * same way.** `/api/cron/nudge` has no client and therefore no header; a design
+   * in which the browser path reads a header and the cron path reads a column is
+   * two mechanisms, and the second one is the one nobody tests.
+   *
+   * The column is kept fresh by the two routes that DO have a client:
+   * `POST /api/chat/message` writes it inside the transaction it already opens, and
+   * `GET /api/chat/state` writes it in `after()` when it has changed.
+   *
+   * **SWALLOWED, LIKE EVERY OTHER READ ON THIS PATH.** A failed clock read is a
+   * timeless room, not a failed beat — and `[F1-23]`: never the error object, this
+   * statement binds `users.id`.
+   */
+  const offsetMinutes = await threadOffsetMinutes(db, args.userId).catch((err) => {
+    logChatFailure('advance.clock', err, { user: args.userId });
+    return null;
+  });
+  const clock = resolveChatClock({ offsetMinutes });
+
   const action = nextAction(run);
 
   try {
@@ -235,10 +268,10 @@ export async function advance(args: { userId: string; locale: Locale }): Promise
         return await finish(run, owner, 'done');
 
       case 'plan':
-        return await doPlan(run, owner, args.locale);
+        return await doPlan(run, owner, args.locale, clock);
 
       case 'execute':
-        return await doBeat(run, owner, action.beat, action.index, action.total);
+        return await doBeat(run, owner, action.beat, action.index, action.total, clock);
     }
   } catch (err) {
     /*
@@ -260,7 +293,12 @@ export async function advance(args: { userId: string; locale: Locale }): Promise
 }
 
 /** The director. One `chat_plan` call, and one UPDATE that writes the sheet. */
-async function doPlan(run: ClaimedRun, owner: string, fallbackLocale: Locale): Promise<AdvanceReply> {
+async function doPlan(
+  run: ClaimedRun,
+  owner: string,
+  fallbackLocale: Locale,
+  clock: ChatClock,
+): Promise<AdvanceReply> {
   const startedAt = Date.now();
 
   const outcome = await plan({
@@ -273,6 +311,10 @@ async function doPlan(run: ClaimedRun, owner: string, fallbackLocale: Locale): P
     triggerMessageId: run.triggerMessageId,
     triggerReadingId: run.triggerReadingId,
     fallbackLocale: run.locale ?? fallbackLocale,
+    /* Resolved once in `advance()`, so every beat of a run reads the same clock —
+     * a run is serial and one beat must not be four seconds "later" than the plan
+     * that ordered it. */
+    clock,
   });
 
   if (outcome.kind === 'shed') {
@@ -346,6 +388,7 @@ async function doBeat(
   beat: Beat,
   index: number,
   total: number,
+  clock: ChatClock,
 ): Promise<AdvanceReply> {
   const startedAt = Date.now();
   const sheet = run.beats!;
@@ -368,6 +411,7 @@ async function doBeat(
     trigger: run.trigger,
     runSoFar,
     attempt: 1,
+    clock,
   });
 
   if (outcome.kind === 'shed') {

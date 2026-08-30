@@ -25,6 +25,7 @@ import {
   messagesForRun,
   releaseLease,
   runExistsForReading,
+  threadOffsetMinutes,
   unreadCount,
   upsertThread,
   writeBeatSheet,
@@ -100,14 +101,38 @@ describe('chat_threads', () => {
       expect(row?.proactiveCountDate).toBe('2026-08-07');
     }));
 
-  it('carries utc_offset_minutes though nothing reads it yet ([R17])', () =>
+  it('round-trips utc_offset_minutes through its own reader (R1, closing [R17])', () =>
     withRollback(async (tx) => {
-      // Folded into 0014 so that ruling the other way on quiet hours later is one
-      // line rather than a migration, and because /api/cron/nudge has no client and
-      // therefore no `x-jm-local-date` header.
+      /*
+       * `[R17]` folded this column into `0014` while nothing read it, so that
+       * ruling the other way on quiet hours later would be one line rather than a
+       * migration. R1 is that line: the engine resolves the querent's wall clock
+       * from this value, and `/api/cron/nudge` — which has no client and therefore
+       * no `x-jm-local-date` — reads it here too.
+       */
       const userId = await makeUser(tx, 'offset');
+
+      // NULL BEFORE ANYTHING WRITES IT, and null is not zero: a thread that has
+      // never reported an offset is not a querent sitting in UTC.
+      expect(await threadOffsetMinutes(tx, userId)).toBeNull();
+
       await upsertThread(tx, userId, { utcOffsetMinutes: 420 });
       expect((await getThread(tx, userId))?.utcOffsetMinutes).toBe(420);
+      expect(await threadOffsetMinutes(tx, userId)).toBe(420);
+
+      // Zero survives the round trip as zero. If the reader ever `??`s it to null
+      // this goes red, which is the whole point of testing the boring value.
+      await upsertThread(tx, userId, { utcOffsetMinutes: 0 });
+      expect(await threadOffsetMinutes(tx, userId)).toBe(0);
+
+      // A touch that names other fields leaves the offset alone.
+      await upsertThread(tx, userId, { lastUserMessageAt: new Date() });
+      expect(await threadOffsetMinutes(tx, userId)).toBe(0);
+    }));
+
+  it('answers null for an id that is not a uuid, rather than raising 22P02', () =>
+    withRollback(async (tx) => {
+      expect(await threadOffsetMinutes(tx, 'not-a-uuid')).toBeNull();
     }));
 });
 

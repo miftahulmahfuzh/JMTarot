@@ -2,7 +2,8 @@ import 'server-only';
 
 import type { Locale, ReaderId } from '@/data/types';
 import type { CompletionPrompt } from '@/lib/llm/types';
-import type { RunTrigger } from '../types';
+import { renderNow } from '../clock';
+import type { ChatClock, RunTrigger } from '../types';
 import type { Affinity } from './affinity';
 import type { PlanCaps } from './caps';
 import { planSystemPrompt } from './system';
@@ -43,6 +44,22 @@ export type PlanInput = {
   trigger: RunTrigger;
   /** `chat_runs.locale`, the minted value. The director may override it (`C-D9`). */
   fallbackLocale: Locale;
+  /**
+   * When this prompt is being built. **INJECTED SO THE AGES ARE TESTABLE**, exactly as
+   * `buildChatPrompt`'s `now` is, and defaulted rather than required for the same reason
+   * `clock` is — `system.test.ts` builds these literals.
+   */
+  now?: number;
+  /**
+   * The querent's clock (phase 1), resolved once per advance from
+   * `chat_threads.utc_offset_minutes`.
+   *
+   * **ABSENT OR `known: false` OMITS THE `SEKARANG:` LINE ENTIRELY**, which is this file's
+   * own rule: *an absent line is silence; a line saying `tidak diketahui` is a fact the
+   * model will reason about*. A model told the clock is unknown starts hedging about time;
+   * a model told nothing goes by the ages, which is what it did for the whole of v0.7.0.
+   */
+  clock?: ChatClock;
   window: readonly WindowEntry[];
   affinity: Affinity;
   /** `awaitingReader`. Prompt rule 5 gives this reader first claim. */
@@ -89,9 +106,18 @@ const TRIGGER_WORD: Record<Locale, Record<RunTrigger, string>> = {
 
 const LABELS: Record<
   Locale,
-  { trigger: string; language: string; affinity: string; spoke: string; awaiting: string; material: string }
+  {
+    now: string;
+    trigger: string;
+    language: string;
+    affinity: string;
+    spoke: string;
+    awaiting: string;
+    material: string;
+  }
 > = {
   id: {
+    now: 'SEKARANG:',
     trigger: 'PEMICU:',
     language: 'BAHASA TERAKHIR:',
     affinity: 'KECOCOKAN:',
@@ -100,6 +126,7 @@ const LABELS: Record<
     material: 'BAHAN:',
   },
   en: {
+    now: 'NOW:',
     trigger: 'TRIGGER:',
     language: 'LAST LANGUAGE:',
     affinity: 'AFFINITY:',
@@ -114,10 +141,26 @@ const LABELS: Record<
  *
  * **AN ABSENT LINE IS SILENCE; A LINE SAYING *tidak ada* IS A FACT THE MODEL WILL REASON
  * ABOUT.** So `KECOCOKAN` is omitted wholly when nothing matched (`[F2-5]`),
- * `MENUNGGU JAWABAN` when nobody is waiting, `BARU SAJA BICARA` when the room is new, and
- * `BAHAN` on every run a querent triggered. A model shown three negatives concludes
- * something is wrong with the querent; a model shown nothing decides on other grounds,
- * which is what it should be doing.
+ * `MENUNGGU JAWABAN` when nobody is waiting, `BARU SAJA BICARA` when the room is new,
+ * `BAHAN` on every run a querent triggered — **and `SEKARANG` when no client has ever
+ * reported an offset for this querent.** A model shown three negatives concludes something
+ * is wrong with the querent; a model shown nothing decides on other grounds, which is what
+ * it should be doing.
+ *
+ * **`SEKARANG` IS FIRST, ABOVE `PEMICU`, AND THE ORDER IS THE ARGUMENT.** Every other line
+ * says something about *this run*; the clock says *when all of this is happening*, and it
+ * is the frame the trigger and the ages are read inside. It matches `<waktu>`'s position
+ * in the voice's user turn, which is the shape a reviewer comparing the two prompts should
+ * see.
+ *
+ * **THERE IS NO WORKED EXAMPLE OF THIS LINE IN THE SYSTEM HALF, AND THAT IS A DELIBERATE
+ * TRADE AGAINST `BAHAN`'s LESSON.** `BAHAN` shipped before the rules mentioned it and the
+ * director read it as an unexplained header — so a new header line wants a worked example.
+ * But `[F2-9]` forbids a quantity in the system half and `system.test.ts` enforces it:
+ * every digit there must be an address, a cap, or a rule number, and a rendered clock is
+ * none of those. Showing a *fake-shaped* clock would be the blog editor's `at:` failure
+ * exactly. **So rule 12 describes it and shows nothing**, and
+ * `npm run smoke -- --chat --director` is the instrument that says whether that was enough.
  *
  * **`BARU SAJA BICARA` IS DERIVED FROM THE WINDOW AND IS NOT THE FAIRNESS RULE ITSELF.**
  * The demotion happens in `affinityFor`, in the hint; this line is the same fact stated
@@ -126,10 +169,13 @@ const LABELS: Record<
  */
 function header(input: PlanInput, recentlySpoke: readonly ReaderId[]): string {
   const L = LABELS[input.fallbackLocale];
-  const lines = [
-    `${L.trigger} ${TRIGGER_WORD[input.fallbackLocale][input.trigger]}`,
-    `${L.language} ${input.fallbackLocale}`,
-  ];
+  const lines: string[] = [];
+
+  const clock = input.clock;
+  if (clock?.known) lines.push(`${L.now} ${renderNow(clock, input.fallbackLocale)}`);
+
+  lines.push(`${L.trigger} ${TRIGGER_WORD[input.fallbackLocale][input.trigger]}`);
+  lines.push(`${L.language} ${input.fallbackLocale}`);
   if (input.material !== null) lines.push(`${L.material} ${input.material}`);
   const affinity = renderAffinity(input.affinity, input.fallbackLocale);
   if (affinity !== '') lines.push(`${L.affinity} ${affinity}`);
