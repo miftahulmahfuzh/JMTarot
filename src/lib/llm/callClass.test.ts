@@ -161,6 +161,32 @@ const COMPLETE_CALLS: Array<{
     why: 'the same promise to the reading as the planner, and a proactive turn is this op too -- what made it proactive is chat_runs.trigger',
   },
   {
+    /*
+     * **R2's PROFILE-MEMORY EXTRACTOR, 2026-08-30, AND IT SPENT THE FOURTEENTH `op`.**
+     * Granted on `insight`'s argument through the process seam 3 demands: a new
+     * recurring call whose price `/admin/tokens` has to be able to state. The full
+     * argument, including why it is not folded into `chat_turn`, is in `@/lib/llm/types`.
+     *
+     * **`deferred` FOR THE CHAT PAIR'S REASON AND NOT THE ADMIN ROWS'.** Nobody is
+     * watching this one at all -- it runs in an `after()` after the last bubble of a
+     * run has already been delivered -- so it is the least contentious `deferred` in
+     * this table. It reserves through `reserveChatCall()` rather than
+     * `reserveModelCall` directly, because it is caused BY the room and must draw on
+     * the room's own half of the window: a chat-caused call outside
+     * `LLM_WINDOW_CHAT_CEILING` would make that ceiling a bound on two of the room's
+     * three call sites, which is worse than no ceiling because it reads as one.
+     *
+     * **`llm_calls.reading_id` IS NULL HERE TOO** (`[R8]`). The extractor never sees a
+     * reading id and must not acquire one: `readingCostsFor` has no `op` predicate.
+     */
+    file: 'src/lib/memory/profile/generate.ts',
+    op: ['profile_memory'],
+    opMarker: "{ op: 'profile_memory', callClass: 'deferred', model: chatModel() }",
+    expect: 'deferred',
+    marker: "callClass: 'deferred'",
+    why: 'nobody is watching it -- it runs in the after() of a finished run -- and it draws on the chat window through reserveChatCall(), so the reading still wins (C-D6)',
+  },
+  {
     file: 'src/lib/moderation/classify.ts',
     op: ['moderation'],
     opMarker: "op: 'moderation'",
@@ -413,9 +439,10 @@ describe('the op set is exactly LLMOp, in both directions', () => {
     'blog_format',
     'chat_plan',
     'chat_turn',
+    'profile_memory',
   ];
 
-  it('the union in types.ts is exactly these thirteen', () => {
+  it('the union in types.ts is exactly these fourteen', () => {
     // Parsed off the source, so widening `LLMOp` without touching this list is red.
     const src = read('src/lib/llm/types.ts');
     const block = src.slice(src.indexOf('export type LLMOp'));
@@ -439,7 +466,7 @@ describe('the op set is exactly LLMOp, in both directions', () => {
     expect([...declared].sort()).toEqual([...LLM_OPS].sort());
   });
 
-  it('no op string appears at ANY ledger-writing site that is not one of the ten', () => {
+  it('no op string appears at ANY ledger-writing site that is not declared in LLMOp', () => {
     /*
      * The grep half, and the one that catches a tenth value invented at a NEW site --
      * including one added by A3 or A5, who read this column and do not own it. The two

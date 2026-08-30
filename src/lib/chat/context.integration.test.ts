@@ -372,7 +372,26 @@ describe('assembleChatContext', () => {
       expect(ctx.addressForms).toEqual([]);
       expect(ctx.answers).toEqual([]);
       expect(ctx.messages).toEqual([]);
-      expect(prompt(ctx).user.startsWith('YOUR TURN:')).toBe(true);
+
+      /*
+       * **THIS ASSERTION WAS `startsWith('YOUR TURN:')` AND PHASE 2 MADE IT STALE**
+       * (fixed 2026-08-30, in phase 4, having been red on `main` since phase 2 landed).
+       * `<waktu>` is now the FIRST block of the user turn by design -- `timeBlock`'s
+       * header calls it *"background to the background: the frame every other block is
+       * read inside"* -- and `CLOCK` above is a KNOWN clock, so it renders.
+       *
+       * The property this test is for is unchanged and is now spelled out rather than
+       * implied by an ordering: **for a querent with nothing, every querent-derived
+       * block is absent and the room still answers.** `<waktu>` is the one block that
+       * is not querent-derived, so it is present, and asserting the order pins phase
+       * 2's ruling here as well as in `prompt.test.ts`.
+       */
+      const { user } = prompt(ctx);
+      expect(user.startsWith('<waktu>')).toBe(true);
+      for (const fence of ['<penanya>', '<jawaban', '<riwayat>', '<obrolan>']) {
+        expect({ fence, present: user.includes(fence) }).toEqual({ fence, present: false });
+      }
+      expect(user).toContain('YOUR TURN:');
     }));
 
   /** An over-cap answer is omitted rather than truncated — `sanitizeAnswer`'s contract. */

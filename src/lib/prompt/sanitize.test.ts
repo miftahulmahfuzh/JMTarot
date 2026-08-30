@@ -257,6 +257,7 @@ describe('the delimiter set', () => {
     ['obrolan', 'v0.7.0: the chat transcript, the querent’s own sentences included'],
     ['lampiran', 'v0.7.0: an attached reading, rendered inline inside <obrolan>'],
     ['waktu', 'R1: the clock at the head of a chat turn — code-derived, stripped anyway'],
+    ['ingatan', 'R2: the profile memory -- model prose about a person, handed back to a model'],
   ] as const;
 
   for (const [tag, block] of FENCED) {
@@ -280,7 +281,19 @@ describe('the delimiter set', () => {
 
     // Spelled out, because that is how the header writes it. `String(n)` would
     // pass against "5 tags" while the header said "four".
-    const spelled = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
+    const spelled = [
+      'zero',
+      'one',
+      'two',
+      'three',
+      'four',
+      'five',
+      'six',
+      'seven',
+      'eight',
+      'nine',
+      'ten',
+    ];
     expect(source.toLowerCase()).toContain(`${spelled[FENCED.length]} tags`);
   });
 

@@ -182,6 +182,33 @@ export type ReadingUsage = {
  * alone, **a chat run would inflate the cost of the reading that triggered it,
  * silently.** Neither call site passes one; F7 writes the negative control.
  *
+ * ── `profile_memory` IS THE FOURTEENTH, 2026-08-30, AND IT IS ASKED FOR TOO ──
+ *
+ * R2's profile-memory extractor: one call per completed chat run whose transcript has
+ * moved past the floor. It earns a value on `insight`'s argument, which is the one
+ * every value since 2026-07-31 has been granted on: **it is a new RECURRING model call
+ * and `/admin/tokens`' own *Biaya per keperluan* table has to be able to say what it
+ * costs.**
+ *
+ * **NOT FOLDED INTO `chat_turn`, AND THE REASON IS `chat_plan` vs `chat_turn`'s OWN.**
+ * That pair was split because a large prompt with a tiny JSON reply and a large prompt
+ * with a two-sentence reply have wildly different token shapes and averaging them makes
+ * both figures meaningless. This one is a **very** large prompt (up to
+ * `PROFILE_MEMORY_WINDOW` messages) with a large structured reply, and folding it into
+ * either would move the chat's per-call figures on a metric an operator reads to decide
+ * whether the room is affordable.
+ *
+ * **AN OP IS WHAT THE CALL IS, NOT WHY IT HAPPENED** -- the rule that kept a proactive
+ * turn a `chat_turn`. This is not a turn: nothing it produces is ever spoken.
+ *
+ * **`llm_calls.reading_id` IS NULL FOR IT** (`[R8]`), like both chat ops:
+ * `readingCostsFor` folds every `reading_id`-bearing row with no `op` predicate, so a
+ * pointer here would silently inflate the cost of whichever reading was in the room.
+ *
+ * **FIVE OF FOURTEEN OPS NOW HAVE NO QUERENT BEHIND THEM.** Do not restate that count
+ * anywhere else: `src/lib/admin/ops.ts` is the machine-checked list, and the reason it
+ * exists is that the same rule was stated in prose four times and three were stale.
+ *
  * Adding a value here is deliberately not free: `OP_ORDER` in
  * `@/lib/analytics/rollup` carries a type-level `AssertNever` over `Exclude`, so a
  * value with no place in the render order is a COMPILE error, and
@@ -200,7 +227,8 @@ export type LLMOp =
   | 'insight'
   | 'blog_format'
   | 'chat_plan'
-  | 'chat_turn';
+  | 'chat_turn'
+  | 'profile_memory';
 
 export type LLMCallOpts = {
   signal?: AbortSignal;

@@ -157,9 +157,43 @@ describe('the event taxonomy', () => {
    * the analysis said "fold in `reading.retried`" believing it was new; it was
    * not, and reading THIS register rather than the plan is what caught it.
    */
+  /*
+   * ── 77 -> 78, R2's PROFILE MEMORY (2026-08-30), AND THE CAP WAS BINDING AGAIN ──
+   *
+   * **ONE NAME FOR A NINE-PHASE PLAN SET, AND IT IS TAKEN BY THE WRITE SIDE.**
+   *
+   *   LANDED, one:   `memory.profile_written`, fired from the `after()` of a finished
+   *                  chat run. Its reason for existing is `dropped`: `llm_calls`
+   *                  already carries the cost and the latency, and nothing else can
+   *                  say how many extracted facts the mechanical filters threw away --
+   *                  which is the number that distinguishes "the model is failing"
+   *                  from "the contract is failing", `persona.generated.fallback`'s
+   *                  argument in a new place.
+   *   DROPPED, two:  `memory.profile_read` (the read is one `.catch()`ed line in an
+   *                  assembler that already fires nothing per block, and a name that
+   *                  fired on every chat prompt would be the highest-volume event in
+   *                  the taxonomy for a fact `chat.turn_generated` implies), and
+   *                  `memory.profile_item_deleted` (folded into
+   *                  `account.answer_changed`'s shape rather than named, on
+   *                  `history.item_deleted`'s precedent that a delete needs a name only
+   *                  when nothing existing can carry it; that fold is a LATER phase's
+   *                  to make and it takes no new name).
+   *   FOLDED OUT:    nothing. The candidate was `memory.chain_offered`, and it was kept
+   *                  for `history.filtered`'s reason: dropping a name to keep a total
+   *                  round is how a taxonomy loses its history.
+   *
+   * **`[R1]` FOR THE FOURTH TIME: THE CAP WAS ALREADY AT ITS CEILING WHEN THIS WORK
+   * OPENED** -- 77 names against a 77 bound -- so `memory.profile_written` went red on
+   * this line and not in the diff that added it.
+   *
+   * **THERE IS NO HEADROOM AFTER THIS.** 78 against a 78 bound. The later phases of
+   * this plan set must FOLD into an existing prop shape -- `chat.run_planned` and
+   * `chat.turn_generated` both have room for a widened closed token -- or raise this
+   * line themselves with their own entry above.
+   */
   it('stays inside the fixed name budget', () => {
     expect(EVENT_NAMES.length).toBeGreaterThanOrEqual(44);
-    expect(EVENT_NAMES.length).toBeLessThanOrEqual(77);
+    expect(EVENT_NAMES.length).toBeLessThanOrEqual(78);
   });
 
   it("admin.page_viewed's pages are route TEMPLATES, not resolved paths (A1-18, R32)", () => {
@@ -191,11 +225,17 @@ describe('the event taxonomy', () => {
    * `memory.summary_generated` -- because a derived value about an existing
    * event is a property of that event and not a new thing that happened.
    *
-   * There are exactly SEVEN `memory.*` names and there were seven at W5. If an
-   * eighth appears with a V3 commit, the register in reconciliation §4 is out by
-   * one and nobody will notice until the count is supposed to reach 61.
+   * There were exactly SEVEN `memory.*` names from W5 through V3. If an eighth had
+   * appeared with a V3 commit, the register in reconciliation §4 was out by one and
+   * nobody would have noticed until the count was supposed to reach 61.
+   *
+   * **THE EIGHTH ARRIVED ON 2026-08-30 AND IT IS NOT V3's** -- R2's
+   * `memory.profile_written`, whose own entry is in the name-budget register below.
+   * The assertion is transcribed rather than narrowed to a prefix count, because what
+   * it is worth is naming WHICH names exist, and it is kept in the V3 test rather than
+   * split into a second one so there is one list of the `memory.` family and not two.
    */
-  it('adds no memory.* name at V3', () => {
+  it('adds no memory.* name at V3, and exactly one at R2', () => {
     const memory = EVENT_NAMES.filter((n) => n.startsWith('memory.'));
     expect(memory).toEqual([
       'memory.chain_offered',
@@ -205,6 +245,7 @@ describe('the event taxonomy', () => {
       'memory.summary_generated',
       'memory.frequency_shown',
       'memory.frequency_generated',
+      'memory.profile_written',
     ]);
   });
 

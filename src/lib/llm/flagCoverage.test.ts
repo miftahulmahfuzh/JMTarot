@@ -94,6 +94,24 @@ const FLAGGED: Array<{
     marker: 'if (!chatEnabled())',
     off: 'as above -- and a shed turn is not an error: the run keeps its beats and the next visit delivers them',
   },
+  {
+    /*
+     * **R2's PROFILE-MEMORY EXTRACTOR, 2026-08-30.** FLAGGED rather than EXEMPT, and the
+     * distinguishing property is the one every row in this table has: **there is a
+     * degraded querent experience for the flag to protect.** The room keeps every fact
+     * it already knows and simply stops learning new ones, which is a real, legible,
+     * reversible loss -- unlike the admin-only exemptions below, where a refused press
+     * is a sentence an operator reads and no querent sees anything change.
+     *
+     * The guard is checked TWICE in the file, in `scheduleProfileExtraction` and again
+     * in `extractProfileMemory`, because the second is callable directly from a future
+     * "refresh now" control or a backfill script. The marker below matches both.
+     */
+    file: 'src/lib/memory/profile/generate.ts',
+    env: 'PROFILE_MEMORY_ENABLED',
+    marker: 'if (!profileMemoryEnabled())',
+    off: 'nothing is written and nothing is read; every fact already remembered still reaches every prompt, and the next completed run after the flag returns to 1 finds a moved hash and extracts normally',
+  },
 ];
 
 /**

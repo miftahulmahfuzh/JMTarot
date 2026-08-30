@@ -37,7 +37,7 @@ describe('the module contract', () => {
     expect(code).not.toContain('@/lib/db');
   });
 
-  it('names all thirteen ops and no fourteenth', () => {
+  it('names all fourteen ops and no fifteenth', () => {
     /*
      * The COMPILE-TIME guard is `_MissingOps` in the module, which is what actually
      * fails when A2's union grows. This is the other direction: a value in `OP_ORDER`
@@ -62,11 +62,20 @@ describe('the module contract', () => {
      * because a large prompt with a tiny JSON reply and a large prompt with a
      * two-sentence reply average into two meaningless figures.
      *
-     * **FOUR OF THE THIRTEEN NOW MEASURE SOMETHING OTHER THAN A READING**, and the order
-     * puts all four last for exactly that reason.
+     * **AND 13 -> 14 ON 2026-08-30**, R2's profile-memory extractor, put and granted on
+     * the same argument: one call per completed chat run over up to a few hundred
+     * messages, and `/admin/tokens` has to be able to say what it costs. **Not folded
+     * into `chat_turn`** for the reason that split `chat_plan` from it in the first
+     * place — a very large prompt with a large structured reply is a third token shape,
+     * and averaging it into a two-sentence bubble makes both figures meaningless.
+     *
+     * **FIVE OF THE FOURTEEN NOW MEASURE SOMETHING OTHER THAN A READING**, and the order
+     * puts all five last for exactly that reason. `profile_memory` is last of the five
+     * because it is caused by the room the way the chat pair is, but is not part of an
+     * exchange: it runs when a run has already ended.
      */
-    expect(OP_ORDER).toHaveLength(13);
-    expect(new Set(OP_ORDER).size).toBe(13);
+    expect(OP_ORDER).toHaveLength(14);
+    expect(new Set(OP_ORDER).size).toBe(14);
     expect([...OP_ORDER].sort()).toEqual(
       [
         'blog_format',
@@ -79,6 +88,7 @@ describe('the module contract', () => {
         'lotus',
         'moderation',
         'persona',
+        'profile_memory',
         'reading',
         'translation',
         'translation_repair',

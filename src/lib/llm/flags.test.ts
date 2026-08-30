@@ -122,8 +122,13 @@ describe('the module', () => {
    * change of priority. **`CHAT_PROACTIVE_ENABLED` is nonetheless the first one to
    * reach for in an outage** — that is said in its own comment rather than by moving
    * it up the list.
+   *
+   * **SEVEN BECAME EIGHT ON 2026-08-30** (R2). `PROFILE_MEMORY_ENABLED` goes at the
+   * END for the same reason the two chat flags did: the five above are in the order
+   * §2d of DEPLOY-VERCEL teaches an operator to reach for them, and a reordering here
+   * would read as a change of priority. Where it sits in THAT table is §2d's business.
    */
-  it('registers exactly the seven deferrable features', () => {
+  it('registers exactly the eight deferrable features', () => {
     expect(DEFERRABLE_FLAGS.map((f) => f.env)).toEqual([
       'DAILY_SUMMARY_ENABLED',
       'FREQUENCY_VERDICT_ENABLED',
@@ -132,6 +137,7 @@ describe('the module', () => {
       'GIST_ENABLED',
       'CHAT_ENABLED',
       'CHAT_PROACTIVE_ENABLED',
+      'PROFILE_MEMORY_ENABLED',
     ]);
   });
 

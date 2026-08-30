@@ -42,7 +42,7 @@ import type { LLMOp } from '@/lib/llm/types';
 import { OP_ORDER } from '@/lib/analytics/rollup';
 
 /**
- * **THE FOUR OPS WITH NO QUERENT BEHIND THEM. A COST-PER-READING DENOMINATOR
+ * **THE FIVE OPS WITH NO QUERENT BEHIND THEM. A COST-PER-READING DENOMINATOR
  * EXCLUDES THESE.**
  *
  * Two measure the DASHBOARD and the CMS — `insight` is the button on `/admin`'s own
@@ -55,12 +55,21 @@ import { OP_ORDER } from '@/lib/analytics/rollup';
  * OVERHEAD.** `/admin/chat` exists precisely so that what the room costs is visible;
  * what this list forbids is dividing it by *Bacaan selesai* and calling the quotient
  * a cost per reading.
+ *
+ * **`profile_memory` IS THE FIFTH, 2026-08-30, AND IT IS THE CLEAREST CASE IN THE
+ * LIST.** R2's extractor runs when a chat run has already ended, over a transcript,
+ * and produces nothing anybody reads as prose. Its denominator is *conversations*, and
+ * dividing it by *Bacaan selesai* would make every cost-per-reading figure move when a
+ * querent chats and never draws a card. **The question this list asks is not "is a
+ * human present" -- `chat_turn` is here and a querent is usually watching one arrive --
+ * it is "would dividing this by a reading count mean anything".**
  */
 export const NON_READING_OPS = [
   'insight',
   'blog_format',
   'chat_plan',
   'chat_turn',
+  'profile_memory',
 ] as const satisfies readonly LLMOp[];
 
 /**
@@ -98,7 +107,7 @@ export const READING_OPS = OP_ORDER.filter(
 ) as readonly LLMOp[];
 
 /**
- * **THE GUARD. A FOURTEENTH OP IS A COMPILE ERROR UNTIL SOMEBODY DECIDES WHICH SIDE
+ * **THE GUARD. A FIFTEENTH OP IS A COMPILE ERROR UNTIL SOMEBODY DECIDES WHICH SIDE
  * IT IS ON.**
  *
  * `OP_ORDER`'s own `AssertNever` shape, one layer up: that one asks *"is every op

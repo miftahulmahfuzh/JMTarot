@@ -225,6 +225,50 @@ describe('the client boundary', () => {
   });
 
   /*
+   * R2. **`@/lib/memory/profile/prompt.ts` CARRIES THE EXTRACTION CONTRACT IN FULL** --
+   * both locales, the kind hints, the worked examples -- and `generate.ts` reaches the
+   * provider. Neither belongs in a browser bundle, on `persona/prompt.ts`'s reasoning.
+   *
+   * **`./types` IS THE EARNED EXCEPTION**, `persona/lines`'s shape: a client component
+   * renders these items on `/account` and offers a control to delete one, so it needs
+   * `UserMemoryKind` and `USER_MEMORY_KINDS` to build its label table. The exception is
+   * followed by an assertion that the file carries no contract prose and no imports at
+   * all, so it stays earned -- a client component must not acquire `node:crypto` for a
+   * label, which is why `userMemoryItemId` lives in `prompt.ts` and not beside the shape
+   * it hashes.
+   */
+  it('lets no client component import the profile-memory prompt or generator', () => {
+    for (const file of CLIENT) {
+      const offending = importsOf(file.source).filter(
+        (spec) => spec.startsWith('@/lib/memory/profile/') && !spec.endsWith('/types'),
+      );
+      expect({ [file.path]: offending }).toEqual({ [file.path]: [] });
+    }
+  });
+
+  it('keeps `@/lib/memory/profile/types` free of contract prose, so the exception stays earned', () => {
+    const raw = readFileSync(join(ROOT, 'lib/memory/profile/types.ts'), 'utf8');
+    const source = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+
+    expect(source).not.toContain("import 'server-only'");
+    expect(source).not.toContain('process.env');
+    for (const sentinel of [
+      'Kamu membaca', // how the Indonesian extraction contract opens
+      'You are reading',
+      'ATURAN', // its section headings
+      'THE RULES',
+    ]) {
+      expect({ sentinel, present: source.includes(sentinel) }).toEqual({
+        sentinel,
+        present: false,
+      });
+    }
+    /* And NO IMPORTS AT ALL -- the property `schema.ts`'s type-import of
+       `UserMemoryItem` rests on, and the reason `normaliseFact` is not here. */
+    expect(source).not.toMatch(/^\s*import\s/m);
+  });
+
+  /*
    * v0.7.0 / F6's task 3. **THE CHAT IS THE SURFACE WHERE RULE 1 IS EASIEST TO
    * BREAK, BECAUSE THE PROMPT IS THE PRODUCT** (roadmap §0.3) -- and the attachment
    * is the part of it a client component genuinely has to name, which is exactly the

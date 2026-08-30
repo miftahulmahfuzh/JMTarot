@@ -66,8 +66,13 @@
  * a worse outage than the quota it was protecting.
  *
  * **AND NONE OF THEM MAY LEAVE BEHIND A ROW THAT LOOKS CURRENT.** That is the
- * trap this file was nearly built on, and the two generators need OPPOSITE
- * treatment because their hashes differ:
+ * trap this file was nearly built on. **THERE ARE TWO INDEPENDENT QUESTIONS, AND
+ * THE FIRST TWO GENERATORS ANSWERED BOTH THE SAME WAY, WHICH IS WHY THIS
+ * PARAGRAPH READ AS THOUGH THERE WERE ONE** (corrected 2026-08-30, when a third
+ * generator answered them differently). The questions are:
+ *
+ *   SAFE?      Does the hash MOVE off a stored fallback, so the row heals?
+ *   NECESSARY? Does a reader BREAK on a missing row, so something must be there?
  *
  *   `lotusInputHash`   = birth year + the six onboarding answers. STATIC. A
  *                        fallback template stored while disabled matches its own
@@ -75,7 +80,9 @@
  *                        would return early for good — every user who onboarded
  *                        during the outage feeding a template into every reading
  *                        they ever take, after the flag went back to `1`, with
- *                        nothing reporting it. So LOTUS WRITES NOTHING when off.
+ *                        nothing reporting it. NOT SAFE, and not necessary either
+ *                        (`getLotusBlock` returning null is already normal).
+ *                        So LOTUS WRITES NOTHING when off.
  *
  *   `personaInputHash` = the above plus `readings:<ids>`. MOVES ON EVERY READING.
  *                        A stored fallback therefore survives only until the
@@ -83,12 +90,29 @@
  *                        the hash and lets `personaStaleness`'s `drift` arm
  *                        regenerate it. **The flag flipping back is not by itself
  *                        enough — the hash has to move**, and two integration tests
- *                        pin down both halves. That bound is what makes the write
- *                        safe, and the write is also NECESSARY: `/api/persona`'s
+ *                        pin down both halves. SAFE. And NECESSARY: `/api/persona`'s
  *                        no-row branch 500s on a generation that writes nothing. So
  *                        PERSONA STORES THE TEMPLATE when off, but only when there
  *                        is no row yet — an existing paragraph is never overwritten
  *                        with one.
+ *
+ *   `profileMemoryInputHash` = the newest chat message id. MOVES ON THE QUERENT'S
+ *                        NEXT SENTENCE, so storing would be SAFE. But it is NOT
+ *                        NECESSARY: the read is one of `assembleChatContext`'s
+ *                        individually `.catch()`ed reads and `/account` must render
+ *                        an empty state for a querent who has never chatted anyway.
+ *                        **And there is nothing honest to write** — there is no
+ *                        template version of "usually has nasi padang for dinner",
+ *                        because a memory is by definition what the querent actually
+ *                        said, and `/account` labels this row *what the room believes
+ *                        about you*. The deterministic value the READ side falls back
+ *                        to is the empty item list, and it is never stored: absence
+ *                        is the honest form of "we could not write a memory", where a
+ *                        stored empty list under a current hash is a CLAIM.
+ *                        So PROFILE MEMORY WRITES NOTHING, on the Lotus's side of the
+ *                        behaviour and the persona's side of the hash. **The asymmetry
+ *                        is real and must not be tidied; it is just not a function of
+ *                        the hash alone.**
  *
  * The two route-level flags write nothing either way — their generators are what
  * write — so they need no such care.
@@ -243,6 +267,29 @@ export function chatProactiveEnabled(): boolean {
 }
 
 /**
+ * The profile memory the room keeps about a querent (R2, 2026-08-30) — one
+ * `profile_memory` call per completed chat run whose transcript has moved past
+ * `PROFILE_MEMORY_MIN_AGE_SECONDS`.
+ *
+ * **THE SECOND-HIGHEST-VOLUME CHAT FLAG**, after `CHAT_ENABLED`: one call per
+ * completed run against that one's two to five per run.
+ *
+ * OFF: **nothing is written and nothing is read.** Every fact already remembered
+ * still reaches every prompt, because the block that renders it reads the stored
+ * row and this gates only the extractor — `sharingEnabled()`'s rule, which every
+ * flag here follows. The readers simply stop learning anything new.
+ *
+ * **IT WRITES NOTHING, WHICH IS THE LOTUS'S BEHAVIOUR ON THE PERSONA'S HASH.** See
+ * the table in this file's header: the hash moves, so storing a fallback would be
+ * safe; nothing 500s on a missing row, so it is not necessary; and there is no
+ * honest deterministic memory to write. Self-healing — the next completed run after
+ * the flag returns to `1` finds a hash that has moved and extracts normally.
+ */
+export function profileMemoryEnabled(): boolean {
+  return process.env.PROFILE_MEMORY_ENABLED !== '0';
+}
+
+/**
  * The register. `docs/DEPLOY-VERCEL.md` §2d orders the same five by what an
  * operator should reach for FIRST (gist, then verdict, summary, persona, Lotus);
  * this list is in feature order instead, because it is what `.env.example` and the
@@ -300,5 +347,13 @@ export const DEFERRABLE_FLAGS = [
      *  proactive run, so it is the cheapest thing in the app to lose. It gates a MINT
      *  rather than a call, which is why `flagCoverage.test.ts` has a `GATES` table. */
     what: 'unprompted chat runs — a posted message still gets answered',
+  },
+  {
+    env: 'PROFILE_MEMORY_ENABLED',
+    enabled: profileMemoryEnabled,
+    /** ONE CALL PER COMPLETED CHAT RUN whose transcript has moved past the floor.
+     *  Off: nothing is written and nothing is lost — every fact already remembered
+     *  still reaches every prompt. The readers just stop learning. */
+    what: 'the profile memory the room keeps about a querent',
   },
 ] as const;

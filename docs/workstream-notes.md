@@ -13076,3 +13076,111 @@ the resemblance and want symmetry; changing it is a ruling, not a tidy-up.
 `delete.integration.test.ts` proves the same-transaction property with a trigger and pins
 the statement ORDER on the source, so a refactor into three awaited helpers fails there
 and is sent here.
+
+---
+
+## The extractor: a THIRD flag shape, and a deletion that is not a staleness trigger (2026-08-30, R2 phase 4)
+
+The write half of R2. `src/lib/memory/profile/{prompt,generate}.ts`, the fourteenth
+`LLMOp`, `PROFILE_MEMORY_ENABLED`, and one `after()` at the end of `advance()`. Four
+things are worth keeping, and the first two are the decisions the phase was required to
+make in writing.
+
+### 1. The hash MOVES and the flag still WRITES NOTHING. That is a third shape, and `flags.ts` was silently carrying a second condition
+
+`flags.ts`'s header presented the Lotus/persona asymmetry as though it followed from the
+hash alone. **It does not.** There are two independent questions, and the first two
+generators happened to answer both the same way — which is exactly why the paragraph read
+as though there were one:
+
+| | SAFE? (does the hash move off a stored fallback?) | NECESSARY? (does a reader break on no row?) | So it writes |
+|---|---|---|---|
+| `lotus` | **No** — birth year + six answers, static for ever | No — `getLotusBlock` returning null is normal | nothing |
+| `persona` | **Yes** — ends `readings:<ids>` | **Yes** — `/api/persona`'s no-row branch 500s | the template |
+| `profile_memory` | **Yes** — ends with the newest `chat_messages.id` | **No** | **nothing** |
+
+The third row is the new information. `profileMemoryInputHash` is
+`v<SOURCE_VERSION>\nnewest:<uuid>`, so it advances on the querent's very next sentence and
+a stored fallback could never freeze the way a Lotus one would — storing would be *safe*.
+It is simply not *necessary*, and there is **nothing honest to store**: `fallbackPersona`
+is a template assembled from numbers the engine computed, and there is no template version
+of *"usually has nasi padang for dinner"*, because a memory is by definition what the
+querent actually said. `/account` labels the row *what the room believes about you*, and a
+fabricated or empty artifact under that label is worse than an absent one.
+
+**CLAUDE.md's *"THE ASYMMETRY IS A FACT ABOUT THE TWO HASHES AND MUST NOT BE 'TIDIED'"*
+survives intact.** This does not contradict it; it names the second condition the sentence
+was silently carrying. **Do not tidy the three into a rule about hashes.**
+
+### 2. A querent deleting a fact is NOT a staleness trigger, and `personaStaleness`'s `user-edit` arm is the wrong precedent
+
+`profileMemoryStaleness` has four arms — `absent`, `source-version`, `drift`, `fresh` —
+and **no `user-edit` arm.** The persona has one because an onboarding-answer edit changes
+an *input* the artifact was derived from. **Here the querent edits the OUTPUT directly**:
+the item is gone from `user_memory.items` the moment the delete route writes the row.
+Reporting that as stale would have a model re-read the same transcript and re-derive the
+fact the querent had just deleted — the feature actively working against them. A13 is
+untouched; it simply does not apply, because no user action changes this artifact's
+inputs.
+
+What makes the deletion stick instead is `user_memory.dismissed_ids` plus two mechanisms
+that are `effectiveYesNo()` / `validateChoice` / `applyAdvice`'s rule in a fifth place:
+**the prompt is handed the suppression COUNT and never the digests** (they are useless to
+a model and would be a fingerprint of deleted text), and **`validateExtraction`
+mechanically drops any produced item whose id is in the list.** The single-writer property
+is enforced by SQL rather than discipline: `upsertUserMemory`'s `set` list does not name
+that column, so this phase's writer *cannot* clobber a refusal.
+
+**Its honest limit, stated rather than hidden, and WIDER by one under the merged id.** An
+item's id is `sha256(kind + '\u001f' + normalise(text))`, so a re-derivation that rewords
+the fact past `normaliseFact` **or refiles it under a different `kind`** hashes
+differently and can come back. A fuzzy match is not available: the deleted text is
+deliberately not kept, and keeping it would make "delete" mean "move to another column in
+the same row". **The whole mitigation is rule 11 of the extraction contract** — reuse an
+existing item's exact wording and its exact kind — and a test asserts that rule exists in
+both locales, because it is the only thing standing there.
+
+### 3. `lastSeen` cannot order the cap, and phase 3's docblock offers it as though it could
+
+Phase 3 describes `lastSeen` as *"how phase 4 chooses what to evict at
+`USER_MEMORY_MAX_ITEMS`"*. **It cannot be, and the reason is the whole-memory protocol
+rather than an omission in the extractor:** the model rewrites the entire list on every
+extraction, so every item written in one pass carries the same day and the field is
+uniform across a stored list by construction. There is nothing to sort by. So the cap
+takes the model's own ranking — contract rule 6 asks for the most useful first and the
+least useful dropped — and `lastSeen` stays what phase 3's own last sentence says it is:
+*"when an extraction last saw it"*, a per-row age marker and not an order. It would only
+become an eviction key if the protocol ever became a delta, which it must not.
+
+### 4. Two places the plan and the code disagreed, and the code won both
+
+- **`returned` was the KEPT count, which made `dropped` identically zero.**
+  `memory.profile_written` exists for `dropped` and nothing else — `llm_calls` already
+  carries the cost and the latency, and only this can say how many facts the mechanical
+  filters threw away, which is what distinguishes *"the model is failing"* from *"the
+  contract is failing"*. As drafted, the one interesting field could never be non-zero and
+  an operator would read a flat line as a clean extractor. `ExtractionVerdict` now carries
+  `returned` on both arms and it is `parsed.length`.
+- **`parseArray` accepted an object wrapper, and its own test said it should not.**
+  `{"items":[]}` scanned to the inner `[]` and became a well-formed EMPTY array, which
+  `validateExtraction` then reports as *a considered empty answer* — the model saying
+  there is nothing worth remembering about this person — from a reply that was the wrong
+  shape. That is the confusion `all_items_dropped` exists to prevent, one level up. The
+  tolerance is now **prose and fences, not an object wrapper**: a `{` before the first `[`
+  is `unparseable`, so nothing is written, the hash does not move, and the reason is
+  accurate.
+
+### `[R1]` for the fourth time
+
+The events taxonomy was **already at its ceiling** when this work opened — 77 names
+against a 77 bound — so `memory.profile_written` went red on `events.test.ts`'s budget
+line and not in the diff that added it. It is 78/78 now. **There is no headroom for the
+later phases of this plan set**; they must fold into an existing prop shape or raise the
+line with their own register entry.
+
+Three closed-set registers the phase plan did not name also failed and had to be
+transcribed rather than narrowed: `rollup.test.ts`'s spelled-out fourteen,
+`ops.test.ts`'s *"names the four the release closed on"*, and `events.test.ts`'s
+`memory.*` list. **That is the machinery working** — each one is a place somebody wrote
+down which members exist, and a phase plan that enumerates files will miss them every
+time.

@@ -40,20 +40,32 @@ describe('the partition of LLMOp', () => {
     expect(READING_OPS).toEqual(expected);
   });
 
-  it('names the four the release closed on, and nothing else', () => {
+  it('names the five the release closed on, and nothing else', () => {
     /*
-     * Spelled out rather than derived: this assertion is the record of WHICH four, and
-     * a fifth arriving should fail here and make somebody write down why. `insight` and
+     * Spelled out rather than derived: this assertion is the record of WHICH five, and
+     * a sixth arriving should fail here and make somebody write down why. `insight` and
      * `blog_format` measure the dashboard and the CMS; `chat_plan` and `chat_turn`
      * measure a product feature that is not a reading.
+     *
+     * **`profile_memory` IS THE FIFTH, 2026-08-30, AND IT FAILED HERE FIRST**, which is
+     * what this assertion is for. R2's extractor runs after a chat run has ended, over
+     * a transcript, and produces nothing anybody reads: its denominator is
+     * *conversations*, so dividing it by *Bacaan selesai* would move every
+     * cost-per-reading figure when a querent chats and never draws a card.
      */
-    expect([...NON_READING_OPS]).toEqual(['insight', 'blog_format', 'chat_plan', 'chat_turn']);
+    expect([...NON_READING_OPS]).toEqual([
+      'insight',
+      'blog_format',
+      'chat_plan',
+      'chat_turn',
+      'profile_memory',
+    ]);
   });
 
   it('is not vacuous: both sides have members', () => {
     // A partition where one side went empty in a refactor would pass every assertion
     // above except this one.
-    expect(NON_READING_OPS.length).toBeGreaterThanOrEqual(4);
+    expect(NON_READING_OPS.length).toBeGreaterThanOrEqual(5);
     expect(READING_OPS.length).toBeGreaterThanOrEqual(9);
   });
 });
@@ -65,7 +77,7 @@ describe('isReadingOp', () => {
     }
   });
 
-  it('is false for all four dashboard, CMS and chat ops', () => {
+  it('is false for all five dashboard, CMS and chat ops', () => {
     for (const op of NON_READING_OPS) expect(isReadingOp(op), op).toBe(false);
   });
 });
