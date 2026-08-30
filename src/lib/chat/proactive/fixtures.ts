@@ -1,5 +1,5 @@
 /**
- * THE SIX FIXTURES `npm run smoke -- --chat --proactive` DRIVES. §11.
+ * THE EIGHT FIXTURES `npm run smoke -- --chat --proactive` DRIVES. §11.
  *
  * ── WHY THEY ARE DATA IN `src/` AND NOT IN THE SCRIPT ─────────────────────
  *
@@ -32,7 +32,7 @@
 import type { Locale, ReaderId } from '@/data/types';
 import { frequencyMechanic } from '@/lib/memory/shadow';
 import type { BeatIntent, RunTrigger } from '../types';
-import type { Material, MaterialKind } from './material';
+import { timeOfDayMaterial, type Material, type MaterialKind } from './material';
 
 /** One canned line. `minutesAgo` is relative to the runner's clock. */
 export type FixtureMessage = {
@@ -95,13 +95,22 @@ export type ProactiveFixture = {
 };
 
 /**
- * The six, in `MATERIAL_ORDER`. **One per kind, and the run prints all six** — the blind
+ * The eight, in `MATERIAL_ORDER`. **One per kind, and the run prints all eight** — the blind
  * read's first question is *"guess what this run is about"*, and it cannot be asked of a
  * sample.
  */
 export function proactiveFixtures(locale: Locale): ProactiveFixture[] {
   const mechanic = frequencyMechanic({ cardId: 18, count: 4 }, { cardId: 16, count: 2 }, locale);
   if (!mechanic) throw new Error('the recurring fixture no longer computes');
+
+  /*
+   * **BUILT THROUGH THE REAL CONSTRUCTOR, NEVER WRITTEN OUT BY HAND.** `weekday` and
+   * `shape` are derivations, and a fixture that stated them would be able to disagree with
+   * the code the blind read is supposed to be judging. `2026-08-09` is a Sunday — the
+   * querent's own example, *"kamu weekend ini kemana aja?"*.
+   */
+  const sundayAfternoon = timeOfDayMaterial('2026-08-09', 'afternoon');
+  if (!sundayAfternoon) throw new Error('the time-of-day fixture no longer computes');
 
   return [
     {
@@ -153,6 +162,30 @@ export function proactiveFixtures(locale: Locale): ProactiveFixture[] {
       },
     },
     {
+      kind: 'profile',
+      /*
+       * A tick, so its trigger is `idle_nudge` — `triggerFor`'s table: only `unanswered`
+       * material renames a tick's trigger.
+       */
+      trigger: 'idle_nudge',
+      room: 'quiet',
+      /*
+       * **THE FIXTURE CARRIES NO REMEMBERED SENTENCE BECAUSE THE TYPE HAS NOWHERE TO PUT
+       * ONE.** The blind read will therefore show a director casting on a topic and a
+       * reader saying nothing specific — which is the correct picture of **this material
+       * alone**. The *"nasi padang lagi kan?"* half arrives through phase 5's fenced
+       * `<ingatan>`, which the smoke script does not stage; this run is the half that says
+       * which subject it is about.
+       */
+      material: {
+        kind: 'profile',
+        /* Twelve lowercase hex, `USER_MEMORY_ITEM_ID_RE`'s shape. */
+        itemId: 'f00d5a1ad00d',
+        itemKind: 'taste',
+        month: '2026-08',
+      },
+    },
+    {
       kind: 'recurring',
       trigger: 'idle_nudge',
       room: 'quiet',
@@ -186,6 +219,17 @@ export function proactiveFixtures(locale: Locale): ProactiveFixture[] {
             : 'someone who carries a lot quietly and has just started saying so',
         updatedAtIso: '2026-08-07T04:00:00.000Z',
       },
+    },
+    {
+      kind: 'time_of_day',
+      /*
+       * The daily job is the source that most often finds nothing else, which is exactly
+       * when this material is what is left. Stated rather than derived, per this type's own
+       * note, so the run prints the `PEMICU:` line production would show.
+       */
+      trigger: 'cron',
+      room: 'quiet',
+      material: sundayAfternoon,
     },
   ];
 }

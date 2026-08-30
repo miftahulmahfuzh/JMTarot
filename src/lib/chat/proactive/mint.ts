@@ -40,6 +40,7 @@ import { db as singleton } from '@/lib/db/client';
 import type { DbOrTx } from '@/lib/db/types';
 import { chatEnabled, chatProactiveEnabled } from '@/lib/llm/flags';
 import { activeRunFor, getThread } from '@/lib/db/queries/chat';
+import { resolveChatClock } from '../clock';
 import { logChatFailure } from '../log';
 import { mintRun } from '../run';
 import {
@@ -162,6 +163,21 @@ export async function mintProactiveRun(input: MintInput): Promise<MintResult> {
       activeRunFor(db, input.userId),
     ]);
 
+    /*
+     * **READ ONCE, HERE, BECAUSE TWO CONSUMERS WANT IT AND MUST NOT DISAGREE.** `[F5]`'s own
+     * rule for `ThreadState` — *read ONCE, by the caller, so that three entry points cannot
+     * each decide differently what a missing thread means* — extended to the offset. M8
+     * needs it to know the querent's weekday and hour at all, and **phase 8's quiet-hours
+     * gate needs the same number for `QuietHours.offsetMinutes` and must not re-read the
+     * thread.** One row, one offset, one clock, for every gate and every detector in this
+     * mint.
+     *
+     * `null` when no browser has ever reported one, and `null` is an ordinary answer on both
+     * sides: no time material, and never a mint-blocking unknown.
+     */
+    const utcOffsetMinutes = thread?.utcOffsetMinutes ?? null;
+    const clock = resolveChatClock({ offsetMinutes: utcOffsetMinutes, now });
+
     const state = {
       lastReadAt: thread?.lastReadAt ?? null,
       lastUserMessageAt: thread?.lastUserMessageAt ?? null,
@@ -198,6 +214,7 @@ export async function mintProactiveRun(input: MintInput): Promise<MintResult> {
       now,
       birthDate: querent.birthDate,
       lastSeenAt: querent.lastSeenAt,
+      clock,
     };
 
     const material: Material | null = input.readingId

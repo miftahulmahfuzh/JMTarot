@@ -352,11 +352,31 @@ describe('the client boundary', () => {
       }
     }
 
+    /*
+     * **THE CLOCK SENTINEL COVERS TWO FILES SINCE R3, NOT ONE.** `material.ts` grew the
+     * day-part and weekday material R3's ice-breaker needs, and the tempting implementation
+     * of a local day is `new Date(ms).toISOString().slice(0, 10)` — which is correct, and
+     * which would put a `Date` in the one proactive module every note test and the smoke
+     * script import. `weekdayOf` is integer arithmetic for that reason, and this is what
+     * keeps it that way.
+     *
+     * **IT GREPS EACH FILE'S OWN SOURCE, NOT ITS IMPORT GRAPH.** `material.ts` imports
+     * `weekdayOf` from `@/lib/chat/clock`, a module that does construct a `Date` — that is
+     * fine and is the whole point of having one clock module. What is forbidden is a
+     * `new Date(` written HERE. Say so, or the first person to read the import concludes the
+     * fence is already breached and deletes it.
+     */
+    for (const rel of ['lib/chat/proactive/eligibility.ts', 'lib/chat/proactive/material.ts']) {
+      const source = readFileSync(join(ROOT, rel), 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/^\s*\/\/.*$/gm, '');
+      expect({ rel, date: source.includes('new Date(') }).toEqual({ rel, date: false });
+    }
+
+    // The stripper must not have eaten the code it is checking.
     const predicate = readFileSync(join(ROOT, 'lib/chat/proactive/eligibility.ts'), 'utf8')
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/^\s*\/\/.*$/gm, '');
-    expect(predicate).not.toContain('new Date(');
-    // The stripper must not have eaten the code it is checking.
     expect(predicate).toContain('checkEligibility');
   });
 

@@ -18,10 +18,14 @@ import {
   profiles,
   readingCards,
   readings,
+  userMemory,
   users,
 } from '@/lib/db/schema';
 import { closeTestDb, withRollback } from '@/lib/db/testing/harness';
 import type { Db, Tx } from '@/lib/db/types';
+import type { UserMemoryItem } from '@/lib/memory/profile/types';
+import { resolveChatClock } from '../clock';
+import { materialLineForRun } from './brief';
 import {
   abandonExpiredRuns,
   nudgeCandidates,
@@ -29,6 +33,7 @@ import {
   selectMaterial,
   selectReadingMaterial,
 } from './detect';
+import { materialKey, type Material } from './material';
 import { upsertThread } from '@/lib/db/queries/chat';
 
 config({ path: '.env.local', quiet: true });
@@ -59,8 +64,60 @@ function args(userId: string, over: Partial<Parameters<typeof selectMaterial>[1]
     now: NOW,
     birthDate: null,
     lastSeenAt: null,
+    /*
+     * **NULL BY DEFAULT, AND EVERY EXISTING NEGATIVE IN THIS FILE DEPENDS ON IT.** M8 is
+     * last in `MATERIAL_ORDER` and is available in every part of every day, so with an
+     * offset set it would answer *every* case here that asserts `selectMaterial` finds
+     * nothing — turning a suite full of honest negatives green for the wrong reason. It is
+     * also the production default until a browser has reported: no time material, never an
+     * error.
+     */
+    clock: resolveChatClock({ offsetMinutes: null, now: NOW }),
     ...over,
   };
+}
+
+/** A clock that knows where the querent is. Jakarta, `+420`, the release's own example. */
+function jakarta(now: Date = NOW) {
+  return resolveChatClock({ offsetMinutes: 420, now });
+}
+
+/**
+ * A `user_memory` row, written directly. **The generator is phase 4's and this suite must
+ * not depend on a model call** — `frequencyMechanic`'s rule one workstream over: the
+ * detector's job is to find the row, not to have produced it.
+ *
+ * **THE IDS ARE REAL TWELVE-HEX IDS AND THAT IS NOT COSMETIC.** `detectProfile` filters
+ * through `isUserMemoryItem`, the same predicate phase 5's `<ingatan>` and phase 6's
+ * `/account` list use, so an item this helper writes with a readable id would be one the
+ * rest of the release cannot see. The constants below say which is which.
+ *
+ * The column names follow phase 3's table; if they move, this helper is the one place.
+ */
+async function putMemory(tx: Tx | Db, userId: string, items: UserMemoryItem[]): Promise<void> {
+  const now = new Date();
+  await tx
+    .insert(userMemory)
+    .values({
+      userId,
+      items,
+      inputHash: 'test',
+      sourceVersion: 1,
+      model: 'test',
+      promptVersion: 'test',
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({ target: userMemory.userId, set: { items, updatedAt: now } });
+}
+
+/** The dinner line. `f00d…`, so a failing assertion says which item it meant. */
+const ID_FOOD = 'f00d5a1ad00d';
+/** The annoying colleague. */
+const ID_WORK = 'b055c0ffee11';
+
+function item(id: string, kind: UserMemoryItem['kind'], text: string): UserMemoryItem {
+  return { id, kind, text, lastSeen: TODAY };
 }
 
 async function makeReading(
@@ -630,3 +687,225 @@ async function statusOf(tx: Tx | Db, runId: string): Promise<string> {
     .limit(1);
   return row.status;
 }
+
+// ---------------------------------------------------------------------------
+// M7 — something the room already knows about the querent
+// ---------------------------------------------------------------------------
+
+describe('M7 — a remembered fact', () => {
+  it('finds the first item whose key is free this month, and carries no text', () =>
+    withRollback(async (tx) => {
+      const userId = await makeUser(tx, 'm7');
+      await putMemory(tx, userId, [
+        item(ID_FOOD, 'taste', 'biasanya makan malam nasi padang'),
+        item(ID_WORK, 'situation', 'ada orang di kantornya yang bikin kesal'),
+      ]);
+
+      const found = await selectMaterial(tx, args(userId));
+      expect(found?.kind).toBe('profile');
+      expect(materialKey(found as Material)).toBe(`profile:${ID_FOOD}:2026-08`);
+      /* **The seam, asserted from the database end**: nothing the extractor stored as
+       * prose is anywhere in the material the director will be handed. */
+      expect(JSON.stringify(found)).not.toContain('nasi padang');
+    }));
+
+  it('moves to the next item once this month’s key is spent, and not to the same one again', () =>
+    withRollback(async (tx) => {
+      const userId = await makeUser(tx, 'm7b');
+      await putMemory(tx, userId, [
+        item(ID_FOOD, 'taste', 'nasi padang'),
+        item(ID_WORK, 'person', 'si bonjeng'),
+      ]);
+      await makeRun(tx, userId, { materialKey: `profile:${ID_FOOD}:2026-08` });
+
+      const found = await selectMaterial(tx, args(userId));
+      expect(materialKey(found as Material)).toBe(`profile:${ID_WORK}:2026-08`);
+    }));
+
+  it('comes back to a spent item NEXT MONTH, which is what stops a once-ever opener', () =>
+    withRollback(async (tx) => {
+      const userId = await makeUser(tx, 'm7c');
+      await putMemory(tx, userId, [item(ID_FOOD, 'taste', 'nasi padang')]);
+      await makeRun(tx, userId, { materialKey: `profile:${ID_FOOD}:2026-08` });
+
+      expect(await selectMaterial(tx, args(userId))).toBeNull();
+      const next = await selectMaterial(tx, args(userId, { localDate: '2026-09-04' }));
+      expect(materialKey(next as Material)).toBe(`profile:${ID_FOOD}:2026-09`);
+    }));
+
+  it('says nothing when an item has no text — an id alone is not a fact', () =>
+    withRollback(async (tx) => {
+      const userId = await makeUser(tx, 'm7d');
+      await putMemory(tx, userId, [item(ID_FOOD, 'taste', '   ')]);
+      expect(await selectMaterial(tx, args(userId))).toBeNull();
+    }));
+
+  it('is blind to an item the rest of the release is blind to, and to nothing else', () =>
+    withRollback(async (tx) => {
+      /*
+       * **THE NARROWER IS `isUserMemoryItem`, THE ONE PHASE 5 AND PHASE 6 USE.** A row with
+       * a kind outside `USER_MEMORY_KINDS` cannot be written by phase 4's parser at all —
+       * it drops the element — and if one somehow existed it would be missing from
+       * `<ingatan>` and from `/account` too. So the honest behaviour here is to skip it,
+       * not to file it under `other`: the alternative casts the director on a subject the
+       * voice cannot see and the querent cannot delete.
+       */
+      const userId = await makeUser(tx, 'm7e');
+      await putMemory(tx, userId, [
+        { id: 'not-an-id', kind: 'taste', text: 'sesuatu', lastSeen: TODAY } as never,
+        { id: ID_WORK, kind: 'astrology', text: 'sesuatu', lastSeen: TODAY } as never,
+        item(ID_FOOD, 'taste', 'nasi padang'),
+      ]);
+      const found = await selectMaterial(tx, args(userId));
+      expect(found).toMatchObject({ kind: 'profile', itemId: ID_FOOD, itemKind: 'taste' });
+    }));
+
+  it('rehydrates from the key alone, and loses the subject once the querent deletes it', () =>
+    withRollback(async (tx) => {
+      const userId = await makeUser(tx, 'm7f');
+      await putMemory(tx, userId, [item(ID_FOOD, 'taste', 'nasi padang')]);
+      const runId = await makeRun(tx, userId, {
+        trigger: 'idle_nudge',
+        status: 'pending',
+        materialKey: `profile:${ID_FOOD}:2026-08`,
+      });
+
+      const line = await materialLineForRun(tx, { runId, userId, locale: 'id', now: NOW });
+      expect(line).toContain('profile — ');
+      expect(line).toContain('kind=taste');
+      expect(line).not.toContain('nasi padang');
+      /* The month is in the key and out of the prompt. */
+      expect(line).not.toContain('2026-08');
+
+      /* Phase 6's per-item delete, from the material's point of view. */
+      await putMemory(tx, userId, []);
+      expect(await materialLineForRun(tx, { runId, userId, locale: 'id', now: NOW })).toBeNull();
+    }));
+});
+
+// ---------------------------------------------------------------------------
+// M8 — what time it is where the querent is
+// ---------------------------------------------------------------------------
+
+describe('M8 — the clock', () => {
+  it('says nothing at all when nobody has reported an offset', () =>
+    withRollback(async (tx) => {
+      /*
+       * **THE NEAREST NEGATIVE, AND THE MOST IMPORTANT ONE IN THE FILE.** An ice-breaker
+       * whose entire content is *"it is Monday morning where you are"* is a false statement
+       * when we do not know where you are, and being confidently wrong about the clock is
+       * the bug R1 exists to delete rather than to move.
+       */
+      const userId = await makeUser(tx, 'm8a');
+      expect(await selectMaterial(tx, args(userId))).toBeNull();
+    }));
+
+  it('is the last thing tried, and it is what is left when nothing happened', () =>
+    withRollback(async (tx) => {
+      const userId = await makeUser(tx, 'm8b');
+      const found = await selectMaterial(tx, args(userId, { clock: jakarta() }));
+      /* NOW is 2026-08-07T12:00Z; +7h is 19:00 on the Friday. */
+      expect(found).toMatchObject({
+        kind: 'time_of_day',
+        localDate: '2026-08-07',
+        weekday: 'fri',
+        part: 'evening',
+        shape: 'ordinary',
+      });
+      expect(materialKey(found as Material)).toBe('tod:2026-08-07:evening');
+    }));
+
+  it('loses to anything that actually happened', () =>
+    withRollback(async (tx) => {
+      /* The monopoly argument, as a test: M8 has unlimited supply, so the only thing
+       * keeping it from eating every run is its position. */
+      const userId = await makeUser(tx, 'm8c');
+      await makeReading(tx, userId);
+      const found = await selectMaterial(tx, args(userId, { clock: jakarta() }));
+      expect(found?.kind).toBe('reading');
+    }));
+
+  it('speaks about the day ONCE, however many parts of it are left', () =>
+    withRollback(async (tx) => {
+      /*
+       * **RANKING IS `MATERIAL_ORDER`'s JOB AND VOLUME IS THIS BRAKE'S** (reconciliation
+       * ruling 5). Being last stops unlimited supply STARVING the ladder; it does not stop
+       * the room mentioning the calendar five times on a quiet day, which is what phase 8's
+       * cap of five would otherwise allow — and phase 8's defence of that number rests on
+       * `no_material` being the binding gate, which a material available in every part of
+       * every day falsifies. The morning key is spent here and the EVENING one is refused,
+       * which a `materialKeyUsed` probe alone would not do.
+       */
+      const userId = await makeUser(tx, 'm8g');
+      await makeRun(tx, userId, { materialKey: 'tod:2026-08-07:morning' });
+      expect(await selectMaterial(tx, args(userId, { clock: jakarta() }))).toBeNull();
+
+      /* And tomorrow is a new day, so the brake is a brake and not an off switch. */
+      const tomorrow = jakarta(new Date('2026-08-08T12:00:00.000Z'));
+      const next = await selectMaterial(tx, args(userId, { clock: tomorrow }));
+      expect(materialKey(next as Material)).toBe('tod:2026-08-08:evening');
+    }));
+
+  it('reads the querent’s own day and not the caller’s, across the date line', () =>
+    withRollback(async (tx) => {
+      /*
+       * The cron passes `utcDateString()`, which at 23:30 UTC is YESTERDAY for a Jakarta
+       * querent already having breakfast. The one derivation is phase 1's
+       * `resolveChatClock`, read for its `localDate`, so the material follows the person
+       * rather than the caller. **`args.localDate` stays the CALLER's day and only
+       * `detectTimeOfDay` reads `clock.localDate`** — two day values in one args object,
+       * deliberately; see reconciliation ruling 6.
+       */
+      const userId = await makeUser(tx, 'm8d');
+      const found = await selectMaterial(
+        tx,
+        args(userId, {
+          now: new Date('2026-08-30T23:30:00.000Z'),
+          localDate: '2026-08-30',
+          clock: jakarta(new Date('2026-08-30T23:30:00.000Z')),
+        }),
+      );
+      expect(found).toMatchObject({
+        kind: 'time_of_day',
+        localDate: '2026-08-31',
+        weekday: 'mon',
+        part: 'morning',
+        shape: 'week_start',
+      });
+    }));
+
+  it('rehydrates the moment it was minted for, and NOT the moment it is planned in', () =>
+    withRollback(async (tx) => {
+      /* `brief.ts`'s rule: a run must not change what it is about between mint and plan.
+       * `lotusMaterial` re-reads because the Lotus is a fact that moves; a moment does not. */
+      const userId = await makeUser(tx, 'm8e');
+      const runId = await makeRun(tx, userId, {
+        trigger: 'cron',
+        status: 'pending',
+        materialKey: 'tod:2026-08-09:afternoon',
+      });
+      const line = await materialLineForRun(tx, {
+        runId,
+        userId,
+        locale: 'id',
+        now: new Date('2026-08-10T03:00:00.000Z'),
+      });
+      expect(line).toContain('time_of_day — ');
+      expect(line).toContain('weekday=sun');
+      expect(line).toContain('part=afternoon');
+      expect(line).toContain('shape=weekend_close');
+      /* The date is in the key and out of the prompt. */
+      expect(line).not.toContain('2026-08-09');
+    }));
+
+  it('answers null on a key it cannot parse rather than failing the run', () =>
+    withRollback(async (tx) => {
+      const userId = await makeUser(tx, 'm8f');
+      const runId = await makeRun(tx, userId, {
+        trigger: 'cron',
+        status: 'pending',
+        materialKey: 'tod:2026-08-09:teatime',
+      });
+      expect(await materialLineForRun(tx, { runId, userId, locale: 'id', now: NOW })).toBeNull();
+    }));
+});
