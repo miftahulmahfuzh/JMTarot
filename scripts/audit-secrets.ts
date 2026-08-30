@@ -560,6 +560,23 @@ const FORBIDDEN: { prefix: string; allow: string[] }[] = [
       'lib/chat/voices/pace.ts',
     ],
   },
+  /*
+   * **R2, PHASE 4. THE FENCE PHASE 3 DEFERRED TO THE COMMIT THAT ADDS THE MODULE IT
+   * FENCES**, which is this one -- `moderation/`'s shape and its argument.
+   *
+   * `prompt.ts` carries the extraction contract in both locales and `generate.ts`
+   * reaches the provider and the database. Neither may reach a browser bundle, and
+   * this walk is TRANSITIVE where `clientBoundary.test.ts` checks only the direct
+   * import -- which is the half that matters once `/account` starts mounting client
+   * components that render these items.
+   *
+   * **`types.ts` IS THE ONE EXCEPTION AND IT IS A ZERO-IMPORT LEAF.** A client
+   * component needs `UserMemoryKind` and `USER_MEMORY_KINDS` for a label table and a
+   * delete control; it must not acquire `node:crypto` for them, which is why
+   * `userMemoryItemId` lives in `prompt.ts`. `clientBoundary.test.ts` asserts the file
+   * carries no contract prose and no imports, so the exception has to stay earned.
+   */
+  { prefix: 'lib/memory/profile/', allow: ['lib/memory/profile/types.ts'] },
 ];
 
 /** Resolve an import specifier to a file under src/, or null if it leaves the tree. */

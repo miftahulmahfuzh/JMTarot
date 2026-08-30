@@ -104,6 +104,7 @@ export const EVENT_NAMES = [
   'memory.summary_generated',
   'memory.frequency_shown',
   'memory.frequency_generated',
+  'memory.profile_written',
 
   // — locale (W6) —
   'locale.changed',
@@ -492,6 +493,28 @@ export type EventMap = {
   'memory.frequency_generated':{ window: string; top_card_id: number; second_card_id: number | null; sample: number; angle: number; total_ms: number;
                                  shadow_card_id: number; shadow_collision: 'top' | 'second' | 'none';
                                  dominance: 'tied' | 'narrow' | 'clear' | 'overwhelming'; pulse: number };
+
+  /**
+   * R2's profile memory. **`dropped` IS THE ONE THAT MATTERS AND IT IS WHY THIS NAME
+   * EXISTS**: `llm_calls` gives the cost and the latency, and nothing else can say how
+   * many facts `validateExtraction` threw away. A `dropped` that trends toward
+   * `returned` means the CONTRACT is failing -- the model is writing dates or
+   * attributions -- and the fix is the prompt, not the code. That is
+   * `persona.generated.fallback`'s argument in a new place.
+   *
+   * `returned` is what the MODEL produced and `items` is what survived, so the two are
+   * equal on a clean extraction and `dropped` is their difference. Both are zero on
+   * every path that made no call, which is honest rather than missing.
+   *
+   * **`reason` IS A CLOSED TOKEN AND NEVER AN ERROR MESSAGE** (rule 2). **NO ITEM TEXT
+   * AND NO COUNT OF ANY PARTICULAR KIND** (rule 1): the memory is prose about a person,
+   * `events` rows survive account erasure with `user_id` nulled, and a per-kind
+   * breakdown of what the room knows about you is not a thing that belongs in a table
+   * with that property.
+   */
+  'memory.profile_written':    { outcome: 'ok' | 'failed'; reason: string | null;
+                                 items: number; returned: number; dropped: number;
+                                 model: string; total_ms: number };
 
   /*
    * `surface` GAINED `'content'` IN v0.4.0 (S2's switcher-as-link, §4.2).

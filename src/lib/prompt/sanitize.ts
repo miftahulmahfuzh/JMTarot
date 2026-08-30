@@ -5,7 +5,7 @@ export const MAX_QUESTION_LENGTH = 200;
  * EVERY DELIMITER THE PROMPT LAYER WRITES, in any casing, with whitespace
  * anywhere inside the tag and with attributes.
  *
- * Nine tags, because nine different blocks fence off user-derived text:
+ * Ten tags, because ten different blocks fence off user-derived text:
  *
  *   <pertanyaan>          the querent's question, in a reading's user turn
  *   <penanya>             the Lotus block, in a reading's user turn (W3 §9)
@@ -31,6 +31,10 @@ export const MAX_QUESTION_LENGTH = 200;
  *                         that writes a fence strips its material, mechanically,
  *                         so a querent typing `</waktu>` cannot forge the frame
  *                         the whole of phase 2 rests on
+ *   <ingatan>             R2's profile memory: the facts the room keeps about a
+ *                         querent, carried back into the extractor's own next
+ *                         prompt and, from phase 5, into every voice prompt --
+ *                         model output that was itself written out of user text
  *
  * THE COUNT ABOVE AND THE ALTERNATION BELOW MUST AGREE, and `sanitize.test.ts`'s
  * `the delimiter set` block is what makes them. They had already drifted once --
@@ -45,7 +49,7 @@ export const MAX_QUESTION_LENGTH = 200;
  * THIS DOES NOT CONTRADICT RECONCILIATION R17. That resolution says the ENGLISH
  * prompt keeps `<pertanyaan>` rather than gaining an English-language tag -- one
  * token per purpose, across both locales, so there is one thing to strip and one
- * thing to test. These nine serve nine purposes and fence nine different
+ * thing to test. These ten serve ten purposes and fence ten different
  * blocks. What R17 warns against is doubling the surface for the SAME purpose,
  * and adding a locale variant of any of these would still be wrong.
  *
@@ -113,11 +117,22 @@ export const MAX_QUESTION_LENGTH = 200;
  * tag until this commit, and that copy is deleted rather than left as a no-op --
  * two implementations of one rule is how the two drift.
  *
+ * `<ingatan>` IS A TENTH PURPOSE, AND IT ARRIVES ON `<terjemahan>`'s ARGUMENT
+ * rather than on a new one (R2, 2026-08-30). What it fences is **model output that
+ * was itself generated from user text, handed to a second model as material** -- the
+ * profile memory, written by the extractor out of the room and read back into the
+ * extractor's own next prompt and, in phase 5, into every voice prompt. The tag is
+ * written by TWO builders in two workstreams (`memory/profile/prompt.ts` and
+ * `chat/prompt/build.ts`), which is exactly the shape `<lampiran>` was added for: a
+ * tag the alternation cannot name is a hole in the block that carries a querent's own
+ * words, however indirectly. **It lands with the WRITE side, so phase 5 gets it for
+ * free and must not add it a second time.**
+ *
  * `[^>]*` covers the attribute on `<jawaban kunci="...">`. It cannot run past a
  * `>` and so cannot swallow arbitrary text between two unrelated tags.
  */
 const DELIMITER =
-  /<\s*\/?\s*(?:pertanyaan|penanya|jawaban|riwayat|terjemahan|sosok|obrolan|lampiran|waktu)(?:[^>]*)>/gi;
+  /<\s*\/?\s*(?:pertanyaan|penanya|jawaban|riwayat|terjemahan|sosok|obrolan|lampiran|waktu|ingatan)(?:[^>]*)>/gi;
 
 /*
  * C0 and C1 control characters, minus the whitespace handled separately below.

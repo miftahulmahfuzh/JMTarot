@@ -1,0 +1,176 @@
+/*
+ * What the room has noted, on `/account`.
+ *
+ * NO NEW HEX, NO NEW FONT SIZE, NO NEW CURVE. `--danger` is reused for the two
+ * destructive controls and for the failure line, which are the only places on this
+ * block where something is destroyed or went wrong -- `AccountAnswers.module.css`'s
+ * rule and its palette.
+ *
+ * **EVERY CONTROL CLEARS 44px**, which is the iOS minimum `PublicShare`'s 36px
+ * button already fails on twenty-three pages. The remove button sits at the END of a
+ * row whose text can be three lines, so the row is a flex container that WRAPS: a
+ * long note must take the width and push the button under it rather than squeezing
+ * it below its own minimum.
+ */
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.hint,
+.empty {
+  margin: 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: var(--fs-hint);
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.empty {
+  color: var(--faint);
+}
+
+.loading {
+  margin: 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: var(--fs-hint);
+  color: var(--faint);
+}
+
+.failed {
+  margin: 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-style: italic;
+  font-size: var(--fs-hint);
+  color: var(--danger);
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--gold-hairline);
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+/*
+ * `min-width: 0` AND `overflow-wrap: anywhere`, both load-bearing. The note is model
+ * output and may hold a long unbroken token; `ChatComposer` paid for exactly this
+ * with `Kirim` disappearing off the edge at 320px, and `break-word` is NOT a
+ * substitute -- only `anywhere` changes min-content width.
+ */
+.text {
+  flex: 1 1 12rem;
+  min-width: 0;
+  margin: 0;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: var(--fs-hint);
+  line-height: 1.5;
+  color: var(--text-warm);
+  overflow-wrap: anywhere;
+}
+
+.reveal,
+.remove,
+.forgetAll,
+.forgetAllConfirm,
+.cancel {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 14px;
+  font-family: var(--font-display), serif;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  border-radius: var(--radius-chip);
+  cursor: pointer;
+}
+
+/* The one control on the block before anything is revealed. Gold, because it is
+   the reason the section is here. */
+.reveal {
+  align-self: flex-start;
+  color: var(--gold);
+  border: 1px solid var(--gold-border);
+  background: var(--gold-wash);
+}
+
+/*
+ * QUIET, NOT `--danger`. Per-row removal is a right the querent is exercising over
+ * something a machine wrote about them, and colouring twelve rows as warnings would
+ * scold them for it. That is V8's argument for its own clear button, and it applies
+ * harder here because there are many rows rather than one.
+ */
+.remove {
+  color: var(--muted);
+  border: 1px solid var(--gold-hairline);
+  background: transparent;
+}
+
+/* The whole payload, and there is no restore. `--danger` earns its place on the
+   second step, where the only question is whether this is the irreversible one. */
+.forgetAll {
+  align-self: flex-start;
+  color: var(--muted);
+  border: 1px solid var(--gold-hairline);
+  background: transparent;
+}
+
+.forgetAllConfirm {
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  background: transparent;
+}
+
+.cancel {
+  color: var(--muted);
+  border: 1px solid var(--gold-hairline);
+  background: transparent;
+}
+
+.confirm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.reveal:focus-visible,
+.remove:focus-visible,
+.forgetAll:focus-visible,
+.forgetAllConfirm:focus-visible,
+.cancel:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--gold-border);
+}
+
+.reveal:disabled,
+.remove:disabled,
+.forgetAll:disabled,
+.forgetAllConfirm:disabled,
+.cancel:disabled {
+  /* One write at a time. Two concurrent deletes would race each other's
+     read-modify-write of the same payload. */
+  cursor: default;
+  color: var(--faint);
+  border-color: var(--gold-hairline);
+  background: transparent;
+}

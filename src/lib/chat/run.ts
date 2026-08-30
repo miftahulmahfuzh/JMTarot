@@ -71,6 +71,7 @@ import {
 } from '@/lib/db/queries/chat';
 import type { DbOrTx } from '@/lib/db/types';
 import { chatEnabled, chatProactiveEnabled } from '@/lib/llm/flags';
+import { scheduleProfileExtraction, trackProfileWritten } from '@/lib/memory/profile/generate';
 import { resolveChatClock } from './clock';
 import { plan } from './direct/plan';
 import { nextAction } from './machine';
@@ -207,6 +208,50 @@ export async function mintRun(args: MintArgs, handle?: DbOrTx): Promise<{ runId:
  * one retried.*
  */
 export async function advance(args: { userId: string; locale: Locale }): Promise<AdvanceReply> {
+  const reply = await advanceOnce(args);
+
+  /*
+   * **THE ONE PLACE A RUN CAN FINISH** (R2, phase 4). A run ends four different ways --
+   * a zero-beat plan (`C-R6`'s silence), the last beat spoken, the last beat skipped,
+   * and an exhausted sheet -- and all four return `done: true` with a non-null `runId`,
+   * while `idle` (no run, or somebody else holds the lease) returns a null one. So this
+   * condition is exactly *"a run just finished"*, written once instead of at four
+   * `after()` sites that would drift.
+   *
+   * `C-D7` is what makes that true and this wrapper inherits it: an abandoned run and a
+   * proactive run are the same object, so there is one exit rather than one per trigger.
+   *
+   * **`run.ts` MAKES NO MODEL CALL AND MUST NOT START.** `flagCoverage.test.ts`'s
+   * `GATES` table asserts this file is NOT a `getProvider()` call site -- that is what
+   * lets `CHAT_PROACTIVE_ENABLED` live in a third table. The extraction's provider call
+   * is in `@/lib/memory/profile/generate`, behind its own flag and its own `FLAGGED`
+   * row.
+   *
+   * **IT IS DEFERRED IN BOTH SENSES.** In `after()`, so the querent's bubble is not
+   * behind it; and `callClass: 'deferred'` through `reserveChatCall()`, so when the chat
+   * and a reading compete the reading still wins (`C-D6`). A shed extraction is not an
+   * error and the next completed run tries again.
+   *
+   * `scheduleProfileExtraction` NEVER THROWS, which is what makes it safe inside an
+   * `after()` that has no useful response to a rejection.
+   */
+  if (reply.done && reply.runId !== null) {
+    after(async () => {
+      const outcome = await scheduleProfileExtraction(args.userId, args.locale);
+      trackProfileWritten(outcome);
+    });
+  }
+
+  return reply;
+}
+
+/**
+ * The engine proper: plan, or execute exactly one beat. **`advance` is the exported
+ * entry point and this is its body**, split out so that "a run has just finished" is
+ * asked in exactly one place. The signature and every returned value are identical --
+ * `advance` forwards `args` unchanged and returns what this returns.
+ */
+async function advanceOnce(args: { userId: string; locale: Locale }): Promise<AdvanceReply> {
   /*
    * **AN OPAQUE PER-REQUEST TOKEN, NEVER A SESSION ID** (§3.3). A session id in a row
    * F7 may render is an identifier with no reason to be there, and it would outlive

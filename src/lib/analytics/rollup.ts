@@ -28,7 +28,7 @@
 import type { LLMOp } from '@/lib/llm/types';
 
 /**
- * **THE THIRTEEN**, in the order a chart or a legend renders them. (This line said
+ * **THE FOURTEEN**, in the order a chart or a legend renders them. (This line said
  * *"The ten"* over an eleven-member array from 2026-07-31 until v0.7.0 — one of the
  * three stale op counts reconciliation `[R13]` found in prose. **The count is written
  * out rather than deleted because the boundary below is what a reader needs, and a
@@ -39,7 +39,7 @@ import type { LLMOp } from '@/lib/llm/types';
  * The order is the request's own shape: what a reading costs, in the order a reading
  * incurs it, then the two background generators, then the two translation passes.
  *
- * **THE LAST FOUR HAVE NO QUERENT BEHIND THEM, AND THAT IS WHY THEY ARE LAST.**
+ * **THE LAST FIVE HAVE NO QUERENT BEHIND THEM, AND THAT IS WHY THEY ARE LAST.**
  * `insight` arrived with A7 on 2026-07-31 and `blog_format` the same day with the markdown
  * editor; `chat_plan` and `chat_turn` arrived with v0.7.0's group chat on 2026-08-07.
  * Every value above them is incurred by somebody taking a reading, directly or in
@@ -47,7 +47,11 @@ import type { LLMOp } from '@/lib/llm/types';
  * is looking at it. Keeping them at the end leaves the nine querent-side rows in the
  * shape they have always had, so a table that grew a row does not also look reordered.
  *
- * **A COST-PER-READING DENOMINATOR MUST EXCLUDE ALL FOUR**, which is the reason the
+ * `profile_memory` arrived with R2's group-chat profile memory on 2026-08-30 and sits
+ * LAST, after the two chat ops, because it is caused by the room the way they are but
+ * is not part of an exchange: it runs when a run has already ended.
+ *
+ * **A COST-PER-READING DENOMINATOR MUST EXCLUDE ALL FIVE**, which is the reason the
  * boundary is visible in the order rather than only in a comment.
  *
  * **THE TWO CHAT OPS SIT AFTER THE TWO ADMIN ONES AND THE DISTINCTION IS WORTH A LINE**:
@@ -70,6 +74,7 @@ export const OP_ORDER = [
   'blog_format',
   'chat_plan',
   'chat_turn',
+  'profile_memory',
 ] as const satisfies readonly LLMOp[];
 
 /**

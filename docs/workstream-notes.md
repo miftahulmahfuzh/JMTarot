@@ -13026,3 +13026,265 @@ offset the server does not have, which is the only shape of test that can see it
 (Jakarta `+420`), while the browser's `Date.prototype.getTimezoneOffset()` returns `-420`. A sign
 error renders a clock fourteen hours out, and every rule downstream then works perfectly against
 a wrong number.
+
+## `user_memory`, and the third category in `delete.ts`'s asymmetry (2026-08-30, R2)
+
+`src/lib/account/delete.ts`'s header has stated one rule since V8: *"the asymmetry with
+`moderation_flags` IS the asymmetry in the foreign keys: `set null` outlives the account,
+`cascade` does not."* It decided two cases correctly and was quoted a third time by
+`F1-D10` to keep the whole group chat out of the erasure transaction. R2's `user_memory`
+is the first case it decides **wrongly**, and the amendment is recorded here rather than
+performed quietly in a header nobody diffs.
+
+**The foreign key answers "does it survive". It does not answer "is this the thing they
+meant."** Every cascading table this rule has been applied to holds either text the
+querent typed — `chat_messages.body`, `readings.question`,
+`onboarding_answers.answer_text` — or prose about a *reading*. `user_memory.items` is a
+model's inferences **about a person**, assembled from a conversation they were having for
+another reason, stored so a reader can use it on them later. It is the only row in this
+database of which that is true, and it is precisely what somebody means when they press
+*delete my account*. Thirty more days of it is `moderation_flags`' risk wearing a
+different foreign key.
+
+**What actually decides the case is a third category the header now names:
+DERIVED-AND-REGENERABLE.** `clearFreeTextAnswers()` is absent from that transaction
+because `onboarding_answers` is the *only copy* of text a person typed, and clearing it
+would break the thirty-day restore the confirmation copy promises. `user_memory` has no
+such property: every input is `chat_messages` and `readings`, both of which cascade and
+therefore **survive** the soft delete, and the extractor is idempotent — so a querent who
+signs back in on day 29 has the room's memory rebuilt on the next run. **Clearing it costs
+the restore nothing, which is what makes it cheap enough to do at all.** That is the test
+to apply to the next table somebody wants to add here, not the foreign key.
+
+**It is a REDACTION and not a DELETE, and `dismissed_ids` is what makes that necessary.**
+Emptying the row leaves the tombstones — opaque twelve-character hashes of items the
+querent individually deleted, carrying no text and able only to *prevent* a write.
+Dropping the row would take them too, so an erase-then-restore on day three would
+resurrect exactly the facts the querent had deleted one at a time. `input_hash` is blanked
+in the same statement and `''` is a reserved never-matches value: an emptied list beside a
+matching hash means the extractor reports `unchanged` and never writes again — the feature
+dead after any erasure, with nothing logged.
+
+**It does not license adding `personas`.** `personas.body` is also model-written prose
+about the person and it stays out of that transaction: it is distilled from a rite the
+querent walked through, it is shown *to* them on `/account` as the product, and it is not
+assembled from a conversation they were having for another reason. Somebody will notice
+the resemblance and want symmetry; changing it is a ruling, not a tidy-up.
+
+**Where it is enforced:** `redactUserMemory` in `src/lib/db/queries/memory.ts`, called from
+`deleteAccount`'s transaction between `redactForUser` and the flag.
+`delete.integration.test.ts` proves the same-transaction property with a trigger and pins
+the statement ORDER on the source, so a refactor into three awaited helpers fails there
+and is sent here.
+
+---
+
+## The extractor: a THIRD flag shape, and a deletion that is not a staleness trigger (2026-08-30, R2 phase 4)
+
+The write half of R2. `src/lib/memory/profile/{prompt,generate}.ts`, the fourteenth
+`LLMOp`, `PROFILE_MEMORY_ENABLED`, and one `after()` at the end of `advance()`. Four
+things are worth keeping, and the first two are the decisions the phase was required to
+make in writing.
+
+### 1. The hash MOVES and the flag still WRITES NOTHING. That is a third shape, and `flags.ts` was silently carrying a second condition
+
+`flags.ts`'s header presented the Lotus/persona asymmetry as though it followed from the
+hash alone. **It does not.** There are two independent questions, and the first two
+generators happened to answer both the same way — which is exactly why the paragraph read
+as though there were one:
+
+| | SAFE? (does the hash move off a stored fallback?) | NECESSARY? (does a reader break on no row?) | So it writes |
+|---|---|---|---|
+| `lotus` | **No** — birth year + six answers, static for ever | No — `getLotusBlock` returning null is normal | nothing |
+| `persona` | **Yes** — ends `readings:<ids>` | **Yes** — `/api/persona`'s no-row branch 500s | the template |
+| `profile_memory` | **Yes** — ends with the newest `chat_messages.id` | **No** | **nothing** |
+
+The third row is the new information. `profileMemoryInputHash` is
+`v<SOURCE_VERSION>\nnewest:<uuid>`, so it advances on the querent's very next sentence and
+a stored fallback could never freeze the way a Lotus one would — storing would be *safe*.
+It is simply not *necessary*, and there is **nothing honest to store**: `fallbackPersona`
+is a template assembled from numbers the engine computed, and there is no template version
+of *"usually has nasi padang for dinner"*, because a memory is by definition what the
+querent actually said. `/account` labels the row *what the room believes about you*, and a
+fabricated or empty artifact under that label is worse than an absent one.
+
+**CLAUDE.md's *"THE ASYMMETRY IS A FACT ABOUT THE TWO HASHES AND MUST NOT BE 'TIDIED'"*
+survives intact.** This does not contradict it; it names the second condition the sentence
+was silently carrying. **Do not tidy the three into a rule about hashes.**
+
+### 2. A querent deleting a fact is NOT a staleness trigger, and `personaStaleness`'s `user-edit` arm is the wrong precedent
+
+`profileMemoryStaleness` has four arms — `absent`, `source-version`, `drift`, `fresh` —
+and **no `user-edit` arm.** The persona has one because an onboarding-answer edit changes
+an *input* the artifact was derived from. **Here the querent edits the OUTPUT directly**:
+the item is gone from `user_memory.items` the moment the delete route writes the row.
+Reporting that as stale would have a model re-read the same transcript and re-derive the
+fact the querent had just deleted — the feature actively working against them. A13 is
+untouched; it simply does not apply, because no user action changes this artifact's
+inputs.
+
+What makes the deletion stick instead is `user_memory.dismissed_ids` plus two mechanisms
+that are `effectiveYesNo()` / `validateChoice` / `applyAdvice`'s rule in a fifth place:
+**the prompt is handed the suppression COUNT and never the digests** (they are useless to
+a model and would be a fingerprint of deleted text), and **`validateExtraction`
+mechanically drops any produced item whose id is in the list.** The single-writer property
+is enforced by SQL rather than discipline: `upsertUserMemory`'s `set` list does not name
+that column, so this phase's writer *cannot* clobber a refusal.
+
+**Its honest limit, stated rather than hidden, and WIDER by one under the merged id.** An
+item's id is `sha256(kind + '\u001f' + normalise(text))`, so a re-derivation that rewords
+the fact past `normaliseFact` **or refiles it under a different `kind`** hashes
+differently and can come back. A fuzzy match is not available: the deleted text is
+deliberately not kept, and keeping it would make "delete" mean "move to another column in
+the same row". **The whole mitigation is rule 11 of the extraction contract** — reuse an
+existing item's exact wording and its exact kind — and a test asserts that rule exists in
+both locales, because it is the only thing standing there.
+
+### 3. `lastSeen` cannot order the cap, and phase 3's docblock offers it as though it could
+
+Phase 3 describes `lastSeen` as *"how phase 4 chooses what to evict at
+`USER_MEMORY_MAX_ITEMS`"*. **It cannot be, and the reason is the whole-memory protocol
+rather than an omission in the extractor:** the model rewrites the entire list on every
+extraction, so every item written in one pass carries the same day and the field is
+uniform across a stored list by construction. There is nothing to sort by. So the cap
+takes the model's own ranking — contract rule 6 asks for the most useful first and the
+least useful dropped — and `lastSeen` stays what phase 3's own last sentence says it is:
+*"when an extraction last saw it"*, a per-row age marker and not an order. It would only
+become an eviction key if the protocol ever became a delta, which it must not.
+
+### 4. Two places the plan and the code disagreed, and the code won both
+
+- **`returned` was the KEPT count, which made `dropped` identically zero.**
+  `memory.profile_written` exists for `dropped` and nothing else — `llm_calls` already
+  carries the cost and the latency, and only this can say how many facts the mechanical
+  filters threw away, which is what distinguishes *"the model is failing"* from *"the
+  contract is failing"*. As drafted, the one interesting field could never be non-zero and
+  an operator would read a flat line as a clean extractor. `ExtractionVerdict` now carries
+  `returned` on both arms and it is `parsed.length`.
+- **`parseArray` accepted an object wrapper, and its own test said it should not.**
+  `{"items":[]}` scanned to the inner `[]` and became a well-formed EMPTY array, which
+  `validateExtraction` then reports as *a considered empty answer* — the model saying
+  there is nothing worth remembering about this person — from a reply that was the wrong
+  shape. That is the confusion `all_items_dropped` exists to prevent, one level up. The
+  tolerance is now **prose and fences, not an object wrapper**: a `{` before the first `[`
+  is `unparseable`, so nothing is written, the hash does not move, and the reason is
+  accurate.
+
+### `[R1]` for the fourth time
+
+The events taxonomy was **already at its ceiling** when this work opened — 77 names
+against a 77 bound — so `memory.profile_written` went red on `events.test.ts`'s budget
+line and not in the diff that added it. It is 78/78 now. **There is no headroom for the
+later phases of this plan set**; they must fold into an existing prop shape or raise the
+line with their own register entry.
+
+Three closed-set registers the phase plan did not name also failed and had to be
+transcribed rather than narrowed: `rollup.test.ts`'s spelled-out fourteen,
+`ops.test.ts`'s *"names the four the release closed on"*, and `events.test.ts`'s
+`memory.*` list. **That is the machinery working** — each one is a place somebody wrote
+down which members exist, and a phase plan that enumerates files will miss them every
+time.
+
+## `<ingatan>`, and the two rules that were NOT written (2026-08-30, R2 phase 5)
+
+**THE DIRECTOR PROFILE CARRIES NO `<ingatan>`, AND THE ARGUMENT IS `beat.angle`.** §4.2's
+narrowing (*"the director casts and orders"*) was the starting point, but R3's
+profile-anchored material made it a live question rather than a restatement. What settled it
+is the one string that crosses from the director into a voice's prompt: `instruction()`
+renders `beat.angle` **unfenced**, inside the block the contract declares to be a command. A
+director able to read the memory could put a remembered fact there, and `checkPlan` has no
+`<ingatan>`-derived check to stop it — so the fence would be bypassed by the one field
+designed to cross it. The material line (`BAHAN:`) already carries a closed kind token and
+scalars, which is everything the director needs to cast a profile-anchored opener, and it
+carries no free text by construction. The privacy argument that decided `<jawaban>` points the
+same way and harder: one call per beat holds the sensitive strings instead of one per beat
+plus one per run, and a model's inferences about a person are a stronger claim than the six
+answers.
+
+**THERE IS NO NAME BAN OVER `<ingatan>` AND ADDING ONE WOULD DELETE THE FEATURE.** The
+`<jawaban>` ban rests on a specific published promise — `onboarding.q.most_loved.hint` says a
+name typed there will not travel. **Nothing promises that about a name the querent typed into
+the group chat**, which is where every name in the memory came from, and
+*"gimana si bonjeng, marah2 lagi ga dia?"* is the sentence R3 was written to produce. A reader
+who knows the name and says *"si bos lu itu"* instead is not being careful; it is the
+uncanny-valley version. The promise boundary is enforced where it already lives:
+`answer_name_leak` refuses a proper name that came out of a stored ANSWER and has not been
+said in the room, wherever in the bubble it appears — so a name that leaked into the memory is
+caught by the check that existed before this release. `validate.test.ts` tests 18 and 19 are
+the pair that keeps both halves true.
+
+**`MEMORY_NGRAM = 8` IS A GUESS AND IS RECORDED AS ONE**, next to `PERSONA_MIN_AGE_SECONDS`.
+`NGRAM = 6` compares a bubble against a sentence a *person* typed; this compares two outputs
+of the same model family, in one language, about one person, on the handful of topics the room
+talks about, where a six-word collision can be topic rather than copying. The instrument is
+`chat.turn_generated.reject_reason` plus `npm run smoke -- --chat`: if it never fires, lower
+it; if it refuses a bubble that reads correctly, raise it, and fix the prompt.
+
+### Three places the plan's own text would not have compiled or would have failed
+
+- **`system).not.toContain('bonjeng')` and the contract both wanted that name.** The plan's
+  *"puts the memory in the user turn and never in the system prompt"* test asserted the
+  absence of `bonjeng` from the system half, while the same plan's Indonesian contract puts
+  *"gimana si bonjeng, marah2 lagi ga dia?"* into it as the worked example that licenses using
+  a room name — and its own next test asserts that example is there. **Two assertions in one
+  plan, mutually exclusive.** The test now asserts the absence of the stored SENTENCE, which
+  is what may not leak; the name is the contract's on purpose. **The generalisation: a canary
+  drawn from the same vocabulary as a worked example is not a canary.**
+- **The plan's seven-word near miss was eight words.**
+  *"lari pagi jam lima tujuh sudah terlalu panas?"* is exactly eight, so
+  `memory_verbatim_ngram` refused it and the test that was supposed to prove the boundary
+  proved it was in the wrong place. Dropping the leading `lari` is the fix. **A near-miss
+  fixture written by eye is a fixture nobody counted**; this one was caught by the suite in
+  its first run, which is the cheap version of that lesson.
+- **`validate.test.ts` already had a test 16.** The plan numbered its four new tests 16–19
+  onto a file whose `too_many_bubbles` holds 16; they are 17–20. The numbers are labels for a
+  reader, and a collision reads as one test replacing another.
+
+### Two counts corrected in passing, both by DELETING the number
+
+`build.ts`'s `buildChatPrompt` doc said *"the four fenced blocks"* and `voices/prompt.ts` said
+the context is *"six database reads"* — both true when written, both wrong twice over inside
+one release, because phase 2 and phase 5 each add a block and phase 5 adds a read. Neither now
+carries a figure: the block-order list in `build.ts`'s header and the read list in
+`context.ts`'s header are the two places that have to be right, and every other mention points
+at them. **`## Analytics`' 67-against-76 in a new place, fixed the way that one says to.**
+
+### The gate, run twice, and the honest reading of it
+
+`npm run smoke -- --chat` (both locales, two runs, 2026-08-30). **All mechanical checks
+`all clean` on both**, and the blind read was **3 of 3 in both locales** on run 1. Overlap
+`id` 0.062 / 0.119 / 0.091, `en` 0.156 / 0.240 / 0.129; sentence-length ratio `en`
+margaret 31.0 against thessaly 7.2; contractions `en` adrian 5.0, margaret 0.0.
+
+**The licence works, and exactly one observation proves it rather than four.** Run 1's
+English half produced *"is this your idea or bonjeng's shouting talking?"* — `bonjeng`
+appears nowhere in the fixture transcript, nowhere in the six answers and nowhere in the
+Lotus block, so it can only have come out of `<ingatan>`, and it arrives as leverage inside
+the current subject with no attribution attached. That is the target sentence's shape, in
+the other language, unprompted. **No reader in either run recited a note, summarised one, or
+named a store.**
+
+**AND THE RATE IS LOWER THAN THE PLAN EXPECTED — one clean use in four locale-runs, not one
+per locale per run. THE CAUSE IS THE FIXTURE TRANSCRIPT, NOT THE CONTRACT, and that is a
+measurement rather than an excuse.** The scripted conversation is about a grandmother and a
+resignation; the four fixture notes are about dinner, a colleague, a morning run and
+preferring one's own company. Only the run attaches, and the querent raises it themselves in
+the last message — so every engagement with it is confounded by `<obrolan>` and cannot be
+scored. **A memory that goes unused in a conversation it has nothing to say about is the
+placement argument working**, not the licence failing: the block sits far from the
+instruction precisely so it does not answer a question about a deadline with a question
+about dinner.
+
+**So the contract was NOT tuned on this.** The rollback note offers *"revert step 3 if
+readers use it badly"* and the exit criteria offer *"fix the LICENCE bullet if nobody uses
+it"*; neither condition is met, and moving a contract on a two-run sample against a
+transcript that does not ask for the memory is the English `spread3` calibration mistake in
+a new place. **What is owed is a better instrument, and it is phase 9's:** a fixture
+transcript that touches one memory topic, or a printed memory-use rate. Recorded as a
+handoff rather than built here, because phase 9 owns every check in that script.
+
+Two pre-existing things seen in passing and left alone, both older than this phase: an `id`
+Margaret bubble truncated mid-word at the token ceiling (*"seberapa jauh Mifta bisa jat"*),
+and an `id` Adrian bubble inventing a habit the prompt does not carry (*"biasanya jadi hantu
+malam"*). Neither is `<ingatan>`-derived — the second is the *"jangan menebak"* rule losing
+to Adrian's register, which is `validate.ts`'s accept bias by design.

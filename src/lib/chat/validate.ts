@@ -39,14 +39,18 @@ import type { ChatLengthBudget } from '@/lib/prompt/budget';
  * **THE TWO FUNCTIONS LOOK ALIKE ENOUGH THAT SOMEBODY WILL WANT TO MAKE THEM
  * CONSISTENT. Do not.**
  *
- * ── THREE REFUSALS OVERRIDE THE ACCEPT BIAS, AND ONLY THREE ────────────────
+ * ── FOUR REFUSALS OVERRIDE THE ACCEPT BIAS, AND ONLY FOUR ──────────────────
  *
- * `banned_word`, `answer_name_leak` and `verbatim_ngram`. Their false-acceptance cost is
- * *not* bounded by the next message: a diagnosis, a name lifted from a stored answer, or
- * a sentence quoted back at the person who typed it is **a promise broken, and a promise
- * broken does not scroll away.** The first is non-negotiable 13; the other two are what
- * keep `onboarding.q.most_loved.hint`'s published promise mechanical rather than hoped
- * for (`[F3-8]`).
+ * `banned_word`, `answer_name_leak`, `verbatim_ngram` and `memory_verbatim_ngram`. Their
+ * false-acceptance cost is *not* bounded by the next message: a diagnosis, a name lifted from
+ * a stored answer, a sentence quoted back at the person who typed it, or a stored note read
+ * aloud is **a promise broken, and a promise broken does not scroll away.** The first is
+ * non-negotiable 13; the next two are what keep `onboarding.q.most_loved.hint`'s published
+ * promise mechanical rather than hoped for (`[F3-8]`); the fourth is the same rule applied to
+ * a store the querent can read on `/account` and `/privacy` names by table.
+ *
+ * **IT WAS THREE FOR TWO RELEASES AND THE COUNT IS IN THE HEADING ON PURPOSE.** A list that
+ * grows without its count moving is how `## Analytics` came to say 67 while the file held 76.
  *
  * ── PURE, AND `scripts/` IMPORTS IT ────────────────────────────────────────
  *
@@ -266,6 +270,21 @@ export const CHAT_SOURCE_TELLS_ID: readonly string[] = [
   'catatan kami',
   'waktu itu kamu',
   'yang kamu isi',
+  /*
+   * R2's four. **THE SAME REASON TOKEN (`source_tell`), NOT A NEW ONE**: what is refused is
+   * identical — a reader naming its source — and the source being `<ingatan>` rather than
+   * `<jawaban>` changes nothing an operator would act on differently.
+   *
+   * **`aku inget` IS DELIBERATELY ABSENT, AND IT IS THE NEAR MISS THAT MATTERS.** *"eh gue
+   * inget lu lagi diet"* is exactly the sentence this whole release is for. What is refused
+   * is a reader naming a STORE — a note, a record, a profile — never a reader remembering.
+   * `matchesTell`'s tail stays open (Indonesian is agglutinative) and its head stays
+   * bounded, so `profilmu` matches while `biodataprofilmu` does not begin with it.
+   */
+  'catatanku',
+  'di ingatanku',
+  'profilmu',
+  'menurut data',
 ];
 
 export const CHAT_SOURCE_TELLS_EN: readonly string[] = [
@@ -283,6 +302,15 @@ export const CHAT_SOURCE_TELLS_EN: readonly string[] = [
   'what you filled in',
   'you filled in',
   'from what you told',
+  /*
+   * R2's four, under the same reason token. **`i remember` ALONE IS ABSENT** for
+   * `aku inget`'s reason: remembering is the feature. `i remember you saying` names an
+   * utterance and is refused; `i remember you hate mondays` names nothing and passes.
+   */
+  'in my notes',
+  'my notes say',
+  'your profile',
+  'i remember you saying',
 ];
 
 /**
@@ -297,6 +325,26 @@ export const CHAT_SOURCE_TELLS_EN: readonly string[] = [
  * block licenses.
  */
 const CHAT_BANNED_ROOTS_ID = BANNED_ROOTS_ID.filter((root) => root !== 'cemas');
+
+/**
+ * `NGRAM`'s sibling, and **IT IS EIGHT WHERE `NGRAM` IS SIX, ON PURPOSE.**
+ *
+ * `verbatim_ngram` compares a bubble against **a sentence a person typed**. Two strings from
+ * two different writers sharing six consecutive words is a quotation and almost nothing else.
+ * This compares a bubble against **another output of the same model family, in the same
+ * language, about the same person, on the same handful of topics the room talks about** — and
+ * a six-word collision there can be topic rather than copying. Using `NGRAM` for both would
+ * import a judgement made about one situation into a different one, which is exactly what
+ * `CHAT_BANNED_ROOTS_ID` refuses to do with `BANNED_ROOTS_ID`.
+ *
+ * **EIGHT IS A GUESS AND IS RECORDED AS ONE.** There is no live measurement behind it yet;
+ * `PERSONA_MIN_AGE_SECONDS`'s honesty. The instrument is `chat.turn_generated.reject_reason`
+ * and `npm run smoke -- --chat`: **if it never fires, lower it; if it refuses a bubble that
+ * reads correctly, raise it** — and per `validateInsight`'s rule, loosen first and fix the
+ * prompt, because the accept bias governs everything this validator does not have a promise
+ * behind.
+ */
+export const MEMORY_NGRAM = 8;
 
 // ---------------------------------------------------------------------------
 // The check
@@ -319,7 +367,9 @@ export type TurnRejectReason =
   | 'register'
   | 'source_tell'
   | 'answer_name_leak'
-  | 'verbatim_ngram';
+  | 'verbatim_ngram'
+  /** R2. `verbatim_ngram`'s sibling over `<ingatan>` — see `MEMORY_NGRAM`. */
+  | 'memory_verbatim_ngram';
 
 export type TurnContext = {
   locale: Locale;
@@ -332,6 +382,15 @@ export type TurnContext = {
   rawAnswers: string[];
   /** Every message body in the window, for the "already said in the room" carve-out. */
   conversation: string[];
+  /**
+   * R2's stored memory lines, **exactly the strings `<ingatan>` rendered**. Never logged and
+   * never returned; they are model-written sentences about a person.
+   *
+   * **REQUIRED, NOT OPTIONAL.** An optional field defaults to *"no check"* at every call site
+   * that forgets it, which is how a refusal quietly stops existing. `voices/prompt.ts`'s memo
+   * carries it, and a missing memo is a refusal there — not a relaxation.
+   */
+  memoryNotes: string[];
 };
 
 function escapeRe(value: string): string {
@@ -599,6 +658,31 @@ export function checkTurn(
     // OVERRIDES THE ACCEPT BIAS. Six words is `lotus.ts`'s judgement, reused not re-derived.
     if (sharesNgram(words(answer), words(text), NGRAM)) {
       return { ok: false, reason: 'verbatim_ngram' };
+    }
+  }
+
+  /*
+   * OVERRIDES THE ACCEPT BIAS, AND IT IS THE FOURTH OVERRIDE TO EARN IT RATHER THAN THE
+   * FOURTH ITEM ON A LIST.
+   *
+   * This file's header states the test: an override exists when the false-acceptance cost
+   * is **a promise broken**, which does not scroll away, rather than one slightly-off bubble
+   * that the next message buries. A reader reciting a stored note back at the person it is
+   * about is that: phase 6 puts `<ingatan>` on `/account` and names it in `/privacy`, so a
+   * bubble that reads the file aloud is the product demonstrating that it keeps one. It is
+   * also the exact failure `[F3-9]` was written for — *"true, sourced, correctly recalled,
+   * and the single ugliest sentence this release can produce"* — one level worse, because the
+   * source is not six answers given once but everything ever said in the room.
+   *
+   * **THERE IS NO NAME CHECK OVER `<ingatan>` AND THERE MUST NOT BE**, and the argument is in
+   * `base.id.ts`'s header: every name in the memory was said out loud in this room, that is
+   * where it came from, and refusing it would delete *"gimana si bonjeng, marah2 lagi ga
+   * dia?"* — the sentence this release exists to produce. `answer_name_leak` above still
+   * covers the only name that carries a promise, wherever in the bubble it came from.
+   */
+  for (const note of ctx.memoryNotes) {
+    if (sharesNgram(words(note), words(text), MEMORY_NGRAM)) {
+      return { ok: false, reason: 'memory_verbatim_ngram' };
     }
   }
 

@@ -2248,6 +2248,30 @@ function chatFixtureAnswers(): Array<{ key: string; text: string }> {
 }
 
 /**
+ * R2's `<ingatan>`, as fixture. **THE POINT OF THE RUN IS WHETHER A READER USES ONE OF THESE
+ * WITHOUT SAYING WHERE IT CAME FROM**, so the notes are the user's own reported targets: a
+ * habitual dinner, a named colleague, a clock habit, and one that `<obrolan>` will contradict.
+ *
+ * The fourth is the conflict rule's exercise and the third is `memory_verbatim_ngram`'s: a
+ * reader that recites *"lari pagi jam lima, tujuh sudah terlalu panas buatnya"* back at him
+ * shares eight words with a stored line and is refused.
+ */
+const CHAT_MEMORY_FIXTURE: Record<Locale, string[]> = {
+  id: [
+    'Kalau makan malam hampir selalu nasi padang, dan sudah lama begitu.',
+    'Ada orang di kantornya yang ia panggil bonjeng, sering marah-marah dan bikin dia capek.',
+    'Lari pagi jam lima, tujuh sudah terlalu panas buatnya.',
+    'Bilang lebih senang jalan sendirian daripada ramai-ramai.',
+  ],
+  en: [
+    'Dinner is almost always the same warung, and has been for a long time.',
+    'Somebody at work he calls bonjeng, who shouts a lot and wears him out.',
+    'Runs at five in the morning, because seven is already too hot for him.',
+    'Says he would rather walk on his own than go out with people.',
+  ],
+};
+
+/**
  * The voice's `ChatContext`, from the fixtures.
  *
  * **ONE BUILDER FOR BOTH RUNNERS.** `--chat` drives it with canned beat sheets and
@@ -2289,6 +2313,7 @@ function chatFixtureContext(args: {
     ],
     lotus: LOTUS_BLOCK_FIXTURE.summary,
     answers: args.answers,
+    memory: CHAT_MEMORY_FIXTURE[locale],
     readings: [0, 1, 2].map((i) => ({
       localDate: `2026-08-0${i + 1}`,
       readerId: (['thessaly', 'margaret', 'adrian'] as const)[i],
@@ -2418,6 +2443,8 @@ async function runChat(locales: Locale[], proactive: boolean) {
           addressForms: FORMS,
           rawAnswers: RAW_ANSWERS,
           conversation: messages.map((m) => m.body),
+          /* R2. The same strings `<ingatan>` rendered, so the check judges what the model saw. */
+          memoryNotes: CHAT_MEMORY_FIXTURE[locale],
         };
 
         /*
@@ -3058,6 +3085,8 @@ async function runDirector(locales: Locale[], withVoices = false) {
           addressForms: FORMS,
           rawAnswers: RAW_ANSWERS,
           conversation: messages.map((m) => m.body),
+          /* R2. The same strings `<ingatan>` rendered, so the check judges what the model saw. */
+          memoryNotes: CHAT_MEMORY_FIXTURE[locale],
         };
 
         let text = '';
@@ -3428,6 +3457,8 @@ async function runProactive(locales: Locale[]) {
           addressForms: FORMS,
           rawAnswers: RAW_ANSWERS,
           conversation: messages.map((m) => m.body),
+          /* R2. The same strings `<ingatan>` rendered, so the check judges what the model saw. */
+          memoryNotes: CHAT_MEMORY_FIXTURE[locale],
         };
 
         let text = '';

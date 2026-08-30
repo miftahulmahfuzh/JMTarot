@@ -509,16 +509,17 @@ extra job, no extra query and no extra endpoint.
 
 ---
 
-## 2d. Shedding features to save quota — the seven kill switches
+## 2d. Shedding features to save quota — the eight kill switches
 
 **THIS IS THE THING TO DO WHEN §2b's RISK ACTUALLY ARRIVES**, and it needs no
-deploy, no code change and no database work: seven environment variables in the
+deploy, no code change and no database work: eight environment variables in the
 Vercel dashboard, each of which stops one feature from reaching a model. Set,
 Redeploy, done.
 
 **FIVE BECAME SEVEN IN v0.7.0** (`C-D15`): `CHAT_ENABLED` and
 `CHAT_PROACTIVE_ENABLED` joined the list, and **the second one is now the first
-thing to reach for.** See the table below.
+thing to reach for.** **AND SEVEN BECAME EIGHT ON 2026-08-30** with R2's profile
+memory. See the table below.
 
 §2b's controls are all *automatic* — the limiter, the rolling ceiling, the soft
 tier. They protect the quota without anybody watching, and by the time you are
@@ -539,11 +540,11 @@ empty value all leave the feature ON.** If you mean to switch something off, typ
 a zero and nothing else.
 
 **Unset is also enabled** — the code needs no variable to run a feature. But **all
-seven are nevertheless SET TO `1` in Production and Preview** (five as of
-2026-07-30, the two chat flags with v0.7.0), and
+eight are nevertheless SET TO `1` in Production and Preview** (five as of
+2026-07-30, the two chat flags with v0.7.0, the profile memory on 2026-08-30), and
 that is deliberate: a kill switch nobody can find is not a kill switch. They are in
-the dashboard so that whoever needs one at 2am sees seven named rows and changes a
-`1` to a `0`, instead of having to know from a document that seven variables could
+the dashboard so that whoever needs one at 2am sees eight named rows and changes a
+`1` to a `0`, instead of having to know from a document that eight variables could
 have existed.
 
 **So the lifecycle is edit-in-place, never add-and-delete.** Change the `1` to a
@@ -566,6 +567,7 @@ not the order the features were built in and not the order they appear in
 | # | Variable | Volume | What a querent loses |
 |---|----------|--------|----------------------|
 | 0 | `CHAT_PROACTIVE_ENABLED=0` | **2–5 calls per unprompted run, up to twice per querent per day, with nobody waiting** | Nothing they asked for. A posted message still gets answered; the readers just stop speaking first. |
+| 0a | `PROFILE_MEMORY_ENABLED=0` | **one call per completed chat run whose transcript moved, nobody waiting** | Nothing today. Every fact the room already remembers still reaches every prompt; the readers just stop learning new ones. Nothing backfills, so facts stated during the outage are lost for good unless the querent says them again. |
 | 0b | `CHAT_ENABLED=0` | **2–5 calls per posted message** | The room still opens and every past message still renders; the composer is disabled with one line of copy. |
 | 1 | `GIST_ENABLED=0` | **one call per reading** | Nothing they can see today. A future reading will not call back to one taken during the outage. |
 | 2 | `FREQUENCY_VERDICT_ENABLED=0` | per changed card pair, per window, cached | The line under *"Pilih pembaca yang cocok denganmu"*. Cached lines keep showing. |
@@ -630,6 +632,16 @@ that took the most care, and the two generators behave differently on purpose:
   `/api/persona` answers 500 with no row — and it is safe to, because
   `personaInputHash` includes the reading list and therefore moves on the querent's
   next reading.
+- `PROFILE_MEMORY_ENABLED=0` **writes nothing either, and it is a THIRD shape rather
+  than a copy of the Lotus.** There are two independent questions — is storing a
+  fallback SAFE (does the hash move off it?) and is it NECESSARY (does a reader break
+  without a row?) — and the two generators above happen to answer both the same way,
+  which is why this section used to read as though there were one question. The
+  profile memory's hash is the newest chat message id, so it MOVES on the querent's
+  next sentence and storing would be safe; but nothing 500s on a missing row, so it is
+  not necessary, and **there is no honest template version of a memory** — a memory is
+  by definition what the querent actually said, and `/account` labels the row *what the
+  room believes about you*. Self-healing on the way back, like the Lotus.
 
 ### Turning them back on
 
@@ -642,6 +654,12 @@ above. Nothing needs backfilling:
   needs one.
 - **Personas** and the **Lotus** regenerate on the querent's next reading, which is
   what moves the hash. A querent who never reads again keeps what they have.
+- **The profile memory does not backfill, and unlike the two above it does not heal
+  on its own timetable either.** The next completed chat run after the flag returns to
+  `1` finds a moved hash and extracts normally — but it extracts over the last
+  `PROFILE_MEMORY_WINDOW` messages, so a fact stated early in a long outage may have
+  fallen out of that window and is lost unless the querent says it again. Nothing on
+  any screen reports that.
 - **Chat runs do not backfill and do not need to.** A run minted while
   `CHAT_ENABLED` was off was never minted at all; a run that was shed mid-flight is
   still sitting there `pending` or `running` and the next visit picks it up, unless

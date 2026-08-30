@@ -174,3 +174,40 @@ describe('the assembler’s reads (F3-23)', () => {
     expect(context).not.toContain('readingsForDay');
   });
 });
+
+describe('the profile memory (R2)', () => {
+  const read = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
+
+  /**
+   * **THE DIRECTOR READS NO MEMORY, AND THE ASSERTION IS ON THE READ RATHER THAN ON THE
+   * RENDER.** `buildChatPrompt` is only ever called by `voices/prompt.ts`, so a director test
+   * over the rendered prompt is defence in depth; this is the load-bearing half — the row is
+   * not fetched at all on the `chat_plan` path.
+   */
+  it('reads the memory only for the voice profile', () => {
+    const context = read('src/lib/chat/context.ts');
+    expect(context).toMatch(/forVoice \? getUserMemory\(/);
+  });
+
+  /** `getUserMemory` is called from exactly one file under `src/lib/chat/`, like `getAnswers`. */
+  it('calls getUserMemory from exactly one file, and that file is context.ts', () => {
+    const callers = SOURCES.filter((s) => calls(s.text, 'getUserMemory')).map((s) => s.path);
+    expect(callers).toEqual(['src/lib/chat/context.ts']);
+  });
+
+  /**
+   * `[F3-5]`, extended. The memory is model-written prose about a person; a route that
+   * serialised a context would ship it to a browser through the one route allowed to answer
+   * with a bubble. The `ChatContext` assertion above already fences the API tree — this
+   * fences the field name too, because a debugging session reaches for the field, not the type.
+   */
+  it('names the memory field in no route handler', () => {
+    const routes = sourcesUnder(join(process.cwd(), 'src/app/api'));
+    for (const route of routes) {
+      expect({ path: route.path, names: route.text.includes('memoryNotes') }).toEqual({
+        path: route.path,
+        names: false,
+      });
+    }
+  });
+});

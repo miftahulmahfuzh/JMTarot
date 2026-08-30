@@ -350,9 +350,17 @@ const en: Catalog = {
    * catalog carries the full account of why the room says this rather than a modal
    * asking you to agree to it. REWRITTEN, not translated.
    */
+  /*
+   * AMENDED FOR R2. The Indonesian catalog carries the full account, including why
+   * this is the load-bearing half of the pair and why it is still a notice rather
+   * than a consent modal. It read: *"In this room the three readers can see your
+   * opening answers, your readings, and this conversation — so they answer you
+   * rather than anybody."*
+   */
   'chat.first_open.notice':
-    'In this room the three readers can see your opening answers, your readings, and ' +
-    'this conversation — so they answer you rather than anybody.',
+    'In this room the three readers can see your opening answers, your readings and ' +
+    'this conversation. They also keep notes about you — you can read and delete ' +
+    'those on the About You page.',
   'chat.first_open.link': 'What that means',
 
   /*
@@ -646,6 +654,23 @@ const en: Catalog = {
   'account.answers.failed': 'That did not save. Try again in a moment.',
   'account.answers.note':
     'Changing or removing an answer rewrites what your reader knows straight away. Your Inner Lotus follows the next time you open this page.',
+
+  // R2 — what the room has noted about the querent. `id.ts` carries the full
+  // account: why the register is plain rather than mystical, why the hint is the
+  // load-bearing string, why there is no edit control, and why `Cancel` and
+  // `Deleting…` are reused from `account.facts` and `history` rather than minted
+  // again here.
+  'account.memory.heading': 'Notes about you',
+  'account.memory.hint':
+    'Written by a language model from what you type in the group, not by you. It can be wrong, and you can delete it.',
+  'account.memory.reveal': 'Show the notes',
+  'account.memory.loading': 'Opening…',
+  'account.memory.empty': 'Nothing noted yet.',
+  'account.memory.failed': 'That did not open. Try again shortly.',
+  'account.memory.itemAria': 'Delete this note: {text}',
+  'account.memory.remove': 'Delete',
+  'account.memory.forgetAll': 'Forget all of it',
+  'account.memory.forgetAllConfirm': 'Yes, forget all of it',
 
   // V8 — account deletion (VD13). See id.ts for why there are three body
   // strings and why `{days}` is interpolated.

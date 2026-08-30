@@ -336,8 +336,15 @@ export const TOKENS = {
    * margin, at thirteen a chart of it would need thirteen distinguishable hues on a
    * canvas §5.2 measured as unable to carry four. The word being stale for a whole
    * release is also the case for `ops.ts` existing.
+   *
+   * **AND `Tiga belas` -> `Empat belas` ON 2026-08-30**, when R2's profile-memory
+   * extractor spent the fourteenth. The argument does not need re-making at this size --
+   * §5.2 measured this canvas as unable to carry four distinguishable hues and this is
+   * fourteen -- but the word is updated in the same commit as `OP_ORDER`, because the
+   * whole reason it is a word and not an interpolation is that a stale one is supposed
+   * to be visible.
    */
-  opSubtitle: 'Tiga belas op adalah tabel, bukan grafik — lebih dari tujuh kelas tidak punya warna.',
+  opSubtitle: 'Empat belas op adalah tabel, bukan grafik — lebih dari tujuh kelas tidak punya warna.',
   opColumns: {
     op: 'Op',
     calls: 'Panggilan',

@@ -28,6 +28,7 @@ import { AccountButton } from '@/components/AccountButton';
 import { AccountAnswers } from '@/components/AccountAnswers';
 import { AccountCard } from '@/components/AccountCard';
 import { AccountFacts } from '@/components/AccountFacts';
+import { AccountMemory } from '@/components/AccountMemory';
 import { ChatButton } from '@/components/ChatButton';
 import { DeleteAccount } from '@/components/DeleteAccount';
 import { Eyebrow } from '@/components/Eyebrow';
@@ -295,6 +296,27 @@ export default async function AccountPage() {
       <section className={styles.section}>
         <h2 className={styles.sectionLabel}>{t('account.answers.heading')}</h2>
         <AccountAnswers initial={answers} />
+      </section>
+
+      {/*
+        WHAT THE ROOM HAS NOTED ABOUT THEM, AND BOTH WAYS TO DESTROY IT (R2).
+        Nobody asked for this block; it follows from storing model-written
+        inferences about a person and re-reading them into every future prompt.
+
+        **THE SERVER READS NOTHING HERE, AND THAT IS THE PROPERTY TO PROTECT.** The
+        reads above are `/account`'s render-path exemption; this block is not one of
+        them, and the notes are deliberately absent from this page's HTML. They
+        arrive only in the response to a press — which is the asking, in
+        reconciliation §7.3's sense. `AccountMemory` is a client component for
+        exactly that reason and not for the persona's latency one.
+
+        BELOW THE ANSWERS AND ABOVE `DeleteAccount`: the two erasure controls sit
+        together, at the bottom, where L13's "do not turn the rite into a settings
+        page" argument put the first of them.
+      */}
+      <section className={styles.section}>
+        <h2 className={styles.sectionLabel}>{t('account.memory.heading')}</h2>
+        <AccountMemory />
       </section>
 
       <DeleteAccount />

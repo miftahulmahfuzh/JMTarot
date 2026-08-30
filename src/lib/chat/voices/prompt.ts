@@ -31,14 +31,31 @@ import { addressFormUsed, checkTurnBodies, type TurnContext, type TurnRejectReas
  *
  * **A MISS IS A REFUSAL, NOT A RELAXATION.** If the guards are absent — somebody called
  * the validator without building, or a lambda recycled between the two calls — the turn
- * is refused rather than checked with two of its fifteen rules missing. That costs a
+ * is refused rather than checked with three of its eighteen rules missing. That costs a
  * bubble, which is the cheap failure; the expensive one is a name reaching the room. The
  * pure core lives in `../validate.ts` and takes its guards as a parameter, which is what
  * `npm test` and the smoke script drive.
+ *
+ * **R2 MADE THAT PARAGRAPH LOAD-BEARING TWICE OVER.** `memory_verbatim_ngram` is the third
+ * check that cannot run without the memo, and its false-acceptance cost is the same class as
+ * the other two, so the refusal branch needed no change at all — which is the property a
+ * seam is supposed to have.
  */
 
-/** Every guard `checkTurnBodies` needs that `VoiceInput` does not carry. */
-type TurnGuards = Pick<TurnContext, 'addressForms' | 'rawAnswers' | 'conversation' | 'budget'>;
+/**
+ * Every guard `checkTurnBodies` needs that `VoiceInput` does not carry.
+ *
+ * **`memoryNotes` JOINS `rawAnswers` HERE RATHER THAN GOING ON `VoiceInput`**, and the reason
+ * is this file's own: `turn.ts` calls the builder and the validator as two calls, only the
+ * first may touch the database, and F3 may not widen `VoiceInput`. The alternative — a second
+ * read inside `validateTurn` — would put a query on a path that is supposed to be pure and
+ * would read a row that may have changed between the two calls, so the bubble would be judged
+ * against a memory the prompt never saw.
+ */
+type TurnGuards = Pick<
+  TurnContext,
+  'addressForms' | 'rawAnswers' | 'conversation' | 'budget' | 'memoryNotes'
+>;
 
 /**
  * Bounded, because a lambda lives longer than a run. Four beats is `CHAT_MAX_BEATS`, and a
@@ -64,7 +81,8 @@ function remember(key: string, guards: TurnGuards): void {
 }
 
 /**
- * The prompt for one beat. **`async` because the context is six database reads**, and
+ * The prompt for one beat. **`async` because the context is a fistful of database reads**
+ * (the count is `context.ts`'s header's to keep — it moved twice in one release), and
  * F1 declared the signature that way so F3 changes a body rather than a caller.
  */
 export async function buildTurnPrompt(
@@ -94,6 +112,8 @@ export async function buildTurnPrompt(
     addressForms: ctx.addressForms,
     rawAnswers: ctx.answers.map((a) => a.text),
     conversation: ctx.messages.map((m) => m.body),
+    /* The same strings `<ingatan>` rendered, so the check judges what the model was shown. */
+    memoryNotes: ctx.memory,
   });
 
   const previous = GUARDS.get(keyOf(input))?.lastReason ?? null;
@@ -130,8 +150,8 @@ export function validateTurn(raw: string, input: VoiceInput): TurnCheck {
 
   if (!memo) {
     /*
-     * The builder did not run in this process. Refusing is the honest answer: two of the
-     * fifteen refusals — the two that keep a published promise — are unavailable, and
+     * The builder did not run in this process. Refusing is the honest answer: three of the
+     * eighteen refusals — the three that keep a published promise — are unavailable, and
      * `[F3-8]`'s overrides exist precisely because their false-acceptance cost is a
      * promise broken rather than an awkward bubble.
      */

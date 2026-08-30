@@ -895,3 +895,49 @@ export async function lastUnansweredAsk(
 
   return answered ? null : toDto(ask as DtoRow);
 }
+
+/**
+ * The newest `limit` messages, oldest first, for R2's profile-memory extractor.
+ *
+ * **NOT `listMessages`, AND THE TWO MUST NOT BE MERGED.** That one is the ROOM's
+ * pagination: it caps at 50, hydrates reply stubs with a second query, and returns a
+ * `ChatMessageDto` because a client renders it. This is an EXTRACTION read -- three
+ * columns, no stubs, no attachment hydration, and a window an order of magnitude
+ * wider, because `PROFILE_MEMORY_WINDOW` is bounded by nothing but the model's
+ * context where `CHAT_CONTEXT_MESSAGES` is bounded by `memory.ts`'s dilution
+ * argument. Merging them would put one of those two bounds on the other.
+ *
+ * **`body` IS TEXT A PERSON TYPED** (`C-D20`). Nothing that catches an error around
+ * this call may log the driver error -- a postgres error quotes its bound parameters.
+ *
+ * Oldest-first is the caller's contract: the extractor reads a conversation forwards.
+ * The query is `desc` because that is the index's direction and where the newest rows
+ * are; the reverse is one pass over at most a few hundred rows.
+ *
+ * **THE NEWEST ROW's `id` IS WHAT `profileMemoryInputHash` DIGESTS**, so the tie-break
+ * on `id` is load-bearing rather than tidy: two messages sharing a `created_at` to the
+ * microsecond would otherwise let the "newest" alternate between two values and the
+ * hash oscillate, extracting on every run for ever.
+ */
+export async function messagesForExtraction(
+  db: DbOrTx,
+  userId: string,
+  limit: number,
+): Promise<Array<{ id: string; author: ChatAuthor; body: string }>> {
+  if (!UUID_RE.test(userId)) return [];
+
+  const capped = Math.min(Math.max(Math.trunc(limit) || 0, 1), 500);
+
+  const rows = await db
+    .select({
+      id: chatMessages.id,
+      author: chatMessages.author,
+      body: chatMessages.body,
+    })
+    .from(chatMessages)
+    .where(eq(chatMessages.userId, userId))
+    .orderBy(desc(chatMessages.createdAt), desc(chatMessages.id))
+    .limit(capped);
+
+  return rows.reverse();
+}

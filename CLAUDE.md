@@ -1771,11 +1771,11 @@ W1 is done, and W3 is its first consumer.
 three Neon knobs (max 1, prepare false, ssl require) are conditional on `VERCEL`, **not
 `NODE_ENV`, because a preview build is also `NODE_ENV=production`; do not trim that comment**.
 `types.ts` (Db / Tx / DbOrTx) is type-only with no runtime imports, so a query module cannot
-acquire the singleton by accident. `schema.ts` has **ONE OWNER: W1** and holds **twenty-two
+acquire the singleton by accident. `schema.ts` has **ONE OWNER: W1** and holds **twenty-three
 tables** — ten at W1, then `translations`, `share_links`, `personas`, `admin_access_log`,
-`llm_calls`, `blog_posts`, `blog_post_locales`, `admin_insights`, v0.7.0's three chat tables and
-`auth_handoffs`. **The count said "thirteen" for three releases and was corrected on 2026-08-09
-rather than appended to**, per the sweep route's rule: a header that miscounts its own body is how
+`llm_calls`, `blog_posts`, `blog_post_locales`, `admin_insights`, v0.7.0's three chat tables,
+`auth_handoffs` and R2's `user_memory`. **The count said "thirteen" for three releases and was
+corrected on 2026-08-09 rather than appended to**: a header that miscounts its own body is how
 the next person concludes the file is untrustworthy. 2026-07-29 added a COLUMN and no
 table, `readings.choice` (migration `0008`). `crypto.ts` is AES-256-GCM field
 encryption, `v1.<iv>.<ct>.<tag>` base64url. `queries/` is one file per read concern, **every

@@ -1,6 +1,14 @@
 import { sql } from 'drizzle-orm';
 import { afterAll, describe, expect, it } from 'vitest';
-import { chatMessages, chatRuns, chatThreads, moderationFlags, shareLinks, users } from '@/lib/db/schema';
+import {
+  chatMessages,
+  chatRuns,
+  chatThreads,
+  moderationFlags,
+  shareLinks,
+  userMemory,
+  users,
+} from '@/lib/db/schema';
 import { closeTestDb, testDb, withRollback } from '@/lib/db/testing/harness';
 import type { Tx } from '@/lib/db/types';
 import { deleteAccount } from './delete';
@@ -10,11 +18,14 @@ afterAll(closeTestDb);
 let n = 0;
 
 /**
- * A user, one moderation flag that still holds text, and one live share link.
+ * A user, one moderation flag that still holds text, one live share link, and
+ * one `user_memory` row with a line in it and a tombstone beside it.
  *
  * The flag's `question` is a placeholder rather than real ciphertext: nothing
  * under test decrypts it, and the only property that matters is "there is text
- * here and afterwards there is not".
+ * here and afterwards there is not". The memory row is there for the same
+ * reason, plus one more -- the tombstone is what proves the erasure REDACTS
+ * rather than DELETES.
  */
 async function seedUserWithFlag(tx: Tx): Promise<string> {
   n += 1;
@@ -37,6 +48,18 @@ async function seedUserWithFlag(tx: Tx): Promise<string> {
     userId: user.id,
     entity: 'reading',
     entityId: user.id,
+  });
+
+  await tx.insert(userMemory).values({
+    userId: user.id,
+    items: [
+      { id: '0a1b2c3d4e5f', kind: 'taste', text: 'suka nasi padang', lastSeen: '2026-08-30' },
+    ],
+    dismissedIds: ['aabbccddeeff'],
+    inputHash: 'hash-1',
+    sourceVersion: 1,
+    model: 'glm-5.3',
+    promptVersion: 'um-1',
   });
 
   return user.id;
@@ -166,6 +189,106 @@ describe('deleteAccount', () => {
     }));
 });
 
+/**
+ * ── R2's ERASURE DUTY (v0.8.0, 2026-08-30) ────────────────────────────────────
+ *
+ * **`user_memory` IS ON `moderation_flags`' SIDE OF `delete.ts`'s ASYMMETRY EVEN
+ * THOUGH ITS FOREIGN KEY IS ON `readings`' SIDE**, and that is an amendment
+ * rather than an oversight. The foreign key answers "does it survive"; it does
+ * not answer "is this the thing they meant". `items` is a model's dossier about
+ * a person, assembled from a conversation they were having for another reason --
+ * the only row in this database of which that is true -- and thirty more days of
+ * it is exactly what the button is supposed to prevent.
+ *
+ * It costs the restore nothing, which is what makes it cheap enough to do: the
+ * inputs are `chat_messages` and `readings`, both of which cascade and therefore
+ * SURVIVE the soft delete, so a restored account has its memory rebuilt on the
+ * next run. `clearFreeTextAnswers()` stays out because `onboarding_answers` is
+ * the only copy of text a person typed. `delete.ts`'s header carries the whole
+ * argument, including why this does not license adding `personas`.
+ */
+describe('the user memory and the erasure promise', () => {
+  const memoryOf = async (tx: Tx, userId: string) => {
+    const [row] = await tx.execute(
+      sql`select items, dismissed_ids, input_hash from user_memory where user_id = ${userId}`,
+    );
+    return row;
+  };
+
+  it('EMPTIES the memory in the same transaction that sets deleted_at', () =>
+    withRollback(async (tx) => {
+      const userId = await seedUserWithFlag(tx);
+      const out = await deleteAccount(tx, userId);
+
+      expect(out.deleted).toBe(true);
+      expect(out.memoryRedacted).toBe(1);
+
+      const row = await memoryOf(tx, userId);
+      expect(row.items).toEqual([]);
+      /*
+       * `input_hash` BLANKED IN THE SAME STATEMENT. An emptied list beside a
+       * matching hash means the extractor reports `unchanged` and never writes
+       * again -- the feature dead after any erasure, with nothing logged.
+       */
+      expect(row.input_hash).toBe('');
+      /*
+       * TOMBSTONES KEPT. This is a REDACTION, not a delete. Dropping the row
+       * would resurrect, on a day-three restore, exactly the facts the querent
+       * had individually deleted.
+       */
+      expect(row.dismissed_ids).toEqual(['aabbccddeeff']);
+    }));
+
+  it('leaves deleted_at unset when the memory redaction fails', () =>
+    withRollback(async (tx) => {
+      /*
+       * THE BOUNDARY TEST, for the new statement. `redactUserMemory` runs AFTER
+       * the revocation and the flag redaction and BEFORE `deleted_at`, so a
+       * failure here must unwind all three. Without this, "same transaction" is
+       * a claim in a comment.
+       */
+      const userId = await seedUserWithFlag(tx);
+
+      await tx.execute(sql`
+        create function pg_temp.boom_mem() returns trigger language plpgsql as
+          $$ begin raise exception 'boom'; end $$`);
+      await tx.execute(sql`
+        create trigger t_boom_mem before update on user_memory
+          for each row execute function pg_temp.boom_mem()`);
+
+      await expect(deleteAccount(tx, userId)).rejects.toThrow();
+
+      await tx.execute(sql`drop trigger t_boom_mem on user_memory`);
+
+      const rows = await tx.execute(sql`select deleted_at from users where id = ${userId}`);
+      expect(rows[0].deleted_at).toBeNull();
+
+      /*
+       * Both EARLIER statements rolled back too, which is the assertion that
+       * proves the whole thing unwound rather than that the failing statement
+       * simply came last.
+       */
+      const flags = await tx.execute(
+        sql`select question from moderation_flags where user_id = ${userId}`,
+      );
+      expect(flags[0].question).not.toBeNull();
+      const links = await tx.execute(
+        sql`select revoked_at from share_links where user_id = ${userId}`,
+      );
+      expect(links[0].revoked_at).toBeNull();
+    }));
+
+  it('does not touch another account memory', () =>
+    withRollback(async (tx) => {
+      const mine = await seedUserWithFlag(tx);
+      const theirs = await seedUserWithFlag(tx);
+
+      await deleteAccount(tx, mine);
+
+      expect((await memoryOf(tx, theirs)).items).toHaveLength(1);
+    }));
+});
+
 describe('the transaction boundary, asserted on the source', () => {
   /*
    * A source-level guard in `legal.test.ts`'s register, and it earns its place
@@ -184,15 +307,21 @@ describe('the transaction boundary, asserted on the source', () => {
     const body = src.slice(open);
     const revoke = body.indexOf('revokeAllForUser(');
     const redact = body.indexOf('redactForUser(');
+    const memory = body.indexOf('redactUserMemory(');
     const flag = body.indexOf('deletedAt:');
 
     expect(revoke).toBeGreaterThan(-1);
     expect(redact).toBeGreaterThan(-1);
+    expect(memory).toBeGreaterThan(-1);
     expect(flag).toBeGreaterThan(-1);
 
-    // Reconciliation §5.6's order: revoke -> redact -> set the flag.
+    // Reconciliation §5.6's order, plus R2's: revoke -> redact -> memory -> flag.
+    // Every statement that actually removes something comes before the flag, so a
+    // failure in any of them aborts rather than marking an account deleted with
+    // its contents intact.
     expect(revoke).toBeLessThan(redact);
-    expect(redact).toBeLessThan(flag);
+    expect(redact).toBeLessThan(memory);
+    expect(memory).toBeLessThan(flag);
   });
 
   it('does not call clearFreeTextAnswers, which is deliberate (A1)', async () => {
