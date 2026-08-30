@@ -224,8 +224,22 @@ export async function runsByUtcDay(db: DbOrTx, range: Range): Promise<RunDayRow[
 // ---------------------------------------------------------------------------
 
 export type BeatBucketRow = {
-  /** `0 | 1 | 2 | 3 | 4`, where 4 means "4 or more". `CHAT_MAX_BEATS` is 4, so the
-   *  top bucket is exact today and stays honest if the cap ever moves. */
+  /**
+   * `0` through `8`, where 8 means "8 or more".
+   *
+   * **EIGHT SINCE 2026-08-30, AND IT WAS FOUR THROUGH TWO CAP RAISES.** The comment
+   * here read *"`CHAT_MAX_BEATS` is 4, so the top bucket is exact today"*; the cap went
+   * to 6 on 2026-08-28 and to 8 with the naturalness rewrite, so for a whole release
+   * this panel — the one `CLAUDE.md` calls the scorecard — folded every five-, six- and
+   * seven-beat run into a bar labelled `4+` and under-reported the exact thing the
+   * release changed.
+   *
+   * **A LITERAL, NOT AN IMPORT OF `CHAT_MAX_BEATS_DEFAULT`.** `queries/admin/**` takes
+   * no config, and a histogram whose buckets moved with an environment variable would
+   * make two date ranges incomparable with nothing on screen saying so. **Revisit it by
+   * hand when the cap moves again** — and `BEAT_BUCKETS` in `series.ts` is the other
+   * half of the same edit.
+   */
   bucket: number;
   runs: number;
 };
@@ -250,7 +264,7 @@ export type BeatBucketRow = {
 export async function beatHistogram(db: DbOrTx, range: Range): Promise<BeatBucketRow[]> {
   if (!usable(range)) return [];
   const result = await db.execute(sql`
-    select least(coalesce(jsonb_array_length(beats -> 'beats'), 0), 4) as bucket,
+    select least(coalesce(jsonb_array_length(beats -> 'beats'), 0), 8) as bucket,
            count(*)                                                    as runs
       from chat_runs
      where status in ('done', 'abandoned')

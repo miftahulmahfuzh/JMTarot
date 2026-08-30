@@ -502,7 +502,8 @@ export const CHAT = {
   beatsTitle: 'Beat per run, dan kesenyapan',
   beatsSubtitle:
     'Sebaran, bukan rata-rata. Rata-ratanya ada di sebelah sebagai pendamping, bukan pengganti.',
-  beatsBucket: (n: number) => (n >= 4 ? '4+ beat' : `${n} beat`),
+  /* `8+` since 2026-08-30, with `BEAT_BUCKETS` and `beatHistogram`'s `least(..., 8)`. */
+  beatsBucket: (n: number) => (n >= 8 ? '8+ beat' : `${n} beat`),
   beatsSilence: 'Kesenyapan',
   beatsMean: 'Rata-rata beat',
   beatsColumns: { bucket: 'Beat', runs: 'Run', share: 'Porsi' },

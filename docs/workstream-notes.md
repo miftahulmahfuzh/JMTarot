@@ -13383,3 +13383,245 @@ appended at the end instead, because **every sibling phase of this plan set appe
 sections, R2's phases 3, 4 and 5 all sit at the tail in date order — and a 2026-08-30 section
 dropped into v0.7.0 material would be the only one out of sequence. The reconciler's instruction
 was *"order them"*, and this is the order the file already had.
+
+## The room was still quiet after the cap moved, and the worked examples are why (2026-08-30)
+
+Phase 9 of `CHAT_TIME_AWARENESS_USER_MEMORY_PROACTIVE_PLAN.md`, satisfying R3: *"increase readers
+interaction (reader↔reader, reader↔user), reader making jokes, reader giving insights to user,
+reader being supportive to each other/user … i just want to see our chat group pass the turing
+test"*, under *"i don't care about glm 5.3 token consumption. burn it all to hell."*
+
+### A cap change needs FOUR edits, and 2026-08-28 made two
+
+`caps.ts` already carried the lesson in its own words — *"Raising this number alone would have
+changed NOTHING … rule 1 is rewritten in the same commit — neither edit works without the other."*
+It raised `CHAT_MAX_BEATS` 4 → 6 and rewrote rule 1 to ask for three or four beats. **What it did
+not touch is the two worked examples sitting directly above that rule, both of which answer with
+two beats and then say so in prose — *"Dua beat, bukan tiga"*, *"two beats are often better than
+one"*.** `system.id.ts`'s own header ranks the examples above the rules: *"the example does more
+work than the description … they are the last thing the model reads before the rules."* So the model
+was shown two and told four, and the room stayed quiet through a release.
+
+**The rule generalises: a cap change is the number, the rule that spends it, every rule that
+constrains it, and every worked example that answers with a count.** Here that was
+`CHAT_MAX_BEATS_DEFAULT` (6 → 8), rule 1, rule 11, and four examples where there were three.
+
+### Two ceilings would have silently capped every run at one beat
+
+Neither is in a file anybody would have opened.
+
+- **`PLAN_MAX_TOKENS = 400`** (`direct/assemble.ts`), sized in its own docblock as *"four beats of
+  JSON … roughly 180 tokens"*. One beat of Indonesian JSON with a 90-character angle is 45–55
+  tokens, so an eight-beat sheet is 400–450 before the envelope. **A truncated reply is not a short
+  plan; it is `unparseable`, which is `planFallback`, which is EXACTLY ONE BEAT by `[F2-13]`.** The
+  symptom would have read as *"the model refuses to plan long runs"*. Now 900.
+- **`MAX_MEMO = 16`** (`voices/prompt.ts`), keyed `runId:beatIndex`, with a comment still reading
+  *"Four beats is `CHAT_MAX_BEATS`"* — stale at 6. A miss there is a **refusal** by design, so an
+  evicted entry is a silently lost bubble out of exactly the longest runs. Now 32.
+
+### Rule 11 directly contradicted the card, and its measured finding was kept
+
+Rule 11's last clause read **"Satu beat, kadang dua"** / **"One beat, sometimes two"** on a proactive
+run — the run type R3 is entirely about. It now reads two to four. **The rest of rule 11 is
+untouched**, including the clause added from six live proactive runs measured twice: *do not answer
+the last line in the window as though it had just arrived; if it is hours old, replying to it now
+reads as a machine.* That finding was paid for and is not what was wrong.
+
+Rule 11 also stopped enumerating what material can be, so Phase 7's two new kinds need no prompt
+edit: it now says the material may be *"a card that keeps turning up, a day that means something,
+what time it is where they are, or something you have known about their habits for a while"* —
+deliberately not a list of `MaterialKind` values.
+
+### `MAX_BEATS_PER_READER` stayed at 3, and its argument changed for the third time
+
+At a four-beat cap it stopped a monologue; at six it stopped `A B C A B C` being the only legal
+shape. **At eight it is what forbids a long run being a DUET**: ceil(8 / 3) is 3, so an eight-beat
+sheet cannot be built out of two readers. That is R3's reader↔reader enforced by arithmetic. Raising
+it to 4 alongside the cap would have made `A B A B A B A B` legal — the longest, liveliest-looking
+runs would be the ones with somebody missing from them.
+
+### Three places where the plan and the tree disagreed, and the tree won
+
+Phase 9 landed last into files phases 2 and 5 had already edited, and its quoted code was written
+against the pre-phase-2 tree. **All three disagreements were resolved toward what had actually
+shipped, and each would have been a silent regression:**
+
+1. **Rule 12 (the clock) is phase 2's and sits between rule 11 and the "not a reason" block.** The
+   plan's replacement text for `system.{id,en}.ts` ran straight from rule 11 to that block, so
+   applying it verbatim would have **deleted R1's only enforcement on the director side** and left
+   `system.test.ts`'s twelve-rule loop failing on a rule nobody would think to look for. The splice
+   keeps it, unrenumbered.
+2. **`scripts/smoke-llm.ts`'s `CHAT_SCRIPT` already had nine messages, not eight** — phase 2 added
+   the clock probe at position 8. The two R3 probes were **inserted before the ending probe** rather
+   than replacing the array, giving eleven, and `CHAT_SHEETS` grew to eleven sheets keeping phase
+   2's two-beat clock sheet at its own length. **Lengthening that one run would have diluted R1's
+   only instrument in the release gate**, so everything around it grew and it did not.
+3. **`REPAIR_WORDS`' compile coupling fired exactly as designed.** Phase 5 had already added
+   `memory_verbatim_ngram` to `TurnRejectReason`, so `Record<Locale, Record<TurnRejectReason,
+   string>>` refused to compile until it was given both phrases. That is the intended outcome and it
+   is worth recording that it actually happened: **the type is what stopped an English enum member
+   reaching an Indonesian prompt through a feature written a week earlier.**
+
+### The `directed === beats.length - 1` assertion was wrong, and the examples were right
+
+The plan's new `system.test.ts` check asserted that every multi-beat worked example aims all but one
+beat at another reader. **It fails on three of the four examples the same plan specifies**, and the
+examples are not what is wrong: in each of those three the second querent-directed beat is an `ask`,
+and **a question put to the person cannot be aimed at a reader instead.** The en example's prose even
+claimed *"Only the first beat is aimed at the querent"* while its own JSON aimed two.
+
+Rewriting the examples to satisfy the literal assertion would have meant inventing questions the
+readers ask each other in order to pass a test — the exact inversion the check exists to catch. **The
+assertion is now at least HALF the beats, which is two of four**, and one directed beat in a
+four-beat run still fails it. The prose was corrected to match the JSON rather than the reverse.
+
+### `CHAT_LENGTH_BUDGET` did NOT move, and the refusal list did not either
+
+Both were re-examined and both were deliberately left alone.
+
+- **The room gets louder by BEATS, never by WORDS.** A longer bubble is the chatbot tell `C-D19` and
+  `[F3-25]` exist to prevent, and raising `maxWords` would have moved the brevity floor's own
+  ceiling in the same commit — switching off the only check in this repository that fails on output
+  being *consistently* too long. Eight 24-word bubbles is far more room than four 36-word ones, and
+  it is more people.
+- **`validate.ts` was not loosened**, in the release that also gives the readers a stored
+  model-written memory of the person. `source_tell` in particular stays: *"you said earlier"* about
+  a message visible in `<obrolan>` reads as natural, and this function cannot tell it from the same
+  phrase about a stored answer — the version that guessed would be guessing about the sentence the
+  whole release exists to prevent.
+- **The accept-bias edit was the RETRY instead.** `C-R7`'s repair line was handing the model a raw
+  `TurnRejectReason` — an English enum member in an Indonesian prompt. `REPAIR_WORDS` renders it as
+  a sentence, which is `TRIGGER_WORD`'s and `INTENT_WORDS`' own rule. **A second attempt that
+  understands why it failed is a bubble kept, and a bubble kept is the room staying loud** — the
+  same objective, reached without touching a refusal.
+
+### One consequence nobody predicted: `lead` goes null more often
+
+An eight-beat run leaves all three readers in `recentlySpoke`, so `affinityFor`'s demotion fires
+whenever two or more readers match the trigger text and `lead` becomes null more often than it did
+at four beats. **That is the demotion working, not the lexicon failing** — `affinityFor` was not
+changed — and the director levers panel now says so beside the `affinity followed` line so the next
+person does not read it as a regression.
+
+### `/admin/chat`'s beat histogram was blind past four through TWO cap raises
+
+`beatHistogram` bucketed `least(jsonb_array_length(...), 4)` under a comment claiming *"`CHAT_MAX_BEATS`
+is 4, so the top bucket is exact today"*. The cap went to 6 on 2026-08-28 and to 8 here, so **the
+panel `CLAUDE.md` calls the release's own scorecard folded every five-, six- and seven-beat run into
+a bar labelled `4+`** — under-reporting precisely the thing the release changed. Taken into scope by
+the reconciler rather than handed off, because no other phase owns those files and a handoff to
+nobody is a gap.
+
+Four edits, and they are ONE edit: the `8` in the SQL, `BEAT_BUCKETS`, `beatsBucket`'s label, and
+`series.test.ts`'s expectation. **Changing either of the first two alone silently drops rows or
+renders empty bars the query can never fill.** The `8` is a **literal and not an import of
+`CHAT_MAX_BEATS_DEFAULT`**: `queries/admin/**` takes no config, and a histogram whose buckets moved
+with an environment variable would make two date ranges incomparable with nothing on screen saying
+so. **`beatFold`'s mean stays flagged as a LOWER BOUND** — widening the top bucket did not make it
+exact, it made it exact until the next raise, and deleting the flag along with the widening is how
+it went stale the first time.
+
+### The gate is now all three chat runs
+
+`--chat` drives CANNED beat sheets, so it cannot measure whether the director plans longer,
+reader-directed runs; it measures the VOICES under the new licence. **`--chat --director` and
+`--chat --proactive` are what measure the cadence, and since this phase they are part of the release
+gate rather than optional instruments.** The sheets in `--chat` were rewritten by hand for the same
+reason the examples were: a canned sheet is a claim about what the director produces, and leaving it
+at one and two beats would have measured new voices under the old cadence and reported nothing.
+`[1] [4] [2] [1] [1] [5] [2] [2] [3] [3] [0]` — 24 beats over eleven messages, up from 10 over nine.
+
+Three things were left behind so a future session can tell whether this worked:
+
+- **Two FLOORS, not bands** (`CHAT_MIN_LONG_RUN_BEATS`, `CHAT_MIN_READER_DIRECTED`). The lever panel
+  is PRINTED and never failed by a standing ruling, and these do not reverse it: neither is a rate.
+  One fires when no run in the whole set exceeds two beats, the other when not one beat names
+  another reader. **Correct output cannot trip either.** In `runProactive` they are accumulated
+  **after** both `continue`s, so a refused plan and a zero-beat plan — each already reported by its
+  own FAIL — do not drag `longest` down and make the cadence line describe the failures.
+- **A WARN when the silence rate is zero.** *Kesenyapan nol bukan kabar baik* has been true since
+  `C-R6` and was measured by nobody. The rewrite pushes in exactly one direction and this is the
+  property it is most likely to break.
+- **Two new blind-read questions** — did they talk to each other, and did anybody make a joke or
+  back anybody up. Neither is greppable, which is why they are questions.
+
+The smoke-only register loops now **name the offending bubble**. At 24 beats a bare
+*"REGISTER: 'pertama,'"* with no bubble beside it is a needle in a haystack, and a check nobody can
+act on is a check somebody deletes.
+
+### The first baselines, and the two bugs the gate caught on the way
+
+**Three `npm run smoke -- --chat --locale id` runs, 24 bubbles each, `glm-5.2`.** Run 1 is the phase
+as the plan specified it; runs 2 and 3 each follow a fix the run before them forced.
+
+| | run 1 | run 2 | run 3 |
+|---|---|---|---|
+| shortest bubble (floor: `<= 6`) | 4 | 6 | **7 FAIL** |
+| mean / max words (ceiling 24, margaret 31) | 16.7 / 27 | 15.7 / 27 | 17.3 / 29 |
+| margaret ÷ thessaly sentence length (floor 1.5) | **1.17 FAIL** | 2.83 | **3.39** |
+| overlap thessaly·margaret / ·adrian / margaret·adrian | .117 / .214 / .103 | .100 / .170 / .100 | .081 / .245 / .146 |
+| bubbles ending in a question (band 15–50%) | 10/24 | 12/24 | 4/24 |
+| bubbles naming the querent (band 5–40%) | 14/24 | 11/24 | 13/24 |
+| double refusals | 0 | 0 | 0 |
+| emoji | 0 | 0 | 0 |
+
+**The blind read on run 3 was three of three** — the reader of the transcript named Margaret from
+her subordination, Adrian from `wkwk` and the slang, and Thessaly from her asking for a number every
+time. The room talks to itself (*"[X] mulai masuk mode akuntan lagi"*, *"itu yang benar"*), somebody
+takes somebody's side on the support probe, and the ENDING PROBE got silence. `C-R6` held.
+
+#### The two bugs, and neither was in the diff a reviewer would have read
+
+1. **`CROSSOVER` in `runChat` used a bare `includes` where `runVoices` used `\b…\b`.** Margaret wrote
+   *"tempat yang **masih** ada untuk pulang"* and was FAILED for `sih`. **`masih` and `kasih` are two
+   of the commonest words in Indonesian, so this false positive was always one bubble away** — the
+   longer runs of this release simply found it first. Now word-bounded, and the two spellings of one
+   check are named in the comment so they cannot drift apart again. **`namesIn`'s rule: a false
+   violation costs correct output, and here it costs the operator's trust in the strongest voice
+   signal the gate has.**
+2. **`CHAT_MAX_TOKENS = 90` WAS THE LENGTH CONTROL, NOT A RUNAWAY GUARD, AND ITS OWN DOCBLOCK SAID
+   OTHERWISE.** Run 2 stored *"…karena dua hal yang kat"* — `out=90`, cut **mid-word**, at THIRTEEN
+   words against a thirty-one-word ceiling — and Adrian's next beat joked about her being cut off, so
+   the defect propagated into the room as content. **The "roughly double Margaret's words"
+   arithmetic was done in English**: `en` runs ~1.4 tokens/word so her 35 words are ~49 tokens, while
+   `id` runs 2.2–3.1 (measured: 15w/33t, 8w/18t, 17w/52t) so her 31 words are 68–96. Now 220, and
+   `budget.test.ts` asserts the PROPERTY — two bubbles at the longest resolved ceiling in the SOURCE
+   locale must fit — rather than a magic number under a title that said *"double"* beside a docblock
+   that said *"triple"* while the constant was neither.
+
+   **A token ceiling is strictly worse than a word ceiling and that is the whole finding.**
+   `validateTurn`'s `too_long` refuses an over-long bubble and `C-R7` retries it; a bubble cut at the
+   token ceiling arrives SHORT and is never refused. **`PLAN_MAX_TOKENS`' rule in a second place: a
+   cap on length and a cap on output tokens are the same edit — 2026-08-30 moved both.**
+
+#### The one open FAIL, and do NOT move the floor to close it
+
+Run 3's shortest bubble is **7 words against `CHAT_BREVITY_FLOOR = 6`**. Three things before anybody
+touches that number:
+
+- **The distribution is not the failure the floor describes.** Its docblock targets *"a run in which
+  every bubble is 18–22 words"*; run 3 opens `7 8 9 9 11 13 14 15 …`. Four bubbles under ten.
+- **Part of the old margin was the truncation bug.** At 90 tokens some bubbles were being CUT, which
+  lowered the observed minimum for free. Removing that removed a source of artificially short
+  bubbles, so 4 → 6 → 7 is partly an instrument change and not only a prose change.
+- **The floor was calibrated on ten-bubble runs and this is twenty-four.** A single order statistic
+  over 10 and over 24 are different measurements.
+
+**None of that licenses moving it on one run** — this file's own rule is that a band moves once, on
+evidence. The honest next step is a fourth run in a fresh quota window; if the shortest is 7 again,
+the question is whether the floor should be *"at least one bubble under 8"* rather than a minimum,
+and the answer belongs in a commit of its own.
+
+#### What is still unrun, and why
+
+`--chat --locale en`, `--chat --director --voices` (both locales) and `--chat --proactive` were not
+completed. **`LLM_WINDOW_CALL_CEILING` is fleet-wide and shared with production**, and a director run
+tripped the soft ceiling after six plans; the three outstanding runs are ~250 more calls against a
+z.ai quota production had already taken to roughly 274 of ~400 in the window. **Running them would
+have risked `1113` on live readings, which is the exact outcome `C-D6` exists to prevent** — so the
+`--chat` half was run three times on `RATELIMIT_BACKEND=memory` and the rest is owed before the
+parent's pull request merges. The partial director run did land its finding: **the cadence works.**
+With the eight-beat cap the director planned `T→user, A→user, M→adrian, T→margaret` and
+`T→user, A→user, M→adrian, T→margaret` four-beat runs with two reader-directed beats each, a
+one-beat run on the one-word probe, and two beats and no tease on the grief probe. Rule 1, rule 10
+and the mix all held on first contact.

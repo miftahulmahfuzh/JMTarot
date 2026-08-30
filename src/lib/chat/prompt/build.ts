@@ -12,6 +12,7 @@ import { stripUntrusted } from '@/lib/prompt/sanitize';
 import type { CompletionPrompt } from '@/lib/llm/types';
 import { CHAT_TIME_VOCAB, renderNow } from '../clock';
 import type { ChatAuthor, Beat, BeatIntent, ChatClock } from '../types';
+import type { TurnRejectReason } from '../validate';
 import { chatBaseContract } from './base';
 import { chatReaderPrompt } from './readers';
 
@@ -263,6 +264,67 @@ const INTENT_WORDS: Record<Locale, Record<BeatIntent, string>> = {
     tease: 'tease',
     agree: 'agree, in your own words',
     push_back: 'push back',
+  },
+};
+
+/**
+ * `C-R7`'s repair reason, in the model's language.
+ *
+ * **A CLOSED TOKEN RENDERED AS PROSE, NEVER THE RAW VALUE** — `assemble.ts`'s
+ * `TRIGGER_WORD` rule and `INTENT_WORDS`' rule, in a third place. The line used to read
+ * *"PERCOBAAN KEDUA. Pesan pertamamu ditolak karena too_long."*: an English enum member
+ * dropped into an Indonesian prompt, naming a rule in a vocabulary the contract above it
+ * never uses.
+ *
+ * **THIS IS THE ACCEPT-BIAS EDIT OF 2026-08-30 AND IT IS DELIBERATELY NOT IN
+ * `validate.ts`.** With `CHAT_MAX_BEATS` at eight a run puts twice as many bubbles through
+ * one retry each, so the cheapest way to keep bubbles is to make the retry land rather than
+ * to refuse less — see `validate.ts`'s header.
+ *
+ * **`Record<Locale, Record<TurnRejectReason, string>>` IS THE SHAPE ON PURPOSE**: a new
+ * refusal reason is a compile error here, which is what stops the raw token coming back in
+ * through the next feature that adds one. It already fired once — R2's
+ * `memory_verbatim_ngram` landed in the same release and was given its two phrases here
+ * rather than widening the type, which is exactly the intended outcome.
+ */
+const REPAIR_WORDS: Record<Locale, Record<TurnRejectReason, string>> = {
+  id: {
+    empty: 'pesannya kosong',
+    too_long: 'pesannya terlalu panjang -- potong, jangan diringkas',
+    too_many_bubbles: 'kamu menulis lebih dari dua pesan; tulis paling banyak dua',
+    markdown: 'kamu memakai markdown; tulis polos saja',
+    angle_bracket: 'kamu menulis tanda kurung siku',
+    address_form: 'kamu memakai sapaan yang tidak ada di daftar',
+    self_address: 'kamu menyebut namamu sendiri',
+    card_name: 'nama kartu tidak ditulis persis seperti diberikan',
+    reading_shape: 'itu terbaca seperti bacaan, bukan seperti pesan grup',
+    banned_word: 'kamu memakai kata yang dilarang di ruangan ini',
+    malay_word: 'ada kata Melayu di situ; pakai bahasa Indonesia',
+    tic_phrase: 'kalimatnya terdengar seperti mesin',
+    register: 'pembuka atau penutupnya terdengar seperti layanan pelanggan',
+    source_tell: 'kamu menyebut dari mana kamu tahu; jangan',
+    answer_name_leak: 'kamu menyebut nama orang yang tidak pernah disebut di ruangan ini',
+    verbatim_ngram: 'kamu mengulang kalimatnya sendiri kepadanya',
+    memory_verbatim_ngram: 'kamu mengulang kalimat yang pernah dia tulis, kata per kata',
+  },
+  en: {
+    empty: 'the message was empty',
+    too_long: 'it was too long -- cut it, do not summarise it',
+    too_many_bubbles: 'you wrote more than two messages; write at most two',
+    markdown: 'you used markdown; write it plain',
+    angle_bracket: 'you wrote an angle bracket',
+    address_form: 'you used a name that is not on the list',
+    self_address: 'you said your own name',
+    card_name: 'a card name was not written exactly as given',
+    reading_shape: 'it reads like a reading rather than a message in a group',
+    banned_word: 'you used a word this room does not use',
+    malay_word: 'there was a Malay word in it',
+    tic_phrase: 'it sounded like a machine',
+    register: 'the opening or the ending sounded like customer service',
+    source_tell: 'you said how you know; do not',
+    answer_name_leak: 'you wrote a name nobody in this room has ever said',
+    verbatim_ngram: 'you repeated their own sentence back at them',
+    memory_verbatim_ngram: 'you repeated a sentence they once wrote, word for word',
   },
 };
 
@@ -597,12 +659,16 @@ function instruction(args: {
   );
 
   /*
-   * `C-R7`'s ONE retry, and the repair line names the REASON rather than repeating the
-   * rule: the rules are already in the system prompt, and a model that has just broken
-   * one is better served by being told which. The reason is a member of a closed set,
-   * so nothing user-derived arrives here.
+   * `C-R7`'s ONE retry. **The reason is rendered as a sentence in the model's own
+   * language** (`REPAIR_WORDS`) rather than as the raw `TurnRejectReason` token: the rules
+   * are already in the system prompt, and a model that has just broken one is served by
+   * being told which — in the vocabulary those rules are written in. The reason is a member
+   * of a closed set, so nothing user-derived arrives here.
    */
-  if (repairReason) lines.push(`${L.repair} ${repairReason}.`);
+  if (repairReason) {
+    const phrase = REPAIR_WORDS[ctx.locale][repairReason as TurnRejectReason] ?? repairReason;
+    lines.push(`${L.repair} ${phrase}.`);
+  }
 
   return lines.join('\n');
 }
@@ -637,6 +703,14 @@ export function chatPromptVersion(locale: Locale, self: ReaderId, budget: ChatLe
          * `group by prompt_version` would return one row per bubble.
          */
         JSON.stringify(CHAT_TIME_VOCAB[locale]),
+        /*
+         * **APPENDED LAST, AND NOTHING ABOVE IT MOVES.** The array's ORDER is part of the
+         * digest, so reordering it silently reprices every `group by prompt_version` across
+         * the deploy — and dropping an entry is invisible, because the function still
+         * compiles and still returns a plausible `chat-v1.xxxxxxxx`. It just stops moving
+         * when that layer changes.
+         */
+        JSON.stringify(REPAIR_WORDS[locale]),
       ].join('\0'),
     )
     .digest('hex');

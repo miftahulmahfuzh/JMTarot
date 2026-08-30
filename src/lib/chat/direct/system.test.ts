@@ -76,6 +76,23 @@ describe('the contract carries its rules, in both locales', () => {
       expect(half).toMatch(locale === 'id' ? /YANG BUKAN ALASAN/ : /WHAT IS NOT A REASON/);
     });
 
+    /**
+     * **R3, 2026-08-30.** The two mechanics the user asked for by name that had no rule of
+     * their own: readers taking each other's side, and being allowed to be funny. Each is
+     * asserted separately because each is separately deletable, and the first is the one a
+     * tidying pass removes as a restatement of *"they may disagree"* — it is the opposite
+     * of that, which is the point.
+     */
+    it(`licenses mutual support and jokes, in the rules (${locale})`, () => {
+      const rules = half.slice(half.indexOf(locale === 'id' ? '\nATURAN\n' : '\nRULES\n'));
+      expect(rules).toContain(locale === 'id' ? 'SALING MEMBELA' : 'BACK EACH OTHER UP');
+      expect(rules).toContain(locale === 'id' ? 'BERCANDA ITU BOLEH' : 'JOKES ARE ALLOWED');
+      /* The ceiling-is-not-a-target line, which is the false positive a raised cap buys. */
+      expect(rules).toContain(
+        locale === 'id' ? 'batas atas, bukan target' : 'a ceiling, not a target',
+      );
+    });
+
     it(`the security clause names the fence and calls its contents material (${locale})`, () => {
       expect(half).toContain('<obrolan>');
       expect(half).toMatch(locale === 'id' ? /KEAMANAN/ : /SECURITY/);
@@ -210,13 +227,25 @@ describe('every worked example survives checkPlan against its own printed window
     it(`the examples are legal plans (${locale})`, () => {
       const examples = examplesIn(HALVES[locale]);
       /*
-       * **THREE SINCE F5.** The third is the proactive shape — a run nobody sent a message
-       * for — and it was added because the measured failure was the director planning from
-       * the newest line in the window when that line was hours old. Rule 11 says so and
-       * this example shows it, which is the blog editor's lesson in a third place: *an
-       * index rule needs a worked example, not a definition.*
+       * **FOUR SINCE 2026-08-30, AND THE COUNT IS THE FIX RATHER THAN A SIDE EFFECT.**
+       *
+       * There were three, and TWO of them answered with two beats while rule 1 asked for
+       * three or four — because the 2026-08-28 cap change rewrote the rule and left the
+       * examples alone. `system.id.ts`'s own header ranks the examples above the rules
+       * (*"the example does more work than the description"*), so the model was shown two
+       * and told four, and the room stayed quiet through a release.
+       *
+       * The four now teach the four shapes the rules describe, in the order a reader of
+       * the prompt meets them:
+       *
+       *   [0] the LONG run, four beats, three of them aimed at another reader
+       *   [1] SILENCE, `C-R6`, unchanged and untouchable
+       *   [2] the SHORT run, one beat -- **added with the long one, not instead of it.**
+       *       A cap at eight with only long examples flattens the MIX, and `caps.ts` is
+       *       explicit that liveliness comes from the mix and from the silence rate.
+       *   [3] the PROACTIVE run, rule 11, four beats and nothing quoted
        */
-      expect(examples).toHaveLength(3);
+      expect(examples).toHaveLength(4);
 
       for (const [i, example] of examples.entries()) {
         const window = buildWindow({
@@ -227,8 +256,8 @@ describe('every worked example survives checkPlan against its own printed window
           now: NOW,
         });
         /*
-         * **THE THIRD EXAMPLE IS CHECKED AS THE PROACTIVE RUN IT DEPICTS.** Passing
-         * `'user_message'` for all three would let a zero-beat third example pass as a
+         * **THE FOURTH EXAMPLE IS CHECKED AS THE PROACTIVE RUN IT DEPICTS.** Passing
+         * `'user_message'` for all four would let a zero-beat proactive example pass as a
          * correct silence — which is exactly what `[F5-7]` forbids and what rule 11 tells
          * the model not to do, so the example would be teaching the opposite of the rule
          * printed beneath it and this test would agree.
@@ -237,7 +266,7 @@ describe('every worked example survives checkPlan against its own printed window
           window,
           fallbackLocale: locale,
           caps: CAPS,
-          trigger: i === 2 ? 'cron' : 'user_message',
+          trigger: i === 3 ? 'cron' : 'user_message',
         });
         if (!result.ok) throw new Error(`${locale}: ${result.reason}`);
         expect(result.repairs).toEqual([]);
@@ -245,21 +274,49 @@ describe('every worked example survives checkPlan against its own printed window
         expect(result.locale).toBe(locale);
       }
 
-      /* The first speaks twice, the second is silence, the third speaks twice about a
-       * material — and `[F5-7]` is why the third is NOT another silence: on a proactive run
-       * nobody spoke, so there is nothing to decline to answer, and the querent's daily
-       * budget was already spent at the mint. */
+      /* Long, silent, short, proactive — and `[F5-7]` is why the last is NOT another
+       * silence: on a proactive run nobody spoke, so there is nothing to decline to
+       * answer, and the querent's daily budget was already spent at the mint. */
       expect(examplesIn(HALVES[locale]).map((e) => JSON.parse(e.json).beats.length)).toEqual([
-        2, 0, 2,
+        4, 0, 1, 4,
       ]);
 
       /*
-       * **THE THIRD EXAMPLE'S WHOLE POINT IS THAT IT QUOTES NOTHING.** The window it prints
-       * is days old; a `reply` pointing into it would teach exactly the behaviour rule 11
-       * exists to stop, and it would do it with a worked example's authority.
+       * **THE FOURTH EXAMPLE'S WHOLE POINT IS THAT IT QUOTES NOTHING.** The window it
+       * prints is days old; a `reply` pointing into it would teach exactly the behaviour
+       * rule 11 exists to stop, and it would do it with a worked example's authority.
        */
-      const proactive = JSON.parse(examples[2].json) as { beats: Array<{ reply: string | null }> };
+      const proactive = JSON.parse(examples[3].json) as { beats: Array<{ reply: string | null }> };
       for (const beat of proactive.beats) expect(beat.reply).toBeNull();
+
+      /*
+       * **R3's OWN ASSERTION, AND IT IS ABOUT THE EXAMPLES RATHER THAN THE PROSE.** The
+       * mechanic the release is measured on is readers answering each other, and rule 1
+       * has said so in words since 2026-08-28 while no example demonstrated it more than
+       * once. Both multi-beat examples must aim at least HALF their beats somewhere other
+       * than the querent, or the prompt is describing the mechanic and showing its
+       * opposite.
+       *
+       * **HALF RATHER THAN ALL-BUT-ONE, AND THE DIFFERENCE IS NOT A WEAKENED CHECK.**
+       * All-but-one is unreachable without breaking the examples: three of the four
+       * multi-beat runs aim a second beat at the querent because that beat is an `ask`,
+       * and a question put to the person cannot be aimed at a reader instead. Writing the
+       * examples to satisfy `beats.length - 1` would mean inventing questions the readers
+       * ask each other in order to pass a test, which is the exact inversion this check
+       * exists to catch. **The floor that matters is that a reader is both answered AND
+       * answers back**, which is two directed beats out of four, and one directed beat in
+       * a four-beat run still fails here.
+       */
+      for (const index of [0, 3]) {
+        const beats = JSON.parse(examples[index].json).beats as Array<{ to: string }>;
+        const directed = beats.filter((b) => b.to !== 'user').length;
+        const floor = Math.ceil(beats.length / 2);
+        expect({ index, ok: directed >= floor, directed }).toEqual({
+          index,
+          ok: true,
+          directed,
+        });
+      }
     });
   }
 });
