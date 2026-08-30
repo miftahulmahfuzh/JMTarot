@@ -13184,3 +13184,107 @@ transcribed rather than narrowed: `rollup.test.ts`'s spelled-out fourteen,
 `memory.*` list. **That is the machinery working** — each one is a place somebody wrote
 down which members exist, and a phase plan that enumerates files will miss them every
 time.
+
+## `<ingatan>`, and the two rules that were NOT written (2026-08-30, R2 phase 5)
+
+**THE DIRECTOR PROFILE CARRIES NO `<ingatan>`, AND THE ARGUMENT IS `beat.angle`.** §4.2's
+narrowing (*"the director casts and orders"*) was the starting point, but R3's
+profile-anchored material made it a live question rather than a restatement. What settled it
+is the one string that crosses from the director into a voice's prompt: `instruction()`
+renders `beat.angle` **unfenced**, inside the block the contract declares to be a command. A
+director able to read the memory could put a remembered fact there, and `checkPlan` has no
+`<ingatan>`-derived check to stop it — so the fence would be bypassed by the one field
+designed to cross it. The material line (`BAHAN:`) already carries a closed kind token and
+scalars, which is everything the director needs to cast a profile-anchored opener, and it
+carries no free text by construction. The privacy argument that decided `<jawaban>` points the
+same way and harder: one call per beat holds the sensitive strings instead of one per beat
+plus one per run, and a model's inferences about a person are a stronger claim than the six
+answers.
+
+**THERE IS NO NAME BAN OVER `<ingatan>` AND ADDING ONE WOULD DELETE THE FEATURE.** The
+`<jawaban>` ban rests on a specific published promise — `onboarding.q.most_loved.hint` says a
+name typed there will not travel. **Nothing promises that about a name the querent typed into
+the group chat**, which is where every name in the memory came from, and
+*"gimana si bonjeng, marah2 lagi ga dia?"* is the sentence R3 was written to produce. A reader
+who knows the name and says *"si bos lu itu"* instead is not being careful; it is the
+uncanny-valley version. The promise boundary is enforced where it already lives:
+`answer_name_leak` refuses a proper name that came out of a stored ANSWER and has not been
+said in the room, wherever in the bubble it appears — so a name that leaked into the memory is
+caught by the check that existed before this release. `validate.test.ts` tests 18 and 19 are
+the pair that keeps both halves true.
+
+**`MEMORY_NGRAM = 8` IS A GUESS AND IS RECORDED AS ONE**, next to `PERSONA_MIN_AGE_SECONDS`.
+`NGRAM = 6` compares a bubble against a sentence a *person* typed; this compares two outputs
+of the same model family, in one language, about one person, on the handful of topics the room
+talks about, where a six-word collision can be topic rather than copying. The instrument is
+`chat.turn_generated.reject_reason` plus `npm run smoke -- --chat`: if it never fires, lower
+it; if it refuses a bubble that reads correctly, raise it, and fix the prompt.
+
+### Three places the plan's own text would not have compiled or would have failed
+
+- **`system).not.toContain('bonjeng')` and the contract both wanted that name.** The plan's
+  *"puts the memory in the user turn and never in the system prompt"* test asserted the
+  absence of `bonjeng` from the system half, while the same plan's Indonesian contract puts
+  *"gimana si bonjeng, marah2 lagi ga dia?"* into it as the worked example that licenses using
+  a room name — and its own next test asserts that example is there. **Two assertions in one
+  plan, mutually exclusive.** The test now asserts the absence of the stored SENTENCE, which
+  is what may not leak; the name is the contract's on purpose. **The generalisation: a canary
+  drawn from the same vocabulary as a worked example is not a canary.**
+- **The plan's seven-word near miss was eight words.**
+  *"lari pagi jam lima tujuh sudah terlalu panas?"* is exactly eight, so
+  `memory_verbatim_ngram` refused it and the test that was supposed to prove the boundary
+  proved it was in the wrong place. Dropping the leading `lari` is the fix. **A near-miss
+  fixture written by eye is a fixture nobody counted**; this one was caught by the suite in
+  its first run, which is the cheap version of that lesson.
+- **`validate.test.ts` already had a test 16.** The plan numbered its four new tests 16–19
+  onto a file whose `too_many_bubbles` holds 16; they are 17–20. The numbers are labels for a
+  reader, and a collision reads as one test replacing another.
+
+### Two counts corrected in passing, both by DELETING the number
+
+`build.ts`'s `buildChatPrompt` doc said *"the four fenced blocks"* and `voices/prompt.ts` said
+the context is *"six database reads"* — both true when written, both wrong twice over inside
+one release, because phase 2 and phase 5 each add a block and phase 5 adds a read. Neither now
+carries a figure: the block-order list in `build.ts`'s header and the read list in
+`context.ts`'s header are the two places that have to be right, and every other mention points
+at them. **`## Analytics`' 67-against-76 in a new place, fixed the way that one says to.**
+
+### The gate, run twice, and the honest reading of it
+
+`npm run smoke -- --chat` (both locales, two runs, 2026-08-30). **All mechanical checks
+`all clean` on both**, and the blind read was **3 of 3 in both locales** on run 1. Overlap
+`id` 0.062 / 0.119 / 0.091, `en` 0.156 / 0.240 / 0.129; sentence-length ratio `en`
+margaret 31.0 against thessaly 7.2; contractions `en` adrian 5.0, margaret 0.0.
+
+**The licence works, and exactly one observation proves it rather than four.** Run 1's
+English half produced *"is this your idea or bonjeng's shouting talking?"* — `bonjeng`
+appears nowhere in the fixture transcript, nowhere in the six answers and nowhere in the
+Lotus block, so it can only have come out of `<ingatan>`, and it arrives as leverage inside
+the current subject with no attribution attached. That is the target sentence's shape, in
+the other language, unprompted. **No reader in either run recited a note, summarised one, or
+named a store.**
+
+**AND THE RATE IS LOWER THAN THE PLAN EXPECTED — one clean use in four locale-runs, not one
+per locale per run. THE CAUSE IS THE FIXTURE TRANSCRIPT, NOT THE CONTRACT, and that is a
+measurement rather than an excuse.** The scripted conversation is about a grandmother and a
+resignation; the four fixture notes are about dinner, a colleague, a morning run and
+preferring one's own company. Only the run attaches, and the querent raises it themselves in
+the last message — so every engagement with it is confounded by `<obrolan>` and cannot be
+scored. **A memory that goes unused in a conversation it has nothing to say about is the
+placement argument working**, not the licence failing: the block sits far from the
+instruction precisely so it does not answer a question about a deadline with a question
+about dinner.
+
+**So the contract was NOT tuned on this.** The rollback note offers *"revert step 3 if
+readers use it badly"* and the exit criteria offer *"fix the LICENCE bullet if nobody uses
+it"*; neither condition is met, and moving a contract on a two-run sample against a
+transcript that does not ask for the memory is the English `spread3` calibration mistake in
+a new place. **What is owed is a better instrument, and it is phase 9's:** a fixture
+transcript that touches one memory topic, or a printed memory-use rate. Recorded as a
+handoff rather than built here, because phase 9 owns every check in that script.
+
+Two pre-existing things seen in passing and left alone, both older than this phase: an `id`
+Margaret bubble truncated mid-word at the token ceiling (*"seberapa jauh Mifta bisa jat"*),
+and an `id` Adrian bubble inventing a habit the prompt does not carry (*"biasanya jadi hantu
+malam"*). Neither is `<ingatan>`-derived — the second is the *"jangan menebak"* rule losing
+to Adrian's register, which is `validate.ts`'s accept bias by design.

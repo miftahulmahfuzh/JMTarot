@@ -31,6 +31,7 @@ const ctx = (over: Partial<Parameters<typeof checkTurn>[1]> = {}) => ({
   addressForms: ['Mifta', 'Mif', 'Ta'],
   rawAnswers: [] as string[],
   conversation: [] as string[],
+  memoryNotes: [] as string[],
   ...over,
 });
 
@@ -288,6 +289,68 @@ describe('checkTurn — every refusal, with its near miss', () => {
     const out = checkTurnBodies('satu\n\ndua\n\ntiga', ctx());
     expect(out).toEqual({ ok: false, reason: 'too_many_bubbles' });
     expect(checkTurnBodies('satu\n\ndua', ctx())).toEqual({ ok: true, bodies: ['satu', 'dua'] });
+  });
+
+  /**
+   * 17. `memory_verbatim_ngram` at EIGHT words, and not at seven. **A near-miss test written
+   * before the refusal** — the near miss is the one that matters here, because the accept
+   * bias governs everything this check does not have a promise behind.
+   *
+   * (The plan numbered this 16; `too_many_bubbles` already held that number, so the four R2
+   * tests are 17–20. The numbers are labels, and a collision reads as one test replacing
+   * another.)
+   */
+  it('17. memory_verbatim_ngram at eight words, and not at seven', () => {
+    const memoryNotes = ['Lari pagi jam lima, tujuh sudah terlalu panas buatnya sejak dulu.'];
+    refuses('lari pagi jam lima tujuh sudah terlalu panas buatnya', 'memory_verbatim_ngram', {
+      memoryNotes,
+    });
+    /*
+     * SEVEN, counted rather than eyeballed: `pagi jam lima tujuh sudah terlalu panas`.
+     * Dropping the leading `lari` is what takes the run from eight to seven — the same
+     * sentence WITH it is a refusal, which is the boundary this test exists to pin.
+     */
+    accepts('pagi jam lima tujuh sudah terlalu panas?', { memoryNotes });
+    accepts('masih lari jam lima?', { memoryNotes });
+  });
+
+  /**
+   * **THE RULING, AS A TEST, AND IT IS THE MOST IMPORTANT ACCEPTANCE IN THE FILE.** A name
+   * that lives only in the memory is a name the querent said out loud in this room, and
+   * *"gimana si bonjeng, marah2 lagi ga dia?"* is the sentence this release exists to
+   * produce. If somebody adds a `memory_name_leak`, this fails first.
+   */
+  it('18. never refuses a name that appears only in the memory', () => {
+    const memoryNotes = ['Ada orang di kantornya yang ia panggil bonjeng, sering marah-marah.'];
+    accepts('gimana si bonjeng, marah2 lagi ga dia?', { memoryNotes });
+    accepts('bonjeng masih gitu?', { memoryNotes });
+  });
+
+  /**
+   * **AND THE OTHER HALF: `answer_name_leak` STILL COVERS THE ONLY NAME THAT CARRIES A
+   * PROMISE**, wherever in the bubble it came from. A name that leaked out of a stored answer
+   * into the memory is refused by the check that already existed — which is why no new name
+   * check was needed.
+   */
+  it('19. still refuses an answer name even when the memory repeats it', () => {
+    refuses('gimana kabar Sari sekarang?', 'answer_name_leak', {
+      rawAnswers: ['ibu saya, namanya Sari'],
+      memoryNotes: ['Sering menyebut Sari, ibunya.'],
+    });
+  });
+
+  /**
+   * 20. R2's four source tells, under the EXISTING reason token. `aku inget` must pass.
+   *
+   * `aku inget kamu suka…` passes because `aku inget` is not a tell. `aku inget kamu pernah
+   * bilang…` is already refused by the existing `kamu pernah bilang` with its open tail —
+   * that is the correct boundary and it needs no new phrase.
+   */
+  it('20. refuses a named store and never a reader simply remembering', () => {
+    refuses('di catatanku kamu suka nasi padang', 'source_tell');
+    refuses('menurut data kamu tidur jam tiga', 'source_tell');
+    accepts('eh gue inget lu lagi diet');
+    accepts('aku inget kamu suka nasi padang');
   });
 });
 

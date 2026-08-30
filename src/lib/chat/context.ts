@@ -14,10 +14,13 @@ import type { ChatClock } from './types';
 import { listMessages, messagesForRun } from '@/lib/db/queries/chat';
 import { readingWithCards, recallableReadings } from '@/lib/db/queries/history';
 import { readLotusBlock } from '@/lib/db/queries/lotus';
+import { getUserMemory } from '@/lib/db/queries/memory';
 import { getAnswers } from '@/lib/db/queries/onboarding';
 import { getProfile } from '@/lib/db/queries/profile';
 import { getTranslation } from '@/lib/db/queries/translations';
+import type { UserMemory } from '@/lib/db/schema';
 import type { DbOrTx } from '@/lib/db/types';
+import { isUserMemoryItem } from '@/lib/memory/profile/types';
 import { correspondencesFor } from '@/lib/numerology';
 import { sanitizeAnswer } from '@/lib/prompt/sanitize';
 import type {
@@ -51,11 +54,12 @@ import type {
  *
  * ── NO NEW QUERY MODULE AND NO NEW INDEX (`[F3-23]`) ────────────────────────
  *
- * Six existing reads, every one of them taking its handle first: `getProfile`,
+ * Seven existing reads, every one of them taking its handle first: `getProfile`,
  * `getAnswers`, `readLotusBlock`, `recallableReadings`, `listMessages` /
- * `messagesForRun`, and — only when a message carries an attachment —
+ * `messagesForRun`, `getUserMemory`, and — only when a message carries an attachment —
  * `readingWithCards` plus `getTranslation`. A `queries/chatContext.ts` would duplicate
- * five of them and drift from all five.
+ * six of them and drift from all six. **`queries/memory.ts` is phase 3's module and this
+ * is its first reader; the assembler still composes what exists and owns no SQL.**
  *
  * ── IT NEVER THROWS, AND THAT IS `chain.ts`'s RULE ─────────────────────────
  *
@@ -110,6 +114,34 @@ export const CHAT_CONTEXT_READINGS_DEFAULT = 5;
  * surveillance"* still holds and this release is already spending that budget elsewhere.
  */
 export const CHAT_READING_LOOKBACK_DAYS_DEFAULT = 30;
+
+/**
+ * **TWELVE NOTES, AND THE CEILING IS AGAINST `<obrolan>` RATHER THAN AGAINST THE MODEL.**
+ *
+ * `memory.ts`'s dilution argument, pointed at the block that exists *because* of it. R2 is
+ * the answer to the forty-message window, so it would be a poor joke if the answer grew
+ * until it competed with the window: forty bubbles are the largest block in this prompt and
+ * must stay so, because *what was just said* is what the next bubble is about. A memory
+ * longer than the transcript is a reader who arrives with an agenda.
+ *
+ * **NO ENV VARIABLE, DELIBERATELY.** The three above have one because they were tuned
+ * against live output; this has not been tuned at all yet, and a knob nobody has ever turned
+ * is furniture in `.env.example` for every future reader. Make it a variable the day
+ * somebody has a measurement that wants it.
+ */
+export const CHAT_MEMORY_NOTES = 12;
+
+/**
+ * One note's ceiling, and `sanitizeAnswer` **REJECTS RATHER THAN TRUNCATES** at it — its own
+ * documented behaviour, and the safe direction here. A note longer than this is a generator
+ * that ran away, and half a runaway sentence in a prompt is worse than no sentence: it reads
+ * as a fact that trails off, and a model completes what trails off.
+ *
+ * Deliberately ABOVE `USER_MEMORY_ITEM_MAX_CHARS` (140), so this never refuses an item the
+ * extractor legitimately wrote. What it catches is a row from a past value set, which is the
+ * same class of thing `isUserMemoryItem` above it catches — jsonb is whatever is in the row.
+ */
+const CHAT_MEMORY_NOTE_CHARS = 240;
 
 /**
  * **THREE NUMEROLOGY FACTS OF SIX**, and V3's finding is why: `/account` shows five
@@ -209,6 +241,57 @@ function answerBlocksFrom(
   return out;
 }
 
+/**
+ * The stored memory, flattened to lines the prompt layer can fence.
+ *
+ * ── THE FLATTENING IS THE SEAM, AND IT IS NARROW ON PURPOSE ─────────────────
+ *
+ * `ChatContext` carries `string[]` rather than the row, so `build.ts` never learns that
+ * `user_memory` has an `input_hash` or a `source_version` — and a future column cannot
+ * silently become prompt material by being added to a type the prompt layer already imports.
+ * `ChatReadingRef`'s rule (*"`RecalledReading`'s fields, minus the ones a chat has no use
+ * for"*), applied one table over.
+ *
+ * ── STORED ORDER, AND THE GENERATOR OWNS RELEVANCE ──────────────────────────
+ *
+ * No sort, no score, no de-duplication. Ranking twelve model-written sentences by a heuristic
+ * written here would give this release its own second opinion about what matters, competing
+ * with the one the extractor already formed. If the wrong twelve arrive, the fix is the
+ * generator.
+ *
+ * ── `sanitizeAnswer` IS THE INBOUND HALF, AND THE ARGUMENT IS V2's ──────────
+ *
+ * The memory is **model output that was itself generated from user text**, handed to a second
+ * model as material, with the result going straight to a screen — `<terjemahan>`'s argument
+ * exactly, and the reason `<ingatan>` is a fence rather than a header line. `build.ts` strips
+ * again when it writes the fence (the fence's writer owns the fence); the pass is idempotent,
+ * so doing it twice costs nothing and doing it once would depend on which file somebody edits
+ * next.
+ */
+function memoryLinesFrom(row: UserMemory | null): string[] {
+  if (!row) return [];
+  const out: string[] = [];
+  for (const item of row.items) {
+    /*
+     * **`$type<>` IS AN ASSERTION THE DRIVER IS NOT OBLIGED TO HONOUR** (phase 3's header,
+     * `answersUpdatedAt`'s lesson). This column is jsonb written from MODEL OUTPUT, so a
+     * row can hold anything a past value set allowed. Filter, never trust.
+     */
+    if (!isUserMemoryItem(item)) continue;
+    /*
+     * **`text` AND NOTHING ELSE.** Not `id`, not `kind`, not `lastSeen`. Invariant 4 in
+     * code: a date in this block is the material that turns *"nasi padang lagi kan?"* into
+     * *"you told me on the 9th"*, and `prompt.test.ts` asserts no `YYYY-MM-DD` and no kind
+     * token appears inside `<ingatan>`.
+     */
+    const clean = sanitizeAnswer(item.text, CHAT_MEMORY_NOTE_CHARS);
+    if (clean === null) continue;
+    out.push(clean);
+    if (out.length >= CHAT_MEMORY_NOTES) break;
+  }
+  return out;
+}
+
 export type { ContextProfile };
 
 export type AssembleArgs = {
@@ -257,7 +340,7 @@ export async function assembleChatContext(db: DbOrTx, args: AssembleArgs): Promi
    * with less. The transcript is the only block worth degrading over, and even it comes
    * back empty rather than throwing.
    */
-  const [profileRow, answerRows, lotus, readingRows, page, runRows] = await Promise.all([
+  const [profileRow, answerRows, lotus, readingRows, page, runRows, memoryRow] = await Promise.all([
     getProfile(db, userId).catch(() => null),
     /*
      * **THE ONE DECRYPT** (`[F3-4]`), and behind `chatAnswersEnabled()` (`[R14]`'s
@@ -278,6 +361,20 @@ export async function assembleChatContext(db: DbOrTx, args: AssembleArgs): Promi
       hasMore: false,
     })),
     args.runId ? messagesForRun(db, args.runId).catch(() => []) : Promise.resolve([]),
+    /*
+     * **R2's BLOCK, AND IT IS `forVoice` FOR THE SAME REASON `<jawaban>` IS** — see the
+     * header. The read is skipped for the director rather than filtered afterwards, so a
+     * `chat_plan` call costs one query fewer and the row is not even fetched on that path.
+     *
+     * **NO FLAG HERE.** The extractor's kill switch gates the model CALL, never the cached
+     * READ (`sharingEnabled()`'s rule): off means *write nothing new*, never *hide what
+     * exists*. Reading it here anyway is what makes turning the switch off a decision about
+     * cost rather than a decision to make the readers forget somebody overnight.
+     *
+     * Swallowed like every other optional read. A memory that fails to load costs the block
+     * and nothing else, and the room still answers.
+     */
+    forVoice ? getUserMemory(db, userId).catch(() => null) : Promise.resolve(null),
   ]);
 
   /*
@@ -349,6 +446,7 @@ export async function assembleChatContext(db: DbOrTx, args: AssembleArgs): Promi
     facts: facts.slice(0, CHAT_NUMEROLOGY_FACTS + 1),
     lotus: lotus?.summary?.trim() ? lotus.summary.trim() : null,
     answers: answerBlocksFrom(answerRows),
+    memory: memoryLinesFrom(memoryRow),
     readings,
     repeatCardIds: repeatedCards(readings),
     messages: entries,

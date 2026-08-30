@@ -88,6 +88,12 @@ export type ChatContext = {
   lotus: string | null;
   /** Empty for the `director` profile and when `CHAT_ANSWERS_ENABLED=0`. */
   answers: ChatAnswerBlock[];
+  /**
+   * R2's distilled profile memory, already sanitized and capped by the assembler, in the
+   * order the generator wrote it. **Empty for the `director` profile** — see the header.
+   * `string[]` and not the row: `build.ts` must not learn `user_memory`'s columns.
+   */
+  memory: string[];
   readings: ChatReadingRef[];
   /** Cards that turned up in more than one of `readings`. Computed in code. */
   repeatCardIds: number[];
@@ -117,6 +123,21 @@ export type ChatContext = {
  *   `<penanya>`   WHO. Then, so it reads as background the conversation is laid over
  *                 rather than as the subject. `build.ts`'s argument, verbatim.
  *   `<jawaban>`   WHAT THEY SAID. Detail about the person, sitting with the person.
+ *   `<ingatan>`   WHAT WE HAVE LEARNED SINCE. R2's distillation, and it sits BEHIND
+ *                 `<jawaban>` because the person's own sentences outrank a model's
+ *                 inferences about them: two blocks can disagree, and the one the
+ *                 querent typed is the one that wins. It sits AHEAD of `<riwayat>`
+ *                 because it is about the PERSON, and the person material is one
+ *                 cluster.
+ *
+ *                 **IT IS DELIBERATELY NOT NEAREST THE INSTRUCTION, AND THAT IS THE
+ *                 PLACEMENT DOING THE MOST WORK.** The slot beside `GILIRANMU:` is
+ *                 reserved for *what was just said*, because that is what the next
+ *                 bubble answers. A memory in that slot produces a reader who replies
+ *                 to a message about a deadline with *"gimana dinner lu tah?"* — using
+ *                 the feature correctly and answering nobody. Far from the instruction
+ *                 it is what it should be: something the reader happens to know.
+ *
  *   `<riwayat>`   WHAT THEY DREW. Between the person and the room, because it is
  *                 context FOR the room rather than part of it (`memory.ts`'s reason).
  *   `<obrolan>`   THE ROOM. Last, and therefore closest to the instruction, because
@@ -351,8 +372,40 @@ function answerBlocks(ctx: ChatContext): string {
 }
 
 /**
- * `<riwayat>` — what they drew. `memoryBlock`'s line shape, reused rather than
- * re-derived, so the two blocks a model may see in this app look alike.
+ * `<ingatan>` — what this room has learned about them, distilled.
+ *
+ * ── THE SAME TAG IN BOTH LOCALES, AND `<riwayat>`'s REASON IS WHY ───────────
+ *
+ * `R17`: an English querent will never type *"riwayat"* and will absolutely type
+ * *"history"*, so the English-looking tag is the one carrying injection surface. Identical
+ * here — *"memory"* is a word somebody types, *"ingatan"* is not — and the second reason is
+ * plainer: two spellings of one fence means two names in every rule, two names in every test,
+ * and a locale in which one of them was forgotten.
+ *
+ * ── PLAIN LINES, NOT BULLETS ────────────────────────────────────────────────
+ *
+ * `historyBlock`'s shape, reused rather than re-derived. A leading `- ` would be a markdown
+ * list in a prompt whose FORM RULES forbid the model from writing one, which is asking a
+ * model to read a shape it has just been told not to produce. The contract has enough to do.
+ *
+ * ── STRIPPED HERE, BY THE FENCE'S WRITER ────────────────────────────────────
+ *
+ * `roomBlock`'s rule and `buildLotusPrompt`'s precedent: **the builder that writes a fence is
+ * the one that strips its material.** The assembler strips too; the pass is idempotent, and
+ * the guarantee lives with the fence rather than with a caller's discipline.
+ */
+function memoryBlock(ctx: ChatContext): string {
+  if (ctx.memory.length === 0) return '';
+  const lines = ctx.memory.map((line) => stripUntrusted(line)).filter((line) => line.length > 0);
+  if (lines.length === 0) return '';
+  return `<ingatan>\n${lines.join('\n')}\n</ingatan>`;
+}
+
+/**
+ * `<riwayat>` — what they drew. W5's `src/lib/prompt/memory.ts` block's line shape, reused
+ * rather than re-derived, so the two blocks a model may see in this app look alike.
+ * **That is W5's `memoryBlock`, not the one directly above** — R2 gave this file a function
+ * of the same name, and the two are unrelated.
  *
  * The `ULANG` / `AGAIN` marker is **computed in code** (`memory.ts`'s rule) and here it
  * means *a card that turned up in more than one of these readings* — which is the
@@ -606,8 +659,10 @@ export type BuildChatPromptArgs = {
  * THE PROMPT. `{ system, user, maxTokens }` and nothing else (`[F3-5]`).
  *
  * The system prompt is the contract plus this reader's chat block: rules, in the place
- * rules live. The user turn is the four fenced blocks plus one unfenced instruction:
- * material, in the place material lives. **`[F3-6]`: not one byte of the six answers is
+ * rules live. The user turn is the fenced blocks plus one unfenced instruction:
+ * material, in the place material lives. **The count is deliberately not written here** —
+ * it has moved twice in one release, and the block-order list in the file header is the one
+ * place that has to be right. **`[F3-6]`: not one byte of the six answers is
  * in the system prompt**, which `prompt.test.ts`'s canary asserts by name.
  */
 export function buildChatPrompt(args: BuildChatPromptArgs): CompletionPrompt {
@@ -620,6 +675,7 @@ export function buildChatPrompt(args: BuildChatPromptArgs): CompletionPrompt {
     timeBlock(ctx),
     personBlock(ctx),
     answerBlocks(ctx),
+    memoryBlock(ctx),
     historyBlock(ctx),
     roomBlock(ctx, now),
     instruction({ ctx, self, beat, budget, repairReason: args.repairReason ?? null }),
