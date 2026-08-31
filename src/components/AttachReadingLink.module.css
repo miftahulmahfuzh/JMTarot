@@ -35,10 +35,13 @@
  * three characters who already know me" before "put this on the internet", and the
  * destructive-adjacent control is never the first thumb target).
  *
- * So THIS rule is the one that now separates the controls from the disclaimer, and
- * `margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--gold-hairline)`
- * is `ShareFooter`'s `.footer` verbatim — the spacing above the group is unchanged
- * whichever control happens to be first.
+ * So THIS rule is the one that now separates the controls from the disclaimer. It
+ * WAS `margin-top: 22px; padding-top: 18px; border-top: 1px solid
+ * var(--gold-hairline)` -- `ShareFooter`'s `.footer` verbatim -- and **the margin is
+ * 0 since 2026-08-30 (R2)**, because the 22 was being ADDED to a parent that already
+ * gapped at 18, putting this hairline 40px below the disclaimer and 18px above this
+ * button. The sentence naming the old value is corrected rather than left standing:
+ * it quoted a declaration this file no longer has. See `.wrap` below.
  *
  * **`ReadingActions`'s `.row` THEN DRAWS ITS OWN, WHICH BECOMES A DIVIDER BETWEEN THE
  * TWO CONTROLS RATHER THAN A HEADER FOR THE GROUP.** That reads as two rows of one
@@ -56,7 +59,18 @@
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  margin-top: 22px;
+  /*
+   * **ZERO, AND THE 18px COMES FROM THE PARENT'S `gap` (2026-08-30, R2).** It was
+   * 22, which the draw shell's and `ReadingView`'s own 18px gap then added to -- so
+   * the hairline sat 40px below the disclaimer while sitting 18px above this
+   * button. The block looked top-tight and bottom-loose, and the reason was in a
+   * different file from the symptom.
+   *
+   * A `margin-top` here is now redundant BY CONSTRUCTION: both parents gap at 18,
+   * which is the number this whole tail uses. `readingRhythm.test.ts` asserts it
+   * stays 0 -- reinstating a margin is the single-line change that undoes R2.
+   */
+  margin-top: 0;
   padding-top: 18px;
   border-top: 1px solid var(--gold-hairline);
 }

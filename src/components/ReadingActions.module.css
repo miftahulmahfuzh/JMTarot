@@ -38,12 +38,13 @@
   justify-content: center;
   gap: var(--corner-gap);
   /*
-   * `ShareFooter`'s `.footer` VERBATIM, which is the block this row replaces -- so
-   * this phase moves nothing vertically and the whole of R2 is visible in phase 2's
-   * diff. **Phase 2 sets `margin-top: 0`** and `readingRhythm.test.ts` then pins the
-   * 18px against three other stylesheets.
+   * **ZERO SINCE 2026-08-30 (R2).** Phase 1 shipped this as 22 -- `ShareFooter`'s
+   * `.footer` verbatim -- so that phase changed no vertical rhythm at all. The 18px
+   * above this hairline now comes entirely from the parent's `gap`, which is 18 on
+   * both mounting screens. See `AttachReadingLink.module.css`'s `.wrap`, which is
+   * the same rule one block up, and `readingRhythm.test.ts`.
    */
-  margin-top: 22px;
+  margin-top: 0;
   padding-top: 18px;
   border-top: 1px solid var(--gold-hairline);
 }

@@ -143,12 +143,23 @@
   }
 }
 
+/*
+ * ── ONE SPACING VALUE ABOVE AND BELOW (2026-08-30, R2/R2a) ─────────────────
+ *
+ * `ReadingPanel.module.css`'s `.disclaimer` is the same sentence on the other
+ * screen and carries the same rule; read that one for the argument. The ONLY
+ * difference is the margin: this element's parent (`.view`) already gaps at 18px,
+ * where `.panel` gaps at 14 -- so 0 here and 4 there produce the same 18px on
+ * screen. **The two files are not byte-identical and that is correct**; what has to
+ * match is the number the querent measures.
+ */
 .disclaimer {
   font-family: var(--font-body), Georgia, serif;
   font-style: italic;
   font-size: 13px;
   color: var(--faint);
   border-top: 1px solid var(--gold-hairline);
-  padding-top: 14px;
-  margin: 6px 0 0;
+  padding-top: 18px;
+  /* `.view` gaps at 18px, which is the whole distance. See above. */
+  margin: 0;
 }
