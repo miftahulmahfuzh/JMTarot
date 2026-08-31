@@ -76,12 +76,28 @@
   background: var(--gold-wash-strong);
 }
 
+/*
+ * ── ONE SPACING VALUE ABOVE AND BELOW (2026-08-30, R2/R2a) ─────────────────
+ *
+ * `padding-top` is the distance from the hairline DOWN to this sentence;
+ * `margin-top` plus `.panel`'s 14px `gap` is the distance from the prose UP to the
+ * hairline. Both are 18px, and every other hairline in the reading tail is 18px on
+ * both sides too -- `ReadingView.module.css`, `AttachReadingLink.module.css` and
+ * `ReadingActions.module.css` carry the same number and `readingRhythm.test.ts`
+ * fails if any of the four moves alone.
+ *
+ * It was `padding-top: 14px; margin: 6px 0 0`, which gave 14px above the sentence
+ * and **40px** below it -- the 22px `margin-top` of whatever block came next, plus
+ * the shell's own 18px gap. The asymmetry was invisible in this file because half of
+ * it lives in another one.
+ */
 .disclaimer {
   font-family: var(--font-body), Georgia, serif;
   font-style: italic;
   font-size: 13px;
   color: var(--faint);
   border-top: 1px solid var(--gold-hairline);
-  padding-top: 14px;
-  margin: 6px 0 0;
+  padding-top: 18px;
+  /* 4 + `.panel`'s `gap: 14px` = 18. See above. */
+  margin: 4px 0 0;
 }
