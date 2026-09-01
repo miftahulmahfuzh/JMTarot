@@ -28,6 +28,7 @@ import {
   prependMessages,
   quoteFor,
   settleOptimistic,
+  shouldOfferScrollToLatest,
   shouldStickToBottom,
   typingReader,
   type DayKey,
@@ -180,6 +181,15 @@ export function ChatRoom({
   const [hasMore, setHasMore] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [newBelow, setNewBelow] = useState(false);
+  /*
+   * **A SCROLL-POSITION FLAG, WHERE `newBelow` IS AN ARRIVAL FLAG** (card #33), and
+   * that difference is the whole reason there are two controls. `newBelow` is written
+   * by `receive()` and answers *something was said while you were away*; this is
+   * written by `onScroll` and answers *you are a long way up*. A querent re-reading
+   * yesterday with nothing arriving sets the second and never the first, which is the
+   * case that had no control at all.
+   */
+  const [awayFromBottom, setAwayFromBottom] = useState(false);
   const [chatOpen, setChatOpen] = useState(true);
   const [sending, setSending] = useState(false);
   const [pendingKeys, setPendingKeys] = useState<readonly string[]>([]);
@@ -799,6 +809,16 @@ export function ChatRoom({
     if (!el) return;
     const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
     if (shouldStickToBottom(distance)) setNewBelow(false);
+    /*
+     * **BOTH DIRECTIONS, AND `scrollToBottom` DELIBERATELY DOES NOT CLEAR IT** — which
+     * is the opposite of `newBelow` above, on purpose. `onScroll` only ever *clears*
+     * `newBelow`, so pre-clearing it in `scrollToBottom` is free; this flag is set as
+     * well as cleared here, so clearing it before a `behavior: 'smooth'` scroll would
+     * hide the arrow and the very next scroll event of that animation would bring it
+     * straight back — a flicker. Governed here alone, the arrow simply stays until the
+     * list arrives, which is what it should do.
+     */
+    setAwayFromBottom(shouldOfferScrollToLatest(distance, el.clientHeight));
   }, []);
 
   const loadOlder = useCallback(() => {
@@ -969,6 +989,14 @@ export function ChatRoom({
         {typing ? <ChatTyping reader={typing} /> : null}
       </ul>
 
+      {/*
+        **ONE TERNARY CHAIN, NEVER TWO `&&` BLOCKS** (card #33). `ReadingView`'s
+        yes/no-versus-choice rule in a new place: two answer boxes on one screen would
+        disagree, so the code is shaped so they CANNOT both render rather than shaped so
+        they happen not to. And the pill wins the collision — while the querent is
+        scrolled up AND something new has arrived, the message that arrived is the more
+        specific thing to say, and the arrow would only repeat its ↓.
+      */}
       {newBelow ? (
         <button
           type="button"
@@ -976,6 +1004,17 @@ export function ChatRoom({
           onClick={() => scrollToBottom(reduce || isStill() ? 'auto' : 'smooth')}
         >
           {t('chat.newMessages')}
+        </button>
+      ) : awayFromBottom ? (
+        <button
+          type="button"
+          className={styles.jump}
+          /* A MARK, SO THE LABEL IS THE COPY — `ChatButton`'s rule, where the count
+             lives in the `aria-label` because a 44px circle has no legible type size. */
+          aria-label={t('chat.scrollToLatest')}
+          onClick={() => scrollToBottom(reduce || isStill() ? 'auto' : 'smooth')}
+        >
+          <ArrowDownMark />
         </button>
       ) : null}
       </div>
@@ -1018,5 +1057,34 @@ export function ChatRoom({
         }
       />
     </div>
+  );
+}
+
+/**
+ * A stroked arrow into a floor: down, and *to the end*, rather than merely down.
+ *
+ * Constructed exactly like `ChatMark` and `HomeMark` — `currentColor`, `aria-hidden`,
+ * `focusable="false"`, `strokeWidth` 1.2 on a 24 viewBox — so the button's own hover
+ * colours drive it and **there is not a hex in this file.** The bar under the head is
+ * what separates *scroll down a bit* from *go to the newest message*; without it the
+ * mark reads as a chevron, which is `HomeMark`'s note about its own door.
+ */
+function ArrowDownMark() {
+  return (
+    <svg
+      className={styles.jumpMark}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M12 4.5V15.5" />
+      <path d="M7.2 10.9L12 15.7L16.8 10.9" />
+      <path d="M6.5 19.2H17.5" />
+    </svg>
   );
 }

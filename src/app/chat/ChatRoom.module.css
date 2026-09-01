@@ -237,6 +237,66 @@
 }
 
 /*
+ * ── THE SCROLL-TO-LATEST ARROW (card #33) ──────────────────────────
+ *
+ * The pill's sibling, and the pair is MUTUALLY EXCLUSIVE IN THE JSX rather than here
+ * -- `ChatRoom` renders them from one ternary chain, so no stylesheet rule has to keep
+ * two overlays out of each other's way. The pill answers *something was said while you
+ * were away*; this answers *you are a long way up*. See the plan for why they are two
+ * controls and not one.
+ *
+ * **ABSOLUTE, FOR THE PILL'S REASON VERBATIM** (the header at the top of this file):
+ * `position: fixed` would anchor it to a viewport the software keyboard moves, and
+ * `.room` carries `--kb-inset` precisely because `100dvh` cannot see the keyboard.
+ * Anchored to `.listWrap` it rides up with the composer instead. The two corner
+ * circles stay the only fixed elements on this screen.
+ *
+ * **44px, AND THE CARD ASKED FOR SMALL.** The iOS minimum wins the target size and the
+ * mark wins the look: 20px of stroke inside an 8%-opacity wash reads as small without
+ * shipping the `PublicShare` defect, which `CLAUDE.md` records as a 36px control under
+ * the floor. Written as literals rather than `var(--corner-size)` on purpose --
+ * `ChatButton.module.css` says the coupling to the corner rail is ONE-WAY, and this is
+ * not on the rail. `.pill` above carries its own `44px` for the same reason.
+ *
+ * NO NEW HEX: the same rest/lift pair `ChatButton`, `AccountButton` and `CardDetail`'s
+ * close control already use.
+ */
+.jump {
+  position: absolute;
+  /* Level with the pill, so whichever one is showing sits in the same band, and
+     against the list's own 12px padding rather than the room's edge. */
+  bottom: 8px;
+  right: 12px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  color: var(--gold-pale);
+  background: var(--gold-wash);
+  border: 1px solid var(--gold-hairline);
+  /* It floats over bubbles and over whatever a reading attachment is showing.
+     Without the blur the mark competes with what is under it. */
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+}
+
+.jump:hover,
+.jump:focus-visible {
+  color: var(--gold-text);
+  background: var(--gold-wash-strong);
+  border-color: var(--gold-border);
+  outline: none;
+}
+
+.jumpMark {
+  width: 20px;
+  height: 20px;
+}
+
+/*
  * F6. The one line an empty bubble draws when its attachment is gone (§8).
  *
  * NO NEW HEX AND NO NEW SIZE: `--fs-hint` in `--label`, italic, which is this app's

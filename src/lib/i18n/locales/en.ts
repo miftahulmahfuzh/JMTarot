@@ -423,6 +423,7 @@ const en: Catalog = {
   'chat.typing.aria': '{name} is writing a message',
 
   'chat.newMessages': 'New messages ↓',
+  'chat.scrollToLatest': 'Go to the latest message',
 
   'chat.older': 'Load older',
   'chat.older.loading': 'Loading…',

@@ -15,6 +15,7 @@ import {
   REPLY_PREVIEW_WORDS,
   replyPreview,
   settleOptimistic,
+  shouldOfferScrollToLatest,
   shouldStickToBottom,
   typingReader,
   type LoopState,
@@ -271,6 +272,38 @@ describe('shouldStickToBottom', () => {
   it('takes an explicit threshold, so the harness can measure a different one', () => {
     expect(shouldStickToBottom(60, 100)).toBe(true);
     expect(shouldStickToBottom(120, 100)).toBe(false);
+  });
+});
+
+describe('shouldOfferScrollToLatest', () => {
+  it('offers the arrow only past a whole screenful, not past the anchor threshold', () => {
+    /*
+     * The two predicates answer different questions and the gap between them is the
+     * point: `ANCHOR_THRESHOLD_PX` is one line of Cormorant, which is the right size
+     * for *may the list move itself* and much too eager for *put a button over the
+     * room*. A querent one bubble up has not asked for one.
+     */
+    expect(shouldOfferScrollToLatest(ANCHOR_THRESHOLD_PX + 1, 700)).toBe(false);
+    expect(shouldOfferScrollToLatest(400, 700)).toBe(false);
+    expect(shouldOfferScrollToLatest(700, 700)).toBe(false);
+    expect(shouldOfferScrollToLatest(701, 700)).toBe(true);
+  });
+
+  it('scales with the screen rather than with a second constant', () => {
+    // 500px up is nothing on a tall phone and is well past the end on a short list.
+    expect(shouldOfferScrollToLatest(500, 700)).toBe(false);
+    expect(shouldOfferScrollToLatest(500, 300)).toBe(true);
+  });
+
+  it('answers false before the list has laid out, so nothing flashes on first paint', () => {
+    expect(shouldOfferScrollToLatest(0, 0)).toBe(false);
+    // The pathological case a zero height would otherwise pass: any distance at all.
+    expect(shouldOfferScrollToLatest(9999, 0)).toBe(false);
+    expect(shouldOfferScrollToLatest(9999, -1)).toBe(false);
+  });
+
+  it('treats a rubber-banded negative distance as not far away', () => {
+    expect(shouldOfferScrollToLatest(-30, 700)).toBe(false);
   });
 });
 
