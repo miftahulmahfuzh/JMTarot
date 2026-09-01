@@ -369,6 +369,89 @@ describe('the room’s React traps, asserted at source level', () => {
   });
 });
 
+describe('the two scroll controls cannot both show (card #33, 2026-09-01)', () => {
+  const ROOM = 'app/chat/ChatRoom.tsx';
+
+  it('renders them from ONE ternary chain, never two independent blocks', () => {
+    /*
+     * The card's whole requirement — *if we are showing "pesan baru", then hide the
+     * arrow down button* — held by the SHAPE of the code rather than by two conditions
+     * that happen to be complementary. `ReadingView`'s yes/no-versus-choice `else if`
+     * is the precedent, and its reason applies verbatim: two answer boxes on one
+     * screen would disagree.
+     *
+     * The forbidden shape is `{newBelow && …}` beside `{awayFromBottom && …}`, which
+     * reads as correct, passes every render, and shows both the moment a message
+     * arrives while the querent is a screenful up — which is the common case, not an
+     * edge one.
+     */
+    const src = stripComments(file(ROOM));
+    expect(src).toMatch(/\{newBelow \? \(/);
+    expect(src).toMatch(/\) : awayFromBottom \? \(/);
+    expect(src).not.toMatch(/\{newBelow &&/);
+    expect(src).not.toMatch(/\{awayFromBottom &&/);
+    /*
+     * TWO bare reads and no more: the `useState` destructure and the one JSX arm.
+     * (`setAwayFromBottom` does not match — no word boundary after `set`.) A third
+     * would be a second renderer, which is the thing this whole describe exists to
+     * keep from appearing.
+     */
+    expect(count(src, /\bawayFromBottom\b/g)).toBe(2);
+  });
+
+  it('drives the arrow from scroll position and the pill from arrival', () => {
+    /*
+     * The distinction is the reason there are two controls at all. `receive()` owns
+     * `newBelow` — it is read BEFORE the DOM grows, per that function's own header —
+     * and `onScroll` owns `awayFromBottom`. If `receive` ever set the arrow's flag the
+     * two would collapse back into one meaning and the pill would be redundant.
+     */
+    const src = stripComments(file(ROOM));
+    const receive = src.slice(src.indexOf('const receive ='), src.indexOf('const advance ='));
+    expect(receive).toContain('setNewBelow(true)');
+    expect(receive).not.toContain('setAwayFromBottom');
+  });
+
+  it('does not clear the arrow in scrollToBottom, which would flicker it', () => {
+    /*
+     * `scrollToBottom` clears `newBelow` because `onScroll` only ever CLEARS that one,
+     * so pre-clearing is free. `awayFromBottom` is set as well as cleared there, so
+     * clearing it before a `behavior: 'smooth'` scroll hides the arrow and the next
+     * event of that same animation brings it straight back.
+     */
+    const src = stripComments(file(ROOM));
+    // The callback's own body. NOT `slice(…, indexOf('useLayoutEffect'))`: the import
+    // line carries that word, so the slice comes back empty and the assertion passes
+    // vacuously — which it did, once, before this comment.
+    const scroll = /const scrollToBottom = useCallback\(([\s\S]*?)\n  \);/.exec(src)?.[1] ?? '';
+    expect(scroll).toContain('setNewBelow(false)');
+    expect(scroll).not.toContain('setAwayFromBottom');
+  });
+
+  it('is a 44px target with a labelled mark, not a 36px one with a glyph', () => {
+    /*
+     * The card asked for *small*; `CLAUDE.md` records `PublicShare`'s 36px control as a
+     * known defect against the iOS minimum. The target keeps the floor and the MARK is
+     * what reads small — so the control carries no text and needs an `aria-label`.
+     */
+    const sheet = css('app/chat/ChatRoom.module.css');
+    const jump = sheet.slice(sheet.indexOf('.jump {'), sheet.indexOf('.jumpMark'));
+    expect(jump).toContain('width: 44px');
+    expect(jump).toContain('height: 44px');
+    // The pill's reason verbatim: a fixed overlay anchors to a viewport the keyboard
+    // moves, and `.room` carries `--kb-inset` because `100dvh` cannot see it.
+    expect(jump).toContain('position: absolute');
+    expect(jump).not.toContain('position: fixed');
+    expect(stripComments(file(ROOM))).toContain("aria-label={t('chat.scrollToLatest')}");
+  });
+
+  it('honours data-still before the jump, like every other programmatic scroll (F4-10)', () => {
+    const src = stripComments(file(ROOM));
+    const arm = src.slice(src.indexOf('styles.jump'), src.indexOf('<ArrowDownMark'));
+    expect(arm).toContain("reduce || isStill() ? 'auto' : 'smooth'");
+  });
+});
+
 describe('the software keyboard (reported from a phone, 2026-08-09)', () => {
   /*
    * `100dvh` tracks the browser's own UI and NOT the software keyboard, so with the

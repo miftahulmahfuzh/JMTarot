@@ -270,6 +270,34 @@ export function shouldStickToBottom(
   return distanceFromBottom <= threshold;
 }
 
+/**
+ * Is the newest message far enough away to be worth a control that jumps back to it?
+ *
+ * The second half of the scroll-position pair, and **deliberately a much coarser
+ * question than `shouldStickToBottom`'s.** The 48px there is *"did the querent
+ * deliberately scroll away"*; that is the right size for deciding whether the list
+ * may move itself, and much too eager for deciding whether to put a floating button
+ * over the room. A querent one bubble up has not asked for one.
+ *
+ * **ONE SCREENFUL, MEASURED AS THE LIST'S OWN `clientHeight`, NOT A SECOND
+ * CONSTANT.** It self-scales — an iPhone SE and a tall Android get the same
+ * *meaning* rather than the same number of pixels — and the meaning is exact: the
+ * newest message is entirely off screen, so getting back to it is real work. A fixed
+ * px figure would have to be justified against one screen size and would then be
+ * wrong on every other.
+ *
+ * A non-positive height is *not* far away: before layout there is nothing to be far
+ * from, and a predicate that answered `true` there would flash the control on the
+ * first paint of every visit.
+ */
+export function shouldOfferScrollToLatest(
+  distanceFromBottom: number,
+  viewportHeight: number,
+): boolean {
+  if (viewportHeight <= 0) return false;
+  return distanceFromBottom > viewportHeight;
+}
+
 // ---------------------------------------------------------------------------
 // Day separators
 // ---------------------------------------------------------------------------

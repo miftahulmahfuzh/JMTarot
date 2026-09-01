@@ -816,6 +816,14 @@ const id = {
 
   'chat.newMessages': 'Pesan baru ↓',
 
+  /*
+   * **THE ARROW'S ONLY COPY IS ITS LABEL**, because the control is a mark rather than
+   * a word — `ChatButton`'s rule, where the count goes in the `aria-label` because at
+   * that size there is no legible type. It is never rendered as text, so it carries no
+   * glyph of its own: `chat.newMessages` earns its ↓ by sitting beside a sentence.
+   */
+  'chat.scrollToLatest': 'Ke pesan terbaru',
+
   'chat.older': 'Muat yang lebih lama',
   'chat.older.loading': 'Memuat…',
 
