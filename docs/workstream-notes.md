@@ -6787,6 +6787,68 @@ w=1200 kpiCols=6  cards=4  overflow=false  offenders=[]
 
 ---
 
+## The draw screen follows the stream (2026-09-01, card #32)
+
+`src/lib/readingScroll.ts` (new, PURE), `src/components/ReadingPanel.tsx`, and a test each.
+The design is `docs/plans/2026-09-01-follow-the-stream-on-the-draw-screen.md`.
+
+**The report was that a querent reads about two lines of a four-paragraph reading and thumbs
+the rest down by hand.** `ReadingPanel` scrolled itself into view once, at the first content,
+and never again -- deliberately, with a comment saying that *"following the stream would drag
+the page out from under a thumb that is trying to read what already arrived"*.
+
+**That harm is real and it is CONDITIONAL, which is the whole of the fix.** It only ever
+happens to somebody who has scrolled AWAY. So the page follows while nobody has moved it and
+lets go the instant they do; scrolling back to the bottom re-acquires. The old comment was
+rewritten rather than deleted -- prose claiming a rule the code no longer follows is worse
+than none.
+
+Three things worth keeping, each of which generalises past this component:
+
+- **AN APPEND-ONLY SURFACE CAN RECOVER `ChatRoom`'s PRE-GROWTH MEASUREMENT AFTER THE FACT.**
+  `ChatRoom` states the trap by name: the distance from the bottom must be read BEFORE the
+  DOM grows, because afterwards `scrollHeight` already contains the new content and a querent
+  sitting at the bottom measures as having scrolled away by exactly the height of what
+  arrived. It solves that in the handler that appends, before React commits. **The draw
+  screen does not have to, because it ONLY APPENDS**: growth lands below the viewport and
+  therefore cannot move `scrollY`, so the pre-growth distance is just the post-growth one
+  minus the growth. `ChatRoom` genuinely cannot do this -- `loadOlder` PREPENDS history,
+  which does move `scrollTop` under the querent, and is why that component also carries a
+  manual `prependedFromRef` compensation. **The question to ask of the next component that
+  wants this is "does it ever prepend?", and the answer decides which of the two shapes it
+  gets.** Here it is what kept the whole feature out of `Draw.tsx`'s chunk loop.
+- **A `smooth` SCROLL FIRED PER CHUNK NEVER LANDS.** Each call restarts the animation from
+  wherever the last one reached, so at a chunk every few tens of milliseconds the viewport
+  permanently trails the text and jitters. `smooth` is for one discrete jump -- a new chat
+  bubble, a back-to-top tap. **So the follow passes `'auto'` unconditionally, and that is
+  STRONGER than the usual `reduce || isStill() ? 'auto' : 'smooth'` rather than a lapse from
+  it:** `'auto'` is exactly what both of those globals would have asked for, so a hardcoded
+  answer cannot drift out of step with them the way a condition can. The override rule itself
+  is untouched and still binds every other scroll in the app.
+- **THE FOLLOW STOPS AT `streaming` AND DOES NOT RUN ON `done`.** That commit is not just the
+  last few words: it mounts `AttachReadingLink`, `ReadingActions` and the disclaimer.
+  Following the document's bottom through it lands the querent on a row of buttons, past the
+  paragraph they were mid-sentence in -- the exact harm the old comment named, at the one
+  moment it would be least welcome.
+
+**`/history/[id]`'s refill inherits nothing and was checked rather than assumed**: it streams
+through `ReadingView`, not this panel. `/s/<slug>` never streams.
+
+**The document's bottom is the anchor, not the panel's**, and that is free rather than
+approximate: `.footer` on the draw screen is `position: fixed`, so `.shell` already carries
+`padding-bottom: calc(96px + env(safe-area-inset-bottom))` to clear it -- which puts the
+newest line just above that footer with room to breathe, with no element measured.
+
+**WHAT WAS NOT VERIFIED, AND WHY IT COULD NOT BE.** `npm test`, `npm run typecheck` and
+`npm run build` all pass, and the minified follow is present in the client chunk -- but every
+one of those is a source-level answer. The behaviour needs loop 5 for the mechanics and a real
+iPhone for the judgement (a chunk landing mid-drag is the case to look for), **and neither was
+possible on this machine: `.env.local` here has eighteen values scrubbed to the literal string
+`[SENSITIVE]`, `LLM_PROVIDER`, `LLM_MODEL` and `LLM_BASE_URL` among them, so no live reading
+can be taken at all.** Recorded as unmeasured rather than claimed. The same scrubbing is why
+`nudge.integration.test.ts` fails here -- confirmed by running it on the untouched base commit
+`d1477fa`, where it fails identically.
+
 ---
 
 # Part II — the full prior text of CLAUDE.md's sections, moved 2026-07-29
