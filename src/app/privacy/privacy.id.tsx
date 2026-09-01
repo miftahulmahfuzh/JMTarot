@@ -91,10 +91,16 @@ export function PrivacyId({ effective }: { effective: string }) {
                 kunci yang tidak ada di dalam kode program dan tidak ada di dalam basis data.
               </>,
               <>
-                <strong>Di dalam bacaan, hanya ringkasan abstraknya yang sampai ke model bahasa.</strong>{' '}
+                <strong>
+                  Dari jawaban awalmu, di dalam bacaan hanya ringkasan abstraknya yang sampai ke
+                  model bahasa.
+                </strong>{' '}
                 Penyulingan itu diperintahkan untuk mengabstraksi, bukan mengulang: yang sampai ke
                 sebuah bacaan berbentuk seperti &ldquo;membawa ingatan kehilangan yang berat&rdquo;,
-                bukan peristiwanya. Nama orang yang kamu sebut tidak pernah ikut.
+                bukan peristiwanya. Nama orang yang kamu sebut tidak pernah ikut.{' '}
+                <strong>Ini soal keenam jawaban ini saja.</strong>{' '}Kalau kamu memakai ruang
+                obrolan, ada bahan lain yang juga sampai ke bacaanmu, dan bentuknya tidak abstrak:
+                lihat <Link href="#2-8">klausul 2.8</Link>.
               </>,
               <>
                 <strong>
@@ -267,6 +273,16 @@ export function PrivacyId({ effective }: { effective: string }) {
             setiap kali. Disimpan apa adanya, tanpa enkripsi, sama seperti pesanmu sendiri.
           </P>
           <P>
+            <strong>
+              Catatan itu juga dibaca para pembaca ketika mereka menulis bacaan kartumu, bukan
+              hanya ketika kamu mengobrol.
+            </strong>{' '}
+            Paling banyak enam catatan yang ikut, dan aturan yang kami berikan kepada mereka
+            melarang membacakannya kembali: tidak boleh mendaftar, tidak boleh merangkum, dan
+            tidak boleh menyebut dari mana mereka tahu. Kalau kamu belum pernah membuka ruang
+            obrolan, tidak ada catatan, dan bacaanmu sama seperti sebelumnya.
+          </P>
+          <P>
             <strong>Catatan itu bisa saja keliru.</strong>{' '}Mesin menyimpulkan, dan
             kesimpulannya kadang salah &mdash; kadang juga terlalu tepat. Keduanya alasan
             kenapa kamu harus bisa melihatnya.
@@ -274,8 +290,9 @@ export function PrivacyId({ effective }: { effective: string }) {
           <P>
             Kamu bisa membaca semuanya dan menghapusnya, satu per satu atau sekaligus, di
             halaman <strong>Dirimu</strong>. Yang kamu hapus tidak ikut dibaca para pembaca
-            pada percakapan berikutnya, dan tidak ditulis ulang belakangan. Tidak ada cara
-            mengembalikannya.
+            pada percakapan berikutnya{' '}
+            <strong>maupun di bacaan kartumu berikutnya</strong>, dan tidak ditulis ulang
+            belakangan. Tidak ada cara mengembalikannya.
           </P>
           <P>
             Tidak ada manusia yang membacanya, dan catatannya tidak diterjemahkan. Lihat{' '}
@@ -291,7 +308,7 @@ export function PrivacyId({ effective }: { effective: string }) {
             'Jawaban awal: supaya bacaanmu terasa ditujukan kepadamu dan bukan kepada orang umum.',
             'Bacaan: supaya aplikasi ini mengingat apa yang sudah kamu tanyakan.',
             'Ruang obrolan: supaya para pembaca menjawab kamu, orang ini, dan bukan orang umum — itulah satu-satunya alasan mereka melihat jawaban awalmu apa adanya di sana.',
-            'Catatan tentangmu: supaya percakapan berikutnya nyambung dengan hidupmu dan tidak mulai dari nol setiap kali.',
+            'Catatan tentangmu: supaya percakapan berikutnya nyambung dengan hidupmu dan tidak mulai dari nol setiap kali, dan supaya bacaan kartumu dibaca untuk orang yang benar-benar kamu.',
             'Analitik: supaya kami tahu bagian mana yang rusak dan bagian mana yang dipakai.',
             'Moderasi: supaya penolakan yang keliru bisa ditemukan dan diperbaiki.',
             'Pengelolaan Layanan: supaya kerusakan bisa diperbaiki, permintaanmu tentang datamu bisa dijawab, dan Syarat & Ketentuan bisa ditegakkan.',
@@ -392,6 +409,18 @@ export function PrivacyId({ effective }: { effective: string }) {
               di sana, pesan-pesan sebelumnya di ruang itu, dan{' '}
               <strong>keenam jawaban awalmu apa adanya</strong>{' '}&mdash; bukan ringkasannya. Lihat{' '}
               <Link href="#2-2">klausul 2.2</Link> dan <Link href="#2-7">2.7</Link>.
+            </P>
+            {/*
+              Card #34. **THE CALLOUT ABOVE BECAME FALSE FOR READINGS TOO**, which is the
+              same failure C-D8 recorded one paragraph up, and the same repair: leave the
+              callout exact and add a paragraph. Softening it into something true of both
+              surfaces would end up true of neither, which is R31's whole point.
+            */}
+            <P>
+              <strong>Dan kalau kamu memakai ruang obrolan, bacaanmu ikut membawa catatan itu:</strong>{' '}
+              sampai enam kalimat pendek yang ditulis mesin tentang kebiasaan dan sifatmu, apa
+              adanya dan bukan ringkasannya. Yang kamu hapus tidak ikut dikirim. Lihat{' '}
+              <Link href="#2-8">klausul 2.8</Link>.
             </P>
           </Callout>
           <P>

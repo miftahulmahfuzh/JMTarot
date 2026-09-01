@@ -9,6 +9,7 @@ import type { ReadingPrompt } from '@/lib/llm/types';
 import { baseContract } from './base';
 import { renderLotusBlock } from './lotus';
 import { memoryBlock, memoryInstruction, type MemoryContext } from './memory';
+import { profileNotesFor, renderProfileBlock } from './profile';
 import { readerPrompt } from './readers';
 import { MAX_TOKENS, servicePrompt } from './services';
 import { sanitizeQuestion } from './sanitize';
@@ -55,6 +56,22 @@ export type PromptContext = {
    * chaining off entirely.
    */
   memory?: MemoryContext | null;
+  /**
+   * Card #34. R2's chat-distilled notes about this querent, already selected and
+   * stripped by `selectProfileNotes`.
+   *
+   * `string[]` AND NOT THE ROW, WHICH IS `chat/context.ts`'s SEAM COPIED ON PURPOSE:
+   * *"`ChatContext` carries `string[]` rather than the row, so `build.ts` never learns
+   * that `user_memory` has an `input_hash` or a `source_version` -- and a future column
+   * cannot silently become prompt material by being added to a type the prompt layer
+   * already imports."* Exactly the same argument, one surface over, and it is also what
+   * keeps `@/lib/db/**` out of this file's import graph.
+   *
+   * Null or empty is normal and is not an error: never opened the chat, deleted
+   * everything on `/account`, the extractor has not run, or `READING_PROFILE_ENABLED=0`.
+   * All four produce the reading this app gave everybody before card #34.
+   */
+  profile?: string[] | null;
 };
 
 export type BuildArgs = {
@@ -259,6 +276,26 @@ export function buildPrompt({
   const lotus = context?.lotus;
   const lotusBlock = lotus ? renderLotusBlock(lotus) : null;
 
+  /*
+   * THE PROFILE BLOCK, BETWEEN THE LOTUS AND THE CARDS (card #34).
+   *
+   * Position is the same argument the Lotus block's comment makes, one line later: in
+   * the user turn it cannot be mistaken for the contract, and ahead of the cards it
+   * reads as background the cards are laid over rather than as the subject. Directly
+   * after `<penanya>` because the two are the same KIND of thing -- what we know about
+   * this person -- and keeping them contiguous means the model meets all of it before
+   * the first card and none of it after.
+   *
+   * `<riwayat>` deliberately does NOT join them: that block is about what the querent
+   * DREW, not about who they are, and it sits after the cards for that reason.
+   *
+   * `renderProfileBlock` returns null for an empty list, so there is no empty-fence
+   * case to guard here.
+   */
+  const profileBlock = context?.profile?.length
+    ? renderProfileBlock(context.profile.slice(0, profileNotesFor(s.id)))
+    : null;
+
   const user = [
     `${L.reader} ${r.name}`,
     /*
@@ -273,6 +310,7 @@ export function buildPrompt({
     `${L.service} ${s.name[locale]}`,
     '',
     ...(lotusBlock ? [lotusBlock, ''] : []),
+    ...(profileBlock ? [profileBlock, ''] : []),
     L.cards,
     ...cardLines,
     '',

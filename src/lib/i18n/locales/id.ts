@@ -1253,10 +1253,23 @@ const id = {
   // So phase 7 and anything after it must budget BEFORE writing copy, and the rule
   // does not change: **shorten the copy, never raise the ceiling.** The one string
   // here that may NOT be shortened at the cost of a claim is `account.memory.hint`.
+  //
+  // CARD #34 ADDED A FOURTH CLAIM TO THAT STRING AND DROPPED NONE OF THE THREE. The
+  // notes now reach the reading prompt as well as the chat, and `C-D8`'s finding is
+  // exactly why the hint is where that gets said: **nobody re-reads `/privacy`;
+  // everybody reads the hint in front of them.** `/privacy` 2.8, 2.2, 3 and 4.1 were
+  // amended in the same commit and `legal.test.ts` holds all four, but this is the
+  // string a querent actually meets while deciding whether to press Delete.
+  //
+  // IT MUST NOT BECOME "supaya bacaanmu lebih personal". `legal.test.ts` bans
+  // `menyesuaikan pengalaman` from the policy by name and calls it *"the sentence this
+  // project exists not to write"*; the same rule governs here, where the test cannot
+  // see it. Say what happens -- the notes are read when a reading is written -- never
+  // what it is for.
   // ==========================================================================
   'account.memory.heading': 'Catatan tentangmu',
   'account.memory.hint':
-    'Ditulis model bahasa dari yang kamu ketik di grup, bukan olehmu. Bisa keliru, bisa kamu hapus.',
+    'Ditulis model bahasa dari yang kamu ketik di grup, bukan olehmu. Ikut dibaca waktu bacaanmu dibuat. Bisa keliru, bisa kamu hapus.',
   'account.memory.reveal': 'Lihat catatannya',
   'account.memory.loading': 'Membuka…',
   'account.memory.empty': 'Belum ada catatan.',

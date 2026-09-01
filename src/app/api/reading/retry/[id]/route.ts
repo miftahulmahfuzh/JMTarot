@@ -75,6 +75,7 @@ import { requireUser } from '@/lib/auth/server';
 import { getProvider } from '@/lib/llm';
 import { buildPrompt } from '@/lib/prompt/build';
 import { getLotusBlock, scheduleLotusRefresh } from '@/lib/prompt/lotus.generate';
+import { getProfileNotes } from '@/lib/prompt/profile.read';
 import { sanitizeQuestion } from '@/lib/prompt/sanitize';
 import { tFor } from '@/lib/i18n/catalog';
 import { getLocale } from '@/lib/i18n/t';
@@ -327,6 +328,25 @@ export async function POST(request: Request, ctxParams: { params: Promise<{ id: 
       locale: readLocale,
     });
 
+    /*
+     * THE PROFILE BLOCK (card #34), ON THE REFILL PATH TOO.
+     *
+     * **A REFILLED READING IS A READING LIKE ANY OTHER**, which is V6's own rule about
+     * `readings.locale` applied to the prompt context: the row keeps its id and its
+     * locale, and it must keep everything else a first attempt would have had. A refill
+     * that silently omitted the block would make `/history/[id]`'s retry produce a
+     * visibly less personal reading than the draw screen does, with nothing on screen
+     * explaining why.
+     *
+     * The notes are read FRESH rather than reconstructed from the failed attempt --
+     * there is nothing stored to reconstruct from, and a note deleted between the two
+     * attempts must not come back.
+     *
+     * ABOVE THE `try` BECAUSE THE `track` BELOW IT NEEDS THE COUNT. Declaring it inside
+     * would leave `profile_note_count` reachable only on the failure path.
+     */
+    const profileNotes = await getProfileNotes(user.id);
+
     let prompt;
     try {
       prompt = buildPrompt({
@@ -335,7 +355,7 @@ export async function POST(request: Request, ctxParams: { params: Promise<{ id: 
         picks,
         question: source.question,
         locale: readLocale,
-        context: { lotus: lotus && lotus.summary ? lotus : null, memory },
+        context: { lotus: lotus && lotus.summary ? lotus : null, memory, profile: profileNotes },
       });
     } catch (err) {
       // Safe: this came from prompt assembly over card data, not from a database
@@ -368,6 +388,8 @@ export async function POST(request: Request, ctxParams: { params: Promise<{ id: 
       question_length: source.question?.length ?? 0,
       lotus_present: Boolean(lotus && lotus.summary),
       memory_block_present: memory !== null,
+      profile_present: profileNotes.length > 0,
+      profile_note_count: profileNotes.length,
       prompt_version: prompt.promptVersion,
     });
 

@@ -662,8 +662,10 @@ const en: Catalog = {
   // `Deleting…` are reused from `account.facts` and `history` rather than minted
   // again here.
   'account.memory.heading': 'Notes about you',
+  // Card #34 added the third sentence. See id.ts for why this string carries the claim
+  // rather than `/privacy` alone, and for what it must never be softened into.
   'account.memory.hint':
-    'Written by a language model from what you type in the group, not by you. It can be wrong, and you can delete it.',
+    'Written by a language model from what you type in the group, not by you. Read again when a reading is written for you. It can be wrong, and you can delete it.',
   'account.memory.reveal': 'Show the notes',
   'account.memory.loading': 'Opening…',
   'account.memory.empty': 'Nothing noted yet.',

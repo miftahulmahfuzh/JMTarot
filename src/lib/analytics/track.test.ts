@@ -112,7 +112,8 @@ describe('defer', () => {
       track('reading.requested', {
         reading_id: 'r', reader_id: 'adrian', service_id: 'spread3', card_count: 3,
         has_question: false, question_length: 0, lotus_present: false,
-        memory_block_present: false, prompt_version: 'id-v1.deadbeef',
+        memory_block_present: false, profile_present: false, profile_note_count: 0,
+        prompt_version: 'id-v1.deadbeef',
       });
       defer(async () => {
         order.push('deferred');

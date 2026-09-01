@@ -6853,6 +6853,300 @@ can be taken at all.** Recorded as unmeasured rather than claimed. The same scru
 
 # Part II — the full prior text of CLAUDE.md's sections, moved 2026-07-29
 
+## The chat-distilled profile reaches every reading (2026-09-01, card #34)
+
+**Miftah's ruling, and it came with a precedence clause: *"change user privacy policy if
+necessary. this requirement takes precedence above everything else."*** So where the feature
+collided with an existing commitment, the commitment was amended in place rather than the feature
+being trimmed to fit it — four clauses in `/privacy`, in both locales, in the same commit as the
+code.
+
+`src/lib/prompt/profile.ts` (the renderer and the selection policy), `profile.read.ts` (the read
+and the switch), `profile.test.ts`; `build.ts`'s third `PromptContext` field; one bullet in
+`base.{id,en}.ts`; `api/reading/route.ts` and `api/reading/retry/[id]/route.ts`;
+`analytics/events.ts`; `privacy.{id,en}.tsx` and `legal.test.ts`; `account.memory.hint` in both
+catalogs; `scripts/smoke-llm.ts`'s `--profile`. Plan:
+`docs/plans/2026-09-01-reading-profile-notes.md`.
+
+### What was fed, and the three things it is not
+
+R2's `user_memory.items` — short third-person sentences a model writes out of what the querent
+types in the group chat. Before this card they reached the chat's voice prompts and nothing else.
+
+Three things in this app are "what we know about the querent" and confusing them is how this gets
+edited wrongly: `<penanya>` is W3's Lotus block, the **abstract** distillation of the six
+onboarding answers; `<sosok>` is V8's persona input, which never reaches a reading at all; and
+`<ingatan>` is this, **near-verbatim rather than abstract**. The first and the third now both
+reach a reading, one fence each.
+
+### Why they are two fences and not one
+
+Folding the notes into `<penanya>` was the smallest change available and it lost on two counts,
+both worth keeping because both look like tidying:
+
+1. **`renderLotusBlock` caps the whole block at `LOTUS_MAX_CHARS` (600) under the rule "the
+   summary is what gets cut, never the nickname."** Notes appended inside that fence would
+   silently truncate the Lotus summary — a feature quietly degrading another feature, with
+   nothing on screen and nothing in the analytics saying so.
+2. **`/privacy` 2.2 promises that in a reading *"only an abstract summary"* of the onboarding
+   answers reaches the model.** That sentence is true of the Lotus and false of these notes.
+   Putting both behind one fence makes it un-amendable: any wording that covers both is false
+   about one of them. Two fences bought a separate switch, a separate analytics prop and a
+   separate sentence in the policy.
+
+### The rule is in the STATIC contract, and that reverses W5's placement on purpose
+
+W5 appends `memoryInstruction` dynamically and deliberately does **not** hash it into
+`prompt_version`, so a reading with `<riwayat>` and one without share a version with different
+system prompts. That was the right trade there — its rule is *editorial* (`refer back only if
+there is a real thread`) and `memory.ts`'s dilution argument wanted it last, nearest the word
+ceiling.
+
+**The `<ingatan>` bullet went the other way, into the static `KEAMANAN` / `SAFETY` section, and
+`base.id.ts`'s own header is the argument:** the `<penanya>` rule is stated unconditionally
+because *"a contract that changed depending on whether a user had been distilled yet would give
+two readings the same `prompt_version` with different rules."* This rule is not editorial, it is
+the **surveillance** rule — do not say how you know, do not make it the subject — and **a safety
+rule present only when its material is present is one refactor from being absent when it
+matters.**
+
+Measured consequence: `prompt_version` moved **once**, in this commit, and the snapshot diff is
+**nine insertions, one per pair** — which is exactly what `build.test.ts`'s fork snapshot exists
+to show. It is then identical whether or not a given querent has notes, and `build.test.ts`
+asserts that.
+
+### The bullet is not a copy of `<penanya>`'s, and the extra clause is the point
+
+`<penanya>` fences ONE continuous paragraph, so bounding the count (*"paling banyak sekali"*) is
+enough. `<ingatan>` fences up to SIX discrete sentences, and **the observed failure of handing a
+model facts about somebody is that it reads them out.** So the bullet bans reciting FIRST and
+bounds the count second — `DILARANG membacakannya: jangan mendaftar, jangan merangkum, dan jangan
+menyebut dua hal sekaligus`, then `Paling banyak SATU hal, sekali` — which is the ordering the
+chat's own `<ingatan>` rules arrived at independently (`chat/prompt/base.id.ts:177-187`) after the
+same problem. `build.test.ts` asserts the ORDER, not just the presence.
+
+The surveillance clause does more work here than in `<penanya>`: the Lotus summary is abstract, so
+a reader leaking it says something vague; a note is near-verbatim, so a reader leaking it says
+*"kamu pernah cerita kamu tidur telat"* — the line that turns uncanny into surveillance.
+
+### The selection policy: a partition, not a score
+
+Six notes, block capped at 480 characters (under `<penanya>`'s 600 — the Lotus stays the larger of
+the two background blocks). Ordering puts `trait` and `habit` first, then everything else in
+stored order.
+
+**`chat/context.ts` refuses to sort its twelve notes**, in these words: *"ranking twelve
+model-written sentences by a heuristic written here would give this release its own second opinion
+about what matters, competing with the one the extractor already formed."* That rule is intact.
+Nothing here is scored, nothing is dropped, and two notes of the same kind keep their relative
+stored order — `profile.test.ts` asserts exactly that (`is a stable partition and not a sort`).
+What IS done is selecting by **declared kind**, which is the mechanism `kind` exists for:
+`types.ts` says *"Phase 7 decides which kinds make a good opener; `other` will not be one"*, so a
+consumer choosing kinds is sanctioned.
+
+Why bother: the card asked for *"character and daily activities"*, which is `trait` and `habit`
+literally. **Without the partition a querent whose first six notes are all `taste` gets a reading
+tailored to their lunch order**, which satisfies the letter of the card and none of it. The smoke
+fixture is eight items for a six-note cap with two `taste` notes last, so the cap bites and the
+partition is visible in a real run.
+
+### Six against the chat's twelve, and it is a guess
+
+`memory.ts`'s dilution argument, pointed one surface over. A chat run is a 40-message window and a
+beat of two sentences; a reading is four paragraphs under a per-paragraph word ceiling the model
+counts against as it writes, and `LENGTH_BUDGET` came down 30% on 2026-07-29 *because the readings
+were too long to read on a phone*. **Nothing has measured six against twelve.** The instrument is
+`npm run smoke -- --all --profile` diffed against `--all --fixed` — same nine hands — and the
+question is whether the tailored reading is BETTER, not whether it is different. If recitation
+appears, the fix is the bullet or `PROFILE_NOTES_MAX`, in that order, and never the code.
+
+### The deletion promise transfers for free, and it rests on one measured fact
+
+`/privacy` 2.8 promised a deleted note *"is not read by the readers in the next conversation"*.
+That now has to hold for readings too, and it does **without `profile.ts` knowing about
+`dismissed_ids` at all**: `dismissUserMemoryItems` filters `items` *and* appends the tombstone in
+one statement, so reading `items` honours the delete button.
+
+**Checked rather than assumed** —
+`memory.integration.test.ts`'s *"removes the item AND tombstones its id, in one statement"*
+asserts `row.items` equals the survivor alone (19 tests in that file, re-run on this branch). **If
+that query ever becomes tombstone-only, `profile.ts` has to start filtering and the policy
+sentence reverts with it**, and `legal.test.ts`'s
+*"extends the deletion promise to the next READING"* is what forces the pairing.
+
+### No cache here, and that is the one deliberate difference from `getLotusBlock`
+
+That function caches for sixty seconds and argues it: a block one minute stale is invisible. **It
+does not hold for this row, because what changes it is the querent pressing Delete** —
+`queries/memory.ts` rule 3 already ruled on exactly this case: *"a cache that served a
+just-deleted item back into a prompt would be the delete button lying through a second door."* One
+primary-key lookup per reading is the price, and it is small next to the model call it precedes.
+
+### The switch, and why it is not in `flags.ts`
+
+`READING_PROFILE_ENABLED`, `!== '0'`, in `profile.read.ts`, checked **before** the read so off
+costs zero queries.
+
+`flags.ts` gates model *calls* and `flagCoverage.test.ts` asserts its set is exactly its two
+tables; `flags.test.ts` separately asserts `READING_ENABLED` appears nowhere in it, because
+switching the reading off does not degrade JMTarot, it ends it. A reading-shaped name in
+`DEFERRABLE_FLAGS` would read as precisely the switch that rule forbids. **The shape to copy is
+`CHAT_ANSWERS_ENABLED`** — env-only, in the feature's own module (`chat/model.ts`), never in
+`flags.ts` — which exists as C-D8's reversal for the same reason this one does: **`/privacy` now
+describes this behaviour, and the ability to withdraw it in one dashboard edit is part of what
+makes publishing that description safe.**
+
+### The typecheck found the second reading path, which a human review would not have
+
+`buildPrompt` has **two** callers, not one: `api/reading/route.ts` and
+`api/reading/retry/[id]/route.ts`. Adding two required props to `reading.requested` made the
+compiler name the refill route, and **a refilled reading is a reading like any other** — V6's rule
+about `readings.locale`, applied to the prompt context. Without it `/history/[id]`'s retry would
+produce a visibly less personal reading than the draw screen, with nothing on screen explaining
+why. The notes are read **fresh** rather than reconstructed, so a note deleted between the two
+attempts does not come back.
+
+Worth recording as a technique: **two required props on a shared event type is a cheap way to
+enumerate every caller of a feature.** An optional prop would have shipped the refill path silently
+unfed.
+
+### The four privacy amendments, and the phrase the repo forbids
+
+R31's rule — an INCOMPLETE amendment is worse than an out-of-date policy — so all four moved
+together, both locales, and `legal.test.ts` gained six assertions so a revert of the code without
+the prose (or the reverse) goes red.
+
+| Clause | What became false |
+|---|---|
+| 2.2 | *"In a reading, only an abstract summary ever reaches the language model"* — **scoped to the six answers, not deleted.** Still true of them; now says so, and points at 2.8 |
+| 2.8 | *"not read by the readers in the next conversation"* — extended to the next reading |
+| 3 | the purpose list named only the next conversation — a new purpose has to be named where purposes are |
+| 4.1 | the callout listing what leaves Indonesia. **Left exact, answered by an added paragraph** — C-D8's own repair one paragraph up, reused |
+
+**`legal.test.ts` bans the sentence this amendment most wants to reach for.** A test named
+*"never says the notes personalise anything"* forbids `menyesuaikan pengalaman` /
+`personalise your experience` in either document and calls it *"the sentence this project exists
+not to write"*. So the prose says what happens — the readers read the notes when they write a
+reading — and never what it is for. **The same rule governs `account.memory.hint`, where no test
+can see it**, which is why the constraint is written into `id.ts`'s comment beside the string.
+
+### The hint is the load-bearing edit, on C-D8's finding
+
+`account.memory.hint` gained a fourth claim and dropped none of its three, because **nobody
+re-reads `/privacy` and everybody reads the hint in front of them** — C-D8's finding, applied a
+third time. It is the string a querent actually meets while deciding whether to press Delete.
+
+**Byte budget, measured, because `prose.test.ts`'s header names not re-measuring as the failure
+mode:** `MAX_BYTES` had moved 23,000 → 25,000 that same morning under card #33, which had breached
+the old ceiling with a single 16-character `aria-label`. After this card: **`id` 23,145 bytes, `en`
+22,816, 405 keys, ~1,855 free (7.4%)**. `MAX_VALUE` did not move and nothing was shortened to fit.
+
+### What is open
+
+- **`/s/<slug>` publishes prose informed by these notes and there is no gate on it.** This is an
+  *increment* on an accepted risk rather than a new class — `<penanya>` already puts the Lotus
+  summary into readings that can be shared — and **gating on shareability is not available,
+  because every reading is shareable, so the gate would mean never using the block.** The
+  mitigations are the bullet (one oblique use, never named, never the subject) and saying so in
+  `/privacy`. If this ever needs closing, the honest lever is a per-reading choice at MINT time,
+  not a suppression at generation time.
+- **Nobody has read a `--profile` run yet.** The code, the caps and the fences are tested; the
+  claim the card actually makes — that readings get *better* — is unmeasured, and the diff against
+  `--all --fixed` is the first honest test of it.
+- The side prompts (day summary, frequency verdict, gist) and the persona were left out
+  deliberately; the plan's §3 has the argument, and the persona's exclusion is the sharp one
+  (`personaInputHash` would move and regenerate every stored row).
+
+### The smoke run that changed the design (three runs, `id`, glm-4.6)
+
+**The block shipped at six notes for all three services and the first `--all --profile` run said
+that was wrong.** This is the measurement, because the numbers matter more than the conclusion.
+
+| Run | Notes/service | Violations | Recitation |
+|---|---|---|---|
+| `--all --profile` | 6 / 6 / 6 | 1 | **`daily` used TWO notes in 2 of 3 readings and restated one nearly verbatim** |
+| `--all --fixed` (control, same hands) | none | 8 | n/a |
+| `--all --profile` after the fix | 2 / 6 / 1 | 6 | none — one note, oblique, in one reading |
+
+The recitation that forced the change, `thessaly/daily`:
+
+> *"Tunggu kabar soal **pindah kerja** itu sampai ada surat resmi di tangan, baru ambil langkah
+> berikutnya."*
+
+against a stored note reading `Sedang menunggu kabar soal pindah kerja`. It is not a surveillance
+tell — it never says how it knows — but it is `DILARANG membacakannya` failing: the paragraph
+instructs the querent *about the note* instead of reading the card. The same reading also used a
+second note (the sleep habit) in its other paragraph, against a rule that says one thing once.
+
+**The fix was LESS MATERIAL, not a sterner rule** (`PROFILE_NOTES_BY_SERVICE`: `daily` 2,
+`spread3` 6, `yesno` 1). `daily` has two paragraphs against `spread3`'s four, so six facts is more
+than the reading has room to place, and a model handed more than it can place spends a paragraph
+placing it. **This is W5's dilution argument arriving from the other side** — W5 answered it by
+moving the instruction nearer the ceiling, which is unavailable here because the rule is
+deliberately static, so the only lever left is the size of the block. After the fix the same
+service reads *"waktu istirahatmu yang terbatas"* and *"satu hal kecil yang kamu tahan tanpa perlu
+bilang ke siapa-siapa"* — the same two notes, used rather than named.
+
+`spread3`'s one surviving echo is the acceptable form and is worth keeping as the calibration
+example: *"Yang sedang berjalan adalah The Hanged Man. Proses pindah kerja itu sekarang berhenti
+total…"* — one note, once, as the thing the card is read against.
+
+**DO NOT READ THE VIOLATION COLUMN AS AN IMPROVEMENT. It is noise: 1, then 8, then 6.** Run one
+tempted exactly that conclusion and it does not survive run three. Every violation in all three
+runs is length calibration or a card-name miss, both of which the control arm produces too (it had
+two card-name failures on its own), and CLAUDE.md already records `daily` and the English `spread3`
+as unconverged. **The block was not shown to improve or worsen length compliance, and three runs
+of nine cannot show it.** What the runs DID establish is the recitation behaviour, which is what
+they were for.
+
+**Zero surveillance tells in all three runs** — no *"kamu pernah cerita"*, *"kamu bilang"*,
+*"aku tahu kamu"*, no `catatan`, no date — grepped, not eyeballed. And no leakage of the two
+`taste` notes the partition puts last (`kopi hitam`, `tanpa gula`: 0 in every run), which is the
+partition doing its job.
+
+**Not yet run: `en`, and `--all --profile` in either locale by a person reading for quality rather
+than for recitation.** The blind read is still owed.
+
+### Moved out of CLAUDE.md by this commit (the net-neutral rule)
+
+CLAUDE.md's rule is that **a ruling which adds a rule there compresses or moves one out in the
+same commit.** Card #34 adds one bullet to `## The prompt`. Three passages were compressed to pay
+for it — A7's insight-prompt bullet and its `53 → 54` measurement (the full argument was already
+here, at *"The first `INSIGHT_SYSTEM` asked for…"*), and the parenthetical below, whose lesson was
+recorded nowhere else and is therefore reproduced verbatim rather than deleted.
+
+> *(This paragraph has its own heading since 2026-08-20. It spent four releases appended to the
+> end of `## Onboarding and the Lotus (W3)`, which is where the third cut nearly deleted it: a
+> section stubbed by heading takes everything filed under it, and nothing about a domain belongs
+> under onboarding. **Prose filed under the wrong heading is prose nobody can protect.**)*
+
+A7's compressed evidence, also kept: **pressing Insight moved its own panel's count 53 → 54, four
+seconds apart** — which is why the stale flag fires only on a closed range.
+
+**The arithmetic, stated rather than claimed:** CLAUDE.md went 142,381 → 142,568 bytes, **net
++187** — not exactly zero. The new bullet is ~830 bytes of cross-cutting invariant and ~1,020 came
+out of three passages, and the residue was not worth a fourth round of surgery on load-bearing
+prose. **The figure is recorded so the next session inherits a measurement rather than a claim** —
+which is the whole complaint `prose.test.ts`'s header makes about ceilings nobody re-measures.
+Headroom against the 150,000 rejection limit: ~7,430.
+
+### Two environment facts found on the way, neither caused by this card
+
+- **`npm run build` cannot complete from this machine's `.env.local`**, and it fails identically on
+  `main` with no changes at all (verified at `242e013`). `vercel env pull` writes the literal string
+  `[SENSITIVE]` for `DATABASE_URL`, `FIELD_ENCRYPTION_KEY` and others, and sets `VERCEL=1` — so
+  `db-migrate-deploy.ts`'s `VERCEL === '1'` guard thinks it is a Vercel build and
+  `db/client.ts` throws `Invalid URL` during page-data collection. The working local invocation is
+  `VERCEL=0 DATABASE_URL=postgres://jmtarot:jmtarot@127.0.0.1:5442/jmtarot npx next build`, and the
+  same two overrides make `npm run audit:secrets` derive all its needles instead of warning on ten
+  files. The 61 integration failures under that env are all the redacted `FIELD_ENCRYPTION_KEY`.
+- **`jmtarot-pg` publishes 5442, not 5432** — `docker-compose.yml` still says
+  `127.0.0.1:5432:5432`, so the running container was started from an older compose or remapped by
+  hand. CLAUDE.md's port trap says 5432. **Check `docker ps` before trusting either.**
+- A **fresh worktree needs a real `node_modules`, not a symlink**: Turbopack refuses one with
+  `Symlink [project]/node_modules is invalid, it points out of the filesystem root`. `cp -al` from
+  the main checkout hardlinks 432MB in 0.23s and Turbopack accepts it.
+
 **CLAUDE.md was cut a second time on 2026-07-29, from 167,282 characters to 93,841 — 44% moved
 here.** The first cut
 (`4df6ecf`, 157k → 95k) moved each workstream's evidence here and left the rules behind; the file
