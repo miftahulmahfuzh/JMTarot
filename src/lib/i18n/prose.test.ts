@@ -78,6 +78,18 @@ import type { MessageKey } from './locales/id';
  * sentence the 2026-08-08 block earned. 25,000 restores ~8.5% over the new figure, the
  * proportion the last re-measure chose. The rule below is intact: this is a WRITTEN
  * reason with the measurement in it, not a number nudged on an inconvenient commit.
+ *
+ * ── RE-MEASURED 2026-09-01 (card #34), NO WIDENING ─────────────────────────
+ *
+ * **RECORDED BECAUSE THE PARAGRAPH ABOVE NAMES NOT RE-MEASURING AS THE FAILURE MODE**,
+ * not because anything came close. Card #34 lengthens one value -- `account.memory.hint`
+ * gains a sentence, because the chat's notes now reach a reading prompt and `C-D8`'s
+ * finding is that the hint is where a querent actually reads that. **`id` 23,145 bytes,
+ * `en` 22,816, over 405 keys: ~1,855 of headroom, 7.4%.** `MAX_VALUE` did not move and
+ * the hint is nowhere near it.
+ *
+ * So the margin bought on this morning's widening is intact, and the next workstream
+ * inherits a number that was checked rather than assumed.
  */
 
 const MAX_VALUE = 320;

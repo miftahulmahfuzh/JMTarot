@@ -347,7 +347,16 @@ export type EventMap = {
 
   'reading.requested':         { reading_id: string; reader_id: string; service_id: string; card_count: number;
                                  has_question: boolean; question_length: number;
-                                 lotus_present: boolean; memory_block_present: boolean; prompt_version: string };
+                                 lotus_present: boolean; memory_block_present: boolean;
+                                 /*
+                                  * Card #34. FOLDED IN RATHER THAN GIVEN A NAME, per this
+                                  * file's ceiling. `profile_note_count` is a COUNT and there
+                                  * is deliberately no prop carrying a note: this table
+                                  * survives erasure with `user_id` nulled, and a note is a
+                                  * sentence a model wrote about a person.
+                                  */
+                                 profile_present: boolean; profile_note_count: number;
+                                 prompt_version: string };
   'reading.first_token':       { reading_id: string; latency_ms: number };
   /**
    * `source` is load-bearing. See EventSource.

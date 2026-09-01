@@ -764,6 +764,16 @@ fluent reading generated with no contract at all.
   `spread3` keeps FOUR paragraphs: dropping the synthesis would leave three unconnected
   card notes. `MAX_TOKENS` and the 1.3 are untouched — the first is a runaway guard, and
   scaling the second would cut Margaret twice.
+- **THE READING CARRIES R2's CHAT NOTES SINCE 2026-09-01 (card #34), AND FOUR `/privacy` CLAUSES
+  DESCRIBE IT.** `prompt/profile.{ts,read.ts}` renders ≤6 `user_memory` items into `<ingatan>`
+  (the chat's tag, R17) between `<penanya>` and the cards, on BOTH `buildPrompt` callers — refill
+  included. **Its rule is STATIC, not appended like `memoryInstruction`**: a surveillance rule
+  present only when its material is must not be, so `prompt_version` moved once, then stable.
+  **A SECOND SURFACE READING THESE NOTES AMENDS `/privacy` 2.2, 2.8, 3 AND 4.1 IN THE SAME
+  COMMIT** — `legal.test.ts` holds all four and forbids *"personalise your experience"*. The
+  deletion promise holds only because `dismissUserMemoryItems` strips `items` as well as
+  tombstoning: **if that becomes tombstone-only, `profile.ts` must filter or the policy lies.**
+  `READING_PROFILE_ENABLED` reverses it, deliberately not in `flags.ts`.
 - **`daily` DID NOT LAND THE CUT AND THAT IS RECORDED RATHER THAN FIXED.** `spread3` came
   in at 80–111 words against the old 130–200; `daily` took the largest relative cut (two
   paragraphs, not four) and Margaret wrote 53, 84 and 67-word openings against her 51
@@ -1541,22 +1551,18 @@ button. `src/app/admin/insight/panels.ts` (the registry), `src/app/admin/Insight
   `{ panel, from, to, force }` and no figures. W3's completion-route rule, applied to a
   prompt. **R21 also survives**: the cached row is read in each page's own `withAdminRead`,
   so the box's first frame is server-rendered and the only fetch is the press.
-- **PRESSING THE BUTTON CHANGES THE PANEL IT DESCRIBES**, because the insight's own
-  `llm_calls` row is dated today — measured 53 → 54 four seconds apart. So the stale flag
-  **only ever fires on a CLOSED range** (`range.to < today`); on a live range the timestamp
-  is what says how old the prose is. Excluding `op: 'insight'` from the metric queries would
-  fix it and would undo the whole reason the tenth op was spent.
-- **THE PROMPT ASKS FOR A FINDING, NOT A SUMMARY (rewritten 2026-08-01, Miftah's report).**
-  The first version asked *"apa yang dikatakan angkanya"* and got a tally back — true, and
-  worth nothing under a chart the operator had just read. It now asks for problem → one piece
-  of evidence → one concrete step, bounds a suggestion to what this dashboard can do, and
-  **names *"tidak ada masalah"* as a CORRECT answer** so the model does not invent a finding
-  to be useful. **The false-positive half is the expensive one and is enforced by a list of
-  what is NOT a problem** — aborted readings, a quiet day, a big percentage over a small base,
-  unreported tokens, anything `CATATAN DARI PANEL` already explains — plus *if you are unsure,
-  it is not*. That is W7's gate trade in a new place: an operator sent to chase a healthy panel
-  stops reading the box. **The worked example carries NO DIGITS** (it says `sekian`), because a
-  figure in the system half is a number the model can copy that rule 1 would then have to catch.
+- **PRESSING THE BUTTON CHANGES THE PANEL IT DESCRIBES** — the insight's own `llm_calls` row is
+  dated today. So the stale flag **only ever fires on a CLOSED range** (`range.to < today`); on a
+  live range the timestamp is what says how old the prose is. Excluding `op: 'insight'` from the
+  metric queries would fix it and undo the whole reason the tenth op was spent.
+- **THE PROMPT ASKS FOR A FINDING, NOT A SUMMARY** (rewritten 2026-08-01): problem → one piece
+  of evidence → one concrete step, suggestions bounded to what this dashboard can do, and
+  ***"tidak ada masalah"* NAMED AS A CORRECT ANSWER** so the model does not invent a finding to
+  be useful. **The false-positive half is the expensive one and is enforced by a list of what is
+  NOT a problem** — aborted readings, a quiet day, a big percentage over a small base, unreported
+  tokens, anything `CATATAN DARI PANEL` already explains — plus *if you are unsure, it is not*.
+  **The worked example carries NO DIGITS** (`sekian`): a figure in the system half is one the
+  model can copy and rule 1 would then have to catch.
 - **`validateInsight` REFUSES SHAPE, NOT TRUTH, AND SAYS SO.** Empty, over-long, or answered
   in markdown is never stored; there is no cheap test for *"this sentence about a trend is
   true"*, and the honest instruments are the timestamp, the stale line and the table view
@@ -1849,11 +1855,6 @@ Google's Authorized Domain is the registrable `jmtarot.site`. The consent screen
 **Testing** mode, so only manually-added test accounts can sign in. **What blocked publishing was
 Google's branding requirement of an app homepage that is not a login page; signed out, `/` now renders
 a landing page, so that blocker is closed** — what remains is pressing Publish.
-
-*(This paragraph has its own heading since 2026-08-20. It spent four releases appended to the end
-of `## Onboarding and the Lotus (W3)`, which is where the third cut nearly deleted it: a section
-stubbed by heading takes everything filed under it, and nothing about a domain belongs under
-onboarding. **Prose filed under the wrong heading is prose nobody can protect.**)*
 
 ## Signing in from the installed app (2026-08-09)
 

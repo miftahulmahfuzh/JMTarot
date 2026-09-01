@@ -70,10 +70,13 @@ export function PrivacyEn({ effective }: { effective: string }) {
                 in the source code and not in the database.
               </>,
               <>
-                <strong>In a reading, only an abstract summary ever reaches the language
-                model.</strong>{' '}The distillation is instructed to abstract rather than restate:
-                what reaches a reading looks like &ldquo;carries a heavy memory of loss&rdquo;,
-                never the incident. Any name you mention never travels with it.
+                <strong>Of these answers, only an abstract summary ever reaches the language
+                model in a reading.</strong>{' '}The distillation is instructed to abstract rather
+                than restate: what reaches a reading looks like &ldquo;carries a heavy memory of
+                loss&rdquo;, never the incident. Any name you mention never travels with it.{' '}
+                <strong>This is about these six answers only.</strong>{' '}If you use the group
+                chat, other material reaches your readings as well, and that material is not
+                abstract: see <Link href="#2-8">clause 2.8</Link>.
               </>,
               <>
                 <strong>In the group chat, your answer is sent word for word.</strong>{' '}This is
@@ -230,6 +233,16 @@ export function PrivacyEn({ effective }: { effective: string }) {
             unencrypted, exactly like your own messages.
           </P>
           <P>
+            <strong>
+              The readers also read these notes when they write your card readings, not only when
+              you are chatting.
+            </strong>{' '}
+            At most six of them travel, and the rules we give the readers forbid reading them back
+            to you: no listing, no summarising, and never saying how they know. If you have never
+            opened the group chat there are no notes, and your readings are exactly what they were
+            before.
+          </P>
+          <P>
             <strong>A note can be wrong.</strong>{' '}A machine is inferring, and an inference is
             sometimes mistaken &mdash; and sometimes uncomfortably accurate. Both are reasons you
             should be able to see them.
@@ -237,7 +250,8 @@ export function PrivacyEn({ effective }: { effective: string }) {
           <P>
             You can read every one of them and delete them, one at a time or all at once, on the{' '}
             <strong>About You</strong> page. Anything you delete is not read by the readers in the
-            next conversation, and is not written back later. There is no way to get it back.
+            next conversation{' '}<strong>or in your next card reading</strong>, and is not written
+            back later. There is no way to get it back.
           </P>
           <P>
             No human reads them, and they are not translated. See{' '}
@@ -253,7 +267,7 @@ export function PrivacyEn({ effective }: { effective: string }) {
             'The opening answers: so a reading sounds like it is for you rather than for anybody.',
             'Readings: so the app remembers what you have already asked.',
             'The group chat: so the readers answer you, this person, and not a generic one — which is the only reason they see your opening answers as written in there.',
-            'The notes about you: so the next conversation carries on from your life instead of starting from nothing each time.',
+            'The notes about you: so the next conversation carries on from your life instead of starting from nothing each time, and so a card reading is read for the person you actually are.',
             'Analytics: so we know what is broken and what is used.',
             'Moderation: so a wrong refusal can be found and fixed.',
             'Running the Service: so breakage can be fixed, a request about your own data can be answered, and the Terms can be enforced.',
@@ -346,6 +360,18 @@ export function PrivacyEn({ effective }: { effective: string }) {
             earlier messages in that room, and{' '}
             <strong>your six opening answers word for word</strong>{' '}&mdash; not a summary of them.
             See <Link href="#2-2">clause 2.2</Link> and <Link href="#2-7">2.7</Link>.
+          </P>
+          {/*
+            Card #34. **THE CALLOUT ABOVE BECAME FALSE FOR READINGS TOO** -- the same
+            failure C-D8 recorded one paragraph up, and the same repair: leave the callout
+            exact and add a paragraph. Softening it into something true of both surfaces
+            would leave it true of neither, which is R31's whole point.
+          */}
+          <P>
+            <strong>And if you use the group chat, your readings carry those notes too:</strong>{' '}
+            up to six short machine-written sentences about your habits and your character, as
+            written rather than summarised. Anything you have deleted is not sent. See{' '}
+            <Link href="#2-8">clause 2.8</Link>.
           </P>
           <P>
             <strong>

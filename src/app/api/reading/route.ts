@@ -4,6 +4,7 @@ import { requireUser } from '@/lib/auth/server';
 import { getProvider } from '@/lib/llm';
 import { buildPrompt } from '@/lib/prompt/build';
 import { getLotusBlock, scheduleLotusRefresh } from '@/lib/prompt/lotus.generate';
+import { getProfileNotes } from '@/lib/prompt/profile.read';
 import { MAX_QUESTION_LENGTH, sanitizeQuestion } from '@/lib/prompt/sanitize';
 import { tFor } from '@/lib/i18n/catalog';
 import { getLocale } from '@/lib/i18n/t';
@@ -332,6 +333,24 @@ export async function POST(request: Request) {
       locale,
     });
 
+    /*
+     * THE PROFILE BLOCK (card #34). R2's chat-distilled notes about this querent.
+     *
+     * One primary-key lookup, on the same terms roadmap §6 permits the two reads above:
+     * per-user, indexed, small. `getProfileNotes` swallows a database error and returns
+     * `[]` -- a reading without the block is a valid reading, and it is the one every
+     * querent who has never opened the chat gets.
+     *
+     * **DELIBERATELY UNCACHED, unlike `getLotusBlock`.** What changes this row is the
+     * querent pressing Delete on `/account`, and `queries/memory.ts` rule 3 already
+     * ruled on it: a cache that served a just-deleted note back into a prompt would be
+     * the delete button lying through a second door. `profile.read.ts`'s header carries
+     * the argument.
+     *
+     * `[]` IS NORMAL: no chat, everything deleted, extractor not run, or the flag off.
+     */
+    const profileNotes = await getProfileNotes(user.id);
+
     let prompt;
     try {
       // buildPrompt re-derives every card from cards.json and, for yes/no,
@@ -346,7 +365,7 @@ export async function POST(request: Request) {
         // An empty summary means "there is a profile but nothing distilled yet".
         // Passing it through would render an empty `<penanya>` block, which is
         // noise in the prompt and a rule the reader would apply to nothing.
-        context: { lotus: lotus && lotus.summary ? lotus : null, memory },
+        context: { lotus: lotus && lotus.summary ? lotus : null, memory, profile: profileNotes },
       });
     } catch (err) {
       console.error('prompt build failed', err);
@@ -371,6 +390,19 @@ export async function POST(request: Request) {
       question_length: question?.length ?? 0,
       lotus_present: Boolean(lotus && lotus.summary),
       memory_block_present: memory !== null,
+      /*
+       * Card #34. TWO PROPS ON AN EXISTING EVENT, never a new name -- `events.ts`'s
+       * ceiling says in those words that for a new measurement *"the answer is almost
+       * always a prop on one of the five above"*, and this is the same measurement
+       * `lotus_present` and `memory_block_present` already make about their blocks.
+       *
+       * A COUNT AND A BOOLEAN, AND NEVER A NOTE. `events.props` carries no free text,
+       * ever; `question.typed` carries a `length` for the same reason. These rows
+       * survive account erasure with `user_id` nulled, and a note is a sentence a model
+       * wrote about a real person.
+       */
+      profile_present: profileNotes.length > 0,
+      profile_note_count: profileNotes.length,
       prompt_version: prompt.promptVersion,
     });
 

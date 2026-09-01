@@ -66,6 +66,7 @@ import { isLocale, LOCALES, type Locale } from '@/lib/i18n/locale';
 import { budgetFor, type LengthBudget } from '@/lib/prompt/budget';
 import { splitChoiceMarker, validateChoice } from '@/lib/reading/choice';
 import type { MemoryContext } from '@/lib/prompt/memory';
+import { selectProfileNotes } from '@/lib/prompt/profile';
 
 /*
  * STATIC IMPORTS ARE SAFE FOR THESE FOUR AND NOT FOR THE REST.
@@ -233,6 +234,23 @@ async function main() {
    */
   const sideLocales: Locale[] = localeArg ? [localeArg] : [...LOCALES];
   const lotus = process.argv.includes('--lotus');
+  /*
+   * `--profile`: THE ONLY INSTRUMENT FOR CARD #34, AND IT IS A DIFF RATHER THAN A CHECK.
+   *
+   * Everything about the `<ingatan>` block is unit-tested for SHAPE -- the selection
+   * policy, the caps, the fence, that no date and no kind token escape -- and **nothing
+   * can unit-test whether a reading tailored on six notes is BETTER than the one
+   * without.** That is the whole claim the card makes, so it gets measured the only way
+   * it can be: `--all --profile` against `--all --fixed`, same nine hands, read side by
+   * side.
+   *
+   * THE FAILURE TO WATCH FOR IS RECITATION. A reading that spends a paragraph listing
+   * the querent's habits is worse than the untailored one, and it is the observed
+   * failure of handing a model facts about somebody -- it reads them out. If it appears,
+   * the fix is the `<ingatan>` bullet in `base.{id,en}.ts` or `PROFILE_NOTES_MAX`, in
+   * that order, and never the code.
+   */
+  const profile = process.argv.includes('--profile');
   const memory = process.argv.includes('--memory');
   const summary = process.argv.includes('--summary');
   const gist = process.argv.includes('--gist');
@@ -281,7 +299,7 @@ async function main() {
      diffed. `--memory` joins that list because its whole point is a recalled
      card that REPEATS in the current draw, which needs a hand it can control. */
   const fixedCards =
-    all && (lotus || memory || process.argv.includes('--fixed'));
+    all && (lotus || memory || profile || process.argv.includes('--fixed'));
 
   /*
    * `npm run smoke -- --lotus` runs ONE real distillation and shows its whole
@@ -503,8 +521,17 @@ async function main() {
       locale,
       question: choiceRun ? CHOICE_QUESTION[locale] : arg('question'),
       context:
-        lotus || memoryCtx
-          ? { lotus: lotus ? LOTUS_BLOCK_FIXTURE : null, memory: memoryCtx }
+        lotus || memoryCtx || profile
+          ? {
+              lotus: lotus ? LOTUS_BLOCK_FIXTURE : null,
+              memory: memoryCtx,
+              /*
+               * THROUGH `selectProfileNotes` RATHER THAN AS A LIST OF STRINGS, so the run
+               * exercises the partition and the caps as well as the prose. Handing
+               * `buildPrompt` a hand-made array would test a path production never takes.
+               */
+              profile: profile ? selectProfileNotes(PROFILE_ITEMS_FIXTURE) : null,
+            }
           : undefined,
     });
     const marker: { choice: string | null } = { choice: null };
@@ -1065,6 +1092,34 @@ const LOTUS_BLOCK_FIXTURE = {
     'pusat dari rasa aman dan kehangatan dalam hidupnya. Ia lebih sering menyendiri, ' +
     'dengan dunia batin yang tenang dan terjaga.',
 };
+
+/**
+ * The canned `user_memory` rows the `--all --profile` run injects into all nine readings.
+ *
+ * WRITTEN AS ITEMS, NOT AS LINES, AND THE SHAPE IS THE POINT: this run has to exercise
+ * `selectProfileNotes` -- the kind partition, the `isUserMemoryItem` filter, the six-note
+ * cap -- because that is the code production runs. A fixture of pre-selected strings
+ * would test a path that only exists in this file.
+ *
+ * EIGHT ITEMS FOR A SIX-NOTE CAP, ON PURPOSE, so the cap actually bites and the two
+ * `taste` notes at the end are the ones that lose. And they SHOULD lose: the card asked
+ * for *"character and daily activities"*, so a run in which lunch beats disposition is
+ * the partition failing.
+ *
+ * The voice is a real extraction's -- third person, one short sentence, no dates and no
+ * hedging -- rather than a tidy hand-written list, because a reading generated from
+ * unnaturally clean notes tells you nothing about the ones the extractor actually writes.
+ */
+const PROFILE_ITEMS_FIXTURE = [
+  { id: '0000000000a1', kind: 'trait', text: 'Lebih suka sendiri dan butuh waktu tenang tiap hari.', lastSeen: '2026-08-30' },
+  { id: '0000000000a2', kind: 'habit', text: 'Tidur larut, sering kerja sampai lewat tengah malam.', lastSeen: '2026-08-29' },
+  { id: '0000000000a3', kind: 'situation', text: 'Sedang menunggu kabar soal pindah kerja.', lastSeen: '2026-08-30' },
+  { id: '0000000000a4', kind: 'habit', text: 'Jalan kaki keliling kompleks kalau sedang banyak pikiran.', lastSeen: '2026-08-28' },
+  { id: '0000000000a5', kind: 'person', text: 'Sering cerita soal ibunya.', lastSeen: '2026-08-27' },
+  { id: '0000000000a6', kind: 'trait', text: 'Susah minta tolong, lebih memilih menyelesaikan sendiri.', lastSeen: '2026-08-26' },
+  { id: '0000000000a7', kind: 'taste', text: 'Suka kopi hitam tanpa gula.', lastSeen: '2026-08-25' },
+  { id: '0000000000a8', kind: 'taste', text: 'Tidak suka tempat yang ramai.', lastSeen: '2026-08-24' },
+];
 
 function renderLotusBlockFixture(): string {
   return `<penanya>\nNama panggilan: ${LOTUS_BLOCK_FIXTURE.nickname}\nLatar: ${LOTUS_BLOCK_FIXTURE.summary}\n</penanya>`;

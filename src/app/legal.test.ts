@@ -450,6 +450,68 @@ describe('the privacy policy', () => {
       expect(PRIVACY['privacy.en']).toContain('in the same transaction');
     });
 
+    /*
+     * ── CARD #34: THE NOTES NOW REACH A READING ────────────────────────────
+     *
+     * Four sentences in these documents became false the moment `<ingatan>` entered
+     * `buildPrompt`, and R31's rule is that an INCOMPLETE amendment is worse than an
+     * out-of-date policy. Each is asserted here so a revert of the code without a
+     * revert of the prose -- or the reverse -- goes red.
+     *
+     * The one to protect is 2.2's. It still says an abstract summary is all that
+     * reaches a reading, which remains TRUE OF THE SIX ANSWERS and is now false of the
+     * reading as a whole. Scoping it rather than deleting it is the honest repair, and
+     * `2-2 names the scope` below is what stops somebody "simplifying" the scope away
+     * and leaving a sentence that reads as a promise about the whole prompt.
+     */
+    it('says in BOTH locales that the notes reach a card reading, not just the chat', () => {
+      expect(PRIVACY['privacy.id']).toContain('ketika mereka menulis bacaan kartumu');
+      expect(PRIVACY['privacy.en']).toMatch(/when they write your card readings/i);
+    });
+
+    it('scopes 2.2\'s abstraction promise to the six answers rather than to a reading', () => {
+      // Without the scope this sentence reads as a promise about everything in the
+      // prompt, which it is not any more.
+      expect(PRIVACY['privacy.id']).toContain('Ini soal keenam jawaban ini saja.');
+      expect(PRIVACY['privacy.en']).toContain('This is about these six answers only.');
+    });
+
+    it('extends the deletion promise to the next READING, not only the next conversation', () => {
+      /*
+       * **A CLAIM ABOUT `queries/memory.ts` AND IT IS TRUE**:
+       * `dismissUserMemoryItems` removes the item from `items` as well as appending the
+       * tombstone, and `selectProfileNotes` reads `items`. If that query ever becomes
+       * tombstone-only, this sentence becomes a false statement in a legal document and
+       * `profile.ts` has to start filtering. That is what this assertion is here to force.
+       */
+      expect(PRIVACY['privacy.id']).toContain('maupun di bacaan kartumu berikutnya');
+      expect(PRIVACY['privacy.en']).toMatch(/or in your next card reading/i);
+    });
+
+    it('names the reading as a PURPOSE in clause 3, not only as a disclosure', () => {
+      // Purpose limitation: a new use has to be named where the uses are listed, or the
+      // policy discloses a behaviour it never says why we do.
+      expect(PRIVACY['privacy.id']).toContain('supaya bacaan kartumu dibaca untuk orang');
+      expect(PRIVACY['privacy.en']).toMatch(/so a card reading is read for the person/i);
+    });
+
+    it('amends 4.1, where what leaves the country is listed', () => {
+      // The callout stays exact and a paragraph answers for the new material -- C-D8's
+      // repair, reused. This asserts the paragraph, not the callout.
+      expect(PRIVACY['privacy.id']).toContain('bacaanmu ikut membawa catatan itu');
+      expect(PRIVACY['privacy.en']).toMatch(/your readings carry those notes too/i);
+    });
+
+    it('states the SIX-note bound in both locales, because the code enforces one', () => {
+      /*
+       * `PROFILE_NOTES_MAX`. A policy that said "your notes" without a bound would be
+       * describing something unbounded while the code sends at most six -- and the day
+       * somebody raises the constant, this is what makes the document move with it.
+       */
+      expect(PRIVACY['privacy.id']).toContain('enam');
+      expect(PRIVACY['privacy.en']).toMatch(/six/i);
+    });
+
     it('never says the notes personalise anything', () => {
       /*
        * **THE SENTENCE THIS PROJECT EXISTS NOT TO WRITE.** Clause 2.2 quotes the
